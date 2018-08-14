@@ -15,9 +15,11 @@ recovery scheme that achieves better performance at the expense of slightly high
 
 Go to [our website](http://aka.ms/FASTER) for more details and papers.
 
-# Build and Test in C#
+# Build and Test
 
-Clone the repo, open /cs/src/FASTER.sln, build using VS 2017.
+For C#, see [here](https://github.com/Microsoft/FASTER/tree/master/cs).
+
+For C++, see [here](https://github.com/Microsoft/FASTER/tree/master/cc).
 
 # Contributing
 
