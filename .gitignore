@@ -189,6 +189,5 @@ ModelManifest.xml
 packages/
 *.VC.db*
 *.VC.opendb
-/.vs/
-/cs/src/.vs/
+.vs/
 *.lib

@@ -82,14 +82,8 @@
     <None Include="app.config" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\native\bin\x64\Release\readtsc.dll">
-      <Link>readtsc.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\core\FASTER.core.csproj">
-      <Project>{01002755-60ca-40ee-94d9-11c07eb58786}</Project>
+    <ProjectReference Include="..\src\core\FASTER.core.csproj">
+      <Project>{f947bc6a-2943-4ac7-aca7-f17351e25fe7}</Project>
       <Name>FASTER.core</Name>
     </ProjectReference>
   </ItemGroup>

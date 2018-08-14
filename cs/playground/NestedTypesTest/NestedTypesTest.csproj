@@ -40,6 +40,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\core\FASTER.core.csproj" />
+    <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
   </ItemGroup>
 </Project>

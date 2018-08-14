@@ -105,9 +105,11 @@ namespace FASTER.test.recovery.sumstore
                     if ((i+1) % checkpointInterval == 0)
                     {
                         if (first)
-                            fht.TakeFullCheckpoint(out token);
+                            while (!fht.TakeFullCheckpoint(out token))
+                                fht.Refresh();
                         else
-                            fht.TakeFullCheckpoint(out nextToken);
+                            while (!fht.TakeFullCheckpoint(out nextToken))
+                                fht.Refresh();
 
                         first = false;
                     }

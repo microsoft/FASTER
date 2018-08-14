@@ -9,7 +9,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>FASTER.benchmark</RootNamespace>
+    <RootNamespace>ManagedSample2</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
@@ -34,10 +34,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" Version="2.2.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\core\FASTER.core.csproj" />
+    <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
   </ItemGroup>
 </Project>

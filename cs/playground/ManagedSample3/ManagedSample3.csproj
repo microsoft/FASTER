@@ -9,7 +9,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>ManagedSample2</RootNamespace>
+    <RootNamespace>ManagedSample3</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
@@ -28,12 +28,17 @@
     <Optimize>true</Optimize>
     <OutputPath>bin\x64\Release\</OutputPath>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Generated\**" />
+    <EmbeddedResource Remove="Generated\**" />
+    <None Remove="Generated\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="App.config" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\core\FASTER.core.csproj" />
+    <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
   </ItemGroup>
 </Project>
