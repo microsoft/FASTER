@@ -5,6 +5,6 @@ set(BENCHMARK_HEADERS
 set(BENCHMARK_SOURCES
 )
 
-ADD_FAST_BENCHMARK(benchmark)
+ADD_FASTER_BENCHMARK(benchmark)
 
 add_executable(process_ycsb process_ycsb.cc)

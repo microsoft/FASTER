@@ -5,5 +5,5 @@ set(SUM_STORE_HEADERS
 )
 
 add_executable(sum_store ${SUM_STORE_HEADERS} sum_store.cc)
-target_link_libraries(sum_store ${FAST_BENCHMARK_LINK_LIBS})
+target_link_libraries(sum_store ${FASTER_BENCHMARK_LINK_LIBS})
 

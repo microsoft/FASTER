@@ -60,38 +60,38 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-set (FAST_LINK_LIBS
+set (FASTER_LINK_LIBS
   faster
 )
  
 # Set the link libraries to for test compilation
-set (FAST_TEST_LINK_LIBS ${FAST_LINK_LIBS} gtest)
+set (FASTER_TEST_LINK_LIBS ${FASTER_LINK_LIBS} gtest)
 if(WIN32)
 else()
-  set (FAST_TEST_LINK_LIBS ${FAST_TEST_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
+  set (FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
 endif()
 
 # Set the link libraries to for benchmark binary compilation
-set (FAST_BENCHMARK_LINK_LIBS ${FAST_LINK_LIBS})
+set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_LINK_LIBS})
 if(WIN32)
-set (FAST_BENCHMARK_LINK_LIBS ${FAST_LINK_LIBS} wsock32 Ws2_32)
+set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_LINK_LIBS} wsock32 Ws2_32)
 else()
-  set (FAST_BENCHMARK_LINK_LIBS ${FAST_BENCHMARK_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
+  set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
 endif()
 
 #Function to automate building test binaries
-FUNCTION(ADD_FAST_TEST TEST_NAME HEADERS)
+FUNCTION(ADD_FASTER_TEST TEST_NAME HEADERS)
   add_executable(${TEST_NAME} ${HEADERS} ${TEST_NAME}.cc)
 
-  target_link_libraries(${TEST_NAME} ${FAST_TEST_LINK_LIBS})
+  target_link_libraries(${TEST_NAME} ${FASTER_TEST_LINK_LIBS})
   add_test(${TEST_NAME} ${CMAKE_BINARY_DIR}/${TEST_NAME})
 ENDFUNCTION()
 
 #Function to automate building benchmark binaries
-FUNCTION(ADD_FAST_BENCHMARK BENCHMARK_NAME)
+FUNCTION(ADD_FASTER_BENCHMARK BENCHMARK_NAME)
   add_executable(${BENCHMARK_NAME} ${BENCHMARK_HEADERS} ${BENCHMARK_NAME}.cc)
 
-  target_link_libraries(${BENCHMARK_NAME} ${FAST_BENCHMARK_LINK_LIBS})
+  target_link_libraries(${BENCHMARK_NAME} ${FASTER_BENCHMARK_LINK_LIBS})
 ENDFUNCTION()
 
 # Build each subdirectory

@@ -1,5 +1,5 @@
 # Build the FASTER library.
-set (FAST_HEADERS
+set (FASTER_HEADERS
   core/address.h
   core/alloc.h
   core/async.h
@@ -35,29 +35,29 @@ set (FAST_HEADERS
 )
 
 if (MSVC)
-set (FAST_HEADERS ${FAST_HEADERS}
+set (FASTER_HEADERS ${FASTER_HEADERS}
   environment/file_windows.h
 )
 else()
-set (FAST_HEADERS ${FAST_HEADERS}
+set (FASTER_HEADERS ${FASTER_HEADERS}
   environment/file_linux.h
 )
 endif() 
 
-set (FAST_SOURCES
+set (FASTER_SOURCES
   core/address.cc
   core/lss_allocator.cc
   core/thread.cc
 )
 
 if (MSVC)
-set (FAST_SOURCES ${FAST_SOURCES}
+set (FASTER_SOURCES ${FASTER_SOURCES}
   environment/file_windows.cc
 )
 else()
-set (FAST_SOURCES ${FAST_SOURCES}
+set (FASTER_SOURCES ${FASTER_SOURCES}
   environment/file_linux.cc
 )
 endif()
 
-add_library(faster STATIC ${FAST_SOURCES} ${FAST_HEADERS})
+add_library(faster STATIC ${FASTER_SOURCES} ${FASTER_HEADERS})

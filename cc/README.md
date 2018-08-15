@@ -7,7 +7,7 @@ them, as needed, during ordinary build.
 
 Building on Windows
 -------------------
-Create new directory "build" off the root directory (FAST\cc). From the new
+Create new directory "build" off the root directory (FASTER\cc). From the new
 "build" directory, execute:
 
   cmake .. -G "<MSVC compiler> Win64"
@@ -24,7 +24,7 @@ build profiles to FASTER.sln, including Debug/x64 and Release/x64.
 Building on Linux
 -----------------
 The Linux build requires several packages (both libraries and header files);
-see "CMakeFiles.txt" in the root directory (FAST/cc) for the list of libraries
+see "CMakeFiles.txt" in the root directory (FASTER/cc) for the list of libraries
 being linked to, on Linux.
 
 As of this writing, the required libraries are:
@@ -42,7 +42,7 @@ Debug or Release build, but not both; so you'll have to run CMake twice, in two
 different directories, to get both Debug and Release build scripts.
 
 Create new directories "build/Debug" and "build/Release" off the root directory
-(FAST/cc). From "build/Debug", run:
+(FASTER/cc). From "build/Debug", run:
 
   cmake -DCMAKE_BUILD_TYPE=Debug ../..
 
@@ -56,13 +56,13 @@ relevant build directory.
 Other options
 -------------
 You can try other generators (compilers) supported by CMake. The main CMake
-build script is the CMakeLists.txt located in the root directory (FAST/cc).
+build script is the CMakeLists.txt located in the root directory (FASTER/cc).
 
 Examples
 ========
-There are some unit tests in FAST/cc/test.
+There are some unit tests in FASTER/cc/test.
 
-Sum-store, located in FAST/cc/playground/sum_store-dir, is a good example of
+Sum-store, located in FASTER/cc/playground/sum_store-dir, is a good example of
 checkpointing and recovery.
 
-There's a basic YCSB test driver in FAST/cc/benchmark-dir.
+There's a basic YCSB test driver in FASTER/cc/benchmark-dir.
