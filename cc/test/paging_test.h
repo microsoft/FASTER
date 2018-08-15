@@ -461,7 +461,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
   std::experimental::filesystem::create_directories("logs");
 
   // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs\\", 0.5 };
+  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
 
   static constexpr size_t kNumRecords = 300000;
   static constexpr size_t kNumThreads = 16;
@@ -977,7 +977,7 @@ TEST(CLASS, Rmw_Concurrent) {
   std::experimental::filesystem::create_directories("logs");
 
   // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs\\", 0.5 };
+  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
 
   // Initial RMW.
   std::deque<std::thread> threads{};
