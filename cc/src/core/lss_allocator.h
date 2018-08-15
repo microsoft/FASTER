@@ -53,7 +53,7 @@ struct alignas(8) Header {
 };
 static_assert(sizeof(Header) == 8, "Header is not 8 bytes!");
 #else
-struct alignas(8) Header {
+struct Header {
   Header(uint16_t offset_)
     : offset{ offset_ } {
   }
@@ -61,7 +61,7 @@ struct alignas(8) Header {
   /// Offset from the head of the segment allocator's buffer to the memory block.
   uint16_t offset;
 };
-static_assert(sizeof(Header) == 8, "Header is not 8 bytes!");
+static_assert(sizeof(Header) == 2, "Header is not 2 bytes!");
 #endif
 
 class ThreadAllocator;
@@ -95,6 +95,7 @@ class SegmentState {
       std::atomic<uint64_t> control;
     };
 };
+static_assert(sizeof(SegmentState) == 8, "sizeof(SegmentState) != 8");
 static_assert(kSegmentSize < UINT16_MAX / 2, "kSegmentSize too large for offset size!");
 
 /// Allocation takes place inside segments. When a segment is no longer needed, we add it to the
@@ -136,6 +137,17 @@ class SegmentAllocator {
   /// Segment allocator state (8 bytes).
   SegmentState state;
 
+  /// Padding, as needed, so that the first user allocation, at buffer_[sizeof(Header)] is 16-byte
+  /// aligned.
+  /// (In _DEBUG builds, sizeof(Header) == 8, so we require 0 bytes padding; in release builds,
+  /// sizeof(Header) == 2, so we require 6 bytes padding.)
+ private:
+#ifdef _DEBUG
+#else
+  uint8_t padding_[6];
+#endif
+
+ public:
   /// This segment's memory. (First allocation's 8-byte Header starts at 8 (mod 16), so the
   /// allocation's contents will start at 0 (mod 16), as desired.)
   uint8_t buffer[kSegmentSize];
