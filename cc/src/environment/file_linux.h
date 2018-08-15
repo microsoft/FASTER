@@ -81,7 +81,7 @@ class File {
     read_count_ = other.read_count_;
     bytes_read_ = other.bytes_read_;
 #endif
-    other.owner_ = -1;
+    other.owner_ = false;
     return *this;
   }
 
