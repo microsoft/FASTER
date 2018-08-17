@@ -102,7 +102,7 @@ namespace ClassCache
         {
         }
 
-        public void ReadCompletionCallback(CacheContext ctx, CacheOutput output)
+        public void ReadCompletionCallback(CacheContext ctx, CacheOutput output, Status status)
         {
         }
 
@@ -111,7 +111,7 @@ namespace ClassCache
             dst.value = value;
         }
 
-        public void RMWCompletionCallback(CacheContext ctx)
+        public void RMWCompletionCallback(CacheContext ctx, Status status)
         {
         }
 

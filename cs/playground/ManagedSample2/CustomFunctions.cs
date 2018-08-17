@@ -7,11 +7,11 @@ namespace ManagedSample2
 {
     public class CustomFunctions : IUserFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
     {
-        public void RMWCompletionCallback(Empty ctx)
+        public void RMWCompletionCallback(Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(Empty ctx, OutputStruct output)
+        public void ReadCompletionCallback(Empty ctx, OutputStruct output, Status status)
         {
         }
 

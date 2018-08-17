@@ -60,10 +60,31 @@ namespace FASTER.test
                 fht.Upsert(new MyKey { key = i }, new MyValue { value = i }, default(MyContext), 0);
 
             MyOutput g1 = new MyOutput();
-            fht.Read(new MyKey { key = 23 }, new MyInput(), ref g1, new MyContext(), 0);
+            var status = fht.Read(new MyKey { key = 23 }, new MyInput(), ref g1, new MyContext(), 0);
 
-            fht.CompletePending(true);
+            if (status == Status.PENDING)
+            {
+                fht.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
             Assert.IsTrue(g1.value.value == 23);
+
+            status = fht.Read(new MyKey { key = 99999 }, new MyInput(), ref g1, new MyContext(), 0);
+
+            if (status == Status.PENDING)
+            {
+                fht.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.NOTFOUND);
+            }
+
+
         }
     }
 }

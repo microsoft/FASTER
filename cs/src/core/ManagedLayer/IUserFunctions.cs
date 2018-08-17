@@ -8,8 +8,8 @@ namespace FASTER.core
     public interface IUserFunctions<K, V, I, O, C>
     {
         // Callbacks
-        void RMWCompletionCallback(C ctx);
-        void ReadCompletionCallback(C ctx, O output);
+        void RMWCompletionCallback(C ctx, Status status);
+        void ReadCompletionCallback(C ctx, O output, Status status);
         void UpsertCompletionCallback(C ctx);
 
 

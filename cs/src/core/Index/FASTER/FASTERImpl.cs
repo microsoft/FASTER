@@ -100,7 +100,7 @@ namespace FASTER.core
             else
             {
                 // no tag found
-                return OperationStatus.SUCCESS;
+                return OperationStatus.NOTFOUND;
             }
             #endregion
 
@@ -166,7 +166,7 @@ namespace FASTER.core
             // No record found
             else
             {
-                return OperationStatus.SUCCESS;
+                return OperationStatus.NOTFOUND;
             }
 
             #endregion
@@ -370,7 +370,7 @@ namespace FASTER.core
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
             logicalAddress = entry.Address;
-            if (logicalAddress >= hlog.HeadAddress)
+            if (logicalAddress >= hlog.ReadOnlyAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = Layout.GetInfo(physicalAddress)->Version;
@@ -379,7 +379,7 @@ namespace FASTER.core
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
                     TraceBackForKeyMatch(key,
                                         logicalAddress,
-                                        hlog.HeadAddress,
+                                        hlog.ReadOnlyAddress,
                                         out logicalAddress,
                                         out physicalAddress);
                 }
@@ -797,12 +797,14 @@ namespace FASTER.core
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     Functions.InitialUpdater(key, input, Layout.GetValue(newPhysicalAddress));
+                    status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     Functions.CopyUpdater(key, input,
                                             Layout.GetValue(physicalAddress),
                                             Layout.GetValue(newPhysicalAddress));
+                    status = OperationStatus.SUCCESS;
                 }
                 else
                 {
@@ -825,7 +827,6 @@ namespace FASTER.core
 
                 if (foundEntry.word == entry.word)
                 {
-                    status = OperationStatus.SUCCESS;
                     goto LatchRelease;
                 }
                 else
@@ -1065,6 +1066,7 @@ namespace FASTER.core
                     Functions.InitialUpdater(pendingContext.key, 
                                              pendingContext.input,
                                              Layout.GetValue(newPhysicalAddress));
+                    status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
@@ -1072,6 +1074,7 @@ namespace FASTER.core
                                             pendingContext.input,
                                             Layout.GetValue(physicalAddress),
                                             Layout.GetValue(newPhysicalAddress));
+                    status = OperationStatus.SUCCESS;
                 }
                 else
                 {
@@ -1094,7 +1097,6 @@ namespace FASTER.core
 
                 if (foundEntry.word == entry.word)
                 {
-                    status = OperationStatus.SUCCESS;
                     goto LatchRelease;
                 }
                 else
@@ -1177,6 +1179,7 @@ namespace FASTER.core
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
+            var status = default(OperationStatus);
 
             var hash = Key.GetHashCode(pendingContext.key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -1229,6 +1232,7 @@ namespace FASTER.core
                 Functions.InitialUpdater(pendingContext.key,
                                          pendingContext.input,
                                          Layout.GetValue(newPhysicalAddress));
+                status = OperationStatus.NOTFOUND;
             }
             else
             {
@@ -1236,6 +1240,7 @@ namespace FASTER.core
                                       pendingContext.input,
                                       Layout.GetValue(physicalAddress),
                                       Layout.GetValue(newPhysicalAddress));
+                status = OperationStatus.SUCCESS;
             }
 
             request.record.Return();
@@ -1253,7 +1258,7 @@ namespace FASTER.core
 
             if (foundEntry.word == entry.word)
             {
-                return OperationStatus.SUCCESS;
+                return status;
             }
             else
             {
@@ -1338,9 +1343,9 @@ namespace FASTER.core
                 #endregion
             }
 
-            if (status == OperationStatus.SUCCESS)
+            if (status == OperationStatus.SUCCESS || status == OperationStatus.NOTFOUND)
             {
-                return Status.OK;
+                return (Status)status;
             }
             else if (status == OperationStatus.RECORD_ON_DISK)
             {

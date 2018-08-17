@@ -23,6 +23,7 @@ namespace FASTER.core
     public enum OperationStatus
     {
         SUCCESS,
+        NOTFOUND,
         RETRY_NOW,
         RETRY_LATER,
         RECORD_ON_DISK,

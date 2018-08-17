@@ -93,7 +93,6 @@ namespace FASTER.test.recovery.sumstore
             // Register thread with FASTER
             fht.StartSession();
 
-            Guid nextToken;
             // Prpcess the batch of input data
             bool first = true;
             fixed (Input* input = inputArray)
@@ -108,7 +107,7 @@ namespace FASTER.test.recovery.sumstore
                             while (!fht.TakeFullCheckpoint(out token))
                                 fht.Refresh();
                         else
-                            while (!fht.TakeFullCheckpoint(out nextToken))
+                            while (!fht.TakeFullCheckpoint(out Guid nextToken))
                                 fht.Refresh();
 
                         first = false;

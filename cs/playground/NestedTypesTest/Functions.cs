@@ -46,7 +46,7 @@ namespace NestedTypesTest
 #endif
         >
     {
-        public void RMWCompletionCallback(MyContext ctx)
+        public void RMWCompletionCallback(MyContext ctx, Status status)
         {
         }
 
@@ -56,6 +56,7 @@ namespace NestedTypesTest
 #else
             MyOutput
 #endif
+            , Status status
             )
         {
         }

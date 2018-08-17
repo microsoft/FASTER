@@ -74,11 +74,11 @@ namespace ManagedSample3
 
     public class MyFunctions : IUserFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public void RMWCompletionCallback(MyContext ctx)
+        public void RMWCompletionCallback(MyContext ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(MyContext ctx, MyOutput output)
+        public void ReadCompletionCallback(MyContext ctx, MyOutput output, Status status)
         {
         }
 

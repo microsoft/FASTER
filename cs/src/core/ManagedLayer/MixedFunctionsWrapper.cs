@@ -13,21 +13,21 @@ namespace FASTER.core
     {
         public static MixedUserFunctions userFunctions;
 
-        public static void RMWCompletionCallback(MixedKeyWrapper* key, MixedInputWrapper* input, MixedContextWrapper* ctx)
+        public static void RMWCompletionCallback(MixedKeyWrapper* key, MixedInputWrapper* input, MixedContextWrapper* ctx, Status status)
         {
             userFunctions.RMWCompletionCallback(
-                UserType.Convert(ctx));
+                UserType.Convert(ctx), status);
 
             UserType.FreeFromContext(key);
             UserType.FreeFromContext(input);
             UserType.FreeFromContext(ctx);
         }
 
-        public static void ReadCompletionCallback(MixedKeyWrapper* key, MixedInputWrapper* input, MixedOutputWrapper* output, MixedContextWrapper* ctx)
+        public static void ReadCompletionCallback(MixedKeyWrapper* key, MixedInputWrapper* input, MixedOutputWrapper* output, MixedContextWrapper* ctx, Status status)
         {
             userFunctions.ReadCompletionCallback(
                 UserType.Convert(ctx),
-                UserType.Convert(output));
+                UserType.Convert(output), status);
 
             UserType.FreeFromContext(key);
             UserType.FreeFromContext(input);

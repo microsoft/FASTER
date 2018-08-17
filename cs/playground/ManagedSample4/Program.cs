@@ -85,11 +85,11 @@ namespace ManagedSample4
 
     public class MyFunctions : IUserFunctions<Wrap<int>, Wrap<int>, Wrap<int>, Wrap<int>, MyContext>
     {
-        public void RMWCompletionCallback(MyContext ctx)
+        public void RMWCompletionCallback(MyContext ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(MyContext ctx, Wrap<int> output)
+        public void ReadCompletionCallback(MyContext ctx, Wrap<int> output, Status status)
         {
         }
         public void UpsertCompletionCallback(MyContext ctx)

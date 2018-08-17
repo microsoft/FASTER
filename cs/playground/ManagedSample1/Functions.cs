@@ -9,11 +9,11 @@ namespace ManagedSample1
 {
     public unsafe class Functions
     {
-        public static void RMWCompletionCallback(KeyStruct* key, InputStruct* output, Empty* ctx)
+        public static void RMWCompletionCallback(KeyStruct* key, InputStruct* output, Empty* ctx, Status status)
         {
         }
 
-        public static void ReadCompletionCallback(KeyStruct* key, InputStruct* input, OutputStruct* output, Empty* ctx)
+        public static void ReadCompletionCallback(KeyStruct* key, InputStruct* input, OutputStruct* output, Empty* ctx, Status status)
         {
         }
 

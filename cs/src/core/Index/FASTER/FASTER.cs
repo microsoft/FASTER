@@ -162,10 +162,10 @@ namespace FASTER.core
             var context = default(PendingContext);
             var internalStatus = InternalRead(key, input, output, userContext, ref context);
             var status = default(Status);
-            if (internalStatus == OperationStatus.SUCCESS)
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 
-                status = Status.OK;
+                status = (Status)internalStatus;
             }
             else
             {
@@ -188,9 +188,10 @@ namespace FASTER.core
             var context = default(PendingContext);
             var internalStatus = InternalUpsert(key, desiredValue, userContext, ref context);
             var status = default(Status);
-            if (internalStatus == OperationStatus.SUCCESS)
+
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = Status.OK;
+                status = (Status)internalStatus;
             }
             else
             {
@@ -213,9 +214,9 @@ namespace FASTER.core
             var context = default(PendingContext);
             var internalStatus = InternalRMW(key, input, userContext, ref context);
             var status = default(Status);
-            if (internalStatus == OperationStatus.SUCCESS)
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                 status = Status.OK;
+                 status = (Status)internalStatus;
             }
             else
             {

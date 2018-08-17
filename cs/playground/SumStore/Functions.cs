@@ -11,11 +11,11 @@ namespace SumStore
 {
     public unsafe class Functions
     {
-        public static void RMWCompletionCallback(AdId* key, Input* input, Empty* ctx)
+        public static void RMWCompletionCallback(AdId* key, Input* input, Empty* ctx, Status status)
         {
         }
 
-        public static void ReadCompletionCallback(AdId* key, Input* input, Output* output, Empty* ctx)
+        public static void ReadCompletionCallback(AdId* key, Input* input, Output* output, Empty* ctx, Status status)
         {
         }
 

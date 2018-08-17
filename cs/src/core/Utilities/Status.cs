@@ -17,13 +17,29 @@
 // *********************************************************************
 namespace FASTER.core
 {
-    using System.Runtime.InteropServices;
 
+    /// <summary>
+    /// Status result of operation on FASTER
+    /// </summary>
     public enum Status
     {
+        /// <summary>
+        /// For Read and RMW, item being read was found, and
+        /// the operation completed successfully
+        /// For Upsert, item was upserted successfully
+        /// </summary>
         OK,
+        /// <summary>
+        /// For Read and RMW, item being read was not found
+        /// </summary>
+        NOTFOUND,
+        /// <summary>
+        /// Operation went pending (async)
+        /// </summary>
         PENDING,
-        ERROR,
-        DONE
+        /// <summary>
+        /// Operation resulted in some error
+        /// </summary>
+        ERROR
     }
 }

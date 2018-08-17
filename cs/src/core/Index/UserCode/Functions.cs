@@ -17,11 +17,11 @@ namespace FASTER.core
 {
     public unsafe struct Functions
     {
-        public static void RMWCompletionCallback(Key* key, Input* input, Context* ctx)
+        public static void RMWCompletionCallback(Key* key, Input* input, Context* ctx, Status status)
         {
         }
 
-        public static void ReadCompletionCallback(Key* key, Input* input, Output* output, Context* ctx)
+        public static void ReadCompletionCallback(Key* key, Input* input, Output* output, Context* ctx, Status status)
         {
         }
 

@@ -7,11 +7,11 @@ namespace FASTER.core
 {
     public class MixedUserFunctions : IUserFunctions<MixedKey, MixedValue, MixedInput, MixedOutput, MixedContext>
     {
-        public void ReadCompletionCallback(MixedContext ctx, MixedOutput output)
+        public void ReadCompletionCallback(MixedContext ctx, MixedOutput output, Status status)
         {
         }
 
-        public void RMWCompletionCallback(MixedContext ctx)
+        public void RMWCompletionCallback(MixedContext ctx, Status status)
         {
         }
 

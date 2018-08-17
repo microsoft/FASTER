@@ -200,9 +200,9 @@ namespace FASTER.core
             
 
             // Handle operation status
-            if (internalStatus == OperationStatus.SUCCESS)
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = Status.OK;
+                status = (Status)internalStatus;
             }
             else
             {
@@ -210,7 +210,7 @@ namespace FASTER.core
             }
 
             // If done, callback user code.
-            if (status == Status.OK)
+            if (status == Status.OK || status == Status.NOTFOUND)
             {
                 if (handleLatches)
                     ReleaseSharedLatch(pendingContext.key);
@@ -220,7 +220,7 @@ namespace FASTER.core
                     case OperationType.RMW:
                         Functions.RMWCompletionCallback(pendingContext.key,
                                                 pendingContext.input,
-                                                pendingContext.userContext);
+                                                pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
                         Functions.UpsertCompletionCallback(pendingContext.key,
@@ -279,9 +279,9 @@ namespace FASTER.core
                 request.record.Return();
 
                 // Handle operation status
-                if (internalStatus == OperationStatus.SUCCESS)
+                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
-                    status = Status.OK;
+                    status = (Status)internalStatus;
                 }
                 else
                 {
@@ -289,7 +289,7 @@ namespace FASTER.core
                 }
 
                 // If done, callback user code
-                if(status == Status.OK)
+                if(status == Status.OK || status == Status.NOTFOUND)
                 {
                     if (handleLatches)
                         ReleaseSharedLatch(pendingContext.key);
@@ -299,13 +299,15 @@ namespace FASTER.core
                         Functions.ReadCompletionCallback(pendingContext.key, 
                                                          pendingContext.input, 
                                                          pendingContext.output, 
-                                                         pendingContext.userContext);
+                                                         pendingContext.userContext,
+                                                         status);
                     }
                     else
                     {
                         Functions.RMWCompletionCallback(pendingContext.key,
                                                         pendingContext.input,
-                                                        pendingContext.userContext);
+                                                        pendingContext.userContext,
+                                                        status);
                     }
                 }
             }
