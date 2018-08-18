@@ -6,7 +6,7 @@ and heavy updates. FASTER supports data larger than memory, by leveraging fast e
 What differentiates FASTER are its cache-optimized index that achieves very high performance — up
 to 160 million operations per second when data fits in memory; its unique “hybrid record log” design
 that combines a traditional persistent log with in-place updates, to shape the memory working set 
-and retain performance; and its architecture as an component that can be embedded in cloud apps. FASTER
+and retain performance; and its architecture as a component that can be embedded in cloud apps. FASTER
 achieves higher throughput than current systems, by more than two orders of magnitude, and scales better 
 than current pure in-memory data structures, for in-memory working sets. FASTER also offers a new consistent
 recovery scheme that achieves better performance at the expense of slightly higher commit latency.
