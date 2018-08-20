@@ -52,15 +52,18 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
     return contexts_[cur_];
   }
 
+  static_assert((sizeof(contexts_) / sizeof(contexts_[0])) == 2);
+
   inline const ExecutionContext& prev() const {
-    return contexts_[(cur_ + 1) % 2];
+    return contexts_[1 - cur];
   }
+
   inline ExecutionContext& prev() {
-    return contexts_[(cur_ + 1) % 2];
+    return contexts_[1 - cur];
   }
 
   inline void swap() {
-    cur_ = (cur_ + 1) % 2;
+    cur_ = 1 - cur;
   }
 
  private:
