@@ -294,7 +294,7 @@ class LightEpoch {
 
   /// CPR checkpoint functions.
   inline void ResetPhaseFinished() {
-    for(size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
+    for(uint32_t idx = 1; idx <= num_entries_; ++idx) {
       assert(table_[idx].phase_finished.load() == Phase::REST ||
              table_[idx].phase_finished.load() == Phase::PERSISTENCE_CALLBACK ||
              table_[idx].phase_finished.load() == Phase::GC_IN_PROGRESS ||
@@ -307,7 +307,7 @@ class LightEpoch {
     uint32_t entry = Thread::id();
     table_[entry].phase_finished = phase;
     // Check if other threads have reported complete.
-    for(size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
+    for(uint32_t idx = 1; idx <= num_entries_; ++idx) {
       Phase entry_phase = table_[idx].phase_finished.load();
       uint64_t entry_epoch = table_[idx].local_current_epoch;
       if(entry_epoch != 0 && entry_phase != phase) {
