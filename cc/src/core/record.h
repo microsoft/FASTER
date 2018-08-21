@@ -47,7 +47,6 @@ class RecordInfo {
     };
 };
 static_assert(sizeof(RecordInfo) == 8, "sizeof(RecordInfo) != 8");
-static_assert(sizeof(RecordInfo) == 8, "sizeof(RecordInfo) != 8");
 
 /// A record stored in the log. The log starts at 0 (mod 64), and consists of Records, one after
 /// the other. Each record's header is 8 bytes.
