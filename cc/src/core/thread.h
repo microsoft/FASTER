@@ -18,7 +18,7 @@ namespace core {
 /// Gives every thread a unique, numeric thread ID, and recycles IDs when threads exit.
 class Thread {
  public:
-  /// The number of entries in table. Currently, this is fixed at 64 and never changes or grows.
+  /// The number of entries in table. Currently, this is fixed at 96 and never changes or grows.
   /// If the table runs out of entries, then the current implementation will throw a
   /// std::runtime_error.
   static constexpr size_t kMaxNumThreads = 96;
