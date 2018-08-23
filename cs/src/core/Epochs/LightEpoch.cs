@@ -438,7 +438,8 @@ namespace FASTER.core
         /// <returns></returns>
         private int ReserveEntryForThread()
         {
-            int threadId = (int)Native32.GetCurrentThreadId();
+            // for portability(run on non-windows platform)
+            int threadId = Environment.OSVersion.Platform == PlatformID.Win32NT ? (int)Native32.GetCurrentThreadId() : Thread.CurrentThread.ManagedThreadId;
             int startIndex = Utility.Murmur3(threadId);
             return ReserveEntry(startIndex, threadId);
         }

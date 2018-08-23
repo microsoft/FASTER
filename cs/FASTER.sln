@@ -43,6 +43,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "adv-file-ops", "src\native\
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "readtsc", "src\native\readtsc\readtsc.vcxproj", "{A6510B80-BD50-4C11-9712-64C3B3865AFF}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ManagedSampleCore", "playground\ManagedSampleCore\ManagedSampleCore.csproj", "{C9391533-1F31-47F6-BE08-9642C95401A8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -97,6 +99,10 @@ Global
 		{A6510B80-BD50-4C11-9712-64C3B3865AFF}.Debug|x64.Build.0 = Release|x64
 		{A6510B80-BD50-4C11-9712-64C3B3865AFF}.Release|x64.ActiveCfg = Release|x64
 		{A6510B80-BD50-4C11-9712-64C3B3865AFF}.Release|x64.Build.0 = Release|x64
+		{C9391533-1F31-47F6-BE08-9642C95401A8}.Debug|x64.ActiveCfg = Debug|x64
+		{C9391533-1F31-47F6-BE08-9642C95401A8}.Debug|x64.Build.0 = Debug|x64
+		{C9391533-1F31-47F6-BE08-9642C95401A8}.Release|x64.ActiveCfg = Release|x64
+		{C9391533-1F31-47F6-BE08-9642C95401A8}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -116,6 +122,7 @@ Global
 		{999943F0-CC60-4BA9-B928-275BE5C5E6B9} = {28800357-C8CE-4CD0-A2AD-D4A910ABB496}
 		{5852AC33-6B01-44F5-BAF3-2AAF796E8449} = {999943F0-CC60-4BA9-B928-275BE5C5E6B9}
 		{A6510B80-BD50-4C11-9712-64C3B3865AFF} = {999943F0-CC60-4BA9-B928-275BE5C5E6B9}
+		{C9391533-1F31-47F6-BE08-9642C95401A8} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}
