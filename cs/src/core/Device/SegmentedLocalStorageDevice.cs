@@ -50,11 +50,14 @@ namespace FASTER.core
                 Native32.EnableProcessPrivileges();
             }
 
-            Native32.GetDiskFreeSpace(dirname.Substring(0, 3),
+            if (!Native32.GetDiskFreeSpace(dirname.Substring(0, 3),
                                         out uint lpSectorsPerCluster,
                                         out lpBytesPerSector,
                                         out uint lpNumberOfFreeClusters,
-                                        out uint lpTotalNumberOfClusters);
+                                        out uint lpTotalNumberOfClusters))
+            {
+                throw new Exception("Unable to retrieve information for disk " + dirname.Substring(0, 3) + " - check if the disk is available.");
+            }
 
             logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
         }

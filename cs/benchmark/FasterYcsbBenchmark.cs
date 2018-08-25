@@ -25,11 +25,12 @@ namespace FASTER.benchmark
             ReadModifyWrite = 2
         }
 
-        const long kInitCount = 250000000;
-        const long kTxnCount = 1000000000;
+        const bool kUseSyntheticData = true;
+        const long kInitCount = kUseSyntheticData ? 2500480 : 250000000;
+        const long kTxnCount = kUseSyntheticData ? 10000000 : 1000000000;
         const int kFileChunkSize = 4096;
         const long kChunkSize = 640;
-        const bool kUseSyntheticData = false;
+        
 
         Key[] init_keys_;
 
@@ -84,7 +85,7 @@ namespace FASTER.benchmark
             freq = HiResTimer.EstimateCPUFrequency();
 #endif
 
-            device = FASTERFactory.CreateLogDevice("D:\\data\\hlog");
+            device = FASTERFactory.CreateLogDevice("C:\\data\\hlog");
 
 #if USE_CODEGEN
             store = FASTERFactory.Create<Key, Value, Input, Output, Context, Functions, IFASTER>
@@ -422,6 +423,8 @@ namespace FASTER.benchmark
                     throw new InvalidDataException("Txn file load fail!" + count + ":" + kTxnCount);
                 }
             }
+
+            Console.WriteLine("loaded " + kTxnCount + " txns.");
         }
 
         private void LoadData()
@@ -495,7 +498,6 @@ namespace FASTER.benchmark
             GCHandle handle = GCHandle.Alloc(input_, GCHandleType.Pinned);
             input_ptr = (Input*)handle.AddrOfPinnedObject();
 
-            Console.WriteLine("loaded " + kTxnCount + " txns.");
 
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());

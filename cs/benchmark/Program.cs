@@ -13,7 +13,7 @@ namespace FASTER.benchmark
         HelpText = "Benchmark to run (0 - YCSB)")]
         public int Benchmark { get; set; }
 
-        [Option('t', "threads", Required = false, Default = 8,
+        [Option('t', "threads", Required = false, Default = 1,
          HelpText = "Number of threads to run the workload.")]
         public int ThreadCount { get; set; }
 
@@ -47,6 +47,9 @@ namespace FASTER.benchmark
 
             var options = result.MapResult(o => o, xs => new Options());
             BenchmarkType b = (BenchmarkType)options.Benchmark;
+
+            Console.WriteLine("#threads = {0}", options.ThreadCount);
+
 
             if (b == BenchmarkType.Ycsb)
             {
