@@ -3,7 +3,7 @@
 
 #pragma warning disable 0162
 
-//#define DASHBOARD
+#define DASHBOARD
 //#define USE_CODEGEN
 
 using FASTER.core;
@@ -28,6 +28,8 @@ namespace FASTER.benchmark
         const bool kUseSyntheticData = true;
         const long kInitCount = kUseSyntheticData ? 2500480 : 250000000;
         const long kTxnCount = kUseSyntheticData ? 10000000 : 1000000000;
+        const int kMaxKey = kUseSyntheticData ? 1 << 22 : 1 << 28;
+
         const int kFileChunkSize = 4096;
         const long kChunkSize = 640;
         
@@ -58,7 +60,6 @@ namespace FASTER.benchmark
         readonly string distribution;
         readonly int readPercent;
 
-        const int kMaxKey = 268435456;
         const int kRunSeconds = 30;
         const int kCheckpointSeconds = -1;
 
@@ -459,6 +460,8 @@ namespace FASTER.benchmark
 
         private void LoadSyntheticData()
         {
+            Console.WriteLine("Loading synthetic data (uniform distribution)");
+
             init_keys_ = new Key[kInitCount];
             long val = 0;
             for (int idx = 0; idx < kInitCount; idx++)
@@ -572,6 +575,10 @@ namespace FASTER.benchmark
                 worker.Join();
             }
 
+#if DASHBOARD
+            dash.Abort();
+#endif
+
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
             long endTailAddress = store.Size;
             Console.WriteLine("End tail address = " + endTailAddress);
@@ -580,8 +587,6 @@ namespace FASTER.benchmark
             Console.WriteLine("##, " + distribution + ", " + numaStyle + ", " + readPercent + ", "
                 + threadCount + ", " + total_ops_done / seconds + ", " 
                 + (endTailAddress - startTailAddress));
-
-            Console.ReadLine();
         }
     }
 }
