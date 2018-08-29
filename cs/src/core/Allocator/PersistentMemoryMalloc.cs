@@ -616,20 +616,11 @@ namespace FASTER.core
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
         /// <param name="index"></param>
-        private void AllocatePage(int index, bool clear = false)
+        private void AllocatePage(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
             byte[] tmp = new byte[adjustedSize];
-            if (clear)
-            {
-                Array.Clear(tmp, 0, adjustedSize);
-            }
-            else
-            {
-#if !(CALLOC)
-                Array.Clear(tmp, 0, adjustedSize);
-#endif
-            }
+            Array.Clear(tmp, 0, adjustedSize);
 
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
             long p = (long)handles[index].AddrOfPinnedObject();
