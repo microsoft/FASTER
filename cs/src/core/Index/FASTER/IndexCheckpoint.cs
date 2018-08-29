@@ -77,8 +77,6 @@ namespace FASTER.core
             HashBucket* start = state[version].tableAligned;
             int startNumChunks = 1;
 
-            var sw = new Stopwatch();
-
             HashIndexPageAsyncFlushResult result = new HashIndexPageAsyncFlushResult
             {
                 start = start,
@@ -86,20 +84,15 @@ namespace FASTER.core
                 numIssued = startNumChunks,
                 numFinished = 0,
                 chunkSize = chunkSize,
-                device = device,
-                sw = sw
+                device = device
             };
 
             numBytesWritten = 0;
 
-            sw.Start();
             for (int index = 0; index < startNumChunks; index++)
             {
                 long chunkStartBucket = (long)start + (index * chunkSize);
-                //sw.Restart();
                 device.WriteAsync((IntPtr)chunkStartBucket, ((ulong)index) * chunkSize, chunkSize, AsyncPageFlushCallback, result);
-                //sw.Stop();
-                //Console.WriteLine("Initial WriteAsync {0}: {1}", index, sw.ElapsedMilliseconds);
             }
             numBytesWritten = ((ulong)numChunks) * chunkSize;
         }
@@ -139,10 +132,6 @@ namespace FASTER.core
             {
                 if (Interlocked.Increment(ref result.numFinished) == result.numChunks)
                 {
-                    // We are done
-                    Console.WriteLine("Done with all index writes");
-                    result.sw.Stop();
-                    Console.WriteLine("Total time: {0}", result.sw.ElapsedMilliseconds);
                     mainIndexCheckpointEvent.Signal();
                 }
                 else
@@ -152,16 +141,12 @@ namespace FASTER.core
                     if (nextChunk < result.numChunks)
                     {
                         long chunkStartBucket = (long)result.start + (nextChunk * result.chunkSize);
-                        //Stopwatch sw = new Stopwatch();
-                        //sw.Start();
                         result.device.WriteAsync(
                             (IntPtr)chunkStartBucket,
                             ((ulong)nextChunk) * result.chunkSize,
                             result.chunkSize,
                             AsyncPageFlushCallback,
                             result);
-                        //sw.Stop();
-                        //Console.WriteLine("WriteAsync {0}: {1}", nextChunk, sw.ElapsedMilliseconds);
                     }
                 }
                 Overlapped.Free(overlap);

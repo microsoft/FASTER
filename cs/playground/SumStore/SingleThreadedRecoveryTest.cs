@@ -126,33 +126,31 @@ namespace SumStore
             fht.StopSession();
 
             // Test outputs
-            var recoveryInfo = default(HybridLogRecoveryInfo);
-            recoveryInfo.Recover(hybridLogToken);
-
-            int num_threads = recoveryInfo.numThreads;
-            DirectoryInfo info = new DirectoryInfo(DirectoryConfiguration.GetHybridLogCheckpointFolder(hybridLogToken));
-            List<ExecutionContext> cpr_points = new List<ExecutionContext>();
-            foreach (var file in info.GetFiles())
-            {
-                if (file.Name != "info.dat" && file.Name != "snapshot.dat")
-                {
-                    using (var reader = new StreamReader(file.FullName))
-                    {
-                        var ctx = new ExecutionContext();
-                        ctx.Load(reader);
-                        cpr_points.Add(ctx);
-                    }
-                }
-            }
+            var checkpointInfo = default(HybridLogRecoveryInfo);
+            checkpointInfo.Recover(hybridLogToken);
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
-            long[] found = new long[numUniqueKeys];
-            long sno = cpr_points.First().serialNum;
-            for (long i = 0; i <= sno; i++)
+            foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var id = i % numUniqueKeys;
-                expected[id]++;
+                var sno = checkpointInfo.continueTokens[guid];
+                for (long i = 0; i <= sno; i++)
+                {
+                    var id = i % numUniqueKeys;
+                    expected[id]++;
+                }
+            }
+
+            int threadCount = 1; // single threaded test
+            int numCompleted = threadCount - checkpointInfo.continueTokens.Count;
+            for (int t = 0; t < numCompleted; t++)
+            {
+                var sno = numOps;
+                for (long i = 0; i < sno; i++)
+                {
+                    var id = i % numUniqueKeys;
+                    expected[id]++;
+                }
             }
 
             // Assert if expected is same as found

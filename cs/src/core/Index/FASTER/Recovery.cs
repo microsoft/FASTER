@@ -12,7 +12,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class PersistentMemoryMalloc<T> : IAllocator
+    public unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         public void AsyncReadPageFromDiskRecovery<TContext>(
                                         long readPageStart, 
@@ -50,7 +50,7 @@ namespace FASTER.core
                 {
                     device.ReadAsync((ulong)(AlignedPageSizeBytes * readPage),
                                              pointers[pageIndex],
-                                             (uint)(PageSize * PrivateRecordSize),
+                                             PageSize,
                                              callback,
                                              asyncResult);
                 }
@@ -59,7 +59,7 @@ namespace FASTER.core
                     ulong offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - recoveryDevicePageOffset));
                     recoveryDevice.ReadAsync(offsetInFile,
                                             pointers[pageIndex],
-                                            (uint)(PageSize * PrivateRecordSize),
+                                            PageSize,
                                             callback,
                                             asyncResult);
                 }
@@ -82,7 +82,7 @@ namespace FASTER.core
                 };
                 device.WriteAsync(pointers[flushPage % BufferSize],
                                   (ulong)(AlignedPageSizeBytes * flushPage),
-                                  (uint)(PageSize * PrivateRecordSize),
+                                  PageSize,
                                   callback,
                                   asyncResult);
             }
@@ -196,7 +196,7 @@ namespace FASTER.core
             var headAddress = hlog.GetStartLogicalAddress(headPage);
             if(headAddress == 0)
             {
-                headAddress += hlog.RecordSize;
+                headAddress = Constants.kFirstValidAddress;
             }
             hlog.RecoveryReset(untilAddress, headAddress);
         }

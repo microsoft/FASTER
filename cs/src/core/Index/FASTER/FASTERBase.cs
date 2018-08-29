@@ -687,9 +687,9 @@ namespace FASTER.core
                     histogram[cnt]++;
             }
 
-            Console.WriteLine("number of hash buckets: {0}", table_size_);
-            Console.WriteLine("total distinct hash-table entry count: {0}", total_record_count);
-            Console.WriteLine("histogram of #entries per bucket: ");
+            Console.WriteLine("Number of hash buckets: {0}", table_size_);
+            Console.WriteLine("Total distinct hash-table entry count: {0}", total_record_count);
+            Console.WriteLine("Histogram of #entries per bucket: ");
             for (int i=0; i<14; i++)
             {
                 Console.WriteLine(i.ToString() + ": " + histogram[i].ToString());

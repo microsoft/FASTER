@@ -40,7 +40,7 @@ namespace FASTER.core
         {
             if (_systemState.phase == Phase.GC)
             {
-                Console.WriteLine("Forcing completion of GC");
+                Debug.WriteLine("Forcing completion of GC");
                 GarbageCollectBuckets(0, true);
             }
 
@@ -81,7 +81,7 @@ namespace FASTER.core
         {
             if (_systemState.phase == Phase.GC)
             {
-                Console.WriteLine("Forcing completion of GC");
+                Debug.WriteLine("Forcing completion of GC");
                 GarbageCollectBuckets(0, true);
             }
 
@@ -576,7 +576,7 @@ namespace FASTER.core
             // Move from I to P2
             if (Interlocked.CompareExchange(ref _systemState.word, nextState.word, currentState.word) == currentState.word)
             {
-                Console.WriteLine("Moved to {0}, {1}", nextState.phase, nextState.version);
+                Debug.WriteLine("Moved to {0}, {1}", nextState.phase, nextState.version);
                 return true;
             }
             else

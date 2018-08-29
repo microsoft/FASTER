@@ -271,7 +271,7 @@ namespace FASTER.core
 
             if (SetThreadGroupAffinity(thread, ref groupAffinityThread, ref oldAffinityThread) == 0)
             {
-                Console.WriteLine("Unable to set group affinity");
+                throw new Exception("Unable to affinitize thread");
             }
         }
 

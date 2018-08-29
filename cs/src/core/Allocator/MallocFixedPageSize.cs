@@ -16,7 +16,7 @@ namespace FASTER.core
 {
     public unsafe class MallocFixedPageSize<T>
     {
-        public static bool ForceUnpinnedAllocation = false;
+        public const bool ForceUnpinnedAllocation = false;
 
         public static MallocFixedPageSize<T> Instance = new MallocFixedPageSize<T>();
         public static MallocFixedPageSize<T> PhysicalInstance = new MallocFixedPageSize<T>(true);
@@ -47,9 +47,7 @@ namespace FASTER.core
 
         [ThreadStatic]
         public static Queue<FreeItem> freeList;
-#if DEBUG
-        public ConcurrentBag<Queue<FreeItem>> allQueues = new ConcurrentBag<Queue<FreeItem>>();
-#endif
+
         public MallocFixedPageSize(bool returnPhysicalAddress = false)
         {
             values[0] = new T[PageSize];
@@ -74,6 +72,9 @@ namespace FASTER.core
                 }
                 else
                 {
+                    // The surefire way to check if a type is blittable
+                    // it to try GCHandle.Alloc with a handle type of Pinned.
+                    // If it throws an exception, we know the type is not blittable.
                     try
                     {
                         handles[0] = GCHandle.Alloc(values[0], GCHandleType.Pinned);
@@ -173,11 +174,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void FreeAtEpoch(long pointer, int removed_epoch = -1)
         {
-            //if (Interlocked.Increment(ref _freed) % 100000 == 0)
-            //{
-            //    Console.WriteLine("Freed " + _freed);
-            //}
-
             if (!ReturnPhysicalAddress)
             {
                 values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
@@ -186,25 +182,7 @@ namespace FASTER.core
             freeList.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
         }
 
-#if DEBUG
-        public int TotalFreeCount()
-        {
-            int result = 0;
-            var x = allQueues.ToArray();
-            foreach (var q in x)
-            {
-                result += q.Count;
-            }
-            return result;
-        }
-
-        public int TotalUsedPointers()
-        {
-            return count - TotalFreeCount();
-        }
-#endif
         public const int kAllocateChunkSize = 16;
-
 
         /// <summary>
         /// Warning: cannot mix 'n' match use of
@@ -316,17 +294,9 @@ namespace FASTER.core
         //static long _allocated = 0;
         public long Allocate()
         {
-            //if (Interlocked.Increment(ref _allocated) % 100000 == 0)
-            //{
-            //    Console.WriteLine("Allocated " + _allocated);
-            //}
-
             if (freeList == null)
             {
                 freeList = new Queue<FreeItem>();
-#if DEBUG
-                allQueues.Add(freeList);
-#endif
             }
             if (freeList.Count > 0)
             {
@@ -452,17 +422,13 @@ namespace FASTER.core
             count = 0;
         }
 
-        public int GetMaxAllocated()
-        {
-            return count;
-        }
 
         #region Checkpoint
 
         // Public facing persistence API
         public void TakeCheckpoint(IDevice device, out ulong numBytes)
         {
-            begin_checkpoint(device, 0UL, out numBytes);
+            BeginCheckpoint(device, 0UL, out numBytes);
         }
 
         public bool IsCheckpointCompleted(bool waitUntilComplete = false)
@@ -479,7 +445,7 @@ namespace FASTER.core
         // Implementation of an asynchronous checkpointing scheme
         protected CountdownEvent checkpointEvent;
 
-        internal void begin_checkpoint(IDevice device, ulong offset, out ulong numBytesWritten)
+        internal void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
         {
             int localCount = count;
             int recordsCountInLastLevel = localCount & PageSizeMask;
@@ -494,12 +460,12 @@ namespace FASTER.core
             for (int i = 0; i < numLevels; i++)
             {
                 OverflowPagesFlushAsyncResult result = default(OverflowPagesFlushAsyncResult);
-                device.WriteAsync(pointers[i], offset + numBytesWritten, alignedPageSize, async_flush_callback, result);
+                device.WriteAsync(pointers[i], offset + numBytesWritten, alignedPageSize, AsyncFlushCallback, result);
                 numBytesWritten += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
             }
         }
 
-        private void async_flush_callback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             try
             {
@@ -532,7 +498,7 @@ namespace FASTER.core
 
         public void Recover(IDevice device, int buckets, ulong numBytes)
         {
-            begin_recovery(device, 0UL, buckets, numBytes, out ulong numBytesRead);
+            BeginRecovery(device, 0UL, buckets, numBytes, out ulong numBytesRead);
         }
 
         public bool IsRecoveryCompleted(bool waitUntilComplete = false)
@@ -551,7 +517,7 @@ namespace FASTER.core
         // Implementation of asynchronous recovery
         private int numLevelsToBeRecovered;
 
-        internal void begin_recovery(IDevice device,
+        internal void BeginRecovery(IDevice device,
                                     ulong offset,
                                     int buckets,
                                     ulong numBytesToRead,
@@ -578,12 +544,12 @@ namespace FASTER.core
                 //read a full page
                 uint length = (uint)PageSize * (uint)RecordSize; ;
                 OverflowPagesReadAsyncResult result = default(OverflowPagesReadAsyncResult);
-                device.ReadAsync(offset + numBytesRead, pointers[i], length, async_page_read_callback, result);
+                device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
                 numBytesRead += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
             }
         }
 
-        private void async_page_read_callback(
+        private void AsyncPageReadCallback(
                                     uint errorCode,
                                     uint numBytes,
                                     NativeOverlapped* overlap)
