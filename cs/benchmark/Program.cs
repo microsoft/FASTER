@@ -13,7 +13,7 @@ namespace FASTER.benchmark
         HelpText = "Benchmark to run (0 = YCSB)")]
         public int Benchmark { get; set; }
 
-        [Option('t', "threads", Required = false, Default = 1,
+        [Option('t', "threads", Required = false, Default = 8,
          HelpText = "Number of threads to run the workload on")]
         public int ThreadCount { get; set; }
 
@@ -45,28 +45,8 @@ namespace FASTER.benchmark
                 return;
             }
 
-            result.WithNotParsed(errs =>
-            {
-                var helpText = HelpText.AutoBuild(result, h =>
-                {
-                    return HelpText.DefaultParsingErrorsHandler(result, h);
-                }, e =>
-                {
-                    return e;
-                });
-                Console.WriteLine(helpText);
-            });
-
             var options = result.MapResult(o => o, xs => new Options());
             BenchmarkType b = (BenchmarkType)options.Benchmark;
-
-            Console.WriteLine("Benchmark Arguments:");
-            Console.WriteLine("  Benchmark = {0}", options.Benchmark);
-            Console.WriteLine("  Number of threads = {0}", options.ThreadCount);
-            Console.WriteLine("  Thread NUMA mapping = {0}", options.NumaStyle);
-            Console.WriteLine("  Read percent = {0}", options.ReadPercent);
-            Console.WriteLine("  Distribution = {0}", options.Distribution);
-
 
             if (b == BenchmarkType.Ycsb)
             {
