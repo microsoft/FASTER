@@ -38,7 +38,10 @@ namespace FASTER.core.Roslyn
             {
                 if (netCoreAssemblyReferences == null)
                 {
-                    var allAvailableAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")).Split(';');
+                    // According to https://docs.microsoft.com/en-us/dotnet/core/tutorials/netcore-hosting,
+                    // result of TRUSTED_PLATFORM_ASSEMBLIES is separated by ';' in windows, ':' in Linux(and Mac?)
+                    var pathEnvSeparator = Environment.OSVersion.Platform == PlatformID.Win32NT ? ';' : ':';
+                    var allAvailableAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")).Split(pathEnvSeparator);
 
                     // From: http://source.roslyn.io/#Microsoft.CodeAnalysis.Scripting/ScriptOptions.cs,40
                     // These references are resolved lazily. Keep in sync with list in core csi.rsp.
@@ -220,7 +223,22 @@ namespace FASTER.core.Roslyn
             public Template(string name)
             {
                 this.TemplateName = name;
-                this.TemplateContents = FASTER.core.Properties.Resources.ResourceManager.GetString(name);
+                // "dotnet build" cannot handling resx's file resource, so using EmbeddedResource instead
+                var asm = typeof(FASTER.core.IFASTER).Assembly;
+                foreach (var x in asm.GetManifestResourceNames())
+                {
+                    // resource name format is prefixed by root namespace and relative path separated by '.', like "FASTER.core.Index.FASTER.FASTER.cs"
+                    if(x.EndsWith($".{name}.cs"))
+                    {
+                        using (var stm = asm.GetManifestResourceStream(x))
+                        using (var sr = new StreamReader(stm, Encoding.UTF8))
+                        {
+                            this.TemplateContents = sr.ReadToEnd();
+                            return;
+                        }
+                    }
+                }
+                throw new Exception($"cannot find resource:{name}");
             }
         }
 
