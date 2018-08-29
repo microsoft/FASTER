@@ -3,7 +3,7 @@
 
 #pragma warning disable 0162
 
-#define DASHBOARD
+//#define DASHBOARD
 //#define USE_CODEGEN
 
 using FASTER.core;
@@ -269,16 +269,16 @@ namespace FASTER.benchmark
         }
 
 #if DASHBOARD
-        int measurementInterval = 2000;
-        bool allDone;
-        bool measureLatency;
-        bool[] writeStats;
-        private EventWaitHandle[] statsWritten;
-        double[] threadThroughput;
-        double[] threadAverageLatency;
-        double[] threadMaximumLatency;
-        long[] threadProgress;
-        double freq;
+        readonly int measurementInterval = 2000;
+        readonly bool allDone;
+        readonly bool measureLatency;
+        readonly bool[] writeStats;
+        readonly private EventWaitHandle[] statsWritten;
+        readonly double[] threadThroughput;
+        readonly double[] threadAverageLatency;
+        readonly double[] threadMaximumLatency;
+        readonly long[] threadProgress;
+        readonly double freq;
 
         void DoContinuousMeasurements()
         {

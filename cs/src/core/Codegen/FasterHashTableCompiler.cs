@@ -56,7 +56,6 @@ namespace FASTER.core.Roslyn
             if (a == null)
             {
                 string error = "Errors during code-gen compilation: \n" + r.Item2;
-                Console.WriteLine(error);
                 throw new Exception(error);
             }
             return Tuple.Create(a.GetType(name), r.Item2);

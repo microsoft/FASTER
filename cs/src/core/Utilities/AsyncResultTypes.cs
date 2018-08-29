@@ -14,14 +14,11 @@ namespace FASTER.core
 {
     public static class Config
     {
-        //public static string CheckpointDirectory = Path.GetTempPath() + "fasterlogs";
-        public static string CheckpointDirectory = "D:\\data";
+        public static string CheckpointDirectory = "C:\\data";
     }
 
     public struct AsyncGetFromDiskResult<TContext> : IAsyncResult
     {
-        //public SectorAlignedMemory record;
-        //public SectorAlignedMemory objBuffer;
         public TContext context;
 
         public bool IsCompleted => throw new NotImplementedException();
@@ -89,7 +86,6 @@ namespace FASTER.core
         public int numFinished;
         public uint chunkSize;
         public IDevice device;
-        public Stopwatch sw;
 
         public bool IsCompleted => throw new NotImplementedException();
 

@@ -59,7 +59,6 @@ namespace FASTER.core.Roslyn
             if (a == null)
             {
                 string error = "Errors during code-gen compilation: \n" + t.Item2;
-                Console.WriteLine(error);
                 throw new Exception(error);
             }
 

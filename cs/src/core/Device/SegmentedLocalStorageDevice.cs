@@ -24,13 +24,13 @@ namespace FASTER.core
         /// <summary>
         /// Device Information obtained from Native32 methods
         /// </summary>
-        private uint lpBytesPerSector;
+        private readonly uint lpBytesPerSector;
 
         private string dirname;
         private IntPtr ioCompletionPort;
-        private bool unbuffered;
-        private bool deleteOnClose;
-        private long segmentSize;
+        private readonly bool unbuffered;
+        private readonly bool deleteOnClose;
+        private readonly long segmentSize;
         ConcurrentDictionary<int, SafeFileHandle> logHandles;
 
         public SegmentedLocalStorageDevice(string dirname, 
@@ -111,9 +111,7 @@ namespace FASTER.core
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine("Log handle! : {0}", logHandle.ToString());
-                        Console.WriteLine(e.ToString());
-                        Environment.Exit(0);
+                        throw new Exception("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
                     }
                     return logHandle;
                 });

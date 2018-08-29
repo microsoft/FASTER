@@ -39,8 +39,7 @@ namespace FASTER.core
                 }
             }
 
-            Console.WriteLine("Cannot continue!");
-            Debug.Assert(false);
+            Debug.WriteLine("Unable to continue session " + guid.ToString());
             return -1;
         }
 

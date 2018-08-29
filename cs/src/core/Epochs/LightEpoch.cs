@@ -1,15 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#define COUNT_ACTIVE_THREADS
-
 using System;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
@@ -25,35 +18,33 @@ namespace FASTER.core
         /// Default invalid index entry.
         /// </summary>
         public const int kInvalidIndex = 0;
+
         /// <summary>
         /// Default number of entries in the entries table
         /// </summary>
         private const int kTableSize = 128;
+
         /// <summary>
         /// Default drainlist size
         /// </summary>
         private const int kDrainListSize = 16;
 
         /// <summary>
-        /// Thread protection status entries. Threads lock entries the
-        /// first time the call Protect() (see reserveEntryForThread()).
-        /// See documentation for the fields to specifics of how threads
-        /// use their Entries to guarantee memory-stability.
+        /// Thread protection status entries.
         /// </summary>
         private Entry[] tableRaw;
         private GCHandle tableHandle;
         private Entry* tableAligned;
 
         /// <summary>
-        /// List of action, epoch pairs containing actions to performed when an epoch becomes safe to reclaim.
+        /// List of action, epoch pairs containing actions to performed 
+        /// when an epoch becomes safe to reclaim.
         /// </summary>
         private int drainCount = 0;
         private EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
-        /// The number of entries in tableAligned. Currently, this is fixed after
-        /// Initialize() and never changes or grows. If tableAligned runs out
-        /// of entries, then the current implementation will deadlock threads.
+        /// Number of entries in the epoch table
         /// </summary>
         private int numEntries;
 
@@ -63,27 +54,20 @@ namespace FASTER.core
         [ThreadStatic]
         public static int threadEntryIndex;
 
-        public int CurrentNumThreads;
-
-        /**
-         * A notion of time for objects that are removed from data structures.
-         * Objects in data structures are timestamped with this Epoch just after
-         * they have been (sequentially consistently) "unlinked" from a structure.
-         * Threads also use this Epoch to mark their entry into a protected region
-         * (also in sequentially consistent way). While a thread operates in this
-         * region "unlinked" items that they may be accessing will not be reclaimed.
-         */
+        /// <summary>
+        /// Global current epoch value
+        /// </summary>
         public int CurrentEpoch;
 
-        /**
-         * Caches the most recent result of ComputeNewSafeToReclaimEpoch() so
-         * that fast decisions about whether an object can be reused or not
-         * (in IsSafeToReclaim()). Effectively, this is periodically computed
-         * by taking the minimum of the protected Epochs in #m_epochTable and
-         * #m_currentEpoch.
-         */
+        /// <summary>
+        /// Cached value of latest epoch that is safe to reclaim
+        /// </summary>
         public int SafeToReclaimEpoch;
 
+        /// <summary>
+        /// Instantiate the epoch table
+        /// </summary>
+        /// <param name="size"></param>
         public LightEpoch(int size = kTableSize)
         {
             Initialize(size);
@@ -94,17 +78,20 @@ namespace FASTER.core
             Uninitialize();
         }
 
+        /// <summary>
+        /// Initialize the epoch table
+        /// </summary>
+        /// <param name="size"></param>
         unsafe void Initialize(int size)
         {
-            CurrentNumThreads = 0;
             numEntries = size;
 
-            // over-allocate to do cache-line alignment
+            // Over-allocate to do cache-line alignment
             tableRaw = new Entry[size + 2];
             tableHandle = GCHandle.Alloc(tableRaw, GCHandleType.Pinned);
             long p = (long)tableHandle.AddrOfPinnedObject();
             
-            // force the pointer to align to 64-byte boundaries
+            // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
 
@@ -116,6 +103,9 @@ namespace FASTER.core
             drainCount = 0;
         }
 
+        /// <summary>
+        /// Clean up epoch table
+        /// </summary>
         void Uninitialize()
         {
             tableHandle.Free();
@@ -125,52 +115,22 @@ namespace FASTER.core
             numEntries = 0;
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
-        } 
-
-        /// <summary>
-        /// Enter the thread into the protected code region, which guarantees
-        /// pointer stability for records in client data structures. After this
-        /// call, accesses to protected data structure items are guaranteed to be
-        /// safe, even if the item is concurrently removed from the structure.
-        ///
-        /// Behavior is undefined if Protect() is called from an already
-        /// protected thread. Upon creation, threads are unprotected.
-        /// </summary>
-        /// <param name="current_epoch">
-        /// A sequentially consistent snapshot of the current
-        /// global epoch. It is okay that this may be stale by the time it
-        /// actually gets entered into the table.</param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int Protect()
-        {
-            int entry = threadEntryIndex;
-            if (kInvalidIndex == entry)
-            {
-                entry = ReserveEntryForThread();
-                threadEntryIndex = entry;
-            }
-
-            (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
-            return (*(tableAligned + entry)).localCurrentEpoch;
         }
 
+        /// <summary>
+        /// Check whether current thread is protected
+        /// </summary>
+        /// <returns>Result of the check</returns>
         public bool IsProtected()
         {
             return (kInvalidIndex != threadEntryIndex);
         }
 
-        public int GetThreadEpoch()
-        {
-            int entry = threadEntryIndex;
-            if (kInvalidIndex == entry)
-            {
-                entry = ReserveEntryForThread();
-                threadEntryIndex = entry;
-            }
-            return (*(tableAligned + entry)).localCurrentEpoch;
-        }
 
+        /// <summary>
+        /// Enter the thread into the protected code region
+        /// </summary>
+        /// <returns>Current epoch</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int ProtectAndDrain()
         {
@@ -191,49 +151,12 @@ namespace FASTER.core
             return (*(tableAligned + entry)).localCurrentEpoch;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int ReentrantProtect()
-        {
-            int entry = threadEntryIndex;
-            if (kInvalidIndex == entry)
-            {
-                entry = ReserveEntryForThread();
-                threadEntryIndex = entry;
-            }
-
-            if ((*(tableAligned + entry)).localCurrentEpoch != 0)
-                return (*(tableAligned + entry)).localCurrentEpoch;
-
-            (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
-            (*(tableAligned + entry)).reentrant++;
-            return (*(tableAligned + entry)).localCurrentEpoch;
-        }
-
         /// <summary>
-        /// Exit the thread from the protected code region. The thread must
-        /// promise not to access pointers to elements in the protected data
-        /// structures beyond this call.
-        ///
-        /// Behavior is undefined if Unprotect() is called from an already
-        /// unprotected thread.
+        /// Check and invoke trigger actions that are ready
         /// </summary>
-        /// <param name="current_epoch"></param>
-        /// <returns></returns>
+        /// <param name="nextEpoch">Next epoch</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Unprotect()
-        {
-            (*(tableAligned+threadEntryIndex)).localCurrentEpoch = 0;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ReentrantUnprotect()
-        {
-            if (--((*(tableAligned + threadEntryIndex)).reentrant) == 0)
-                (*(tableAligned + threadEntryIndex)).localCurrentEpoch = 0;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Drain(int nextEpoch)
+        private void Drain(int nextEpoch)
         {
             ComputeNewSafeToReclaimEpoch(nextEpoch);
 
@@ -255,6 +178,9 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Thread releases its epoch entry
+        /// </summary>
         public void Release()
         {
             int entry = threadEntryIndex;
@@ -263,38 +189,31 @@ namespace FASTER.core
                 return;
             }
 
-#if COUNT_ACTIVE_THREADS
-            Interlocked.Decrement(ref CurrentNumThreads);
-#endif
             threadEntryIndex = kInvalidIndex;
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
         }
 
         /// <summary>
-        /// Increment the current epoch; this should be called "occasionally" to
-        /// ensure that items removed from client data structures can eventually be
-        /// removed. Roughly, items removed from data structures cannot be reclaimed
-        /// until the epoch in which they were removed ends and all threads that may
-        /// have operated in the protected region during that Epoch have exited the
-        /// protected region. As a result, the current epoch should be bumped whenever
-        /// enough items have been removed from data structures that they represent
-        /// a significant amount of memory. Bumping the epoch unnecessarily may impact
-        /// performance, since it is an atomic operation and invalidates a read-hot
-        /// object in the cache of all of the cores.
+        /// Increment global current epoch
         /// </summary>
+        /// <returns></returns>
         public int BumpCurrentEpoch()
         {
             int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
             
             if (drainCount > 0)
-            {
                 Drain(nextEpoch);
-            }
 
             return nextEpoch;
         }
 
+        /// <summary>
+        /// Increment current epoch and associate trigger action
+        /// with the prior epoch
+        /// </summary>
+        /// <param name="onDrain">Trigger action</param>
+        /// <returns></returns>
         public int BumpCurrentEpoch(Action onDrain)
         {
             int PriorEpoch = BumpCurrentEpoch() - 1;
@@ -335,8 +254,7 @@ namespace FASTER.core
                     if (++j == 500)
                     {
                         j = 0;
-                        Thread.Sleep(1);
-                        Console.Write("."); // "Slowdown: Unable to add trigger to epoch");
+                        Debug.WriteLine("Delay finding a free entry in the drain list");
                     }
                 }
             }
@@ -347,14 +265,11 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Looks at all of the threads in the protected region and \a currentEpoch
-        /// and returns the latest Epoch that is guaranteed to be safe for reclamation.
-        /// That is, all items removed and tagged with a lower Epoch than returned by
-        /// this call may be safely reused.
+        /// Looks at all threads and return the latest safe epoch
         /// </summary>
-        /// <param name="currentEpoch"></param>
-        /// <returns></returns>
-        public int ComputeNewSafeToReclaimEpoch(int currentEpoch)
+        /// <param name="currentEpoch">Current epoch</param>
+        /// <returns>Safe epoch</returns>
+        private int ComputeNewSafeToReclaimEpoch(int currentEpoch)
         {
             int oldestOngoingCall = currentEpoch;
 
@@ -368,35 +283,18 @@ namespace FASTER.core
             }
 
             // The latest safe epoch is the one just before 
-            //the earlier unsafe one.
+            // the earliest unsafe epoch.
             SafeToReclaimEpoch = oldestOngoingCall - 1;
             return SafeToReclaimEpoch;
         }
 
-        public void SpinWaitForSafeToReclaim(int currentEpoch, int safeToReclaimEpoch)
-        {
-            do
-            {
-                ComputeNewSafeToReclaimEpoch(currentEpoch);
-            }
-            while (SafeToReclaimEpoch < safeToReclaimEpoch);
-        }
-
-        public bool IsSafeToReclaim(long epoch)
-        {
-            return (epoch <= SafeToReclaimEpoch);
-        }
-
         /// <summary>
-        /// Does the heavy lifting of reserveEntryForThread() and is really just
-        /// split out for easy unit testing. This method relies on the fact that no
+        /// Reserve entry for thread. This method relies on the fact that no
         /// thread will ever have ID 0.
-        ///
-        /// http://msdn.microsoft.com/en-us/library/windows/desktop/ms686746(v=vs.85).asp
         /// </summary>
-        /// <param name="startIndex"></param>
-        /// <param name="threadId"></param>
-        /// <returns></returns>
+        /// <param name="startIndex">Start index</param>
+        /// <param name="threadId">Thread id</param>
+        /// <returns>Reserved entry</returns>
         private int ReserveEntry(int startIndex, int threadId)
         {
             int current_iteration = 0;
@@ -415,9 +313,6 @@ namespace FASTER.core
 
                         if (success)
                         {
-#if COUNT_ACTIVE_THREADS
-                            Interlocked.Increment(ref CurrentNumThreads);
-#endif
                             return (int)index_to_test;
                         }
                     }
@@ -426,16 +321,16 @@ namespace FASTER.core
 
                 if (current_iteration > (numEntries * 3))
                 {
-                    throw new Exception("unable to make progress reserving an epoch entry.");
+                    throw new Exception("Unable to reserve an epoch entry, try increasing the epoch table size (kTableSize)");
                 }
             }
         }
 
         /// <summary>
-        /// Allocate a new Entry to track a thread's protected/unprotected status and
-        /// return the index to it. This should only be called once for a thread.
+        /// Allocate a new entry in epoch table. This is called 
+        /// once for a thread.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Reserved entry</returns>
         private int ReserveEntryForThread()
         {
             int threadId = (int)Native32.GetCurrentThreadId();
@@ -444,45 +339,20 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// An entry tracks the protected/unprotected state of a single
-        /// thread. Threads (conservatively) the Epoch when they entered
-        /// the protected region, and more loosely when they left.
-        /// Threads compete for entries and atomically lock them using a
-        /// compare-and-swap on the #m_threadId member.
+        /// Epoch table entry (cache line size).
         /// </summary>
         [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
         private struct Entry
         {
 
             /// <summary>
-            /// Threads record a snapshot of the global epoch during Protect().
-            /// Threads reset this to 0 during Unprotect().
-            /// It is safe that this value may actually lag the real current
-            /// epoch by the time it is actually stored. This value is set
-            /// with a sequentially-consistent store, which guarantees that
-            /// it precedes any pointers that were removed (with sequential
-            /// consistency) from data structures before the thread entered
-            /// the epoch. This is critical to ensuring that a thread entering
-            /// a protected region can never see a pointer to a data item that
-            /// was already "unlinked" from a protected data structure. If an
-            /// item is "unlinked" while this field is non-zero, then the thread
-            /// associated with this entry may be able to access the unlinked
-            /// memory still. This is safe, because the value stored here must
-            /// be less than the epoch value associated with the deleted item
-            /// (by sequential consistency, the snapshot of the epoch taken
-            /// during the removal operation must have happened before the
-            /// snapshot taken just before this field was updated during
-            /// Protect()), which will prevent its reuse until this (and all
-            /// other threads that could access the item) have called
-            /// Unprotect().
+            /// Thread-local value of epoch
             /// </summary>
             [FieldOffset(0)]
             public int localCurrentEpoch;
 
             /// <summary>
-            /// ID of the thread associated with this entry. Entries are
-            /// locked by threads using atomic compare-and-swap. See
-            /// reserveEntry() for details.
+            /// ID of thread associated with this entry.
             /// </summary>
             [FieldOffset(4)]
             public int threadId;
@@ -500,6 +370,14 @@ namespace FASTER.core
             public Action action;
         }
 
+        /// <summary>
+        /// Mechanism for threads to mark some activity as completed until
+        /// some version by this thread, and check if all active threads 
+        /// have completed the same activity until that version.
+        /// </summary>
+        /// <param name="markerIdx">ID of activity</param>
+        /// <param name="version">Version</param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MarkAndCheckIsComplete(int markerIdx, int version)
         {
