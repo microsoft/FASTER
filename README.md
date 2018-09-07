@@ -1,21 +1,20 @@
 # Introduction
 
 Managing large application state easily and with high performance is one of the hardest problems
-in the cloud today. 
+in the cloud today. FASTER is a concurrent key-value store + cache that is designed for point 
+lookups and heavy updates. FASTER supports data larger than memory, by leveraging fast external 
+storage. It also supports consistent recovery using a new checkpointing technique that lets 
+applications trade-off performance for commit latency.
 
-We present FASTER, a new concurrent key-value store designed for point lookups 
-and heavy updates. FASTER supports data larger than memory, by leveraging fast external storage. 
+What differentiates FASTER from a technical perspective are (1) its latch-free cache-optimized index; 
+(2) its unique “hybrid record log” design that combines a traditional persistent append-only log with 
+in-place updates, to shape the memory working set and retain performance; (3) its architecture as a 
+component that can be embedded in multi-threaded cloud apps; and (4) its asynchronous recovery model 
+based on group commit.
 
-What differentiates FASTER are its cache-optimized index that achieves very high performance — up
-to 160 million operations per second when data fits in memory; its unique “hybrid record log” design
-that combines a traditional persistent log with in-place updates, to shape the memory working set 
-and retain performance; and its architecture as a component that can be embedded in cloud apps. 
-
-FASTER achieves higher throughput than current systems, by more than two orders of magnitude, and scales better 
-than current pure in-memory data structures, for in-memory working sets. 
-
-FASTER also offers a new consistent recovery scheme that achieves better performance at the expense of
-slightly higher commit latency.
+For standard benchmarks where the working set fits in main memory, we found FASTER to achieve
+significantly higher throughput than current systems, and match or exceed the performance of pure 
+in-memory data structures while offering more functionality. See [the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf) for more details.
 
 # Getting Started
 
