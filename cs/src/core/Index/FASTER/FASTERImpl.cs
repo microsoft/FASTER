@@ -1440,7 +1440,7 @@ namespace FASTER.core
 
             if (logicalAddress < hlog.ReadOnlyAddress)
             {
-                Console.WriteLine("Allocated address is read-only, retrying");
+                Debug.WriteLine("Allocated address is read-only, retrying");
                 BlockAllocate(recordSize, out logicalAddress);
             }
         }

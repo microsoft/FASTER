@@ -230,7 +230,7 @@ TEST(CLASS, Serial) {
     };
     uint8_t wasted_space[3];
   };
-  static_assert(sizeof(Value2) == 16, "sizeof(Value2) != 12");
+  static_assert(sizeof(Value2) == 16, "sizeof(Value2) != 16");
   static_assert(alignof(Value2) == 4, "alignof(Value2) != 4");
 
   class UpsertContext1 : public IAsyncContext {
@@ -727,7 +727,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
     };
     uint8_t wasted_space[3];
   };
-  static_assert(sizeof(Value2) == 16, "sizeof(Value2) != 12");
+  static_assert(sizeof(Value2) == 16, "sizeof(Value2) != 16");
   static_assert(alignof(Value2) == 4, "alignof(Value2) != 4");
 
   class UpsertContext1 : public IAsyncContext {

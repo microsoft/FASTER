@@ -142,9 +142,6 @@ namespace FASTER.core
                             }
                             else
                             {
-                                //Console.WriteLine("Lookup Address = " + oldAddress);
-                                //Console.WriteLine("RecordInfo: " + RecordInfo.ToString((RecordInfo*)record));
-                                // Console.WriteLine("Record not found. Looking for: " + ctx.key->value + " found: " + Layout.GetKey((long)record)->value + " req bytes: " + requiredBytes);
                                 ctx.callbackQueue.Add(ctx);
                             }
                         }
@@ -165,7 +162,7 @@ namespace FASTER.core
     }
 
 
-    public unsafe partial class PersistentMemoryMalloc<T> : IAllocator
+    public unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         #region Async file operations
 
@@ -181,16 +178,16 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AsyncReadRecordToMemory(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
-            ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + PrivateRecordSize * (fromLogical & PageSizeMask));
+            ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
 
-            uint alignedReadLength = (uint)((long)fileOffset + (numRecords * PrivateRecordSize) - (long)alignedFileOffset);
+            uint alignedReadLength = (uint)((long)fileOffset + numRecords - (long)alignedFileOffset);
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
             var record = readBufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
-            record.required_bytes = numRecords * RecordSize;
+            record.required_bytes = numRecords;
 
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext>);
             asyncResult.context = context;
@@ -237,8 +234,7 @@ namespace FASTER.core
             }
             else if ((device as WrappedDevice) != null)
             {
-                var ud = (device as WrappedDevice).GetUnderlyingDevice() as SegmentedLocalStorageDevice;
-                if (ud != null)
+                if ((device as WrappedDevice).GetUnderlyingDevice() is SegmentedLocalStorageDevice ud)
                 {
                     string filename = ud.GetFileName();
                     filename = filename.Substring(0, filename.Length - 4) + ".objlog";
@@ -246,8 +242,7 @@ namespace FASTER.core
                 }
             }
 
-            Console.WriteLine("Unable to create object log device");
-            return null;
+            throw new Exception("Unable to create object log device");
         }
 
         public void AsyncReadPagesFromDevice(int numPages, long destinationStartPage, IDevice device, out CountdownEvent completed)
@@ -272,7 +267,7 @@ namespace FASTER.core
                 device.ReadAsync(
                     (ulong)(AlignedPageSizeBytes * (flushPage - destinationStartPage)),
                     pointers[flushPage % BufferSize],
-                    (uint)(PageSize * PrivateRecordSize),
+                    PageSize,
                     AsyncReadPageFromDeviceCallback,
                     asyncResult);
             }
@@ -327,7 +322,7 @@ namespace FASTER.core
 
                 WriteAsync(pointers[flushPage % BufferSize],
                                     (ulong)(AlignedPageSizeBytes * flushPage),
-                                    (uint)(PageSize * PrivateRecordSize),
+                                    PageSize,
                                     AsyncFlushPageCallback,
                                     asyncResult, device, objlogDevice);
             }
@@ -362,7 +357,7 @@ namespace FASTER.core
 
                 WriteAsync(pointers[flushPage % BufferSize],
                             (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                            (uint)(PageSize * PrivateRecordSize),
+                            PageSize,
                             AsyncFlushPageToDeviceCallback,
                             asyncResult, device, objlogDevice);
             }

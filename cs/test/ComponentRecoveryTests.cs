@@ -48,14 +48,14 @@ namespace FASTER.test.recovery
             }
 
             //issue call to checkpoint
-            allocator.begin_checkpoint(device, 0, out ulong numBytesWritten);
+            allocator.BeginCheckpoint(device, 0, out ulong numBytesWritten);
             //wait until complete
             allocator.IsCheckpointCompleted(true);
 
 
             var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
             //issue call to recover
-            recoveredAllocator.begin_recovery(device, 0, numBucketsToAdd, numBytesWritten, out ulong numBytesRead);
+            recoveredAllocator.BeginRecovery(device, 0, numBucketsToAdd, numBytesWritten, out ulong numBytesRead);
             //wait until complete
             recoveredAllocator.IsRecoveryCompleted(true);
 

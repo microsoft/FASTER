@@ -80,6 +80,7 @@ Status File::Delete() {
     int error = errno;
     return Status::IOError;
   }
+  return Status::Ok;
 }
 
 Status File::GetDeviceAlignment() {

@@ -24,13 +24,13 @@ namespace FASTER.core
         /// <summary>
         /// Device Information obtained from Native32 methods
         /// </summary>
-        private uint lpBytesPerSector;
+        private readonly uint lpBytesPerSector;
 
         private string dirname;
         private IntPtr ioCompletionPort;
-        private bool unbuffered;
-        private bool deleteOnClose;
-        private long segmentSize;
+        private readonly bool unbuffered;
+        private readonly bool deleteOnClose;
+        private readonly long segmentSize;
         ConcurrentDictionary<int, SafeFileHandle> logHandles;
 
         public SegmentedLocalStorageDevice(string dirname, 
@@ -50,11 +50,14 @@ namespace FASTER.core
                 Native32.EnableProcessPrivileges();
             }
 
-            Native32.GetDiskFreeSpace(dirname.Substring(0, 3),
+            if (!Native32.GetDiskFreeSpace(dirname.Substring(0, 3),
                                         out uint lpSectorsPerCluster,
                                         out lpBytesPerSector,
                                         out uint lpNumberOfFreeClusters,
-                                        out uint lpTotalNumberOfClusters);
+                                        out uint lpTotalNumberOfClusters))
+            {
+                throw new Exception("Unable to retrieve information for disk " + dirname.Substring(0, 3) + " - check if the disk is available.");
+            }
 
             logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
         }
@@ -108,9 +111,7 @@ namespace FASTER.core
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine("Log handle! : {0}", logHandle.ToString());
-                        Console.WriteLine(e.ToString());
-                        Environment.Exit(0);
+                        throw new Exception("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
                     }
                     return logHandle;
                 });

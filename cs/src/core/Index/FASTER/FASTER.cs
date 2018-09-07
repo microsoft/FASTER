@@ -15,7 +15,7 @@ namespace FASTER.core
 {
     public unsafe partial class FasterKV : FASTERBase, IFASTER
     { 
-        public PersistentMemoryMalloc<byte> hlog;
+        public PersistentMemoryMalloc hlog;
 
         public static int numPendingReads = 0;
 
@@ -62,7 +62,7 @@ namespace FASTER.core
             if (checkpointDir != null)
                 Config.CheckpointDirectory = checkpointDir;
 
-            hlog = new PersistentMemoryMalloc<byte>(logDevice);
+            hlog = new PersistentMemoryMalloc(logDevice);
             var recordSize = Layout.EstimatePhysicalSize(null, null);
             Initialize(size, hlog.GetSectorSize());
 
@@ -178,13 +178,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(Key* key, Value* desiredValue, Context* userContext, long monotonicSerialNum)
         {
-            /*
-            Console.WriteLine(hlog.GetPhysicalAddress(0));
-            if (((RecordInfo*)hlog.GetPhysicalAddress(0))->Invalid != true)
-            {
-                Debugger.Break();
-            }*/
-
             var context = default(PendingContext);
             var internalStatus = InternalUpsert(key, desiredValue, userContext, ref context);
             var status = default(Status);

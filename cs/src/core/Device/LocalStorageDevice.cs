@@ -24,11 +24,11 @@ namespace FASTER.core
         /// <summary>
         /// Device Information obtained from Native32 methods
         /// </summary>
-        private uint lpSectorsPerCluster;
-        private uint lpBytesPerSector;
-        private uint lpNumberOfFreeClusters;
-        private uint lpTotalNumberOfClusters;
-        private IntPtr ioCompletionPort;
+        private readonly uint lpSectorsPerCluster;
+        private readonly uint lpBytesPerSector;
+        private readonly uint lpNumberOfFreeClusters;
+        private readonly uint lpTotalNumberOfClusters;
+        private readonly IntPtr ioCompletionPort;
 
         public LocalStorageDevice(string filename, bool enablePrivileges = false, 
             bool useIoCompletionPort = false, bool unbuffered = false, bool deleteOnClose = false)
@@ -87,11 +87,8 @@ namespace FASTER.core
             } 
             catch(Exception e)
             {
-                Console.WriteLine("Log handle! : {0}", logHandle.ToString());
-                Console.WriteLine(e.ToString());
-                Environment.Exit(0);
+                throw new Exception("Error binding log handle for " + filename + ": " + e.ToString());
             }
-            
         }
 
         /// <summary>
