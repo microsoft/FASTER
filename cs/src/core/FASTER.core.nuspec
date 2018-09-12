@@ -7,8 +7,7 @@
     <authors>FASTER</authors>
     <owners>Microsoft</owners>
     <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
-    <licenseUrl>https://github.com/Microsoft/FASTER/blob/master/LICENSE</licenseUrl>
-    <!--<iconUrl>http://ICON_URL_HERE_OR_DELETE_THIS_LINE</iconUrl>-->
+    <licenseUrl>https://raw.githubusercontent.com/Microsoft/FASTER/master/LICENSE</licenseUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <description>A fast key-value store that supports larger-than-memory data</description>
     <releaseNotes>See project website</releaseNotes>
