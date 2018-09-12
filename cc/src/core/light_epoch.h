@@ -296,6 +296,7 @@ class LightEpoch {
   inline void ResetPhaseFinished() {
     for(uint32_t idx = 1; idx <= num_entries_; ++idx) {
       assert(table_[idx].phase_finished.load() == Phase::REST ||
+             table_[idx].phase_finished.load() == Phase::INDEX_CHKPT ||
              table_[idx].phase_finished.load() == Phase::PERSISTENCE_CALLBACK ||
              table_[idx].phase_finished.load() == Phase::GC_IN_PROGRESS ||
              table_[idx].phase_finished.load() == Phase::GROW_IN_PROGRESS);

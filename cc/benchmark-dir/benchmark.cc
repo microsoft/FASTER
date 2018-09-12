@@ -544,8 +544,13 @@ void run_benchmark(store_t* store, size_t num_threads) {
   if(kCheckpointSeconds == 0) {
     std::this_thread::sleep_for(std::chrono::seconds(kRunSeconds));
   } else {
-    auto callback = [](uint64_t persistent_serial_num) {
-      ++num_checkpoints;
+    auto callback = [](Status result, uint64_t persistent_serial_num) {
+      if(result != Status::Ok) {
+        printf("Thread %" PRIu32 " reports checkpoint failed.\n",
+               Thread::id());
+      } else {
+        ++num_checkpoints;
+      }
     };
 
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -558,7 +563,8 @@ void run_benchmark(store_t* store, size_t num_threads) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
       current_time = std::chrono::high_resolution_clock::now();
       if(current_time - last_checkpoint_time >= std::chrono::seconds(kCheckpointSeconds)) {
-        bool success = store->Checkpoint(callback);
+        Guid token;
+        bool success = store->Checkpoint(nullptr, callback, token);
         if(success) {
           printf("Starting checkpoint %" PRIu64 ".\n", checkpoint_num);
           ++checkpoint_num;

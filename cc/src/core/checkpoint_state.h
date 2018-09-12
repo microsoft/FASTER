@@ -9,6 +9,7 @@
 #include "address.h"
 #include "guid.h"
 #include "malloc_fixed_page_size.h"
+#include "status.h"
 #include "thread.h"
 
 namespace FASTER {
@@ -101,22 +102,61 @@ template <class F>
 class CheckpointState {
  public:
   typedef F file_t;
-  typedef void(*persistence_callback_t)(uint64_t persistent_serial_num);
+  typedef void(*index_persistence_callback_t)(Status result);
+  typedef void(*hybrid_log_persistence_callback_t)(Status result, uint64_t persistent_serial_num);
 
   CheckpointState()
     : index_checkpoint_started{ false }
     , failed{ false }
     , flush_pending{ UINT32_MAX }
-    , persistence_callback{ nullptr } {
+    , index_persistence_callback{ nullptr }
+    , hybrid_log_persistence_callback{ nullptr } {
   }
 
-  void InitializeCheckpoint(uint32_t version, uint64_t table_size, Address log_begin_address,
-                            Address checkpoint_start_address, bool use_snapshot_file,
-                            Address flushed_until_address,
-                            persistence_callback_t persistence_callback_) {
+  void InitializeIndexCheckpoint(const Guid& token, uint32_t version, uint64_t table_size,
+                                 Address log_begin_address, Address checkpoint_start_address,
+                                 index_persistence_callback_t callback) {
     failed = false;
     index_checkpoint_started = false;
     continue_tokens.clear();
+    index_token = token;
+    hybrid_log_token = Guid{};
+    index_metadata.Initialize(version, table_size, log_begin_address, checkpoint_start_address);
+    log_metadata.Reset();
+    flush_pending = 0;
+    index_persistence_callback = callback;
+    hybrid_log_persistence_callback = nullptr;
+  }
+
+  void InitializeHybridLogCheckpoint(const Guid& token, uint32_t version, bool use_snapshot_file,
+                                     Address flushed_until_address,
+                                     hybrid_log_persistence_callback_t callback) {
+    failed = false;
+    index_checkpoint_started = false;
+    continue_tokens.clear();
+    index_token = Guid{};
+    hybrid_log_token = token;
+    index_metadata.Reset();
+    log_metadata.Initialize(use_snapshot_file, version, flushed_until_address);
+    if(use_snapshot_file) {
+      flush_pending = UINT32_MAX;
+    } else {
+      flush_pending = 0;
+    }
+    index_persistence_callback = nullptr;
+    hybrid_log_persistence_callback = callback;
+  }
+
+  void InitializeCheckpoint(const Guid& token, uint32_t version, uint64_t table_size,
+                            Address log_begin_address, Address checkpoint_start_address,
+                            bool use_snapshot_file, Address flushed_until_address,
+                            index_persistence_callback_t index_persistence_callback_,
+                            hybrid_log_persistence_callback_t hybrid_log_persistence_callback_) {
+    failed = false;
+    index_checkpoint_started = false;
+    continue_tokens.clear();
+    index_token = token;
+    hybrid_log_token = token;
     index_metadata.Initialize(version, table_size, log_begin_address, checkpoint_start_address);
     log_metadata.Initialize(use_snapshot_file, version, flushed_until_address);
     if(use_snapshot_file) {
@@ -124,22 +164,26 @@ class CheckpointState {
     } else {
       flush_pending = 0;
     }
-    persistence_callback = persistence_callback_;
+    index_persistence_callback = index_persistence_callback_;
+    hybrid_log_persistence_callback = hybrid_log_persistence_callback_;
   }
 
   void CheckpointDone() {
     assert(!failed);
-    assert(index_checkpoint_started);
+    assert(index_token == Guid{} || index_checkpoint_started);
     assert(continue_tokens.empty());
     assert(flush_pending == 0);
     index_metadata.Reset();
     log_metadata.Reset();
     snapshot_file.Close();
-    persistence_callback = nullptr;
+    index_persistence_callback = nullptr;
+    hybrid_log_persistence_callback = nullptr;
   }
 
-  inline void InitializeRecover() {
+  inline void InitializeRecover(const Guid& index_token_, const Guid& hybrid_log_token_) {
     failed = false;
+    index_token = index_token_;
+    hybrid_log_token = hybrid_log_token_;
   }
 
   void RecoverDone() {
@@ -153,11 +197,16 @@ class CheckpointState {
   std::atomic<bool> failed;
   IndexMetadata index_metadata;
   LogMetadata log_metadata;
+
+  Guid index_token;
+  Guid hybrid_log_token;
+
   /// State used when fold_over_snapshot = false.
   file_t snapshot_file;
   std::atomic<uint32_t> flush_pending;
 
-  persistence_callback_t persistence_callback;
+  index_persistence_callback_t index_persistence_callback;
+  hybrid_log_persistence_callback_t hybrid_log_persistence_callback;
   std::unordered_map<Guid, uint64_t> continue_tokens;
 };
 
