@@ -11,10 +11,12 @@
     <AssemblyName>FASTER.core</AssemblyName>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-    <SignAssembly>false</SignAssembly>
+    <SignAssembly>true</SignAssembly>
     <ApplicationIcon />
     <OutputType>Library</OutputType>
     <StartupObject />
+    <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
