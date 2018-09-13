@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "FASTER.benchmark": {
-      "commandName": "Project",
-      "commandLineArgs": "-b 1 -t 1 -n 1 -r 50 -d uniform"
-    }
-  }
-}
