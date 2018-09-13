@@ -8,15 +8,33 @@
 
 using FASTER.core;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace FASTER.benchmark
 {
-    public unsafe class FASTER_YcsbBenchmark
+    public class KeyComparer : IEqualityComparer<Key>
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Equals(Key x, Key y)
+        {
+            return x.value == y.value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetHashCode(Key obj)
+        {
+            return (int)Utility.GetHashCode(obj.value);
+        }
+    }
+
+    public unsafe class ConcurrentDictionary_YcsbBenchmark
     {
         public enum Op : ulong
         {
@@ -28,7 +46,7 @@ namespace FASTER.benchmark
         const bool kUseSyntheticData = true;
         const bool kUseSmallData = false;
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
-        const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
+        const long kTxnCount = kUseSmallData ?  10000000 : 1000000000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
 
         const int kFileChunkSize = 4096;
@@ -45,12 +63,7 @@ namespace FASTER.benchmark
         Input* input_ptr;
         readonly IDevice device;
 
-#if USE_CODEGEN
-        IFASTER
-#else
-        FasterKV
-#endif
-            store;
+        ConcurrentDictionary<Key, Value> store;
 
         long total_ops_done = 0;
 
@@ -65,7 +78,7 @@ namespace FASTER.benchmark
 
         volatile bool done = false;
 
-        public FASTER_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_)
+        public ConcurrentDictionary_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_)
         {
             threadCount = threadCount_;
             numaStyle = numaStyle_;
@@ -86,14 +99,8 @@ namespace FASTER.benchmark
             freq = HiResTimer.EstimateCPUFrequency();
 #endif
 
-            device = FASTERFactory.CreateLogDevice("C:\\data\\hlog");
 
-#if USE_CODEGEN
-            store = FASTERFactory.Create<Key, Value, Input, Output, Context, Functions, IFASTER>
-#else
-            store = new FasterKV
-#endif
-                (kMaxKey / 2, device);
+            store = new ConcurrentDictionary<Key, Value>(threadCount, kMaxKey, new KeyComparer());
         }
 
         private void RunYcsb(int thread_idx)
@@ -119,8 +126,6 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            store.StartSession();
-
             while (!done)
             {
                 long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
@@ -144,28 +149,17 @@ namespace FASTER.benchmark
                     else
                         op = Op.ReadModifyWrite;
 
-                    if (idx % 256 == 0)
-                    {
-                        store.Refresh();
-
-                        if (idx % 65536 == 0)
-                        {
-                            store.CompletePending(false);
-                        }
-                    }
-
                     switch (op)
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(local_txn_keys_ptr, &value, null, 1);
+                                store[*local_txn_keys_ptr] = value;
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                Status result = store.Read(local_txn_keys_ptr, null, (Output*)&value, null, 1);
-                                if (result == Status.OK)
+                                if (store.TryGetValue(*local_txn_keys_ptr, out value))
                                 {
                                     ++reads_done;
                                 }
@@ -173,11 +167,8 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = store.RMW(local_txn_keys_ptr, input_ptr + (idx & 0x7), null, 1);
-                                if (result == Status.OK)
-                                {
-                                    ++writes_done;
-                                }
+                                store.AddOrUpdate(*local_txn_keys_ptr, *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
+                                ++writes_done;
                                 break;
                             }
                         default:
@@ -202,8 +193,6 @@ namespace FASTER.benchmark
 #endif
             }
 
-            store.CompletePending(true);
-            store.StopSession();
             sw.Stop();
 
             Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
@@ -240,7 +229,6 @@ namespace FASTER.benchmark
                 int x = idx;
                 workers[idx] = new Thread(() => SetupYcsb(x));
             }
-
             Stopwatch sw = new Stopwatch();
             sw.Start();
             // Start threads.
@@ -253,14 +241,10 @@ namespace FASTER.benchmark
                 worker.Join();
             }
             sw.Stop();
+
             Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
 
-            long startTailAddress = store.Size;
-            Console.WriteLine("Start tail address = " + startTailAddress);
-
-
             idx_ = 0;
-            store.DumpDistribution();
 
             Console.WriteLine("Executing experiment.");
 
@@ -289,7 +273,6 @@ namespace FASTER.benchmark
                 while (runSeconds < kRunSeconds)
                 {
                     Thread.Sleep(TimeSpan.FromSeconds(kCheckpointSeconds));
-                    store.TakeFullCheckpoint(out Guid token);
                     runSeconds += kCheckpointSeconds;
                 }
             }
@@ -308,13 +291,10 @@ namespace FASTER.benchmark
 #endif
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
-            long endTailAddress = store.Size;
-            Console.WriteLine("End tail address = " + endTailAddress);
 
             Console.WriteLine("Total " + total_ops_done + " ops done " + " in " + seconds + " secs.");
             Console.WriteLine("##, " + distribution + ", " + numaStyle + ", " + readPercent + ", "
-                + threadCount + ", " + total_ops_done / seconds + ", "
-                + (endTailAddress - startTailAddress));
+                + threadCount + ", " + total_ops_done / seconds);
         }
 
         private void SetupYcsb(int thread_idx)
@@ -323,8 +303,6 @@ namespace FASTER.benchmark
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
             else
                 Native32.AffinitizeThreadShardedTwoNuma((uint)thread_idx);
-
-            store.StartSession();
 
 #if DASHBOARD
             var tstart = HiResTimer.Rdtsc();
@@ -341,18 +319,9 @@ namespace FASTER.benchmark
             {
                 for (long idx = chunk_idx; idx < chunk_idx + kChunkSize; ++idx)
                 {
-                    if (idx % 256 == 0)
-                    {
-                        store.Refresh();
-
-                        if (idx % 65536 == 0)
-                        {
-                            store.CompletePending(false);
-                        }
-                    }
 
                     Key key = init_keys_[idx];
-                    store.Upsert(&key, &value, null, 1);
+                    store[key] = value;
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -369,10 +338,6 @@ namespace FASTER.benchmark
                 }
 #endif
             }
-
-
-            store.CompletePending(true);
-            store.StopSession();
         }
 
 #if DASHBOARD
@@ -435,11 +400,11 @@ namespace FASTER.benchmark
 
                     if (measureLatency)
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.Size, totalProgress);
+                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.Count, totalProgress);
                     }
                     else
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.Size, totalProgress);
+                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.Count, totalProgress);
                     }
                 }
             }

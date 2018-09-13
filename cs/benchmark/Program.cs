@@ -32,7 +32,7 @@ namespace FASTER.benchmark
 
     enum BenchmarkType : int
     {
-        Ycsb
+        Ycsb, ConcurrentDictionaryYcsb
     };
 
     public class Program
@@ -51,6 +51,11 @@ namespace FASTER.benchmark
             if (b == BenchmarkType.Ycsb)
             {
                 var test = new FASTER_YcsbBenchmark(options.ThreadCount, options.NumaStyle, options.Distribution, options.ReadPercent);
+                test.Run();
+            }
+            else if (b == BenchmarkType.ConcurrentDictionaryYcsb)
+            {
+                var test = new ConcurrentDictionary_YcsbBenchmark(options.ThreadCount, options.NumaStyle, options.Distribution, options.ReadPercent);
                 test.Run();
             }
         }
