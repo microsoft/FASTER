@@ -14,7 +14,9 @@ based on group commit.
 
 For standard benchmarks where the working set fits in main memory, we found FASTER to achieve
 significantly higher throughput than current systems, and match or exceed the performance of pure 
-in-memory data structures while offering more functionality. See [the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf) for more details.
+in-memory data structures while offering more functionality. See [the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf) for more details. We also have a detailed
+analysis of C# FASTER performance in a wiki page 
+[here](https://github.com/Microsoft/FASTER/wiki/Performance-of-FASTER-in-C%23).
 
 # Getting Started
 
