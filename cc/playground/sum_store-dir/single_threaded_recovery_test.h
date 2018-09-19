@@ -39,9 +39,14 @@ class SingleThreadedRecoveryTest {
       assert(result == Status::Ok);
     };
 
-    auto persistence_callback = [](uint64_t persistent_serial_num) {
-      printf("Thread %" PRIu32 " reports persistence until %" PRIu64 "\n",
-             Thread::id(), persistent_serial_num);
+    auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
+      if(result != Status::Ok) {
+        printf("Thread %" PRIu32 " reports checkpoint failed.\n",
+               Thread::id());
+      } else {
+        printf("Thread %" PRIu32 " reports persistence until %" PRIu64 "\n",
+               Thread::id(), persistent_serial_num);
+      }
     };
 
     // Register thread with FASTER
@@ -53,7 +58,9 @@ class SingleThreadedRecoveryTest {
       store.Rmw(context, callback, idx);
 
       if(idx % kCheckpointInterval == 0) {
-        store.Checkpoint(persistence_callback);
+        Guid token;
+        store.Checkpoint(nullptr, hybrid_log_persistence_callback, token);
+        printf("Calling Checkpoint(), token = %s\n", token.ToString().c_str());
       }
       if(idx % kCompletePendingInterval == 0) {
         store.CompletePending(false);
@@ -73,15 +80,16 @@ class SingleThreadedRecoveryTest {
     std::getline(std::cin, discard);
   }
 
-  void RecoverAndTest(uint32_t cpr_version, uint32_t index_version) {
+  void RecoverAndTest(const Guid& index_token, const Guid& hybrid_log_token) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
       assert(result == Status::Ok);
     };
 
     // Recover
+    uint32_t version;
     std::vector<Guid> session_ids;
-    store.Recover(cpr_version, index_version, session_ids);
+    store.Recover(index_token, hybrid_log_token, version, session_ids);
 
     // Create array for reading
     auto read_results = alloc_aligned<uint64_t>(64, sizeof(uint64_t) * kNumUniqueKeys);

@@ -134,8 +134,14 @@ class FasterKv {
   inline bool CompletePending(bool wait = false);
 
   /// Checkpoint/recovery operations.
-  bool Checkpoint(void(*persistence_callback)(uint64_t persistent_serial_num));
-  Status Recover(uint32_t cpr_version, uint32_t index_version, std::vector<Guid>& session_ids);
+  bool Checkpoint(void(*index_persistence_callback)(Status result),
+                  void(*hybrid_log_persistence_callback)(Status result,
+                      uint64_t persistent_serial_num), Guid& token);
+  bool CheckpointIndex(void(*index_persistence_callback)(Status result), Guid& token);
+  bool CheckpointHybridLog(void(*hybrid_log_persistence_callback)(Status result,
+                           uint64_t persistent_serial_num), Guid& token);
+  Status Recover(const Guid& index_token, const Guid& hybrid_log_token, uint32_t& version,
+                 std::vector<Guid>& session_ids);
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
@@ -227,11 +233,11 @@ class FasterKv {
   Status RecoverFuzzyIndexComplete(bool wait);
 
   Status WriteIndexMetadata();
-  Status ReadIndexMetadata(uint32_t version);
+  Status ReadIndexMetadata(const Guid& token);
   Status WriteCprMetadata();
-  Status ReadCprMetadata(uint32_t version);
+  Status ReadCprMetadata(const Guid& token);
   Status WriteCprContext();
-  Status ReadCprContexts(uint32_t version, const Guid* guids);
+  Status ReadCprContexts(const Guid& token, const Guid* guids);
 
   Status RecoverHybridLog();
   Status RecoverHybridLogFromSnapshotFile();
@@ -1434,8 +1440,7 @@ void FasterKv<K, V, D>::InitializeCheckpointLocks() {
 
 template <class K, class V, class D>
 Status FasterKv<K, V, D>::WriteIndexMetadata() {
-  uint32_t checkpoint_version = checkpoint_.index_metadata.version;
-  std::string filename = disk.index_checkpoint_path(checkpoint_version) + "info.dat";
+  std::string filename = disk.index_checkpoint_path(checkpoint_.index_token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
   std::FILE* file = std::fopen(filename.c_str(), "wb");
@@ -1453,8 +1458,8 @@ Status FasterKv<K, V, D>::WriteIndexMetadata() {
 }
 
 template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadIndexMetadata(uint32_t version) {
-  std::string filename = disk.index_checkpoint_path(version) + "info.dat";
+Status FasterKv<K, V, D>::ReadIndexMetadata(const Guid& token) {
+  std::string filename = disk.index_checkpoint_path(token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
   std::FILE* file = std::fopen(filename.c_str(), "rb");
@@ -1473,8 +1478,7 @@ Status FasterKv<K, V, D>::ReadIndexMetadata(uint32_t version) {
 
 template <class K, class V, class D>
 Status FasterKv<K, V, D>::WriteCprMetadata() {
-  uint32_t checkpoint_version = checkpoint_.log_metadata.version;
-  std::string filename = disk.cpr_checkpoint_path(checkpoint_version) + "info.dat";
+  std::string filename = disk.cpr_checkpoint_path(checkpoint_.hybrid_log_token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
   std::FILE* file = std::fopen(filename.c_str(), "wb");
@@ -1492,8 +1496,8 @@ Status FasterKv<K, V, D>::WriteCprMetadata() {
 }
 
 template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadCprMetadata(uint32_t version) {
-  std::string filename = disk.cpr_checkpoint_path(version) + "info.dat";
+Status FasterKv<K, V, D>::ReadCprMetadata(const Guid& token) {
+  std::string filename = disk.cpr_checkpoint_path(token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
   std::FILE* file = std::fopen(filename.c_str(), "rb");
@@ -1512,8 +1516,7 @@ Status FasterKv<K, V, D>::ReadCprMetadata(uint32_t version) {
 
 template <class K, class V, class D>
 Status FasterKv<K, V, D>::WriteCprContext() {
-  uint32_t checkpoint_version = prev_thread_ctx().version;
-  std::string filename = disk.cpr_checkpoint_path(checkpoint_version);
+  std::string filename = disk.cpr_checkpoint_path(checkpoint_.hybrid_log_token);
   const Guid& guid = prev_thread_ctx().guid;
   filename += guid.ToString();
   filename += ".dat";
@@ -1535,13 +1538,13 @@ Status FasterKv<K, V, D>::WriteCprContext() {
 }
 
 template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadCprContexts(uint32_t version, const Guid* guids) {
+Status FasterKv<K, V, D>::ReadCprContexts(const Guid& token, const Guid* guids) {
   for(size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
     const Guid& guid = guids[idx];
     if(guid == Guid{}) {
       continue;
     }
-    std::string filename = disk.cpr_checkpoint_path(version);
+    std::string filename = disk.cpr_checkpoint_path(token);
     filename += guid.ToString();
     filename += ".dat";
     // (This code will need to be refactored into the disk_t interface, if we want to support
@@ -1571,15 +1574,14 @@ Status FasterKv<K, V, D>::ReadCprContexts(uint32_t version, const Guid* guids) {
 template <class K, class V, class D>
 Status FasterKv<K, V, D>::CheckpointFuzzyIndex() {
   uint32_t hash_table_version = resize_info_.version;
-  uint32_t checkpoint_version = checkpoint_.index_metadata.version;
   // Checkpoint the main hash table.
-  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_version) +
+  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
                                 "ht.dat");
   RETURN_NOT_OK(ht_file.Open(&disk.handler()));
   RETURN_NOT_OK(state_[hash_table_version].Checkpoint(disk, std::move(ht_file),
                 checkpoint_.index_metadata.num_ht_bytes));
   // Checkpoint the hash table's overflow buckets.
-  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_version) +
+  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
                                  "ofb.dat");
   RETURN_NOT_OK(ofb_file.Open(&disk.handler()));
   RETURN_NOT_OK(overflow_buckets_allocator_[hash_table_version].Checkpoint(disk,
@@ -1607,17 +1609,16 @@ Status FasterKv<K, V, D>::CheckpointFuzzyIndexComplete() {
 template <class K, class V, class D>
 Status FasterKv<K, V, D>::RecoverFuzzyIndex() {
   uint8_t hash_table_version = resize_info_.version;
-  uint32_t checkpoint_version = checkpoint_.index_metadata.version;
   assert(state_[hash_table_version].size() == checkpoint_.index_metadata.table_size);
 
   // Recover the main hash table.
-  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_version) +
+  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
                                 "ht.dat");
   RETURN_NOT_OK(ht_file.Open(&disk.handler()));
   RETURN_NOT_OK(state_[hash_table_version].Recover(disk, std::move(ht_file),
                 checkpoint_.index_metadata.num_ht_bytes));
   // Recover the hash table's overflow buckets.
-  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_version) +
+  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
                                  "ofb.dat");
   RETURN_NOT_OK(ofb_file.Open(&disk.handler()));
   return overflow_buckets_allocator_[hash_table_version].Recover(disk, std::move(ofb_file),
@@ -1776,7 +1777,7 @@ Status FasterKv<K, V, D>::RecoverHybridLogFromSnapshotFile() {
   uint32_t capacity = hlog.buffer_size();
   RecoveryStatus recovery_status{ start_page, end_page };
   checkpoint_.snapshot_file = disk.NewFile(disk.relative_cpr_checkpoint_path(
-                                checkpoint_.log_metadata.version) + "snapshot.dat");
+                                checkpoint_.hybrid_log_token) + "snapshot.dat");
   RETURN_NOT_OK(checkpoint_.snapshot_file.Open(&disk.handler()));
 
   // Initially issue read request for all pages that can be held in memory
@@ -2086,13 +2087,16 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
   }
 
   switch(next_state.action) {
-  case Action::Checkpoint:
+  case Action::CheckpointFull:
+  case Action::CheckpointIndex:
+  case Action::CheckpointHybridLog:
     switch(next_state.phase) {
     case Phase::PREP_INDEX_CHKPT:
-      // This case is handled directly inside Checkpoint().
+      // This case is handled directly inside Checkpoint[Index]().
       assert(false);
       break;
     case Phase::INDEX_CHKPT:
+      assert(next_state.action != Action::CheckpointHybridLog);
       // Issue async request for fuzzy checkpoint
       assert(!checkpoint_.failed);
       if(CheckpointFuzzyIndex() != Status::Ok) {
@@ -2100,6 +2104,9 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       }
       break;
     case Phase::PREPARE:
+      // Index checkpoint will never reach this state; and CheckpointHybridLog() will handle this
+      // case directly.
+      assert(next_state.action == Action::CheckpointFull);
       // INDEX_CHKPT -> PREPARE
       // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
       // (Ensures that recovery won't accidentally reallocate from the ofb.)
@@ -2109,17 +2116,24 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       if(WriteIndexMetadata() != Status::Ok) {
         checkpoint_.failed = true;
       }
+      if(checkpoint_.index_persistence_callback) {
+        // Notify the host that the index checkpoint has completed.
+        checkpoint_.index_persistence_callback(Status::Ok);
+      }
       break;
     case Phase::IN_PROGRESS: {
+      assert(next_state.action != Action::CheckpointIndex);
       // PREPARE -> IN_PROGRESS
       // Do nothing
       break;
     }
     case Phase::WAIT_PENDING:
+      assert(next_state.action != Action::CheckpointIndex);
       // IN_PROGRESS -> WAIT_PENDING
       // Do nothing
       break;
-    case Phase::WAIT_FLUSH: {
+    case Phase::WAIT_FLUSH:
+      assert(next_state.action != Action::CheckpointIndex);
       // WAIT_PENDING -> WAIT_FLUSH
       if(fold_over_snapshot) {
         // Move read-only to tail
@@ -2131,7 +2145,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
         // Get final address for CPR
         checkpoint_.log_metadata.final_address = tail_address;
         checkpoint_.snapshot_file = disk.NewFile(disk.relative_cpr_checkpoint_path(
-                                      checkpoint_.log_metadata.version) + "snapshot.dat");
+                                      checkpoint_.hybrid_log_token) + "snapshot.dat");
         if(checkpoint_.snapshot_file.Open(&disk.handler()) != Status::Ok) {
           checkpoint_.failed = true;
         }
@@ -2145,19 +2159,40 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
         checkpoint_.failed = true;
       }
       break;
-    }
     case Phase::PERSISTENCE_CALLBACK:
+      assert(next_state.action != Action::CheckpointIndex);
       // WAIT_FLUSH -> PERSISTENCE_CALLBACK
       break;
     case Phase::REST:
-      // PERSISTENCE_CALLBACK -> REST
-      // All persistence callbacks have been called; we can reset the contexts now. (Have to reset
-      // contexts before another checkpoint can be started.)
-      checkpoint_.CheckpointDone();
-      // Free checkpoint locks!
-      checkpoint_locks_.Free();
-      // Checkpoint is done--no more work for threads to do.
-      system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+      // PERSISTENCE_CALLBACK -> REST or INDEX_CHKPT -> REST
+      if(next_state.action != Action::CheckpointIndex) {
+        // The checkpoint is done; we can reset the contexts now. (Have to reset contexts before
+        // another checkpoint can be started.)
+        checkpoint_.CheckpointDone();
+        // Free checkpoint locks!
+        checkpoint_locks_.Free();
+        // Checkpoint is done--no more work for threads to do.
+        system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+      } else {
+        // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the
+        // ofb. (Ensures that recovery won't accidentally reallocate from the ofb.)
+        checkpoint_.index_metadata.ofb_count =
+          overflow_buckets_allocator_[resize_info_.version].count();
+        // Write index meta data on disk
+        if(WriteIndexMetadata() != Status::Ok) {
+          checkpoint_.failed = true;
+        }
+        auto index_persistence_callback = checkpoint_.index_persistence_callback;
+        // The checkpoint is done; we can reset the contexts now. (Have to reset contexts before
+        // another checkpoint can be started.)
+        checkpoint_.CheckpointDone();
+        // Checkpoint is done--no more work for threads to do.
+        system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+        if(index_persistence_callback) {
+          // Notify the host that the index checkpoint has completed.
+          index_persistence_callback(Status::Ok);
+        }
+      }
       break;
     default:
       // not reached
@@ -2255,9 +2290,12 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
     SystemState current_state = (previous_state == final_state) ? final_state :
                                 previous_state.GetNextState();
     switch(current_state.action) {
-    case Action::Checkpoint:
+    case Action::CheckpointFull:
+    case Action::CheckpointIndex:
+    case Action::CheckpointHybridLog:
       switch(current_state.phase) {
       case Phase::PREP_INDEX_CHKPT:
+        assert(current_state.action != Action::CheckpointHybridLog);
         // Both from REST -> PREP_INDEX_CHKPT and PREP_INDEX_CHKPT -> PREP_INDEX_CHKPT
         if(previous_state.phase == Phase::REST) {
           // Thread ack that we're performing a checkpoint.
@@ -2267,19 +2305,31 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::INDEX_CHKPT: {
+        assert(current_state.action != Action::CheckpointHybridLog);
         // Both from PREP_INDEX_CHKPT -> INDEX_CHKPT and INDEX_CHKPT -> INDEX_CHKPT
         Status result = CheckpointFuzzyIndexComplete();
         if(result != Status::Pending && result != Status::Ok) {
           checkpoint_.failed = true;
         }
         if(result != Status::Pending) {
-          GlobalMoveToNextState(current_state);
+          if(current_state.action == Action::CheckpointIndex) {
+            // This thread is done now.
+            thread_ctx().phase = Phase::REST;
+            // Thread ack that it is done.
+            if(epoch_.FinishThreadPhase(Phase::INDEX_CHKPT)) {
+              GlobalMoveToNextState(current_state);
+            }
+          } else {
+            // Index checkpoint is done; move on to PREPARE phase.
+            GlobalMoveToNextState(current_state);
+          }
         }
         break;
       }
       case Phase::PREPARE:
-        // Handle INDEX_CHKPT -> PREPARE and PREPARE -> PREPARE
-        if(previous_state.phase == Phase::INDEX_CHKPT) {
+        assert(current_state.action != Action::CheckpointIndex);
+        // Handle (INDEX_CHKPT -> PREPARE or REST -> PREPARE) and PREPARE -> PREPARE
+        if(previous_state.phase != Phase::PREPARE) {
           // mark pending requests
           MarkAllPendingRequests();
           // keep a count of number of threads
@@ -2293,6 +2343,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::IN_PROGRESS:
+        assert(current_state.action != Action::CheckpointIndex);
         // Handle PREPARE -> IN_PROGRESS and IN_PROGRESS -> IN_PROGRESS
         if(previous_state.phase == Phase::PREPARE) {
           assert(prev_thread_ctx().retry_requests.empty());
@@ -2311,6 +2362,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::WAIT_PENDING:
+        assert(current_state.action != Action::CheckpointIndex);
         // Handle IN_PROGRESS -> WAIT_PENDING and WAIT_PENDING -> WAIT_PENDING
         if(!epoch_.HasThreadFinishedPhase(Phase::WAIT_PENDING)) {
           if(prev_thread_ctx().pending_ios.empty() &&
@@ -2323,6 +2375,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::WAIT_FLUSH:
+        assert(current_state.action != Action::CheckpointIndex);
         // Handle WAIT_PENDING -> WAIT_FLUSH and WAIT_FLUSH -> WAIT_FLUSH
         if(!epoch_.HasThreadFinishedPhase(Phase::WAIT_FLUSH)) {
           bool flushed;
@@ -2342,11 +2395,12 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::PERSISTENCE_CALLBACK:
+        assert(current_state.action != Action::CheckpointIndex);
         // Handle WAIT_FLUSH -> PERSISTENCE_CALLBACK and PERSISTENCE_CALLBACK -> PERSISTENCE_CALLBACK
         if(previous_state.phase == Phase::WAIT_FLUSH) {
           // Persistence callback
-          if(checkpoint_.persistence_callback) {
-            checkpoint_.persistence_callback(prev_thread_ctx().serial_num);
+          if(checkpoint_.hybrid_log_persistence_callback) {
+            checkpoint_.hybrid_log_persistence_callback(Status::Ok, prev_thread_ctx().serial_num);
           }
           // Thread has finished checkpointing.
           thread_ctx().phase = Phase::REST;
@@ -2432,11 +2486,12 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
 }
 
 template <class K, class V, class D>
-bool FasterKv<K, V, D>::Checkpoint(void(*persistence_callback)(uint64_t persistent_serial_num)) {
-  // Only one thread can initiate a checkpoint at a time. (This assumption is implicit in the C#
-  /// version, and explicit here.)
+bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status result),
+                                   void(*hybrid_log_persistence_callback)(Status result,
+                                       uint64_t persistent_serial_num), Guid& token) {
+  // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
-  SystemState desired{ Action::Checkpoint, Phase::REST, expected.version };
+  SystemState desired{ Action::CheckpointFull, Phase::REST, expected.version };
   if(!system_state_.compare_exchange_strong(expected, desired)) {
     // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
     return false;
@@ -2444,17 +2499,22 @@ bool FasterKv<K, V, D>::Checkpoint(void(*persistence_callback)(uint64_t persiste
   // We are going to start a checkpoint.
   epoch_.ResetPhaseFinished();
   // Initialize all contexts
-  disk.CreateIndexCheckpointDirectory(desired.version);
-  disk.CreateCprCheckpointDirectory(desired.version);
+  token = Guid::Create();
+  disk.CreateIndexCheckpointDirectory(token);
+  disk.CreateCprCheckpointDirectory(token);
   // Obtain tail address for fuzzy index checkpoint
   if(!fold_over_snapshot) {
-    checkpoint_.InitializeCheckpoint(desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), true,
-                                     hlog.flushed_until_address.load(), persistence_callback);
+                                     hlog.flushed_until_address.load(),
+                                     index_persistence_callback,
+                                     hybrid_log_persistence_callback);
   } else {
-    checkpoint_.InitializeCheckpoint(desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), false,
-                                     Address::kInvalidAddress, persistence_callback);
+                                     Address::kInvalidAddress, index_persistence_callback,
+                                     hybrid_log_persistence_callback);
+
   }
   InitializeCheckpointLocks();
   // Let other threads know that the checkpoint has started.
@@ -2463,27 +2523,89 @@ bool FasterKv<K, V, D>::Checkpoint(void(*persistence_callback)(uint64_t persiste
 }
 
 template <class K, class V, class D>
-Status FasterKv<K, V, D>::Recover(uint32_t cpr_version, uint32_t index_version,
+bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status result),
+                                        Guid& token) {
+  // Only one thread can initiate a checkpoint at a time.
+  SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
+  SystemState desired{ Action::CheckpointIndex, Phase::REST, expected.version };
+  if(!system_state_.compare_exchange_strong(expected, desired)) {
+    // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
+    return false;
+  }
+  // We are going to start a checkpoint.
+  epoch_.ResetPhaseFinished();
+  // Initialize all contexts
+  token = Guid::Create();
+  disk.CreateIndexCheckpointDirectory(token);
+  checkpoint_.InitializeIndexCheckpoint(token, desired.version,
+                                        state_[resize_info_.version].size(),
+                                        hlog.begin_address.load(), hlog.GetTailAddress(),
+                                        index_persistence_callback);
+  // Let other threads know that the checkpoint has started.
+  system_state_.store(desired.GetNextState());
+  return true;
+}
+
+template <class K, class V, class D>
+bool FasterKv<K, V, D>::CheckpointHybridLog(void(*hybrid_log_persistence_callback)(Status result,
+    uint64_t persistent_serial_num), Guid& token) {
+  // Only one thread can initiate a checkpoint at a time.
+  SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
+  SystemState desired{ Action::CheckpointHybridLog, Phase::REST, expected.version };
+  if(!system_state_.compare_exchange_strong(expected, desired)) {
+    // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
+    return false;
+  }
+  // We are going to start a checkpoint.
+  epoch_.ResetPhaseFinished();
+  // Initialize all contexts
+  token = Guid::Create();
+  disk.CreateCprCheckpointDirectory(token);
+  // Obtain tail address for fuzzy index checkpoint
+  if(!fold_over_snapshot) {
+    checkpoint_.InitializeHybridLogCheckpoint(token, desired.version, true,
+        hlog.flushed_until_address.load(), hybrid_log_persistence_callback);
+  } else {
+    checkpoint_.InitializeHybridLogCheckpoint(token, desired.version, false,
+        Address::kInvalidAddress, hybrid_log_persistence_callback);
+  }
+  InitializeCheckpointLocks();
+  // Let other threads know that the checkpoint has started.
+  system_state_.store(desired.GetNextState());
+  return true;
+}
+
+template <class K, class V, class D>
+Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_log_token,
+                                  uint32_t& version,
                                   std::vector<Guid>& session_ids) {
+  version = 0;
   session_ids.clear();
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::Recover, Phase::REST, expected.version })) {
     return Status::Aborted;
   }
-  checkpoint_.InitializeRecover();
+  checkpoint_.InitializeRecover(index_token, hybrid_log_token);
   Status status;
 #define BREAK_NOT_OK(s) \
     status = (s); \
-    if (status != Status::Ok) break \
+    if (status != Status::Ok) break
 
   do {
     // Index and log metadata.
-    BREAK_NOT_OK(ReadIndexMetadata(index_version));
-    BREAK_NOT_OK(ReadCprMetadata(cpr_version));
-    system_state_.store(SystemState{ Action::Recover, Phase::REST, cpr_version + 1 });
+    BREAK_NOT_OK(ReadIndexMetadata(index_token));
+    BREAK_NOT_OK(ReadCprMetadata(hybrid_log_token));
+    if(checkpoint_.index_metadata.version != checkpoint_.log_metadata.version) {
+      // Index and hybrid-log checkpoints should have the same version.
+      status = Status::Corruption;
+      break;
+    }
 
-    BREAK_NOT_OK(ReadCprContexts(cpr_version, checkpoint_.log_metadata.guids));
+    system_state_.store(SystemState{ Action::Recover, Phase::REST,
+                                     checkpoint_.log_metadata.version + 1 });
+
+    BREAK_NOT_OK(ReadCprContexts(hybrid_log_token, checkpoint_.log_metadata.guids));
     // The index itself (including overflow buckets).
     BREAK_NOT_OK(RecoverFuzzyIndex());
     BREAK_NOT_OK(RecoverFuzzyIndexComplete(true));
@@ -2499,9 +2621,11 @@ Status FasterKv<K, V, D>::Recover(uint32_t cpr_version, uint32_t index_version,
     for(const auto& token : checkpoint_.continue_tokens) {
       session_ids.push_back(token.first);
     }
+    version = checkpoint_.log_metadata.version;
   }
   checkpoint_.RecoverDone();
-  system_state_.store(SystemState{ Action::None, Phase::REST, cpr_version + 1 });
+  system_state_.store(SystemState{ Action::None, Phase::REST,
+                                   checkpoint_.log_metadata.version + 1 });
   return status;
 #undef BREAK_NOT_OK
 }

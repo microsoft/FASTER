@@ -9,6 +9,7 @@
 #include <string>
 
 #include "../core/gc_state.h"
+#include "../core/guid.h"
 #include "../core/light_epoch.h"
 #include "../core/utility.h"
 #include "../environment/file.h"
@@ -456,30 +457,30 @@ class FileSystemDisk {
     return log_;
   }
 
-  std::string relative_index_checkpoint_path(uint32_t version) const {
+  std::string relative_index_checkpoint_path(const Guid& token) const {
     std::string retval = "index-checkpoints";
     retval += FASTER::environment::kPathSeparator;
-    retval += std::to_string(version);
+    retval += token.ToString();
     retval += FASTER::environment::kPathSeparator;
     return retval;
   }
-  std::string index_checkpoint_path(uint32_t version) const {
-    return root_path_ + relative_index_checkpoint_path(version);
+  std::string index_checkpoint_path(const Guid& token) const {
+    return root_path_ + relative_index_checkpoint_path(token);
   }
 
-  std::string relative_cpr_checkpoint_path(uint32_t version) const {
+  std::string relative_cpr_checkpoint_path(const Guid& token) const {
     std::string retval = "cpr-checkpoints";
     retval += FASTER::environment::kPathSeparator;
-    retval += std::to_string(version);
+    retval += token.ToString();
     retval += FASTER::environment::kPathSeparator;
     return retval;
   }
-  std::string cpr_checkpoint_path(uint32_t version) const {
-    return root_path_ + relative_cpr_checkpoint_path(version);
+  std::string cpr_checkpoint_path(const Guid& token) const {
+    return root_path_ + relative_cpr_checkpoint_path(token);
   }
 
-  void CreateIndexCheckpointDirectory(uint32_t version) {
-    std::string index_dir = index_checkpoint_path(version);
+  void CreateIndexCheckpointDirectory(const Guid& token) {
+    std::string index_dir = index_checkpoint_path(token);
     std::experimental::filesystem::path path{ index_dir };
     try {
       std::experimental::filesystem::remove_all(path);
@@ -489,8 +490,8 @@ class FileSystemDisk {
     std::experimental::filesystem::create_directories(path);
   }
 
-  void CreateCprCheckpointDirectory(uint32_t version) {
-    std::string cpr_dir = cpr_checkpoint_path(version);
+  void CreateCprCheckpointDirectory(const Guid& token) {
+    std::string cpr_dir = cpr_checkpoint_path(token);
     std::experimental::filesystem::path path{ cpr_dir };
     try {
       std::experimental::filesystem::remove_all(path);

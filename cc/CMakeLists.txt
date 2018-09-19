@@ -63,10 +63,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set (FASTER_LINK_LIBS
   faster
 )
- 
+
 # Set the link libraries to for test compilation
 set (FASTER_TEST_LINK_LIBS ${FASTER_LINK_LIBS} gtest)
 if(WIN32)
+  set(FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} rpcrt4)
 else()
   set (FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
 endif()
@@ -74,7 +75,7 @@ endif()
 # Set the link libraries to for benchmark binary compilation
 set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_LINK_LIBS})
 if(WIN32)
-set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_LINK_LIBS} wsock32 Ws2_32)
+set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_LINK_LIBS} rpcrt4 wsock32 Ws2_32)
 else()
   set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
 endif()

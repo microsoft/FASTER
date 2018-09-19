@@ -9,6 +9,7 @@
 
 #include "../core/gc_state.h"
 #include "../core/light_epoch.h"
+#include "../core/guid.h"
 #include "../environment/file.h"
 
 namespace FASTER {
@@ -77,28 +78,28 @@ class NullDisk {
     return log_;
   }
 
-  std::string relative_index_checkpoint_path(uint32_t version) const {
+  std::string relative_index_checkpoint_path(const Guid& token) const {
     assert(false);
     return "";
   }
-  std::string index_checkpoint_path(uint32_t version) const {
-    assert(false);
-    return "";
-  }
-
-  std::string relative_cpr_checkpoint_path(uint32_t version) const {
-    assert(false);
-    return "";
-  }
-  std::string cpr_checkpoint_path(uint32_t version) const {
+  std::string index_checkpoint_path(const Guid& token) const {
     assert(false);
     return "";
   }
 
-  void CreateIndexCheckpointDirectory(uint32_t version) {
+  std::string relative_cpr_checkpoint_path(const Guid& token) const {
+    assert(false);
+    return "";
+  }
+  std::string cpr_checkpoint_path(const Guid& token) const {
+    assert(false);
+    return "";
+  }
+
+  void CreateIndexCheckpointDirectory(const Guid& token) {
     assert(false);
   }
-  void CreateCprCheckpointDirectory(uint32_t version) {
+  void CreateCprCheckpointDirectory(const Guid& token) {
     assert(false);
   }
 

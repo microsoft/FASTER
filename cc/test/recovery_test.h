@@ -427,6 +427,7 @@ TEST(CLASS, Serial) {
   static constexpr size_t kNumRecords = 6000000;
 
   Guid session_id;
+  Guid token;
 
   {
     // Populate and checkpoint the store.
@@ -500,15 +501,16 @@ TEST(CLASS, Serial) {
       threads_persistent[idx] = false;
     }
 
-    auto persistence_callback = [](uint64_t persistent_serial_num) {
+    auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
       bool expected = false;
+      ASSERT_EQ(Status::Ok, result);
       ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected,
                   true));
       ++num_threads_persistent;
     };
 
     // checkpoint (transition from REST to INDEX_CHKPT)
-    ASSERT_TRUE(store.Checkpoint(persistence_callback));
+    ASSERT_TRUE(store.Checkpoint(nullptr, hybrid_log_persistence_callback, token));
 
     while(num_threads_persistent < 1) {
       store.CompletePending(false);
@@ -524,8 +526,9 @@ TEST(CLASS, Serial) {
   // Test recovery.
   FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> session_ids;
-  Status status = new_store.Recover(1, 1, session_ids);
+  Status status = new_store.Recover(token, token, version, session_ids);
   ASSERT_EQ(Status::Ok, status);
   ASSERT_EQ(1, session_ids.size());
   ASSERT_EQ(session_id, session_ids[0]);
@@ -932,6 +935,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
   static constexpr size_t kNumRecords = 6000000;
 
   Guid session_id;
+  Guid token;
 
   {
     // Populate and checkpoint the store.
@@ -1005,15 +1009,16 @@ TEST(CLASS, Serial_VariableLengthKey) {
       threads_persistent[idx] = false;
     }
 
-    auto persistence_callback = [](uint64_t persistent_serial_num) {
+    auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
       bool expected = false;
+      ASSERT_EQ(Status::Ok, result);
       ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected,
                   true));
       ++num_threads_persistent;
     };
 
     // checkpoint (transition from REST to INDEX_CHKPT)
-    ASSERT_TRUE(store.Checkpoint(persistence_callback));
+    ASSERT_TRUE(store.Checkpoint(nullptr, hybrid_log_persistence_callback, token));
 
     while(num_threads_persistent < 1) {
       store.CompletePending(false);
@@ -1029,8 +1034,9 @@ TEST(CLASS, Serial_VariableLengthKey) {
   // Test recovery.
   FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> session_ids;
-  Status status = new_store.Recover(1, 1, session_ids);
+  Status status = new_store.Recover(token, token, version, session_ids);
   ASSERT_EQ(Status::Ok, status);
   ASSERT_EQ(1, session_ids.size());
   ASSERT_EQ(session_id, session_ids[0]);
@@ -1258,6 +1264,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
 
   static Guid session_ids[kNumThreads];
   std::memset(session_ids, 0, sizeof(session_ids));
+  static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
   num_threads_persistent = 0;
@@ -1269,8 +1276,9 @@ TEST(CLASS, Concurrent_Insert_Small) {
   static std::atomic<uint32_t> num_threads_started;
   num_threads_started = 0;
 
-  static auto persistence_callback = [](uint64_t persistent_serial_num) {
+  static auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
     bool expected = false;
+    ASSERT_EQ(Status::Ok, result);
     ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
     ++num_threads_persistent;
   };
@@ -1352,7 +1360,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
         std::this_thread::yield();
       }
       // checkpoint (transition from REST to INDEX_CHKPT)
-      ASSERT_TRUE(store->Checkpoint(persistence_callback));
+      ASSERT_TRUE(store->Checkpoint(nullptr, hybrid_log_persistence_callback, token));
 
       // Ensure that the checkpoint completes.
       while(num_threads_persistent < kNumThreads) {
@@ -1423,8 +1431,9 @@ TEST(CLASS, Concurrent_Insert_Small) {
   // Test recovery.
   store_t new_store{ 8192, 201326592, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> recovered_session_ids;
-  Status status = new_store.Recover(1, 1, recovered_session_ids);
+  Status status = new_store.Recover(token, token, version, recovered_session_ids);
   ASSERT_EQ(recovered_session_ids.size(), kNumThreads);
   ASSERT_EQ(Status::Ok, status);
 
@@ -1673,6 +1682,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
 
   static Guid session_ids[kNumThreads];
   std::memset(session_ids, 0, sizeof(session_ids));
+  static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
   num_threads_persistent = 0;
@@ -1684,8 +1694,9 @@ TEST(CLASS, Concurrent_Insert_Large) {
   static std::atomic<uint32_t> num_threads_started;
   num_threads_started = 0;
 
-  static auto persistence_callback = [](uint64_t persistent_serial_num) {
+  static auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
     bool expected = false;
+    ASSERT_EQ(Status::Ok, result);
     ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
     ++num_threads_persistent;
   };
@@ -1767,7 +1778,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
         std::this_thread::yield();
       }
       // checkpoint (transition from REST to INDEX_CHKPT)
-      ASSERT_TRUE(store->Checkpoint(persistence_callback));
+      ASSERT_TRUE(store->Checkpoint(nullptr, hybrid_log_persistence_callback, token));
 
       // Ensure that the checkpoint completes.
       while(num_threads_persistent < kNumThreads) {
@@ -1836,8 +1847,9 @@ TEST(CLASS, Concurrent_Insert_Large) {
   // Test recovery.
   store_t new_store{ 524288, 201326592, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> recovered_session_ids;
-  Status status = new_store.Recover(1, 1, recovered_session_ids);
+  Status status = new_store.Recover(token, token, version, recovered_session_ids);
   ASSERT_EQ(recovered_session_ids.size(), kNumThreads);
   ASSERT_EQ(Status::Ok, status);
 
@@ -2085,6 +2097,7 @@ TEST(CLASS, Concurrent_Update_Small) {
 
   static Guid session_ids[kNumThreads];
   std::memset(session_ids, 0, sizeof(session_ids));
+  static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
   num_threads_persistent = 0;
@@ -2096,10 +2109,10 @@ TEST(CLASS, Concurrent_Update_Small) {
   static std::atomic<uint32_t> num_threads_started;
   num_threads_started = 0;
 
-  static auto persistence_callback = [](uint64_t persistent_serial_num) {
+  static auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
     bool expected = false;
-    ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected,
-                true));
+    ASSERT_EQ(Status::Ok, result);
+    ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
     ++num_threads_persistent;
   };
 
@@ -2192,7 +2205,7 @@ TEST(CLASS, Concurrent_Update_Small) {
         std::this_thread::yield();
       }
       // checkpoint (transition from REST to INDEX_CHKPT)
-      ASSERT_TRUE(store->Checkpoint(persistence_callback));
+      ASSERT_TRUE(store->Checkpoint(nullptr, hybrid_log_persistence_callback, token));
 
       // Ensure that the checkpoint completes.
       while(num_threads_persistent < kNumThreads) {
@@ -2261,8 +2274,9 @@ TEST(CLASS, Concurrent_Update_Small) {
   // Test recovery.
   store_t new_store{ 8192, 201326592, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> recovered_session_ids;
-  Status status = new_store.Recover(1, 1, recovered_session_ids);
+  Status status = new_store.Recover(token, token, version, recovered_session_ids);
   ASSERT_EQ(recovered_session_ids.size(), kNumThreads);
   ASSERT_EQ(Status::Ok, status);
 
@@ -2512,7 +2526,11 @@ TEST(CLASS, Concurrent_Update_Large) {
 
   static Guid session_ids[kNumThreads];
   std::memset(session_ids, 0, sizeof(session_ids));
+  static Guid index_token;
+  static Guid hybrid_log_token;
 
+  static std::atomic<bool> index_checkpoint_completed;
+  index_checkpoint_completed = false;
   static std::atomic<uint32_t> num_threads_persistent;
   num_threads_persistent = 0;
   static std::atomic<bool> threads_persistent[Thread::kMaxNumThreads];
@@ -2523,8 +2541,14 @@ TEST(CLASS, Concurrent_Update_Large) {
   static std::atomic<uint32_t> num_threads_started;
   num_threads_started = 0;
 
-  static auto persistence_callback = [](uint64_t persistent_serial_num) {
+  static auto index_persistence_callback = [](Status result) {
+    ASSERT_EQ(Status::Ok, result);
+    index_checkpoint_completed = true;
+  };
+
+  static auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
     bool expected = false;
+    ASSERT_EQ(Status::Ok, result);
     ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
     ++num_threads_persistent;
   };
@@ -2594,22 +2618,6 @@ TEST(CLASS, Concurrent_Update_Large) {
       }
     }
 
-    // Truncate some old copies of records that we no longer need.
-    static std::atomic<bool> truncated;
-    truncated = false;
-    static std::atomic<bool> complete;
-    complete = false;
-    auto truncate_callback = [](uint64_t offset) {
-      truncated = true;
-    };
-    auto complete_callback = []() {
-      complete = true;
-    };
-    ASSERT_TRUE(store.ShiftBeginAddress(Address{ 33554432L }, truncate_callback,
-                                        complete_callback));
-    while(!truncated || !complete) {
-      store.CompletePending(false);
-    }
     store.StopSession();
 
     /// Update and checkpoint the store.
@@ -2634,10 +2642,16 @@ TEST(CLASS, Concurrent_Update_Large) {
       while(num_threads_started < kNumThreads) {
         std::this_thread::yield();
       }
-      // checkpoint (transition from REST to INDEX_CHKPT)
-      ASSERT_TRUE(store->Checkpoint(persistence_callback));
+      // checkpoint the index (transition from REST to INDEX_CHKPT)
+      ASSERT_TRUE(store->CheckpointIndex(index_persistence_callback, index_token));
+      // Ensure that the index checkpoint completes.
+      while(!index_checkpoint_completed) {
+        store->CompletePending(false);
+      }
 
-      // Ensure that the checkpoint completes.
+      // checkpoint the hybrid log (transition from REST to PREPARE)
+      ASSERT_TRUE(store->CheckpointHybridLog(hybrid_log_persistence_callback, hybrid_log_token));
+      // Ensure that the hybrid-log checkpoint completes.
       while(num_threads_persistent < kNumThreads) {
         store->CompletePending(false);
       }
@@ -2711,8 +2725,9 @@ TEST(CLASS, Concurrent_Update_Large) {
   // Test recovery.
   store_t new_store{ 524288, 201326592, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> recovered_session_ids;
-  Status status = new_store.Recover(1, 1, recovered_session_ids);
+  Status status = new_store.Recover(index_token, hybrid_log_token, version, recovered_session_ids);
   ASSERT_EQ(recovered_session_ids.size(), kNumThreads);
   ASSERT_EQ(Status::Ok, status);
 
@@ -2808,7 +2823,7 @@ TEST(CLASS, Concurrent_Update_Large) {
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
-        ASSERT_EQ(Status::Pending, result);
+        ASSERT_EQ(Status::Pending, result) << idx;
       }
       if(idx % 256 == 0) {
         store->Refresh();
@@ -2962,6 +2977,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
 
   static Guid session_ids[kNumThreads];
   std::memset(session_ids, 0, sizeof(session_ids));
+  static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
   num_threads_persistent = 0;
@@ -2973,8 +2989,9 @@ TEST(CLASS, Concurrent_Rmw_Small) {
   static std::atomic<uint32_t> num_threads_started;
   num_threads_started = 0;
 
-  static auto persistence_callback = [](uint64_t persistent_serial_num) {
+  static auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
     bool expected = false;
+    ASSERT_EQ(Status::Ok, result);
     ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
     ++num_threads_persistent;
   };
@@ -3075,7 +3092,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
         std::this_thread::yield();
       }
       // checkpoint (transition from REST to INDEX_CHKPT)
-      ASSERT_TRUE(store->Checkpoint(persistence_callback));
+      ASSERT_TRUE(store->Checkpoint(nullptr, hybrid_log_persistence_callback, token));
 
       // Ensure that the checkpoint completes.
       while(num_threads_persistent < kNumThreads) {
@@ -3148,8 +3165,9 @@ TEST(CLASS, Concurrent_Rmw_Small) {
   // Test recovery.
   store_t new_store{ 8192, 402653184, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> recovered_session_ids;
-  Status status = new_store.Recover(1, 1, recovered_session_ids);
+  Status status = new_store.Recover(token, token, version, recovered_session_ids);
   ASSERT_EQ(recovered_session_ids.size(), kNumThreads);
   ASSERT_EQ(Status::Ok, status);
 
@@ -3400,6 +3418,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
 
   static Guid session_ids[kNumThreads];
   std::memset(session_ids, 0, sizeof(session_ids));
+  static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
   num_threads_persistent = 0;
@@ -3411,8 +3430,9 @@ TEST(CLASS, Concurrent_Rmw_Large) {
   static std::atomic<uint32_t> num_threads_started;
   num_threads_started = 0;
 
-  static auto persistence_callback = [](uint64_t persistent_serial_num) {
+  static auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
     bool expected = false;
+    ASSERT_EQ(Status::Ok, result);
     ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
     ++num_threads_persistent;
   };
@@ -3541,7 +3561,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
         std::this_thread::yield();
       }
       // checkpoint (transition from REST to INDEX_CHKPT)
-      ASSERT_TRUE(store->Checkpoint(persistence_callback));
+      ASSERT_TRUE(store->Checkpoint(nullptr, hybrid_log_persistence_callback, token));
 
       // Ensure that the checkpoint completes.
       while(num_threads_persistent < kNumThreads) {
@@ -3613,8 +3633,9 @@ TEST(CLASS, Concurrent_Rmw_Large) {
   // Test recovery.
   store_t new_store{ 524288 * 2, 402653184, "storage", 0.4 };
 
+  uint32_t version;
   std::vector<Guid> recovered_session_ids;
-  Status status = new_store.Recover(1, 1, recovered_session_ids);
+  Status status = new_store.Recover(token, token, version, recovered_session_ids);
   ASSERT_EQ(recovered_session_ids.size(), kNumThreads);
   ASSERT_EQ(Status::Ok, status);
 
