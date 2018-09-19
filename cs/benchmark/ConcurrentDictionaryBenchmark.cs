@@ -172,7 +172,7 @@ namespace FASTER.benchmark
                                 break;
                             }
                         default:
-                            throw new NotImplementedException("Unexpected op: " + op);
+                            throw new InvalidOperationException("Unexpected op: " + op);
                     }
                 }
 

@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 
 namespace SumStore
 {
-    public class SingleThreadedRecoveryTest : IFASTERRecoveryTest
+    public class SingleThreadedRecoveryTest : IFasterRecoveryTest
     {
         const long numUniqueKeys = (1 << 23);
         const long keySpace = (1L << 15);
@@ -20,14 +20,14 @@ namespace SumStore
         const long refreshInterval = (1 << 8);
         const long completePendingInterval = (1 << 12);
         const long checkpointInterval = (1 << 20);
-        ICustomFaster fht;
+        ICustomFasterKv fht;
 
         public SingleThreadedRecoveryTest()
         {
             // Create FASTER index
-            var log = FASTERFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogFileName());
-            fht = FASTERFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFaster>
+            var log = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogFileName());
+            fht = FasterFactory.Create
+                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
                 (keySpace, log);
         }
 

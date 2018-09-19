@@ -5,7 +5,7 @@ using System.IO;
 
 namespace FASTER.core
 {
-    public interface IFASTERValue<TValue>
+    public interface IFasterValue<TValue>
     {
         TValue Clone();
         void Deserialize(Stream fromStream);

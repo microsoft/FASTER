@@ -15,8 +15,8 @@ namespace NestedTypesTest
     {
         static void Main(string[] args)
         {
-            var log = FASTERFactory.CreateLogDevice(Path.GetTempPath() + "hybridlog.log");
-            var h = FASTERFactory.Create
+            var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "hybridlog.log");
+            var h = FasterFactory.Create
                 <
 #if BLIT_KEY && GENERIC_BLIT_KEY
                 CompoundGroupKey<Empty, TimeKey<int>>

@@ -30,9 +30,40 @@ namespace FASTER.core
         public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    public class PageAsyncFlushResult : IAsyncResult
+    public struct PageAsyncReadResult<TContext> : IAsyncResult
     {
         public long page;
+        public TContext context;
+        public CountdownEvent handle;
+        public SectorAlignedMemory freeBuffer1;
+        public IOCompletionCallback callback;
+        public int count;
+        public ISegmentedDevice objlogDevice;
+
+        public bool IsCompleted => throw new NotImplementedException();
+
+        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
+
+        public object AsyncState => throw new NotImplementedException();
+
+        public bool CompletedSynchronously => throw new NotImplementedException();
+
+        public void Free()
+        {
+            if (freeBuffer1.buffer != null)
+                freeBuffer1.Return();
+
+            if (handle != null)
+            {
+                handle.Signal();
+            }
+        }
+    }
+
+    public class PageAsyncFlushResult<TContext> : IAsyncResult
+    {
+        public long page;
+        public TContext context;
         public bool partial;
         public long untilAddress;
         public int count;
@@ -41,19 +72,6 @@ namespace FASTER.core
         public SectorAlignedMemory freeBuffer1;
         public SectorAlignedMemory freeBuffer2;
 
-        public bool IsCompleted => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
-    }
-
-    public struct PageAsyncReadResult<TContext> : IAsyncResult
-    {
-        public long page;
-        public TContext context; 
 
         public bool IsCompleted => throw new NotImplementedException();
 
@@ -62,20 +80,19 @@ namespace FASTER.core
         public object AsyncState => throw new NotImplementedException();
 
         public bool CompletedSynchronously => throw new NotImplementedException();
-    }
 
-    public struct PageAsyncFlushResult<TContext> : IAsyncResult
-    {
-        public long page;
-        public TContext context;
+        public void Free()
+        {
+            if (freeBuffer1.buffer != null)
+                freeBuffer1.Return();
+            if (freeBuffer2.buffer != null)
+                freeBuffer2.Return();
 
-        public bool IsCompleted => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
+            if (handle != null)
+            {
+                handle.Signal();
+            }
+        }
     }
 
     public unsafe class HashIndexPageAsyncFlushResult : IAsyncResult

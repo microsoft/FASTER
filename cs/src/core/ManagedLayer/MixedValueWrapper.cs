@@ -53,16 +53,16 @@ namespace FASTER.core
 
         public static void Serialize(MixedValueWrapper* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(MixedValueWrapper* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         public static void Free(MixedValueWrapper* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
     #endregion
 
@@ -214,16 +214,16 @@ namespace FASTER.core
 
         public static void Serialize(MixedValueWrapper* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(MixedValueWrapper* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         public static void Free(MixedValueWrapper* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
     #endregion
 

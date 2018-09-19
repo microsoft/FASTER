@@ -22,8 +22,8 @@ namespace FASTER.test
         [TestInitialize]
         public void Setup()
         {
-            var log = FASTERFactory.CreateLogDevice(Path.GetTempPath() + "\\hybridlog_native.log");
-            fht = FASTERFactory.Create
+            var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "\\hybridlog_native.log");
+            fht = FasterFactory.Create
                 <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFaster>
                 (128, log);
             fht.StartSession();

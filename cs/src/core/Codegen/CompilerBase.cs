@@ -224,7 +224,7 @@ namespace FASTER.core.Roslyn
             {
                 this.TemplateName = name;
                 // "dotnet build" cannot handling resx's file resource, so using EmbeddedResource instead
-                var asm = typeof(FASTER.core.IFASTER).Assembly;
+                var asm = typeof(FASTER.core.IFasterKV).Assembly;
                 foreach (var x in asm.GetManifestResourceNames())
                 {
                     // resource name format is prefixed by root namespace and relative path separated by '.', like "FASTER.core.Index.FASTER.FASTER.cs"

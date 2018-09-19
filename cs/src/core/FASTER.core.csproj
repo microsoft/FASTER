@@ -37,9 +37,6 @@
     <None Include="..\native\bin\x64\Release\adv-file-ops.dll" Link="adv-file-ops.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\native\bin\x64\Release\readtsc.dll" Link="readtsc.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
     <ItemGroup>

@@ -93,7 +93,7 @@ namespace FASTER.test
 
         public void CopyUpdater(MyKey key, MyInput input, MyValue oldValue, ref MyValue newValue)
         {
-            newValue.value = oldValue.value + input.value;
+            newValue = new MyValue { value = oldValue.value + input.value };
         }
 
         public int InitialValueLength(MyKey key, MyInput input)
@@ -103,7 +103,7 @@ namespace FASTER.test
 
         public void InitialUpdater(MyKey key, MyInput input, ref MyValue value)
         {
-            value.value = input.value;
+            value = new MyValue { value = input.value };
         }
 
         public void InPlaceUpdater(MyKey key, MyInput input, ref MyValue value)

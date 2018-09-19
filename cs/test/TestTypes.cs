@@ -52,16 +52,16 @@ namespace FASTER.test
 
         public static void Serialize(KeyStruct* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(KeyStruct* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         public static void Free(KeyStruct* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         #endregion
 
@@ -113,16 +113,16 @@ namespace FASTER.test
 
         public static void Serialize(ValueStruct* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(ValueStruct* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         public static void Free(ValueStruct* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         #endregion
 
@@ -163,11 +163,10 @@ namespace FASTER.test
         Status Read(KeyStruct* key, InputStruct* input, OutputStruct* output, Empty* context, long lsn);
         Status Upsert(KeyStruct* key, ValueStruct* value, Empty* context, long lsn);
         Status RMW(KeyStruct* key, InputStruct* input, Empty* context, long lsn);
-        Status Delete(KeyStruct* key, Empty* context, long lsn);
         bool CompletePending(bool wait);
 
         /* Statistics */
-        long Size { get; }
+        long LogTailAddress { get; }
         void DumpDistribution();
     }
     public unsafe class Functions

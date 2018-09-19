@@ -100,10 +100,13 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void InitialUpdater(MixedKeyWrapper* key, MixedInputWrapper* input, MixedValueWrapper* value)
         {
+            UserType.Initialize(value);
+
             userFunctions.InitialUpdater(
                 UserType.Convert(key),
                 UserType.Convert(input),
                 ref UserType.Convert(value));
+
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -122,6 +125,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void CopyUpdater(MixedKeyWrapper* key, MixedInputWrapper* input, MixedValueWrapper* oldValue, MixedValueWrapper* newValue)
         {
+            UserType.Initialize(newValue);
+
             userFunctions.CopyUpdater(
                 UserType.Convert(key),
                 UserType.Convert(input),

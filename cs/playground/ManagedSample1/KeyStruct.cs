@@ -6,7 +6,7 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSample1
+namespace ManagedSampleCore
 {
     public unsafe struct KeyStruct
     {
@@ -44,17 +44,17 @@ namespace ManagedSample1
 
         public static void Serialize(KeyStruct* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(KeyStruct* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Free(KeyStruct* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         #endregion
 

@@ -13,7 +13,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FASTERBase, IFASTER
+    public unsafe partial class FasterKV : FasterBase, IFasterKV
     { 
         public PersistentMemoryMalloc hlog;
 
@@ -22,7 +22,7 @@ namespace FASTER.core
         private const bool kCopyReadsToTail = false;
         private const bool breakWhenClassIsLoaded = false;
 
-        public long Size => hlog.GetTailAddress();
+        public long LogTailAddress => hlog.GetTailAddress();
 
         public enum CheckpointType
         {
@@ -156,6 +156,17 @@ namespace FASTER.core
             return InternalCompletePending(wait);
         }
 
+        public bool CompleteCheckpoint(bool wait = false)
+        {
+            do
+            {
+                CompletePending();
+                if (_systemState.phase == Phase.REST)
+                    return true;
+            } while (wait);
+            return false;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(Key* key, Input* input, Output* output, Context* userContext, long monotonicSerialNum)
         {
@@ -197,13 +208,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(Key* key, Input* input, Context* userContext, long monotonicSerialNum)
         {
-            /*
-            if (((RecordInfo*)hlog.GetPhysicalAddress(0))->Invalid != true)
-            {
-                Debugger.Break();
-            }*/
-
-
             var context = default(PendingContext);
             var internalStatus = InternalRMW(key, input, userContext, ref context);
             var status = default(Status);
@@ -217,11 +221,6 @@ namespace FASTER.core
             }
             threadCtx.serialNum = monotonicSerialNum;
             return status;
-        }
-
-        public Status Delete(Key* key, Context* userContext, long monotonicSerialNum)
-        {
-            throw new NotImplementedException();
         }
 
         /// <summary>

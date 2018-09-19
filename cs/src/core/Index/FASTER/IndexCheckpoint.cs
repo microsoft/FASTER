@@ -16,7 +16,7 @@ namespace FASTER.core
 {
 
 
-    public unsafe partial class FASTERBase
+    public unsafe partial class FasterBase
     {
         // Derived class facing persistence API
         protected IndexCheckpointInfo _indexCheckpoint;

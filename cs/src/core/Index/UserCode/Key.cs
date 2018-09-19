@@ -115,17 +115,17 @@ namespace FASTER.core
 
         public static void Serialize(Key* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(Key* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Free(Key* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static Key* MoveToContext(Key* key)

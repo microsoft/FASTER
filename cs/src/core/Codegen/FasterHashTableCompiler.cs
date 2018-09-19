@@ -86,7 +86,7 @@ namespace FASTER.core.Roslyn
             UpdateDictionary(d, FindSymbol("Output"), this.runtimeTypeParameters.ElementAt(i++));
             UpdateDictionary(d, FindSymbol("Context"), this.runtimeTypeParameters.ElementAt(i++));
             UpdateDictionary(d, FindSymbol("Functions"), this.runtimeTypeParameters.ElementAt(i++));
-            UpdateDictionary(d, FindSymbol("IFASTER"), this.runtimeTypeParameters.ElementAt(i++));
+            UpdateDictionary(d, FindSymbol("IFasterKV"), this.runtimeTypeParameters.ElementAt(i++));
 
             var pass1 = new TypeReplacer(this.compilation, d);
             var pass2 = new NamespaceReplacer(this.compilation);

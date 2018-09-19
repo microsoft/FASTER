@@ -17,7 +17,7 @@ using System.Threading;
 namespace FASTER.core
 {   
 
-    public unsafe partial class FasterKV : FASTERBase, IFASTER
+    public unsafe partial class FasterKV : FasterBase, IFasterKV
    {
         public class EpochPhaseIdx
         {
@@ -505,7 +505,7 @@ namespace FASTER.core
                                 }
                                 else
                                 {
-                                    notify = _hybridLogCheckpoint.flushed.IsSet;
+                                    notify = (_hybridLogCheckpoint.flushed != null) && _hybridLogCheckpoint.flushed.IsSet;
                                 }
 
                                 if(_checkpointType == CheckpointType.FULL)

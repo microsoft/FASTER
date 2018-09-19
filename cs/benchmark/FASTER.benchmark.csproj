@@ -30,6 +30,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\src\native\bin\x64\Release\readtsc.dll" Link="readtsc.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="App.config" />
   </ItemGroup>
 

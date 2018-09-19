@@ -14,7 +14,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FASTERBase, IFASTER
+    public unsafe partial class FasterKV : FasterBase, IFasterKV
     {
         enum LatchOperation : byte
         {
@@ -1514,6 +1514,8 @@ namespace FASTER.core
                     }
                     if (!force)
                         break;
+
+                    InternalRefresh();
                 }
             }
         }

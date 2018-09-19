@@ -73,11 +73,13 @@
   </Choose>
   <ItemGroup>
     <Compile Include="ComponentRecoveryTests.cs" />
+    <Compile Include="ObjectRecoveryTest.cs" />
     <Compile Include="FullRecoveryTests.cs" />
     <Compile Include="ObjectFASTERTests.cs" />
     <Compile Include="BasicFASTERTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ObjectTestTypes.cs" />
+    <Compile Include="ObjectRecoveryTestTypes.cs" />
     <Compile Include="RecoveryTestTypes.cs" />
     <Compile Include="TestTypes.cs" />
   </ItemGroup>

@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace ClassCache
 {
-    public class CacheKey : IFASTERKey<CacheKey>
+    public class CacheKey : IFasterKey<CacheKey>
     {
         public long key;
 
@@ -48,7 +48,7 @@ namespace ClassCache
         }
     }
 
-    public class CacheValue : IFASTERValue<CacheValue>
+    public class CacheValue : IFasterValue<CacheValue>
     {
         public long value;
 

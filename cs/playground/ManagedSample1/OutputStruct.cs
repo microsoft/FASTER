@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-namespace ManagedSample1
+namespace ManagedSampleCore
 {
     public unsafe struct OutputStruct
     {

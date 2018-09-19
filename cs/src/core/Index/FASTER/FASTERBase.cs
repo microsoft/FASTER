@@ -223,7 +223,7 @@ namespace FASTER.core
         public HashBucket* tableAligned;
     }
 
-	public unsafe partial class FASTERBase
+	public unsafe partial class FasterBase
 	{
 		// Initial size of the table
 		protected long minTableSize = 16;
@@ -249,7 +249,7 @@ namespace FASTER.core
 
 		protected long currentSize;
 
-		public FASTERBase()
+		public FasterBase()
 		{
             epoch = LightEpoch.Instance;
 		}

@@ -8,15 +8,21 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ManagedSample1
+namespace ManagedSampleCore
 {
     public class Program
     {
         static unsafe void Main(string[] args)
         {
-            var fht = FASTERFactory.Create
-                <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFaster>
-                (128, FASTERFactory.CreateLogDevice(""), LogMutableFraction: 0.5);
+            // This sample uses the unsafe API of FASTER, and works only for blittable struct types
+            // Your structs have to implement certain static methods (see the structs for details)
+            // You also define the interface (ICustomFaster) that will be returned by the factory
+            // This sample represents the highest performance level for FASTER, at the expense of
+            // supporting limited types.
+
+            var fht = FasterFactory.Create
+                <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFasterKv>
+                (128, FasterFactory.CreateLogDevice(""), LogMutableFraction: 0.5);
 
             fht.StartSession();
 

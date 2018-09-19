@@ -46,7 +46,7 @@ namespace FASTER.benchmark
         readonly IDevice device;
 
 #if USE_CODEGEN
-        IFASTER
+        IFasterKV
 #else
         FasterKV
 #endif
@@ -86,10 +86,10 @@ namespace FASTER.benchmark
             freq = HiResTimer.EstimateCPUFrequency();
 #endif
 
-            device = FASTERFactory.CreateLogDevice("C:\\data\\hlog");
+            device = FasterFactory.CreateLogDevice("C:\\data\\hlog");
 
 #if USE_CODEGEN
-            store = FASTERFactory.Create<Key, Value, Input, Output, Context, Functions, IFASTER>
+            store = FasterFactory.Create<Key, Value, Input, Output, Context, Functions, IFasterKV>
 #else
             store = new FasterKV
 #endif
@@ -181,7 +181,7 @@ namespace FASTER.benchmark
                                 break;
                             }
                         default:
-                            throw new NotImplementedException("Unexpected op: " + op);
+                            throw new InvalidOperationException("Unexpected op: " + op);
                     }
                 }
 
@@ -255,7 +255,7 @@ namespace FASTER.benchmark
             sw.Stop();
             Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
 
-            long startTailAddress = store.Size;
+            long startTailAddress = store.LogTailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
 
 
@@ -308,7 +308,7 @@ namespace FASTER.benchmark
 #endif
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
-            long endTailAddress = store.Size;
+            long endTailAddress = store.LogTailAddress;
             Console.WriteLine("End tail address = " + endTailAddress);
 
             Console.WriteLine("Total " + total_ops_done + " ops done " + " in " + seconds + " secs.");

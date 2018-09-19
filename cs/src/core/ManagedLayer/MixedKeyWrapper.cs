@@ -46,17 +46,17 @@ namespace FASTER.core
 
         public static void Serialize(MixedKeyWrapper* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(MixedKeyWrapper* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Free(MixedKeyWrapper* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
     #endregion

@@ -76,10 +76,10 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe partial class FasterKV : FASTERBase, IFASTER
+        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
         ///    {
         ///
-        ///        private void AsyncGetFromDisk(long fromLogical,  [rest of string was truncated]&quot;;.
+        ///        private void AsyncGetFromDisk(long fromLogical [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string AsyncIO {
             get {
@@ -104,11 +104,12 @@ namespace FASTER.core.Properties {
         ///{
         ///    public static class Config
         ///    {
-        ///        //public static string CheckpointDirectory = Path.GetTempPath() + &quot;fasterlogs&quot;;
-        ///        public static string CheckpointDirectory = &quot;D:\\data&quot;;
+        ///        public static string CheckpointDirectory = &quot;C:\\data&quot;;
         ///    }
         ///
-        ///    pub [rest of string was truncated]&quot;;.
+        ///    public struct AsyncGetFromDiskResult&lt;TContext&gt; : IAsyncResult
+        ///    {
+        ///        public TContex [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string AsyncResultTypes {
             get {
@@ -136,9 +137,9 @@ namespace FASTER.core.Properties {
         ///namespace FASTER.core
         ///{   
         ///
-        ///    public unsafe partial class FasterKV : FASTERBase, IFASTER
+        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
         ///   {
-        ///        public class [rest of string was truncated]&quot;;.
+        ///        public cla [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string Checkpoint {
             get {
@@ -184,6 +185,8 @@ namespace FASTER.core.Properties {
         ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
         ///// Licensed under the MIT license.
         ///
+        ///#pragma warning disable 0162
+        ///
         ///using System;
         ///using System.Collections.Concurrent;
         ///using System.Collections.Generic;
@@ -194,12 +197,11 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe partial class FasterKV : FASTERBase, IFASTER
+        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
         ///    { 
-        ///        public PersistentMemoryMalloc&lt;byte&gt; hlog;
+        ///        public PersistentMemoryMalloc hlog;
         ///
-        ///        public static int numFuzzy = 0;
-        ///        public sta [rest of string was truncated]&quot;;.
+        ///        public static int numPe [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string FASTER {
             get {
@@ -239,6 +241,7 @@ namespace FASTER.core.Properties {
         ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
         ///// Licensed under the MIT license.
         ///
+        ///#pragma warning disable 0162
         ///#define CPR
         ///
         ///using System;
@@ -251,13 +254,12 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe partial class FasterKV : FASTERBase, IFASTER
+        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
         ///    {
         ///        enum LatchOperation : byte
         ///        {
         ///            None,
-        ///            ReleaseShared,
-        ///     [rest of string was truncated]&quot;;.
+        /// [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string FASTERImpl {
             get {
@@ -279,12 +281,12 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe partial class FasterKV : FASTERBase, IFASTER
+        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
         ///    {
         ///
         ///        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ///        protected Guid InternalAcquire()
-        ///        { [rest of string was truncated]&quot;;.
+        ///        internal Guid InternalAcquire()
+        ///         [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string FASTERThread {
             get {
@@ -306,12 +308,12 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe interface IFASTER_Mixed
+        ///    public unsafe interface IFasterKV_Mixed
         ///    {
         ///        /* Thread-related operations */
         ///        Guid StartSession();
         ///        long ContinueSession(Guid guid);
-        ///        void StopSess [rest of string was truncated]&quot;;.
+        ///        void StopSe [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string IFASTER_Mixed {
             get {
@@ -338,7 +340,7 @@ namespace FASTER.core.Properties {
         ///{
         ///
         ///
-        ///    public unsafe partial class FASTERBase
+        ///    public unsafe partial class FasterBase
         ///    {
         ///        // Derived class facing persistence API
         ///        pr [rest of string was truncated]&quot;;.
@@ -366,7 +368,7 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe partial class FASTERBase
+        ///    public unsafe partial class FasterBase
         ///    {
         ///        // Derived class exposed API
         ///        protected void Re [rest of string was truncated]&quot;;.
@@ -446,8 +448,7 @@ namespace FASTER.core.Properties {
         ///    {
         ///        public static MixedUserFunctions userFunctions;
         ///
-        ///        public static void RMWCompletionCallback(MixedKeyWrapper* key, MixedInputWrapper* input, MixedContextWrapper* ctx)
-        ///        [rest of string was truncated]&quot;;.
+        ///        public static void RMWCompletionCallback(MixedKeyWrapper* key, MixedInputWrapper* input, MixedContextWrapper* ctx, Status s [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string MixedFunctionsWrapper {
             get {
@@ -528,13 +529,10 @@ namespace FASTER.core.Properties {
         ///{
         ///    [FASTER.core.Roslyn.TypeKind(&quot;user&quot;)]
         ///    public unsafe class MixedManagedFast
-        ///        :
-        ///        IManagedFAST&lt;MixedKey, MixedValue, MixedInput, MixedOutput, MixedContext&gt;
+        ///        : IManagedFasterKV&lt;MixedKey, MixedValue, MixedInput, MixedOutput, MixedContext&gt;
         ///    {
-        ///        private IFASTER_Mixed store;
-        ///        public long Size =&gt; store.Size;
-        ///
-        ///    [rest of string was truncated]&quot;;.
+        ///        private IFasterKV_Mixed store;
+        ///        public long LogTailAddress =&gt; store.LogTa [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string MixedManagedFAST {
             get {
@@ -583,7 +581,7 @@ namespace FASTER.core.Properties {
         ///#else
         ///    class
         ///#endif
-        ///        MixedKey : IFASTERKey&lt;MixedKey&gt;
+        ///        MixedKey : IFasterKey&lt;MixedKey&gt;
         ///    {
         ///        public long key;
         ///
@@ -613,15 +611,15 @@ namespace FASTER.core.Properties {
         ///{
         ///    public class MixedUserFunctions : IUserFunctions&lt;MixedKey, MixedValue, MixedInput, MixedOutput, MixedContext&gt;
         ///    {
-        ///        public void ReadCompletionCallback(MixedContext ctx, MixedOutput output)
+        ///        public void ReadCompletionCallback(MixedContext ctx, MixedOutput output, Status status)
         ///        {
         ///        }
         ///
-        ///        public void RMWCompletionCallback(MixedContext ctx)
+        ///        public void RMWCompletionCallback(MixedContext ctx, Status status)
         ///        {
         ///        }
         ///
-        ///        public void UpsertCompl [rest of string was truncated]&quot;;.
+        ///  [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string MixedUserFunctions {
             get {
@@ -661,7 +659,6 @@ namespace FASTER.core.Properties {
         ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
         ///// Licensed under the MIT license.
         ///
-        ///#define CALLOC
         ///using System;
         ///using System.Runtime.CompilerServices;
         ///using System.Threading;
@@ -677,7 +674,9 @@ namespace FASTER.core.Properties {
         ///
         ///	public enum FlushStatus : int { Flushed, InProgress };
         ///
-        ///	public enum CloseStatus : int { Close [rest of string was truncated]&quot;;.
+        ///	public enum CloseStatus : int { Closed, Open };
+        ///
+        ///   [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string PersistentMemoryMalloc {
             get {
@@ -689,6 +688,8 @@ namespace FASTER.core.Properties {
         ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
         ///// Licensed under the MIT license.
         ///
+        ///#pragma warning disable 0162
+        ///
         ///using System;
         ///using System.Diagnostics;
         ///using System.IO;
@@ -698,11 +699,11 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe partial class PersistentMemoryMalloc&lt;T&gt; : IAllocator
+        ///    public unsafe partial class PersistentMemoryMalloc : IAllocator
         ///    {
-        ///        public void AsyncReadPageFromDiskRecovery&lt;TContext&gt;(
-        ///                                        long readPageStart, 
-        ///                  [rest of string was truncated]&quot;;.
+        ///        public void RecoveryReset(long tailAddress, long headAddress)
+        ///        {
+        ///            long tailPage = Ge [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string Recovery {
             get {

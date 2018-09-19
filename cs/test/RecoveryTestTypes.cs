@@ -53,16 +53,16 @@ namespace FASTER.test.recovery.sumstore
 
         public static void Serialize(AdId* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(AdId* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         public static void Free(AdId* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         #endregion
     }
@@ -125,16 +125,16 @@ namespace FASTER.test.recovery.sumstore
 
         public static void Serialize(NumClicks* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(NumClicks* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         public static void Free(NumClicks* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         #endregion
     }
@@ -167,11 +167,10 @@ namespace FASTER.test.recovery.sumstore
         Status Read(AdId* key, Input* input, Output* output, Empty* context, long lsn);
         Status Upsert(AdId* key, NumClicks* value, Empty* context, long lsn);
         Status RMW(AdId* key, Input* input, Empty* context, long lsn);
-        Status Delete(AdId* key, Empty* context, long lsn);
         bool CompletePending(bool wait);
 
         /* Statistics */
-        long Size { get; }
+        long LogTailAddress { get; }
         void DumpDistribution();
     }
 

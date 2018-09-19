@@ -13,8 +13,10 @@ namespace ManagedSample2
     class Program
     {
         static void Main(string[] args)
-        { 
-            var fht = FASTERFactory.Create
+        {
+            // This sample uses structs, but via the safe API (no pointers)
+
+            var fht = FasterFactory.Create
                 <KeyStruct, ValueStruct, InputStruct, OutputStruct, 
                 Empty, CustomFunctions>
                 (128, new NullDevice(), new CustomFunctions());

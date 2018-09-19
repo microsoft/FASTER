@@ -83,7 +83,7 @@ namespace FASTER.test.recovery
             IDevice ht_device = new LocalStorageDevice("ht.dat", false, false, true, true);
             IDevice ofb_device = new LocalStorageDevice("ofb.dat", false, false, true, true);
 
-            var hash_table1 = new FASTERBase();
+            var hash_table1 = new FasterBase();
             hash_table1.Initialize(size, 512);
 
             //do something
@@ -111,7 +111,7 @@ namespace FASTER.test.recovery
             //wait until complete
             hash_table1.IsIndexFuzzyCheckpointCompleted(true);
 
-            var hash_table2 = new FASTERBase();
+            var hash_table2 = new FasterBase();
             hash_table2.Initialize(size, 512);
 
             //issue recover call

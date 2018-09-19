@@ -12,7 +12,7 @@ namespace FASTER.core
 #else
     class
 #endif
-        MixedKey : IFASTERKey<MixedKey>
+        MixedKey : IFasterKey<MixedKey>
     {
         public long key;
 
@@ -49,7 +49,7 @@ namespace FASTER.core
 #else
     class
 #endif
- MixedValue : IFASTERValue<MixedValue>
+ MixedValue : IFasterValue<MixedValue>
     {
         public long value;
         public MixedValue Clone()

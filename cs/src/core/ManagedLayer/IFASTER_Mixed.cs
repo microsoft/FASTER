@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe interface IFASTER_Mixed
+    public unsafe interface IFasterKV_Mixed
     {
         /* Thread-related operations */
         Guid StartSession();
@@ -23,11 +23,18 @@ namespace FASTER.core
         Status Read(MixedKeyWrapper* key, MixedInputWrapper* input, MixedOutputWrapper* output, MixedContextWrapper* context, long lsn);
         Status Upsert(MixedKeyWrapper* key, MixedValueWrapper* value, MixedContextWrapper* context, long lsn);
         Status RMW(MixedKeyWrapper* key, MixedInputWrapper* input, MixedContextWrapper* context, long lsn);
-        Status Delete(MixedKeyWrapper* key, MixedContextWrapper* context, long lsn);
         bool CompletePending(bool wait);
 
+        /* Recovery */
+        bool TakeFullCheckpoint(out Guid token);
+        bool TakeIndexCheckpoint(out Guid token);
+        bool TakeHybridLogCheckpoint(out Guid token);
+        void Recover(Guid fullcheckpointToken);
+        void Recover(Guid indexToken, Guid hybridLogToken);
+        bool CompleteCheckpoint(bool wait);
+
         /* Statistics */
-        long Size { get; }
+        long LogTailAddress { get; }
         void DumpDistribution();
     }
 }

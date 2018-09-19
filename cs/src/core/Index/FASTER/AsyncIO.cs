@@ -13,16 +13,15 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FASTERBase, IFASTER
+    public unsafe partial class FasterKV : FasterBase, IFasterKV
     {
 
-        private void AsyncGetFromDisk(long fromLogical, 
-                                      int numRecords, 
-                                      IOCompletionCallback callback, 
-                                      AsyncIOContext context, 
+        private void AsyncGetFromDisk(long fromLogical,
+                                      int numRecords,
+                                      IOCompletionCallback callback,
+                                      AsyncIOContext context,
                                       SectorAlignedMemory result = default(SectorAlignedMemory))
         {
-            //Debugger.Break();
             while (numPendingReads > 120)
             {
                 Thread.SpinWait(100);
@@ -67,7 +66,7 @@ namespace FASTER.core
                     }
                 }
 
-                AsyncGetFromDisk(startAddress, numBytes, 
+                AsyncGetFromDisk(startAddress, numBytes,
                     AsyncGetFromDiskCallback, ctx, ctx.record);
                 return false;
             }
@@ -87,78 +86,65 @@ namespace FASTER.core
                     uint numBytes,
                     NativeOverlapped* overlap)
         {
-            //Debugger.Break();
-            var result = (AsyncGetFromDiskResult<AsyncIOContext>)Overlapped.Unpack(overlap).AsyncResult;
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
-            catch (Exception ex)
-            {
-                Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref numPendingReads);
 
-                var ctx = result.context;
-                var record = ctx.record.GetValidPointer();
-                if (Layout.HasTotalRecord(record, ctx.record.available_bytes, out int requiredBytes))
+            var result = (AsyncGetFromDiskResult<AsyncIOContext>)Overlapped.Unpack(overlap).AsyncResult;
+            Interlocked.Decrement(ref numPendingReads);
+
+            var ctx = result.context;
+            var record = ctx.record.GetValidPointer();
+            if (Layout.HasTotalRecord(record, ctx.record.available_bytes, out int requiredBytes))
+            {
+                //We have the complete record.
+                if (RetrievedObjects(record, ctx))
                 {
-                    //We have the complete record.
-                    if (RetrievedObjects(record, ctx))
+                    if (Key.Equals(ctx.key, Layout.GetKey((long)record)))
                     {
-                        if (Key.Equals(ctx.key, Layout.GetKey((long)record)))
+                        //The keys are same, so I/O is complete
+                        // ctx.record = result.record;
+                        ctx.callbackQueue.Add(ctx);
+                    }
+                    else
+                    {
+                        var oldAddress = ctx.logicalAddress;
+
+                        //keys are not same. I/O is not complete
+                        ctx.logicalAddress = ((RecordInfo*)record)->PreviousAddress;
+                        if (ctx.logicalAddress != Constants.kInvalidAddress)
                         {
-                            //The keys are same, so I/O is complete
-                            // ctx.record = result.record;
-                            ctx.callbackQueue.Add(ctx);
+
+                            // Delete key, value, record
+                            if (Key.HasObjectsToSerialize())
+                            {
+                                var physicalAddress = (long)ctx.record.GetValidPointer();
+                                Key.Free(Layout.GetKey(physicalAddress));
+                            }
+                            if (Value.HasObjectsToSerialize())
+                            {
+                                var physicalAddress = (long)ctx.record.GetValidPointer();
+                                Value.Free(Layout.GetValue(physicalAddress));
+                            }
+                            ctx.record.Return();
+                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ctx);
                         }
                         else
                         {
-                            var oldAddress = ctx.logicalAddress;
-
-                            //keys are not same. I/O is not complete
-                            ctx.logicalAddress = ((RecordInfo*)record)->PreviousAddress;
-                            if (ctx.logicalAddress != Constants.kInvalidAddress)
-                            {
-
-                                // Delete key, value, record
-                                if (Key.HasObjectsToSerialize())
-                                {
-                                    var physicalAddress = (long)ctx.record.GetValidPointer();
-                                    Key.Free(Layout.GetKey(physicalAddress));
-                                }
-                                if (Value.HasObjectsToSerialize())
-                                {
-                                    var physicalAddress = (long)ctx.record.GetValidPointer();
-                                    Value.Free(Layout.GetValue(physicalAddress));
-                                }
-                                ctx.record.Return();
-                                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ctx);
-                            }
-                            else
-                            {
-                                ctx.callbackQueue.Add(ctx);
-                            }
+                            ctx.callbackQueue.Add(ctx);
                         }
                     }
                 }
-                else
-                {
-                    ctx.record.Return();
-                    AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ctx);
-                }
-
-                Overlapped.Free(overlap);
             }
+            else
+            {
+                ctx.record.Return();
+                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ctx);
+            }
+
+            Overlapped.Free(overlap);
         }
-
-
-
     }
 
 
@@ -245,31 +231,85 @@ namespace FASTER.core
             throw new Exception("Unable to create object log device");
         }
 
-        public void AsyncReadPagesFromDevice(int numPages, long destinationStartPage, IDevice device, out CountdownEvent completed)
+        public void AsyncReadPagesFromDevice<TContext>(
+                                long readPageStart,
+                                int numPages,
+                                IOCompletionCallback callback,
+                                TContext context,
+                                long devicePageOffset = 0,
+                                IDevice device = null)
         {
-            var asyncResult = new PageAsyncFlushResult();
+            AsyncReadPagesFromDevice(readPageStart, numPages, callback, context, out CountdownEvent completed, devicePageOffset, device);
+        }
 
-            ISegmentedDevice objlogDevice = null;
+        public void AsyncReadPagesFromDevice<TContext>(
+                                        long readPageStart,
+                                        int numPages,
+                                        IOCompletionCallback callback,
+                                        TContext context,
+                                        out CountdownEvent completed,
+                                        long devicePageOffset = 0,
+                                        IDevice device = null)
+        {
+            var usedDevice = (device != null) ? device : this.device;
+            ISegmentedDevice usedObjlogDevice = null;
+
             if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
             {
-                objlogDevice = CreateObjectLogDevice(device);
-                throw new Exception("Reading pages with object log not yet supported");
+                usedObjlogDevice = (device != null) ? CreateObjectLogDevice(device) : objlogDevice;
             }
+
             completed = new CountdownEvent(numPages);
-            asyncResult.handle = completed;
-            asyncResult.objlogDevice = objlogDevice;
-
-            for (long flushPage = destinationStartPage; flushPage < destinationStartPage + numPages; flushPage++)
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
-                long pageStartAddress = flushPage << LogPageSizeBits;
-                long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
+                int pageIndex = (int)(readPage % BufferSize);
+                if (values[pageIndex] == null)
+                {
+                    // Allocate a new page
+                    AllocatePage(pageIndex);
+                }
+                else
+                {
+                    ClearPage(pageIndex, readPage == 0);
+                }
+                var asyncResult = new PageAsyncReadResult<TContext>()
+                {
+                    page = readPage,
+                    context = context,
+                    handle = completed,
+                    count = 1
+                };
 
-                device.ReadAsync(
-                    (ulong)(AlignedPageSizeBytes * (flushPage - destinationStartPage)),
-                    pointers[flushPage % BufferSize],
-                    PageSize,
-                    AsyncReadPageFromDeviceCallback,
-                    asyncResult);
+                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+
+                if (device != null)
+                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+                ReadAsync(offsetInFile, pointers[pageIndex], PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
+            }
+        }
+
+        public void AsyncFlushPages<TContext>(
+                                        long flushPageStart,
+                                        int numPages,
+                                        IOCompletionCallback callback,
+                                        TContext context)
+        {
+            for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
+            {
+                int pageIndex = GetPageIndexForPage(flushPage);
+                var asyncResult = new PageAsyncFlushResult<TContext>()
+                {
+                    page = flushPage,
+                    context = context,
+                    count = 1,
+                    partial = false,
+                    untilAddress = (flushPage + 1) << LogPageSizeBits
+                };
+
+                WriteAsync(pointers[flushPage % BufferSize],
+                                  (ulong)(AlignedPageSizeBytes * flushPage),
+                                  PageSize, callback, asyncResult, device, objlogDevice);
             }
         }
 
@@ -300,7 +340,7 @@ namespace FASTER.core
                 long pageStartAddress = flushPage << LogPageSizeBits;
                 long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
 
-                var asyncResult = new PageAsyncFlushResult();
+                var asyncResult = new PageAsyncFlushResult<Empty>();
                 asyncResult.page = flushPage;
                 asyncResult.count = 1;
                 if (pageEndAddress > untilAddress)
@@ -335,23 +375,26 @@ namespace FASTER.core
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="device"></param>
+        /// <param name="completed"></param>
         public void AsyncFlushPagesToDevice(long startPage, long endPage, IDevice device, out CountdownEvent completed)
         {
-            var asyncResult = new PageAsyncFlushResult();
-
-            int numPages = (int)(endPage - startPage);
-
             ISegmentedDevice objlogDevice = null;
             if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
             {
-                numPages = numPages * 2;
                 objlogDevice = CreateObjectLogDevice(device);
             }
 
-            completed = new CountdownEvent(numPages);
-            asyncResult.handle = completed;
+            int totalNumPages = (int)(endPage - startPage);
+            completed = new CountdownEvent(totalNumPages);
+
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
             {
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    handle = completed,
+                    count = 1
+                };
+
                 long pageStartAddress = flushPage << LogPageSizeBits;
                 long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
 
@@ -366,12 +409,10 @@ namespace FASTER.core
 
         long[] segmentOffsets = new long[SegmentBufferSize];
 
-        private void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
-                                IOCompletionCallback callback, PageAsyncFlushResult asyncResult,
+        private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
+                                IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                                 IDevice device, ISegmentedDevice objlogDevice)
         {
-            // Debugger.Break();
-
             if (!Key.HasObjectsToSerialize() && !Value.HasObjectsToSerialize())
             {
                 device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
@@ -381,8 +422,6 @@ namespace FASTER.core
 
             // need to write both page and object cache
             asyncResult.count++;
-            //if (alignedDestinationAddress == 0)
-            //    Debugger.Break();
             MemoryStream ms = new MemoryStream();
             var buffer = ioBufferPool.Get(PageSize);
             Buffer.MemoryCopy((void*)alignedSourceAddress, buffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
@@ -443,34 +482,31 @@ namespace FASTER.core
             device.WriteAsync((IntPtr)buffer.aligned_pointer, alignedDestinationAddress,
                 numBytesToWrite, callback, asyncResult);
         }
+
+        private void ReadAsync<TContext>(
+            ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length,
+            IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, ISegmentedDevice objlogDevice)
+        {
+            if (!Key.HasObjectsToSerialize() && !Value.HasObjectsToSerialize())
+            {
+                device.ReadAsync(alignedSourceAddress, alignedDestinationAddress,
+                    aligned_read_length, callback, asyncResult);
+                return;
+            }
+
+            asyncResult.callback = callback;
+            asyncResult.count++;
+            asyncResult.objlogDevice = objlogDevice;
+
+            device.ReadAsync(alignedSourceAddress, alignedDestinationAddress,
+                    aligned_read_length, AsyncReadPageCallback<TContext>, asyncResult);
+        }
         #endregion
 
 
         #region Async callbacks
 
-        /// <summary>
-        /// IOCompletion callback for page read
-        /// </summary>
-        /// <param name="errorCode"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="overlap"></param>
-        private void AsyncReadPageFromDeviceCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
-        {
-            if (errorCode != 0)
-            {
-                System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-            }
 
-            PageAsyncFlushResult result = (PageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
-            if (result.handle != null)
-                result.handle.Signal();
-            Overlapped.Free(overlap);
-
-            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
-            {
-                throw new NotImplementedException("Recovery of object log not yet supported");
-            }
-        }
 
         /// <summary>
         /// IOCompletion callback for page flush
@@ -482,11 +518,11 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
-            //Set the page status to flushed
-            PageAsyncFlushResult result = (PageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
+            // Set the page status to flushed
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
@@ -510,18 +546,7 @@ namespace FASTER.core
                     }
                 }
                 ShiftFlushedUntilAddress();
-
-                Interlocked.MemoryBarrier();
-
-                if (result.freeBuffer1.buffer != null)
-                    result.freeBuffer1.Return();
-                if (result.freeBuffer2.buffer != null)
-                    result.freeBuffer2.Return();
-
-                if (result.handle != null)
-                {
-                    result.handle.Signal();
-                }
+                result.Free();
             }
 
             Overlapped.Free(overlap);
@@ -537,19 +562,114 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
-            PageAsyncFlushResult result = (PageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
-            if (result.freeBuffer1.buffer != null)
-                result.freeBuffer1.Return();
-            if (result.freeBuffer2.buffer != null)
-                result.freeBuffer2.Return();
-
-            if (result.handle != null)
-                result.handle.Signal();
+            if (Interlocked.Decrement(ref result.count) == 0)
+            {
+                result.Free();
+            }
             Overlapped.Free(overlap);
+        }
+
+        private void AsyncReadPageCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        {
+            if (errorCode != 0)
+            {
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+            }
+
+            PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
+
+            if (Interlocked.Decrement(ref result.count) == 1)
+            {
+                // We will be issuing another I/O, so free this overlap
+                Overlapped.Free(overlap);
+
+                long ptr = (long)pointers[result.page % BufferSize];
+                // Correct for page 0 of HLOG
+                if (result.page == 0)
+                    ptr += Constants.kFirstValidAddress;
+
+                long minObjAddress = long.MaxValue;
+                long maxObjAddress = long.MinValue;
+
+                while (ptr < (long)pointers[result.page % BufferSize] + PageSize)
+                {
+                    if (!Layout.GetInfo(ptr)->Invalid)
+                    {
+                        if (Key.HasObjectsToSerialize())
+                        {
+                            Key* key = Layout.GetKey(ptr);
+                            var addr = ((AddressInfo*)key)->Address;
+                            if (addr < minObjAddress) minObjAddress = addr;
+                            addr += ((AddressInfo*)key)->Size;
+                            if (addr > maxObjAddress) maxObjAddress = addr;
+                        }
+
+                        if (Value.HasObjectsToSerialize())
+                        {
+                            Value* value = Layout.GetValue(ptr);
+                            var addr = ((AddressInfo*)value)->Address;
+                            if (addr < minObjAddress) minObjAddress = addr;
+                            addr += ((AddressInfo*)value)->Size;
+                            if (addr > maxObjAddress) maxObjAddress = addr;
+                        }
+                    }
+                    ptr += Layout.GetPhysicalSize(ptr);
+                }
+
+                // Object log fragment should be aligned by construction
+                Debug.Assert(minObjAddress % sectorSize == 0);
+
+                var to_read = (int)(maxObjAddress - minObjAddress);
+                var objBuffer = ioBufferPool.Get(to_read);
+                result.freeBuffer1 = objBuffer;
+                var alignedLength = (to_read + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                // Request objects from objlog
+                result.objlogDevice.ReadAsync(
+                    (int)(result.page >> (LogSegmentSizeBits-LogPageSizeBits)),
+                    (ulong)minObjAddress, 
+                    (IntPtr)objBuffer.aligned_pointer, (uint)alignedLength, AsyncReadPageCallback<TContext>, result);
+            }
+            else
+            {
+                // Load objects from buffer into memory
+                long ptr = (long)pointers[result.page % BufferSize];
+                // Correct for page 0 of HLOG
+                if (result.page == 0)
+                    ptr += Constants.kFirstValidAddress;
+
+                MemoryStream ms = new MemoryStream(result.freeBuffer1.buffer);
+                ms.Seek(result.freeBuffer1.offset + result.freeBuffer1.valid_offset, SeekOrigin.Begin);
+
+                while (ptr < (long)pointers[result.page % BufferSize] + PageSize)
+                {
+                    if (!Layout.GetInfo(ptr)->Invalid)
+                    {
+                        if (Key.HasObjectsToSerialize())
+                        {
+                            Key.Deserialize(Layout.GetKey(ptr), ms);
+                        }
+
+                        if (Value.HasObjectsToSerialize())
+                        {
+                            Value.Deserialize(Layout.GetValue(ptr), ms);
+                        }
+                    }
+                    ptr += Layout.GetPhysicalSize(ptr);
+                }
+                ms.Dispose();
+
+                result.Free();
+
+                // Call the "real" page read callback
+                result.callback(errorCode, numBytes, overlap);
+            }
+           
         }
         #endregion
     }

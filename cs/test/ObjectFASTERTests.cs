@@ -17,13 +17,13 @@ namespace FASTER.test
     [TestClass]
     public class ObjectFASTERTests
     {
-        private static IManagedFAST<MyKey, MyValue, MyInput, MyOutput, MyContext> fht;
+        private static IManagedFasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext> fht;
 
         [ClassInitialize]
         public static void Setup(TestContext t)
         {
-            var log = FASTERFactory.CreateLogDevice(Path.GetTempPath() + "\\hybridlog_object.log");
-            fht = FASTERFactory.Create
+            var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "\\hybridlog_object.log");
+            fht = FasterFactory.Create
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
                 (indexSizeBuckets: 128, logDevice: log, functions: new MyFunctions(), 
                 LogMutableFraction: 0.1, LogPageSizeBits: 9, LogTotalSizeBytes: 512*16
@@ -52,6 +52,29 @@ namespace FASTER.test
 
             Assert.IsTrue(output.value.value == value.value);
         }
+
+        [TestMethod]
+        public void ObjectInMemWriteRead2()
+        {
+            var key1 = new MyKey { key = 8999998 };
+            var input1 = new MyInput { value = 23 };
+
+            fht.RMW(key1, input1, null, 0);
+
+            var key2 = new MyKey { key = 8999999 };
+            var input2 = new MyInput { value = 24 };
+            fht.RMW(key2, input2, null, 0);
+
+            MyOutput output = new MyOutput();
+            fht.Read(key1, null, ref output, null, 0);
+
+            Assert.IsTrue(output.value.value == input1.value);
+
+            fht.Read(key2, null, ref output, null, 0);
+            Assert.IsTrue(output.value.value == input2.value);
+
+        }
+
 
         [TestMethod]
         public void ObjectDiskWriteRead()

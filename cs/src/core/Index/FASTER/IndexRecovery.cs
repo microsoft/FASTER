@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public unsafe partial class FASTERBase
+    public unsafe partial class FasterBase
     {
         // Derived class exposed API
         protected void RecoverFuzzyIndex(IndexRecoveryInfo info)

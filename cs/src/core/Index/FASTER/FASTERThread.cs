@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FASTERBase, IFASTER
+    public unsafe partial class FasterKV : FasterBase, IFasterKV
     {
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -128,7 +128,7 @@ namespace FASTER.core
                 {
                     CompleteIOPendingRequests(threadCtx);
                 }
-                Refresh();
+                InternalRefresh();
                 CompleteRetryRequests(threadCtx);
 
                 done &= (threadCtx.ioPendingRequests.Count == 0);

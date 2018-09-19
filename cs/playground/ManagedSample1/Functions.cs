@@ -5,8 +5,12 @@ using FASTER.core;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSample1
+namespace ManagedSampleCore
 {
+    /// <summary>
+    /// Callback functions for FASTER operations customized to user types
+    /// See \cs\src\core\Index\UserCode\Functions.cs for template details
+    /// </summary>
     public unsafe class Functions
     {
         public static void RMWCompletionCallback(KeyStruct* key, InputStruct* output, Empty* ctx, Status status)

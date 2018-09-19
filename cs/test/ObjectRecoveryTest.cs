@@ -8,11 +8,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
 using FASTER.core;
 
-namespace FASTER.test.recovery.sumstore
+namespace FASTER.test.recovery.objectstore
 {
 
     [TestClass]
-    public class FullRecoveryTests
+    public class ObjectRecoveryTests
     {
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);
@@ -20,7 +20,7 @@ namespace FASTER.test.recovery.sumstore
         const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private ICustomFaster fht;
+        private IManagedFasterKV<AdId, NumClicks, Input, Output, Empty> fht;
         private string test_path;
         private Guid token;
 
@@ -38,8 +38,8 @@ namespace FASTER.test.recovery.sumstore
 
             fht = 
                 FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFaster>
-                (keySpace, log, checkpointDir: test_path);
+                <AdId, NumClicks, Input, Output, Empty, Functions>
+                (keySpace, log, checkpointDir: test_path, functions: new Functions());
         }
 
         [TestCleanup]
@@ -71,7 +71,7 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [TestMethod]
-        public void RecoveryTest1()
+        public void ObjectRecoveryTest1()
         {
             Populate();
             Setup();
@@ -80,14 +80,12 @@ namespace FASTER.test.recovery.sumstore
 
         public unsafe void Populate()
         {
-            Empty context;
-
             // Prepare the dataset
-            var inputArray = new Input[numOps];
+            var inputArray = new Tuple<AdId, Input>[numOps];
             for (int i = 0; i < numOps; i++)
             {
-                inputArray[i].adId.adId = i % numUniqueKeys;
-                inputArray[i].numClicks.numClicks = 1;
+                inputArray[i] = new Tuple<AdId, Input>
+                    (new AdId { adId = i % numUniqueKeys }, new Input { numClicks = 1 });
             }
 
             // Register thread with FASTER
@@ -95,34 +93,34 @@ namespace FASTER.test.recovery.sumstore
 
             // Prpcess the batch of input data
             bool first = true;
-            fixed (Input* input = inputArray)
+            for (int i = 0; i < numOps; i++)
             {
-                for (int i = 0; i < numOps; i++)
+                fht.RMW(inputArray[i].Item1, inputArray[i].Item2, default(Empty), i);
+
+                if ((i + 1) % checkpointInterval == 0)
                 {
-                    fht.RMW(&((input + i)->adId), input + i, &context, i);
+                    if (first)
+                        while (!fht.TakeFullCheckpoint(out token))
+                            fht.Refresh();
+                    else
+                        while (!fht.TakeFullCheckpoint(out Guid nextToken))
+                            fht.Refresh();
 
-                    if ((i+1) % checkpointInterval == 0)
-                    {
-                        if (first)
-                            while (!fht.TakeFullCheckpoint(out token))
-                                fht.Refresh();
-                        else
-                            while (!fht.TakeFullCheckpoint(out Guid nextToken))
-                                fht.Refresh();
+                    fht.CompleteCheckpoint(true);
 
-                        first = false;
-                    }
+                    first = false;
+                }
 
-                    if (i % completePendingInterval == 0)
-                    {
-                        fht.CompletePending(false);
-                    }
-                    else if (i % refreshInterval == 0)
-                    {
-                        fht.Refresh();
-                    }
+                if (i % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (i % refreshInterval == 0)
+                {
+                    fht.Refresh();
                 }
             }
+
 
             // Make sure operations are completed
             fht.CompletePending(true);
@@ -137,24 +135,25 @@ namespace FASTER.test.recovery.sumstore
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            Empty context;
-            var inputArray = new Input[numUniqueKeys];
+            var inputArray = new Tuple<AdId, Input>[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
-                inputArray[i].adId.adId = i;
-                inputArray[i].numClicks.numClicks = 0;
+                inputArray[i] = new Tuple<AdId, Input>(new AdId { adId = i }, new Input { numClicks = 0 });
+            }
+
+            var outputArray = new Output[numUniqueKeys];
+            for (int i = 0; i < numUniqueKeys; i++)
+            {
+                outputArray[i] = new Output();
             }
 
             // Register with thread
             fht.StartSession();
 
             // Issue read requests
-            fixed (Input* input = inputArray)
+            for (var i = 0; i < numUniqueKeys; i++)
             {
-                for (var i = 0; i < numUniqueKeys; i++)
-                {
-                    fht.Read(&((input + i)->adId), null, (Output*)&((input + i)->numClicks), &context, i);
-                }
+                fht.Read(inputArray[i].Item1, null, ref outputArray[i], default(Empty), i);
             }
 
             // Complete all pending requests
@@ -198,8 +197,11 @@ namespace FASTER.test.recovery.sumstore
             for (long i = 0; i < numUniqueKeys; i++)
             {
                 Assert.IsTrue(
-                    expected[i] == inputArray[i].numClicks.numClicks,
-                    "Debug error for AdId {0}: Expected ({1}), Found({2})", inputArray[i].adId.adId, expected[i], inputArray[i].numClicks.numClicks);
+                    expected[i] == outputArray[i].numClicks.numClicks,
+                    "Debug error for AdId {0}: Expected ({1}), Found({2})", 
+                    inputArray[i].Item1.adId,
+                    expected[i], 
+                    outputArray[i].numClicks.numClicks);
             }
         }
     }

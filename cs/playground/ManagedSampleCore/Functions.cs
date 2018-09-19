@@ -5,7 +5,7 @@ using FASTER.core;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSample1
+namespace ManagedSampleCore
 {
     public unsafe class Functions
     {

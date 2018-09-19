@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace SumStore
 {
-    public class ConcurrentRecoveryTest : IFASTERRecoveryTest
+    public class ConcurrentRecoveryTest : IFasterRecoveryTest
     {
         const long numUniqueKeys = (1 << 22);
         const long keySpace = (1L << 14);
@@ -24,18 +24,18 @@ namespace SumStore
         const long checkpointInterval = (1 << 22);
         int threadCount;
         int numActiveThreads;
-        ICustomFaster fht;
+        ICustomFasterKv fht;
         BlockingCollection<Input[]> inputArrays;
         List<Guid> tokens;
         public ConcurrentRecoveryTest(int threadCount)
         {
             this.threadCount = threadCount;
             tokens = new List<Guid>();
-            var log = FASTERFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogFileName());
+            var log = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogFileName());
 
             // Create FASTER index
-            fht = FASTERFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFaster>
+            fht = FasterFactory.Create
+                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
                 (keySpace, log);
             numActiveThreads = 0;
 

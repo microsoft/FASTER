@@ -8,15 +8,15 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ManagedSample1
+namespace ManagedSampleCore
 {
     public class Program
     {
         static unsafe void Main(string[] args)
         {
-            var fht = FASTERFactory.Create
-                <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFaster>
-                (128, FASTERFactory.CreateLogDevice(""), LogMutableFraction: 0.5);
+            var fht = FasterFactory.Create
+                <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFasterKv>
+                (128, FasterFactory.CreateLogDevice(""), LogMutableFraction: 0.5);
 
             fht.StartSession();
 

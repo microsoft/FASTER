@@ -5,7 +5,7 @@ using System.IO;
 
 namespace FASTER.core
 {
-    public interface IFASTERKey<TKey>
+    public interface IFasterKey<TKey>
     {
         TKey Clone();
         void Deserialize(Stream fromStream);

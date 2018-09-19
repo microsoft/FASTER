@@ -122,25 +122,25 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryPin()
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryMarkReadOnly()
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void MarkReadOnly()
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Unpin()
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 #endif
         public bool IsNull()

@@ -5,7 +5,7 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSample1
+namespace ManagedSampleCore
 {
     public unsafe struct ValueStruct
     {
@@ -50,17 +50,17 @@ namespace ManagedSample1
 
         public static void Serialize(ValueStruct* key, Stream toStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Deserialize(ValueStruct* key, Stream fromStream)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public static void Free(ValueStruct* key)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
         #endregion
 
