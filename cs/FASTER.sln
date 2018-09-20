@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 15.0.27004.2008
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.benchmark", "benchmark\FASTER.benchmark.csproj", "{33A732D1-2B58-4FEE-9696-B9483496229F}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A6510B80-BD50-4C11-9712-64C3B3865AFF} = {A6510B80-BD50-4C11-9712-64C3B3865AFF}
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.test", "test\FASTER.test.csproj", "{0DC7F5A2-E963-4E7F-BD37-6F7864B726F2}"
 EndProject
@@ -34,7 +37,6 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.core", "src\core\FASTER.core.csproj", "{F947BC6A-2943-4AC7-ACA7-F17351E25FE7}"
 	ProjectSection(ProjectDependencies) = postProject
 		{5852AC33-6B01-44F5-BAF3-2AAF796E8449} = {5852AC33-6B01-44F5-BAF3-2AAF796E8449}
-		{A6510B80-BD50-4C11-9712-64C3B3865AFF} = {A6510B80-BD50-4C11-9712-64C3B3865AFF}
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "native", "native", "{999943F0-CC60-4BA9-B928-275BE5C5E6B9}"

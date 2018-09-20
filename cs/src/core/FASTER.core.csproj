@@ -10,7 +10,6 @@
     <RootNamespace>FASTER.core</RootNamespace>
     <AssemblyName>FASTER.core</AssemblyName>
     <ErrorReport>prompt</ErrorReport>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
     <SignAssembly>true</SignAssembly>
     <ApplicationIcon />
     <OutputType>Library</OutputType>
@@ -33,8 +32,8 @@
   <PropertyGroup Condition="'$(TargetFramework)'!='net46'">
     <DefineConstants>$(DefineConstants);DOTNETCORE</DefineConstants>
   </PropertyGroup>
-  <ItemGroup>
-    <None Include="..\native\bin\x64\Release\adv-file-ops.dll" Link="adv-file-ops.dll">
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <None Include="$(ProjectDir)..\native\bin\x64\Release\adv-file-ops.dll" Link="adv-file-ops.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

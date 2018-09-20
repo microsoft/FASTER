@@ -11,7 +11,6 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>FASTER.benchmark</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
@@ -29,8 +28,8 @@
     <OutputPath>bin\x64\Release\</OutputPath>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Include="..\src\native\bin\x64\Release\readtsc.dll" Link="readtsc.dll">
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <None Include="$(ProjectDir)..\src\native\bin\x64\Release\readtsc.dll" Link="readtsc.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
