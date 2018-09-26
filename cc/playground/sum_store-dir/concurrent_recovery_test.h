@@ -45,9 +45,14 @@ class ConcurrentRecoveryTest {
       assert(result == Status::Ok);
     };
 
-    auto persistence_callback = [](uint64_t persistent_serial_num) {
-      printf("Thread %" PRIu32 " reports persistence until %" PRIu64 "\n",
-             Thread::id(), persistent_serial_num);
+    auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
+      if(result != Status::Ok) {
+        printf("Thread %" PRIu32 " reports checkpoint failed.\n",
+               Thread::id());
+      } else {
+        printf("Thread %" PRIu32 " reports persistence until %" PRIu64 "\n",
+               Thread::id(), persistent_serial_num);
+      }
     };
 
     // Register thread with the store
@@ -60,9 +65,10 @@ class ConcurrentRecoveryTest {
       RmwContext context{ idx % kNumUniqueKeys, 1 };
       store->Rmw(context, callback, idx);
       if(idx % kCheckpointInterval == 0 && *num_active_threads == num_threads) {
-        if(store->Checkpoint(persistence_callback)) {
-          printf("Thread %" PRIu32 " calling Checkpoint(), %" PRIu32 "\n", Thread::id(),
-                 ++(*num_checkpoints));
+        Guid token;
+        if(store->Checkpoint(nullptr, hybrid_log_persistence_callback, token)) {
+          printf("Thread %" PRIu32 " calling Checkpoint(), version = %" PRIu32 ", token = %s\n",
+                 Thread::id(), ++(*num_checkpoints), token.ToString().c_str());
         }
       }
       if(idx % kCompletePendingInterval == 0) {
@@ -125,15 +131,17 @@ class ConcurrentRecoveryTest {
     }
   }
 
-  void RecoverAndTest(uint32_t cpr_version, uint32_t index_version) {
+  void RecoverAndTest(const Guid& index_token, const Guid& hybrid_log_token) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
       assert(result == Status::Ok);
     };
 
     // Recover
+    uint32_t version;
     std::vector<Guid> session_ids;
-    FASTER::core::Status result = store.Recover(cpr_version, index_version, session_ids);
+    FASTER::core::Status result = store.Recover(index_token, hybrid_log_token, version,
+                                  session_ids);
     if(result != FASTER::core::Status::Ok) {
       printf("Recovery failed with error %u\n", static_cast<uint8_t>(result));
       exit(1);
@@ -205,9 +213,15 @@ class ConcurrentRecoveryTest {
       assert(result == Status::Ok);
     };
 
-    auto persistence_callback = [](uint64_t persistent_serial_num) {
-      printf("Thread %" PRIu32 " reports persistence until %" PRIu64 "\n",
-             Thread::id(), persistent_serial_num);
+
+    auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
+      if(result != Status::Ok) {
+        printf("Thread %" PRIu32 " reports checkpoint failed.\n",
+               Thread::id());
+      } else {
+        printf("Thread %" PRIu32 " reports persistence until %" PRIu64 "\n",
+               Thread::id(), persistent_serial_num);
+      }
     };
 
     // Register thread with the store
@@ -220,9 +234,10 @@ class ConcurrentRecoveryTest {
       RmwContext context{ idx % kNumUniqueKeys, 1 };
       store->Rmw(context, callback, idx);
       if(idx % kCheckpointInterval == 0 && *num_active_threads == num_threads) {
-        if(store->Checkpoint(persistence_callback)) {
-          printf("Thread %" PRIu32 " calling Checkpoint(), %" PRIu32 "\n", Thread::id(),
-                 ++(*num_checkpoints));
+        Guid token;
+        if(store->Checkpoint(nullptr, hybrid_log_persistence_callback, token)) {
+          printf("Thread %" PRIu32 " calling Checkpoint(), version = %" PRIu32 ", token = %s\n",
+                 Thread::id(), ++(*num_checkpoints), token.ToString().c_str());
         }
       }
       if(idx % kCompletePendingInterval == 0) {
@@ -241,11 +256,14 @@ class ConcurrentRecoveryTest {
     printf("Populate successful on thread %" PRIu32 ".\n", Thread::id());
   }
 
-  void Continue(uint32_t cpr_version, uint32_t index_version) {
+  void Continue(const Guid& index_token, const Guid& hybrid_log_token) {
     // Recover
-    printf("Recovering version (%" PRIu32 ", %" PRIu32 ")\n", cpr_version, index_version);
+    printf("Recovering version (index_token = %s, hybrid_log_token = %s)\n",
+           index_token.ToString().c_str(), hybrid_log_token.ToString().c_str());
+    uint32_t version;
     std::vector<Guid> session_ids;
-    FASTER::core::Status result = store.Recover(cpr_version, index_version, session_ids);
+    FASTER::core::Status result = store.Recover(index_token, hybrid_log_token, version,
+                                  session_ids);
     if(result != FASTER::core::Status::Ok) {
       printf("Recovery failed with error %u\n", static_cast<uint8_t>(result));
       exit(1);
@@ -253,7 +271,7 @@ class ConcurrentRecoveryTest {
       printf("Recovery Done!\n");
     }
 
-    num_checkpoints.store(cpr_version);
+    num_checkpoints.store(version);
     // Some threads may have already completed.
     num_threads = session_ids.size();
 

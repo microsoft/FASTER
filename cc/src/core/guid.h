@@ -48,24 +48,37 @@ class Guid {
 #endif
 
  public:
-#ifdef _WIN32
   static Guid Create() {
+#ifdef _WIN32
     GUID guid;
     HRESULT result = ::CoCreateGuid(&guid);
     assert(result == S_OK);
     return guid;
-  }
 #else
-  static Guid Create() {
     uuid_t uuid;
     uuid_generate(uuid);
     return uuid;
-  }
 #endif
+  }
 
+  static Guid Parse(const std::string str) {
 #ifdef _WIN32
+    GUID guid;
+    auto result = ::UuidFromString(reinterpret_cast<uint8_t*>(const_cast<char*>(str.c_str())),
+                                   &guid);
+    assert(result = RPC_S_OK);
+    return guid;
+#else
+    uuid_t uuid;
+    int result = uuid_parse(const_cast<char*>(str.c_str()), uuid);
+    assert(result == 0);
+    return uuid;
+#endif
+  }
+
   std::string ToString() const {
     char buffer[37];
+#ifdef _WIN32
     size_t offset = sprintf(buffer, "%.8lX-%.4hX-%.4hX-", guid_.Data1, guid_.Data2, guid_.Data3);
     for(size_t idx = 0; idx < 2; ++idx) {
       offset += sprintf(buffer + offset, "%.2hhX", guid_.Data4[idx]);
@@ -75,38 +88,30 @@ class Guid {
       offset += sprintf(buffer + offset, "%.2hhX", guid_.Data4[idx]);
     }
     buffer[36] = '\0';
-    return std::string{ buffer };
-  }
 #else
-  std::string ToString() const {
-    char buffer[37];
     uuid_unparse(uuid_, buffer);
-    return std::string{ buffer };
-  }
 #endif
+    return std::string { buffer };
+  }
 
-#ifdef _WIN32
   bool operator==(const Guid& other) const {
+#ifdef _WIN32
     return guid_.Data1 == other.guid_.Data1 &&
            guid_.Data2 == other.guid_.Data2 &&
            guid_.Data3 == other.guid_.Data3 &&
            std::memcmp(guid_.Data4, other.guid_.Data4, 8) == 0;
-  }
 #else
-  bool operator==(const Guid& other) const {
     return uuid_compare(uuid_, other.uuid_) == 0;
-  }
 #endif
+  }
 
-#ifdef _WIN32
   uint32_t GetHashCode() const {
+#ifdef _WIN32
     // From C#, .NET Reference Framework.
     return guid_.Data1 ^ ((static_cast<uint32_t>(guid_.Data2) << 16) |
                           static_cast<uint32_t>(guid_.Data3)) ^
            ((static_cast<uint32_t>(guid_.Data4[2]) << 24) | guid_.Data4[7]);
-  }
 #else
-  uint32_t GetHashCode() const {
     uint32_t Data1;
     uint16_t Data2;
     uint16_t Data3;
@@ -117,8 +122,8 @@ class Guid {
     return Data1 ^ ((static_cast<uint32_t>(Data2) << 16) |
                     static_cast<uint32_t>(Data3)) ^
            ((static_cast<uint32_t>(uuid_[10]) << 24) | uuid_[15]);
-  }
 #endif
+  }
 
  private:
 #ifdef _WIN32

@@ -14,7 +14,8 @@
 int main(int argc, char* argv[]) {
   if(argc < 3) {
     printf("Usage: sum_store.exe single <operation>\n");
-    printf("Where <operation> is one of \"populate\", \"recover <version>\", or \"continue\".\n");
+    printf("Where <operation> is one of \"populate\", \"recover <token>\", or "
+           "\"continue <token>\".\n");
     exit(0);
   }
 
@@ -34,11 +35,11 @@ int main(int argc, char* argv[]) {
       test.Populate();
     } else if(task == "recover") {
       if(argc != 4) {
-        printf("Must specify version to recover to.\n");
+        printf("Must specify token to recover to.\n");
         exit(1);
       }
-      uint32_t version = std::atoi(argv[3]);
-      test.RecoverAndTest(version, version);
+      Guid token = Guid::Parse(argv[3]);
+      test.RecoverAndTest(token, token);
     }
   } else if(type == "concurrent") {
     if(argc < 4) {
@@ -55,18 +56,18 @@ int main(int argc, char* argv[]) {
       test.Populate();
     } else if(task == "recover") {
       if(argc != 5) {
-        printf("Must specify version to recover to.\n");
+        printf("Must specify token to recover to.\n");
         exit(1);
       }
-      uint32_t version = std::atoi(argv[4]);
-      test.RecoverAndTest(version, version);
+      Guid token = Guid::Parse(argv[4]);
+      test.RecoverAndTest(token, token);
     } else if(task == "continue") {
       if(argc != 5) {
         printf("Must specify version to continue from.\n");
         exit(1);
       }
-      uint32_t version = std::atoi(argv[4]);
-      test.Continue(version, version);
+      Guid token = Guid::Parse(argv[4]);
+      test.Continue(token, token);
     }
 
   }

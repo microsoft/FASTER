@@ -18,7 +18,9 @@ struct ResizeInfo {
 // collect, or grow index).
 enum class Action : uint8_t {
   None = 0,
-  Checkpoint,
+  CheckpointFull,
+  CheckpointIndex,
+  CheckpointHybridLog,
   Recover,
   GC,
   GrowIndex
@@ -52,24 +54,58 @@ struct SystemState {
   /// The state transitions.
   inline SystemState GetNextState() const {
     switch(action) {
-    case Action::Checkpoint:
+    case Action::CheckpointFull:
       switch(phase) {
       case Phase::REST:
-        return SystemState{ Action::Checkpoint, Phase::PREP_INDEX_CHKPT, version };
+        return SystemState{ Action::CheckpointFull, Phase::PREP_INDEX_CHKPT, version };
       case Phase::PREP_INDEX_CHKPT:
-        return SystemState{ Action::Checkpoint, Phase::INDEX_CHKPT, version };
+        return SystemState{ Action::CheckpointFull, Phase::INDEX_CHKPT, version };
       case Phase::INDEX_CHKPT:
-        return SystemState{ Action::Checkpoint, Phase::PREPARE, version };
+        return SystemState{ Action::CheckpointFull, Phase::PREPARE, version };
       case Phase::PREPARE:
-        return SystemState{ Action::Checkpoint, Phase::IN_PROGRESS, version + 1 };
+        return SystemState{ Action::CheckpointFull, Phase::IN_PROGRESS, version + 1 };
       case Phase::IN_PROGRESS:
-        return SystemState{ Action::Checkpoint, Phase::WAIT_PENDING, version };
+        return SystemState{ Action::CheckpointFull, Phase::WAIT_PENDING, version };
       case Phase::WAIT_PENDING:
-        return SystemState{ Action::Checkpoint, Phase::WAIT_FLUSH, version };
+        return SystemState{ Action::CheckpointFull, Phase::WAIT_FLUSH, version };
       case Phase::WAIT_FLUSH:
-        return SystemState{ Action::Checkpoint, Phase::PERSISTENCE_CALLBACK, version };
+        return SystemState{ Action::CheckpointFull, Phase::PERSISTENCE_CALLBACK, version };
       case Phase::PERSISTENCE_CALLBACK:
-        return SystemState{ Action::Checkpoint, Phase::REST, version };
+        return SystemState{ Action::CheckpointFull, Phase::REST, version };
+      default:
+        // not reached
+        assert(false);
+        return SystemState(UINT64_MAX);
+      }
+      break;
+    case Action::CheckpointIndex:
+      switch(phase) {
+      case Phase::REST:
+        return SystemState{ Action::CheckpointIndex, Phase::PREP_INDEX_CHKPT, version };
+      case Phase::PREP_INDEX_CHKPT:
+        return SystemState{ Action::CheckpointIndex, Phase::INDEX_CHKPT, version };
+      case Phase::INDEX_CHKPT:
+        return SystemState{ Action::CheckpointIndex, Phase::REST, version };
+      default:
+        // not reached
+        assert(false);
+        return SystemState(UINT64_MAX);
+      }
+      break;
+    case Action::CheckpointHybridLog:
+      switch(phase) {
+      case Phase::REST:
+        return SystemState{ Action::CheckpointHybridLog, Phase::PREPARE, version };
+      case Phase::PREPARE:
+        return SystemState{ Action::CheckpointHybridLog, Phase::IN_PROGRESS, version + 1 };
+      case Phase::IN_PROGRESS:
+        return SystemState{ Action::CheckpointHybridLog, Phase::WAIT_PENDING, version };
+      case Phase::WAIT_PENDING:
+        return SystemState{ Action::CheckpointHybridLog, Phase::WAIT_FLUSH, version };
+      case Phase::WAIT_FLUSH:
+        return SystemState{ Action::CheckpointHybridLog, Phase::PERSISTENCE_CALLBACK, version };
+      case Phase::PERSISTENCE_CALLBACK:
+        return SystemState{ Action::CheckpointHybridLog, Phase::REST, version };
       default:
         // not reached
         assert(false);
