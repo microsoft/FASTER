@@ -15,7 +15,7 @@ namespace FASTER.core
         private IFasterKV_Mixed store;
         public long LogTailAddress => store.LogTailAddress;
 
-        public MixedManagedFast(long size, IDevice logDevice, string checkpointDir, MixedUserFunctions functions, long LogTotalSizeBytes = 17179869184, double LogMutableFraction = 0.9, int LogPageSizeBits = 25)
+        public MixedManagedFast(long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir, MixedUserFunctions functions, long LogTotalSizeBytes = 17179869184, double LogMutableFraction = 0.9, int LogPageSizeBits = 25)
         {
             MixedFunctionsWrapper.userFunctions = functions;
 
@@ -23,7 +23,8 @@ namespace FASTER.core
                 <MixedKeyWrapper, MixedValueWrapper, MixedInputWrapper,
                 MixedOutputWrapper, MixedContextWrapper, MixedFunctionsWrapper,
                 IFasterKV_Mixed>
-                (size, logDevice, checkpointDir, LogTotalSizeBytes, LogMutableFraction, LogPageSizeBits);
+                (size, logDevice, objectLogDevice, checkpointDir, LogTotalSizeBytes, 
+                LogMutableFraction, LogPageSizeBits);
         }
 
         public bool CompletePending(bool wait)

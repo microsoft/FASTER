@@ -57,12 +57,12 @@ namespace FASTER.core
             }
         }
         
-        public FasterKV(long size, IDevice logDevice, string checkpointDir = null)
+        public FasterKV(long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir = null)
         {
             if (checkpointDir != null)
                 Config.CheckpointDirectory = checkpointDir;
 
-            hlog = new PersistentMemoryMalloc(logDevice);
+            hlog = new PersistentMemoryMalloc(logDevice, objectLogDevice);
             var recordSize = Layout.EstimatePhysicalSize(null, null);
             Initialize(size, hlog.GetSectorSize());
 

@@ -3,197 +3,54 @@
 
 using Microsoft.Win32.SafeHandles;
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public class LocalStorageDevice : IDevice
+    public class LocalStorageDevice : StorageDeviceBase
     {
-        /// <summary>
-        /// File information
-        /// </summary>
-        private readonly string filename;
-        private readonly SafeFileHandle logHandle;
-        private readonly bool enablePrivileges;
-        private readonly bool useIoCompletionPort;
+        private readonly bool preallocateSegment;
+        private readonly bool deleteOnClose;
+        private readonly ConcurrentDictionary<int, SafeFileHandle> logHandles;
+        private readonly SafeFileHandle singleLogHandle;
 
-        /// <summary>
-        /// Device Information obtained from Native32 methods
-        /// </summary>
-        private readonly uint lpSectorsPerCluster;
-        private readonly uint lpBytesPerSector;
-        private readonly uint lpNumberOfFreeClusters;
-        private readonly uint lpTotalNumberOfClusters;
-        private readonly IntPtr ioCompletionPort;
-
-        public LocalStorageDevice(string filename, bool enablePrivileges = false, 
-            bool useIoCompletionPort = false, bool unbuffered = false, bool deleteOnClose = false)
+        public LocalStorageDevice(
+            string filename, long segmentSize = -1,
+            bool preallocateSegment = false, bool singleSegment = true, bool deleteOnClose = false)
+            : base(filename, segmentSize, GetSectorSize(filename))
         {
-            this.filename = filename;
-            this.enablePrivileges = enablePrivileges;
-            this.useIoCompletionPort = useIoCompletionPort;
+            Native32.EnableProcessPrivileges();
 
-            if (enablePrivileges)
-            {
-                Native32.EnableProcessPrivileges();
-            }
+            this.preallocateSegment = preallocateSegment;
+            this.deleteOnClose = deleteOnClose;
 
-            Native32.GetDiskFreeSpace(filename.Substring(0, 3),
-                                        out lpSectorsPerCluster,
-                                        out lpBytesPerSector,
-                                        out lpNumberOfFreeClusters,
-                                        out lpTotalNumberOfClusters);
-
-            uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
-            uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
-            uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
-            uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
-
-            if (unbuffered)
-                fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
-        
-            if (deleteOnClose)
-                fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
-
-            logHandle = Native32.CreateFileW(filename, 
-                                             fileAccess,
-                                             fileShare, 
-                                             IntPtr.Zero, 
-                                             fileCreation, 
-                                             fileFlags, 
-                                             IntPtr.Zero);
-
-            if (enablePrivileges)
-            {
-                Native32.EnableVolumePrivileges(ref filename, logHandle);
-            }
-
-            if (useIoCompletionPort)
-            {
-                ioCompletionPort = Native32.CreateIoCompletionPort(
-                    logHandle,
-                    IntPtr.Zero,
-                    (uint)logHandle.DangerousGetHandle().ToInt64(),
-                    0);
-            }
-
-            try
-            {
-                ThreadPool.BindHandle(logHandle);
-            } 
-            catch(Exception e)
-            {
-                throw new Exception("Error binding log handle for " + filename + ": " + e.ToString());
-            }
-        }
-
-        /// <summary>
-        /// Sets file size to the specified value -- DOES NOT reset file seek pointer to original location
-        /// </summary>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        public bool SetFileSize(long size)
-        {
-            if (enablePrivileges)
-                return Native32.SetFileSize(logHandle, size);
+            if (singleSegment)
+                singleLogHandle = CreateHandle(0);
             else
-            {
-                int lodist = (int)size;
-                int hidist = (int)(size >> 32);
-                Native32.SetFilePointer(logHandle, lodist, ref hidist, Native32.EMoveMethod.Begin);
-                if (!Native32.SetEndOfFile(logHandle)) return false;
-                return true;
-            }
+                logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
         }
 
-        public string GetFileName()
-        {
-            return filename;
-        }
-
-        public uint GetSectorSize()
-        {
-            return lpBytesPerSector;
-        }
-
-        public void Close()
-        {
-            Native32.CloseHandle(logHandle);
-        }
-
-        public unsafe void ReadAsync(ulong sourceAddress,
-                                     IntPtr destinationAddress,
-                                     uint readLength,
-                                     IAsyncResult asyncResult)
-        {
-            Overlapped ov = new Overlapped
-            {
-                AsyncResult = asyncResult,
-                OffsetLow = unchecked((int)(sourceAddress & 0xFFFFFFFF)),
-                OffsetHigh = unchecked((int)((sourceAddress >> 32) & 0xFFFFFFFF))
-            };
-
-            NativeOverlapped* ovNative = ov.UnsafePack(null, IntPtr.Zero);
-
-            /* Invoking the Native method ReadFile provided by Kernel32.dll
-             * library. Returns false, if request failed or accepted for async 
-             * operation. Returns true, if success synchronously.
-             */
-            uint bytesRead = default(uint);
-            bool result = Native32.ReadFile(logHandle,
-                                destinationAddress,
-                                readLength,
-                                out bytesRead,
-                                ovNative);
-
-            if (!result)
-            {
-                int error = Marshal.GetLastWin32Error();
-                
-                /* Just handle the case when it is not ERROR_IO_PENDING
-                 * If ERROR_IO_PENDING, then it is accepted for async execution
-                 */ 
-                if (error != Native32.ERROR_IO_PENDING)
-                {
-                    Overlapped.Unpack(ovNative);
-                    Overlapped.Free(ovNative);
-                    throw new Exception("Error reading from log file: " + error);
-                }
-            }
-            else
-            {
-                //executed synchronously, so process callback
-                //callback(0, bytesRead, ovNative);
-            }
-        }
-
-        public unsafe void ReadAsync(ulong sourceAddress, 
+        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, 
                                      IntPtr destinationAddress, 
                                      uint readLength, 
                                      IOCompletionCallback callback, 
                                      IAsyncResult asyncResult)
         {
-            //Debug.WriteLine("sourceAddress: {0}, destinationAddress: {1}, readLength: {2}"
-            //    , sourceAddress, (ulong)destinationAddress, readLength);
+            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
 
-            if (readLength != 512)
-            {
-
-            }
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
 
-            uint bytesRead = default(uint);
-            bool result = Native32.ReadFile(logHandle, 
-                                            destinationAddress, 
+            bool result = Native32.ReadFile(logHandle,
+                                            destinationAddress,
                                             readLength,
-                                            out bytesRead, 
+                                            out uint bytesRead,
                                             ovNative);
 
             if (!result)
@@ -203,8 +60,6 @@ namespace FASTER.core
                 {
                     Overlapped.Unpack(ovNative);
                     Overlapped.Free(ovNative);
-
-                    // NOTE: alignedDestinationAddress needs to be freed by whoever catches the exception
                     throw new Exception("Error reading from log file: " + error);
                 }
             }
@@ -215,35 +70,29 @@ namespace FASTER.core
             }
         }
 
-        public unsafe void WriteAsync(IntPtr sourceAddress, 
+        public override unsafe void WriteAsync(IntPtr sourceAddress, 
+                                      int segmentId,
                                       ulong destinationAddress, 
                                       uint numBytesToWrite, 
                                       IOCompletionCallback callback, 
                                       IAsyncResult asyncResult)
         {
+            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
+            
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             ovNative->OffsetLow = unchecked((int)(destinationAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)((destinationAddress >> 32) & 0xFFFFFFFF));
 
-
-            /* Invoking the Native method WriteFile provided by Kernel32.dll
-            * library. Returns false, if request failed or accepted for async 
-            * operation. Returns true, if success synchronously.
-            */
-            uint bytesWritten = default(uint);
             bool result = Native32.WriteFile(logHandle,
                                     sourceAddress,
                                     numBytesToWrite,
-                                    out bytesWritten,
+                                    out uint bytesWritten,
                                     ovNative);
 
             if (!result)
             {
                 int error = Marshal.GetLastWin32Error();
-                /* Just handle the case when it is not ERROR_IO_PENDING
-                 * If ERROR_IO_PENDING, then it is accepted for async execution
-                 */
                 if (error != Native32.ERROR_IO_PENDING)
                 {
                     Overlapped.Unpack(ovNative);
@@ -253,13 +102,112 @@ namespace FASTER.core
             }
             else
             {
-                //executed synchronously, so process callback
+                // On synchronous completion, issue callback directly
                 callback(0, bytesWritten, ovNative);
             }
         }
 
-        public void DeleteAddressRange(long fromAddress, long toAddress)
+        public override void DeleteSegmentRange(int fromSegment, int toSegment)
         {
+            if (singleLogHandle != null)
+                throw new InvalidOperationException("Cannot delete segment range");
+
+            for (int i=fromSegment; i<toSegment; i++)
+            {
+                if (logHandles.TryRemove(i, out SafeFileHandle logHandle))
+                {
+                    logHandle.Dispose();
+                    Native32.DeleteFileW(GetSegmentName(i));
+                }
+            }
+        }
+
+        public override void Close()
+        {
+            if (singleLogHandle != null)
+                singleLogHandle.Dispose();
+            else
+                foreach (var logHandle in logHandles.Values)
+                    logHandle.Dispose();
+        }
+
+
+        private string GetSegmentName(int segmentId)
+        {
+            return FileName + "." + segmentId;
+        }
+
+        private static uint GetSectorSize(string filename)
+        {
+            if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3),
+                                        out uint lpSectorsPerCluster,
+                                        out uint _sectorSize,
+                                        out uint lpNumberOfFreeClusters,
+                                        out uint lpTotalNumberOfClusters))
+            {
+                Debug.WriteLine("Unable to retrieve information for disk " + filename.Substring(0, 3) + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
+                _sectorSize = 512;
+            }
+            return _sectorSize;
+        }
+
+        private SafeFileHandle CreateHandle(int segmentId)
+        {
+            uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
+            uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
+            uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
+            uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
+
+            fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+            if (deleteOnClose)
+                fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
+
+            var logHandle = Native32.CreateFileW(
+                GetSegmentName(segmentId),
+                fileAccess, fileShare,
+                IntPtr.Zero, fileCreation,
+                fileFlags, IntPtr.Zero);
+
+            if (preallocateSegment)
+                SetFileSize(FileName, logHandle, SegmentSize);
+
+            try
+            {
+                ThreadPool.BindHandle(logHandle);
+            }
+            catch (Exception e)
+            {
+                throw new Exception("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
+            }
+            return logHandle;
+        }
+
+        private SafeFileHandle GetOrAddHandle(int _segmentId)
+        {
+            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
+        }
+
+        /// <summary>
+        /// Sets file size to the specified value.
+        /// Does not reset file seek pointer to original location.
+        /// </summary>
+        /// <param name="size"></param>
+        /// <returns></returns>
+        private bool SetFileSize(string filename, SafeFileHandle logHandle, long size)
+        {
+            if (SegmentSize <= 0)
+                return false;
+
+            if (Native32.EnableVolumePrivileges(ref filename, logHandle))
+            {
+                return Native32.SetFileSize(logHandle, size);
+            }
+
+            int lodist = (int)size;
+            int hidist = (int)(size >> 32);
+            Native32.SetFilePointer(logHandle, lodist, ref hidist, Native32.EMoveMethod.Begin);
+            if (!Native32.SetEndOfFile(logHandle)) return false;
+            return true;
         }
     }
 }

@@ -1,31 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using Microsoft.Win32.SafeHandles;
 using System;
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace FASTER.core
 {
-    public class NullDevice : IDevice
+    public class NullDevice : StorageDeviceBase
     {
-        public NullDevice(int sector_size = -1)
+        public NullDevice() : base("null", 1L << 30, 512)
         {
         }
 
-        public void DeleteAddressRange(long fromAddress, long toAddress)
+        public override unsafe void ReadAsync(int segmentId, ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-        }
+            alignedSourceAddress = ((ulong)segmentId << 30) | alignedSourceAddress;
 
-        public uint GetSectorSize()
-        {
-            return 512;
-        }
-
-        public unsafe void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
-        {
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ov_native = ov.UnsafePack(callback, IntPtr.Zero);
             ov_native->OffsetLow = unchecked((int)(alignedSourceAddress & 0xFFFFFFFF));
@@ -34,8 +24,10 @@ namespace FASTER.core
             callback(0, aligned_read_length, ov_native);
         }
 
-        public unsafe void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void WriteAsync(IntPtr alignedSourceAddress, int segmentId, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
+            alignedDestinationAddress = ((ulong)segmentId << 30) | alignedDestinationAddress;
+
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ov_native = ov.UnsafePack(callback, IntPtr.Zero);
 
@@ -43,6 +35,14 @@ namespace FASTER.core
             ov_native->OffsetHigh = unchecked((int)((alignedDestinationAddress >> 32) & 0xFFFFFFFF));
 
             callback(0, numBytesToWrite, ov_native);
+        }
+
+        public override void DeleteSegmentRange(int fromSegment, int toSegment)
+        {
+        }
+
+        public override void Close()
+        {
         }
     }
 }

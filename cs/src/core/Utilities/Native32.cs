@@ -113,10 +113,6 @@ namespace FASTER.core
             [In] UInt32 dwFlagsAndAttributes,
             [In] IntPtr hTemplateFile);
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        public static extern void CloseHandle(
-            [In] SafeHandle handle);
-
         [DllImport("Kernel32.dll", SetLastError = true)]
         public static extern bool ReadFile(
             [In] SafeFileHandle hFile,
@@ -140,17 +136,58 @@ namespace FASTER.core
             [Out] out UInt32 lpNumberOfBytesTransferred,
             [In] bool bWait);
 
-        [DllImport("adv-file-ops.dll", SetLastError = true)]
-        public static extern bool CreateAndSetFileSize(ref string filename, Int64 file_size);
 
         [DllImport("adv-file-ops.dll", SetLastError = true)]
-        public static extern bool EnableProcessPrivileges();
+        private static extern bool DoEnableProcessPrivileges();
 
         [DllImport("adv-file-ops.dll", SetLastError = true)]
-        public static extern bool EnableVolumePrivileges(ref string filename, SafeFileHandle hFile);
+        private static extern bool DoEnableVolumePrivileges(ref string filename, SafeFileHandle hFile);
 
         [DllImport("adv-file-ops.dll", SetLastError = true)]
-        public static extern bool SetFileSize(SafeFileHandle hFile, Int64 file_size);
+        private static extern bool DoCreateAndSetFileSize(ref string filename, Int64 file_size);
+
+        [DllImport("adv-file-ops.dll", SetLastError = true)]
+        private static extern bool DoSetFileSize(SafeFileHandle hFile, Int64 file_size);
+
+
+        public static bool EnableProcessPrivileges()
+        {
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+#endif
+            return DoEnableProcessPrivileges();
+        }
+
+        public static bool EnableVolumePrivileges(ref string fileName, SafeFileHandle hFile)
+        {
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+#endif
+
+            return DoEnableVolumePrivileges(ref fileName, hFile);
+        }
+
+        public static bool CreateAndSetFileSize(ref string filename, long fileSize)
+        {
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+#endif
+            return DoCreateAndSetFileSize(ref filename, fileSize);
+        }
+
+        public static bool SetFileSize(SafeFileHandle hFile, long fileSize)
+        {
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+#endif
+
+            return DoSetFileSize(hFile, fileSize);
+        }
+
 
         public enum EMoveMethod : uint
         {
@@ -212,9 +249,9 @@ namespace FASTER.core
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName);
-        #endregion
+#endregion
 
-        #region thread and numa functions
+#region thread and numa functions
         [DllImport("kernel32.dll")]
         public static extern IntPtr GetCurrentThread();
         [DllImport("kernel32")]
@@ -293,6 +330,6 @@ namespace FASTER.core
             AffinitizeThreadRoundRobin(threadIdx);
             return;
         }
-        #endregion
+#endregion
     }
 }

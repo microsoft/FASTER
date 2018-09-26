@@ -307,6 +307,7 @@ namespace FASTER.core
     {
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
+        public IDevice snapshotFileObjectLogDevice;
         public CountdownEvent flushed;
         public long started;
 
@@ -325,6 +326,8 @@ namespace FASTER.core
             started = 0;
             flushed = null;
             info.Reset();
+            snapshotFileDevice.Close();
+            if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Close();
         }
     }
 
@@ -410,8 +413,8 @@ namespace FASTER.core
         public void Initialize(Guid token, long _size)
         {
             info.Initialize(token, _size);
-            main_ht_device = new WrappedDevice(new SegmentedLocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(token), 1L << 30, false, false, true));
-            ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(token), false, false, true);
+            main_ht_device = new LocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(token));
+            ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(token));
         }
         public void Recover(Guid token)
         {
@@ -420,6 +423,8 @@ namespace FASTER.core
         public void Reset()
         {
             info.Reset();
+            main_ht_device.Close();
+            ofb_device.Close();
         }
     }
 }

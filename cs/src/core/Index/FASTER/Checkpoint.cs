@@ -259,8 +259,10 @@ namespace FASTER.core
                             {
                                 ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
 
-                                var fileName = DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken);
-                                _hybridLogCheckpoint.snapshotFileDevice = new LocalStorageDevice(fileName, false, false, true);
+                                _hybridLogCheckpoint.snapshotFileDevice = FasterFactory.CreateLogDevice
+                                    (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = FasterFactory.CreateObjectLogDevice
+                                    (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
 
                                 long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
                                 long endPage = hlog.GetPage(_hybridLogCheckpoint.info.finalLogicalAddress);
@@ -272,7 +274,8 @@ namespace FASTER.core
                                 new Thread(() =>
                                     hlog.AsyncFlushPagesToDevice(startPage, 
                                                                  endPage, 
-                                                                 _hybridLogCheckpoint.snapshotFileDevice, 
+                                                                 _hybridLogCheckpoint.snapshotFileDevice,
+                                                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice,
                                                                  out _hybridLogCheckpoint.flushed)).Start();
                             }
 

@@ -30,7 +30,7 @@ namespace FASTER.test.recovery
         {
             int seed = 123;
             var rand1 = new Random(seed);
-            IDevice device = new LocalStorageDevice("test_ofb.dat", false, false, true, true);
+            var device = new LocalStorageDevice("test_ofb.dat", deleteOnClose: true);
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
@@ -80,8 +80,8 @@ namespace FASTER.test.recovery
             int size = 1 << 16;
             long numAdds = 1 << 18;
 
-            IDevice ht_device = new LocalStorageDevice("ht.dat", false, false, true, true);
-            IDevice ofb_device = new LocalStorageDevice("ofb.dat", false, false, true, true);
+            IDevice ht_device = new LocalStorageDevice("ht.dat", deleteOnClose: true);
+            IDevice ofb_device = new LocalStorageDevice("ofb.dat", deleteOnClose: true);
 
             var hash_table1 = new FasterBase();
             hash_table1.Initialize(size, 512);

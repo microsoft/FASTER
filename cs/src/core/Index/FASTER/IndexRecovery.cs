@@ -17,26 +17,26 @@ namespace FASTER.core
     public unsafe partial class FasterBase
     {
         // Derived class exposed API
-        protected void RecoverFuzzyIndex(IndexRecoveryInfo info)
+        protected void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
             var ht_version = resizeInfo.version;
-            var token = info.token;
-            Debug.Assert(state[ht_version].size == info.table_size);
+            var token = info.info.token;
+            Debug.Assert(state[ht_version].size == info.info.table_size);
 
             BeginMainIndexRecovery(ht_version,
-                             DirectoryConfiguration.GetPrimaryHashTableFileName(token),
-                             info.num_ht_bytes);
+                             info.main_ht_device,
+                             info.info.num_ht_bytes);
 
             overflowBucketsAllocator.Recover(
-                             DirectoryConfiguration.GetOverflowBucketsFileName(token),
-                             info.num_buckets,
-                             info.num_ofb_bytes);
+                             info.ofb_device,
+                             info.info.num_buckets,
+                             info.info.num_ofb_bytes);
 
         }
 
         internal void RecoverFuzzyIndex(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes)
         {
-            _BeginMainIndexRecovery(ht_version, device, num_ht_bytes);
+            BeginMainIndexRecovery(ht_version, device, num_ht_bytes);
             overflowBucketsAllocator.Recover(ofbdevice, num_buckets, num_ofb_bytes);
         }
 
@@ -50,29 +50,19 @@ namespace FASTER.core
         //Main Index Recovery Functions
         private int numChunksToBeRecovered;
 
-        private void BeginMainIndexRecovery(
-                                        int version,
-                                        string filename,
-                                        ulong num_bytes)
-        {
-            _BeginMainIndexRecovery(
-                version, 
-                new WrappedDevice(new SegmentedLocalStorageDevice(filename, 1L << 30, false, false, true)), 
-                num_bytes);
-        }
 
-        private void _BeginMainIndexRecovery(
+        private void BeginMainIndexRecovery(
                                 int version,
                                 IDevice device,
                                 ulong num_bytes)
         {
-            numChunksToBeRecovered = 1; // Constants.kNumMergeChunks;
-            long chunkSize = state[version].size / 1; // Constants.kNumMergeChunks;
+            numChunksToBeRecovered = 1;
+            long chunkSize = state[version].size / 1;
             HashBucket* start = state[version].tableAligned;
             uint sizeOfPage = (uint)chunkSize * (uint)sizeof(HashBucket);
 
             uint num_bytes_read = 0;
-            for (int index = 0; index < 1 /*Constants.kNumMergeChunks*/; index++)
+            for (int index = 0; index < 1; index++)
             {
                 HashBucket* chunkStartBucket = start + (index * chunkSize);
                 HashIndexPageAsyncReadResult result = default(HashIndexPageAsyncReadResult);
@@ -97,26 +87,13 @@ namespace FASTER.core
             return completed;
         }
 
-        protected unsafe void AsyncPageReadCallback(
-                                        uint errorCode,
-                                        uint numBytes,
-                                        NativeOverlapped* overlap)
+        protected unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref numChunksToBeRecovered);
-            }
+            Interlocked.Decrement(ref numChunksToBeRecovered);
         }
 
         protected void DeleteTentativeEntries()

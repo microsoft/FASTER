@@ -162,6 +162,7 @@ namespace FASTER.test.recovery.sumstore
         bool TakeHybridLogCheckpoint(out Guid token);
         void Recover(Guid fullcheckpointToken);
         void Recover(Guid indexToken, Guid hybridLogToken);
+        bool CompleteCheckpoint(bool wait);
 
         /* Store Interface */
         Status Read(AdId* key, Input* input, Output* output, Empty* context, long lsn);

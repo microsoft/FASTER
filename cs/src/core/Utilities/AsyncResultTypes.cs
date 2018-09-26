@@ -38,7 +38,7 @@ namespace FASTER.core
         public SectorAlignedMemory freeBuffer1;
         public IOCompletionCallback callback;
         public int count;
-        public ISegmentedDevice objlogDevice;
+        public IDevice objlogDevice;
 
         public bool IsCompleted => throw new NotImplementedException();
 
@@ -68,7 +68,7 @@ namespace FASTER.core
         public long untilAddress;
         public int count;
         public CountdownEvent handle;
-        public ISegmentedDevice objlogDevice;
+        public IDevice objlogDevice;
         public SectorAlignedMemory freeBuffer1;
         public SectorAlignedMemory freeBuffer2;
 

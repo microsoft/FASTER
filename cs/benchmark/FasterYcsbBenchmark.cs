@@ -93,7 +93,7 @@ namespace FASTER.benchmark
 #else
             store = new FasterKV
 #endif
-                (kMaxKey / 2, device);
+                (kMaxKey / 2, device, null);
         }
 
         private void RunYcsb(int thread_idx)

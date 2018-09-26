@@ -190,7 +190,7 @@ namespace FASTER.core
             {
                 asyncResult.context.record = result;
                 asyncResult.context.objBuffer = record;
-                objlogDevice.ReadAsync(
+                objectLogDevice.ReadAsync(
                     (int)(context.logicalAddress >> LogSegmentSizeBits),
                     alignedFileOffset,
                     (IntPtr)asyncResult.context.objBuffer.aligned_pointer,
@@ -200,46 +200,16 @@ namespace FASTER.core
             }
         }
 
-        private ISegmentedDevice CreateObjectLogDevice(IDevice device)
-        {
-            if ((device as NullDevice) != null)
-            {
-                return new SegmentedNullDevice();
-            }
-            else if ((device as LocalStorageDevice) != null)
-            {
-                string filename = (device as LocalStorageDevice).GetFileName();
-                filename = filename.Substring(0, filename.Length - 4) + ".objlog";
-                return new SegmentedLocalStorageDevice(filename, -1, false, false, true);
-            }
-            else if ((device as SegmentedLocalStorageDevice) != null)
-            {
-                string filename = (device as SegmentedLocalStorageDevice).GetFileName();
-                filename = filename.Substring(0, filename.Length - 4) + ".objlog";
-                return new SegmentedLocalStorageDevice(filename, -1, false, false, true);
-            }
-            else if ((device as WrappedDevice) != null)
-            {
-                if ((device as WrappedDevice).GetUnderlyingDevice() is SegmentedLocalStorageDevice ud)
-                {
-                    string filename = ud.GetFileName();
-                    filename = filename.Substring(0, filename.Length - 4) + ".objlog";
-                    return new SegmentedLocalStorageDevice(filename, -1, false, false, true);
-                }
-            }
-
-            throw new Exception("Unable to create object log device");
-        }
-
         public void AsyncReadPagesFromDevice<TContext>(
                                 long readPageStart,
                                 int numPages,
                                 IOCompletionCallback callback,
                                 TContext context,
                                 long devicePageOffset = 0,
-                                IDevice device = null)
+                                IDevice logDevice = null, IDevice objectLogDevice = null)
         {
-            AsyncReadPagesFromDevice(readPageStart, numPages, callback, context, out CountdownEvent completed, devicePageOffset, device);
+            AsyncReadPagesFromDevice(readPageStart, numPages, callback, context, 
+                out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
         }
 
         public void AsyncReadPagesFromDevice<TContext>(
@@ -249,14 +219,21 @@ namespace FASTER.core
                                         TContext context,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null)
+                                        IDevice device = null, IDevice objectLogDevice = null)
         {
-            var usedDevice = (device != null) ? device : this.device;
-            ISegmentedDevice usedObjlogDevice = null;
+            var usedDevice = device;
+            IDevice usedObjlogDevice = objectLogDevice;
+
+            if (device == null)
+            {
+                usedDevice = this.device;
+                usedObjlogDevice = this.objectLogDevice;
+            }
 
             if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
             {
-                usedObjlogDevice = (device != null) ? CreateObjectLogDevice(device) : objlogDevice;
+                if (usedObjlogDevice == null)
+                    throw new Exception("Object log device not provided");
             }
 
             completed = new CountdownEvent(numPages);
@@ -309,7 +286,7 @@ namespace FASTER.core
 
                 WriteAsync(pointers[flushPage % BufferSize],
                                   (ulong)(AlignedPageSizeBytes * flushPage),
-                                  PageSize, callback, asyncResult, device, objlogDevice);
+                                  PageSize, callback, asyncResult, device, objectLogDevice);
             }
         }
 
@@ -364,7 +341,7 @@ namespace FASTER.core
                                     (ulong)(AlignedPageSizeBytes * flushPage),
                                     PageSize,
                                     AsyncFlushPageCallback,
-                                    asyncResult, device, objlogDevice);
+                                    asyncResult, device, objectLogDevice);
             }
         }
 
@@ -376,14 +353,8 @@ namespace FASTER.core
         /// <param name="endPage"></param>
         /// <param name="device"></param>
         /// <param name="completed"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, IDevice device, out CountdownEvent completed)
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
         {
-            ISegmentedDevice objlogDevice = null;
-            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
-            {
-                objlogDevice = CreateObjectLogDevice(device);
-            }
-
             int totalNumPages = (int)(endPage - startPage);
             completed = new CountdownEvent(totalNumPages);
 
@@ -402,7 +373,7 @@ namespace FASTER.core
                             (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                             PageSize,
                             AsyncFlushPageToDeviceCallback,
-                            asyncResult, device, objlogDevice);
+                            asyncResult, device, objectLogDevice);
             }
         }
 
@@ -411,7 +382,7 @@ namespace FASTER.core
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                                 IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                                IDevice device, ISegmentedDevice objlogDevice)
+                                IDevice device, IDevice objlogDevice)
         {
             if (!Key.HasObjectsToSerialize() && !Value.HasObjectsToSerialize())
             {
@@ -485,7 +456,7 @@ namespace FASTER.core
 
         private void ReadAsync<TContext>(
             ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length,
-            IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, ISegmentedDevice objlogDevice)
+            IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
             if (!Key.HasObjectsToSerialize() && !Value.HasObjectsToSerialize())
             {

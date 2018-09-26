@@ -23,6 +23,7 @@ namespace FASTER.test.recovery.objectstore
         private IManagedFasterKV<AdId, NumClicks, Input, Output, Empty> fht;
         private string test_path;
         private Guid token;
+        private IDevice log, objlog;
 
         [TestInitialize]
         public void Setup()
@@ -34,12 +35,13 @@ namespace FASTER.test.recovery.objectstore
                     Directory.CreateDirectory(test_path);
             }
 
-            var log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
+            log = FasterFactory.CreateLogDevice(test_path + "\\hlog", deleteOnClose: true);
+            objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\hlog", deleteOnClose: true);
 
             fht = 
                 FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, Functions>
-                (keySpace, log, checkpointDir: test_path, functions: new Functions());
+                (keySpace, log, objlog, checkpointDir: test_path, functions: new Functions());
         }
 
         [TestCleanup]
@@ -47,6 +49,9 @@ namespace FASTER.test.recovery.objectstore
         {
             fht.StopSession();
             fht = null;
+            log.Close();
+            objlog.Close();
+            DeleteDirectory(test_path);
         }
 
         public static void DeleteDirectory(string path)

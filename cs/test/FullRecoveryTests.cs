@@ -23,6 +23,7 @@ namespace FASTER.test.recovery.sumstore
         private ICustomFaster fht;
         private string test_path;
         private Guid token;
+        private IDevice log;
 
         [TestInitialize]
         public void Setup()
@@ -34,7 +35,7 @@ namespace FASTER.test.recovery.sumstore
                     Directory.CreateDirectory(test_path);
             }
 
-            var log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
+            log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
 
             fht = 
                 FasterFactory.Create
@@ -47,6 +48,8 @@ namespace FASTER.test.recovery.sumstore
         {
             fht.StopSession();
             fht = null;
+            log.Close();
+            DeleteDirectory(test_path);
         }
 
         public static void DeleteDirectory(string path)
@@ -109,6 +112,8 @@ namespace FASTER.test.recovery.sumstore
                         else
                             while (!fht.TakeFullCheckpoint(out Guid nextToken))
                                 fht.Refresh();
+
+                        fht.CompleteCheckpoint(true);
 
                         first = false;
                     }

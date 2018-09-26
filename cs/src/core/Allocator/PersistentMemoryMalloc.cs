@@ -56,7 +56,7 @@ namespace FASTER.core
         NativeSectorAlignedBufferPool readBufferPool;
 
         private readonly IDevice device;
-        private readonly ISegmentedDevice objlogDevice;
+        private readonly IDevice objectLogDevice;
         private readonly int sectorSize;
 
         // Page size
@@ -115,7 +115,7 @@ namespace FASTER.core
 
         public long BeginAddress;
 
-        public PersistentMemoryMalloc(IDevice device) : this(device, 0)
+        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice) : this(device, objectLogDevice, 0)
         {
             Allocate(Constants.kFirstValidAddress); // null pointer
             ReadOnlyAddress = GetTailAddress();
@@ -125,7 +125,7 @@ namespace FASTER.core
             BeginAddress = ReadOnlyAddress;
         }
 
-        public PersistentMemoryMalloc(IDevice device, long startAddress)
+        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress)
         {
             if (BufferSize < 16)
             {
@@ -134,9 +134,15 @@ namespace FASTER.core
 
             this.device = device;
 
-            objlogDevice = CreateObjectLogDevice(device);
+            this.objectLogDevice = objectLogDevice;
 
-            sectorSize = (int)device.GetSectorSize();
+            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
+            {
+                if (objectLogDevice == null)
+                    throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
+            }
+
+            sectorSize = (int)device.SectorSize;
             epoch = LightEpoch.Instance;
             ioBufferPool = new NativeSectorAlignedBufferPool(1, sectorSize);
             AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
@@ -470,7 +476,7 @@ namespace FASTER.core
             epoch.BumpCurrentEpoch(() =>
             {
                 device.DeleteAddressRange(oldBeginAddress, newBeginAddress);
-                objlogDevice.DeleteSegmentRange((int)(oldBeginAddress >> LogSegmentSizeBits), (int)(newBeginAddress >> LogSegmentSizeBits));
+                objectLogDevice.DeleteSegmentRange((int)(oldBeginAddress >> LogSegmentSizeBits), (int)(newBeginAddress >> LogSegmentSizeBits));
             });
         }
 

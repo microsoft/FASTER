@@ -44,6 +44,9 @@ namespace FASTER.core
             _indexCheckpoint.Recover(indexToken);
             _hybridLogCheckpoint.Recover(hybridLogToken);
 
+            _indexCheckpoint.main_ht_device = new LocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token));
+            _indexCheckpoint.ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token));
+
             var l1 = _indexCheckpoint.info.finalLogicalAddress;
             var l2 = _hybridLogCheckpoint.info.finalLogicalAddress;
             var v = _hybridLogCheckpoint.info.version;
@@ -55,7 +58,7 @@ namespace FASTER.core
             _systemState.phase = Phase.REST;
             _systemState.version = (v + 1);
 
-            RecoverFuzzyIndex(_indexCheckpoint.info);
+            RecoverFuzzyIndex(_indexCheckpoint);
 
             IsFuzzyIndexRecoveryComplete(true);
 
@@ -69,6 +72,8 @@ namespace FASTER.core
             {
                 RecoverHybridLogFromSnapshotFile(_indexCheckpoint.info, _hybridLogCheckpoint.info);
             }
+
+            _indexCheckpoint.Reset();
 
             RestoreHybridLog(_hybridLogCheckpoint.info.finalLogicalAddress);
         }
@@ -137,6 +142,7 @@ namespace FASTER.core
 
             public IDevice recoveryDevice;
             public long recoveryDevicePageOffset;
+            public IDevice objectLogRecoveryDevice;
 
             public ReadStatus[] readStatus;
             public FlushStatus[] flushStatus;
@@ -255,7 +261,9 @@ namespace FASTER.core
             var capacity = hlog.GetCapacityNumPages();
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage);
 
-            recoveryStatus.recoveryDevice = new LocalStorageDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid), false, false, true);
+            recoveryStatus.recoveryDevice = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid));
+            recoveryStatus.objectLogRecoveryDevice = FasterFactory.CreateObjectLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid));
+
             recoveryStatus.recoveryDevicePageOffset = startPage;
 
             // Initially issue read request for all pages that can be held in memory
@@ -268,7 +276,7 @@ namespace FASTER.core
                                             AsyncReadPagesCallbackForRecovery,
                                             recoveryStatus,
                                             recoveryStatus.recoveryDevicePageOffset,
-                                            recoveryStatus.recoveryDevice);
+                                            recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
 
 
@@ -336,6 +344,9 @@ namespace FASTER.core
                     }
                 }
             }
+
+            recoveryStatus.recoveryDevice.Close();
+            recoveryStatus.objectLogRecoveryDevice.Close();
         }
 
         private void RecoverFromPage(long startRecoveryAddress,
@@ -446,7 +457,7 @@ namespace FASTER.core
                         hlog.AsyncReadPagesFromDevice(readPage, 1, AsyncReadPagesCallbackForRecovery,
                                                             result.context,
                                                             result.context.recoveryDevicePageOffset,
-                                                            result.context.recoveryDevice);
+                                                            result.context.recoveryDevice, result.context.objectLogRecoveryDevice);
                     }
                 }
                 result.Free();

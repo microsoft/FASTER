@@ -16,7 +16,7 @@ std::string FormatWin32AndHRESULT(DWORD win32_result) {
 }
 
 extern "C"
-__declspec(dllexport) bool EnableProcessPrivileges() {
+__declspec(dllexport) bool DoEnableProcessPrivileges() {
 	HANDLE token;
 
 	TOKEN_PRIVILEGES token_privileges;
@@ -35,13 +35,12 @@ __declspec(dllexport) bool EnableProcessPrivileges() {
 }
 
 extern "C"
-__declspec(dllexport) bool EnableVolumePrivileges(std::string& filename, HANDLE file_handle)
+__declspec(dllexport) bool DoEnableVolumePrivileges(std::string& filename, HANDLE file_handle)
 {
 	std::string volume_string = "\\\\.\\" + filename.substr(0, 2);
 	HANDLE volume_handle = ::CreateFile(volume_string.c_str(), 0, 0, nullptr, OPEN_EXISTING,
 		FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (INVALID_HANDLE_VALUE == volume_handle) {
-		// std::cerr << "Error retrieving volume handle: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 
@@ -55,7 +54,6 @@ __declspec(dllexport) bool EnableVolumePrivileges(std::string& filename, HANDLE 
 		0, &bytes_returned, nullptr);
 
 	if (!result) {
-		// std::cerr << "Error in DeviceIoControl: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 
@@ -65,38 +63,34 @@ __declspec(dllexport) bool EnableVolumePrivileges(std::string& filename, HANDLE 
 
 
 extern "C"
-__declspec(dllexport) bool SetFileSize(HANDLE file_handle, int64_t file_size)
+__declspec(dllexport) bool DoSetFileSize(HANDLE file_handle, int64_t file_size)
 {
 	LARGE_INTEGER li;
 	li.QuadPart = file_size;
 
 	BOOL result = ::SetFilePointerEx(file_handle, li, NULL, FILE_BEGIN);
 	if (!result) {
-		std::cerr << "SetFilePointer failed with error: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 
 	// Set a fixed file length
 	result = ::SetEndOfFile(file_handle);
 	if (!result) {
-		std::cerr << "SetEndOfFile failed with error: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 
 	result = ::SetFileValidData(file_handle, file_size);
 	if (!result) {
-		std::cerr << "SetFileValidData failed with error: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 	return true;
 }
 
 extern "C"
-__declspec(dllexport) bool CreateAndSetFileSize(std::string& filename, int64_t file_size)
+__declspec(dllexport) bool DoCreateAndSetFileSize(std::string& filename, int64_t file_size)
 {
-	BOOL result = ::EnableProcessPrivileges();
+	BOOL result = ::DoEnableProcessPrivileges();
 	if (!result) {
-		std::cerr << "EnableProcessPrivileges failed with error: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 
@@ -109,20 +103,16 @@ __declspec(dllexport) bool CreateAndSetFileSize(std::string& filename, int64_t f
 	HANDLE file_handle = ::CreateFile(filename.c_str(), desired_access, shared_mode, NULL,
 		create_disposition, flags, NULL);
 	if (INVALID_HANDLE_VALUE == file_handle) {
-		std::cerr << "write file (" << filename << ") not created. Error: " <<
-			FormatWin32AndHRESULT(::GetLastError()) << std::endl;
 		return false;
 	}
 
-	result = ::EnableVolumePrivileges(filename, file_handle);
+	result = ::DoEnableVolumePrivileges(filename, file_handle);
 	if (!result) {
-		std::cerr << "EnableVolumePrivileges failed with error: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 
-	result = ::SetFileSize(file_handle, file_size);
+	result = ::DoSetFileSize(file_handle, file_size);
 	if (!result) {
-		std::cerr << "SetFileSize failed with error: " << FormatWin32AndHRESULT(::GetLastError());
 		return false;
 	}
 

@@ -48,7 +48,7 @@ namespace NestedTypesTest
                 MyContext
 #endif
                 , MyFunctions>
-                (128, log, new MyFunctions(),
+                (128, log, null, new MyFunctions(),
                 LogPageSizeBits: 10,
                 LogTotalSizeBytes: 1L << 14
                 );

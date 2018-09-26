@@ -18,14 +18,17 @@ namespace FASTER.test
     public class ObjectFASTERTests
     {
         private static IManagedFasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext> fht;
-
+        private static IDevice log, objlog;
+        
         [ClassInitialize]
         public static void Setup(TestContext t)
         {
-            var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "\\hybridlog_object.log");
+            log = FasterFactory.CreateLogDevice("hlog", deleteOnClose: true);
+            objlog = FasterFactory.CreateObjectLogDevice("hlog", deleteOnClose: true);
+
             fht = FasterFactory.Create
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (indexSizeBuckets: 128, logDevice: log, functions: new MyFunctions(), 
+                (indexSizeBuckets: 128, logDevice: log, objectLogDevice: objlog, functions: new MyFunctions(), 
                 LogMutableFraction: 0.1, LogPageSizeBits: 9, LogTotalSizeBytes: 512*16
                 );
             fht.StartSession();
@@ -36,6 +39,7 @@ namespace FASTER.test
         {
             fht.StopSession();
             fht = null;
+            log.Close();
         }
 
 

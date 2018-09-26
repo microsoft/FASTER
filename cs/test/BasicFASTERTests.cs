@@ -18,11 +18,12 @@ namespace FASTER.test
     public class BasicFASTERTests
     {
         private ICustomFaster fht;
+        private IDevice log;
 
         [TestInitialize]
         public void Setup()
         {
-            var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "\\hybridlog_native.log");
+            log = new LocalStorageDevice("hybridlog_native.log", deleteOnClose: true);
             fht = FasterFactory.Create
                 <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFaster>
                 (128, log);
@@ -34,6 +35,7 @@ namespace FASTER.test
         {
             fht.StopSession();
             fht = null;
+            log.Close();
         }
 
 

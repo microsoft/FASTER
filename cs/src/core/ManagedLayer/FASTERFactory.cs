@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq.Expressions;
+using System.Runtime.InteropServices;
 using static FASTER.core.Roslyn.Helper;
 
 namespace FASTER.core
@@ -17,12 +18,44 @@ namespace FASTER.core
         /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
         /// <param name="segmentSize">Size of each chunk of the log</param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath, long segmentSize = 1L << 30)
+        public static IDevice CreateLogDevice(string logPath, long segmentSize = 1L << 30, bool deleteOnClose = false)
         {
             IDevice logDevice = new NullDevice();
-            if (!String.IsNullOrWhiteSpace(logPath))
-                logDevice = new WrappedDevice(new SegmentedLocalStorageDevice(logPath, segmentSize, false, false, true, false));
+            if (String.IsNullOrWhiteSpace(logPath))
+                return logDevice;
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                logDevice = new ManagedLocalStorageDevice(logPath + ".log", segmentSize, true, false, deleteOnClose);
+            }
+#else
+            {
+                logDevice = new LocalStorageDevice(logPath + ".log", segmentSize, true, false, deleteOnClose);
+            }
+#endif
+            return logDevice;
+        }
 
+        /// <summary>
+        /// Create a storage device for the object log (for non-blittable objects)
+        /// </summary>
+        /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
+        /// <returns>Device instance</returns>
+        public static IDevice CreateObjectLogDevice(string logPath, bool deleteOnClose = false)
+        {
+            IDevice logDevice = new NullDevice();
+            if (String.IsNullOrWhiteSpace(logPath))
+                return logDevice;
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                logDevice = new ManagedLocalStorageDevice(logPath + ".obj.log", singleSegment: false, deleteOnClose: deleteOnClose);
+            }
+#else
+            {
+                logDevice = new LocalStorageDevice(logPath + ".obj.log", singleSegment: false, deleteOnClose: deleteOnClose);
+            }
+#endif
             return logDevice;
         }
 
@@ -38,6 +71,7 @@ namespace FASTER.core
         /// <typeparam name="TIFaster">Interface of returned FASTER instance</typeparam>
         /// <param name="indexSizeBuckets">Numer of buckets</param>
         /// <param name="logDevice">Log device</param>
+        /// <param name="objectLogDevice">Log device for storing objects (only needed for non-blittable key/value types)</param>
         /// <param name="LogTotalSizeBytes">Total size of log (bytes)</param>
         /// <param name="LogMutableFraction">Fraction of log that is mutable</param>
         /// <param name="LogPageSizeBits">Size of each log page</param>
@@ -45,7 +79,7 @@ namespace FASTER.core
         /// <returns>Instance of FASTER</returns>
         public static TIFaster
             Create<TKey, TValue, TInput, TOutput, TContext, TFunctions, TIFaster>(
-            long indexSizeBuckets, IDevice logDevice, 
+            long indexSizeBuckets, IDevice logDevice, IDevice objectLogDevice = null,
             long LogTotalSizeBytes = 17179869184, double LogMutableFraction = 0.9, int LogPageSizeBits = 25,
             string checkpointDir = null
             )
@@ -55,7 +89,7 @@ namespace FASTER.core
                 HashTableManager.GetFasterHashTable
                                 <TKey, TValue, TInput, TOutput,
                                 TContext, TFunctions, TIFaster>
-                                (indexSizeBuckets, logDevice, checkpointDir, 
+                                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir, 
                                 LogTotalSizeBytes, LogMutableFraction, LogPageSizeBits);
         }
 
@@ -70,6 +104,7 @@ namespace FASTER.core
         /// <typeparam name="TFunctions">Callback Functions</typeparam>
         /// <param name="indexSizeBuckets">Numer of buckets</param>
         /// <param name="logDevice">Log device</param>
+        /// <param name="objectLogDevice">Log device for storing objects (only needed for non-blittable key/value types)</param>
         /// <param name="functions">Instance of functions</param>
         /// <param name="LogTotalSizeBytes">Total size of log (bytes)</param>
         /// <param name="LogMutableFraction">Fraction of log that is mutable</param>
@@ -79,13 +114,17 @@ namespace FASTER.core
         /// <returns>Instance of FASTER</returns>
         public static IManagedFasterKV<TKey, TValue, TInput, TOutput, TContext>
             Create<TKey, TValue, TInput, TOutput, TContext, TFunctions>
-            (long indexSizeBuckets, IDevice logDevice, 
+            (long indexSizeBuckets, IDevice logDevice, IDevice objectLogDevice,
             TFunctions functions,
             long LogTotalSizeBytes = 17179869184, double LogMutableFraction = 0.9, int LogPageSizeBits = 25,
             bool treatValueAsAtomic = false, string checkpointDir = null)
             where TFunctions : IUserFunctions<TKey, TValue, TInput, TOutput, TContext>
         {
-            return HashTableManager.GetMixedManagedFasterHashTable<TKey, TValue, TInput, TOutput, TContext, TFunctions>(indexSizeBuckets, logDevice, checkpointDir, functions, treatValueAsAtomic, LogTotalSizeBytes, LogMutableFraction, LogPageSizeBits);
+            return HashTableManager.GetMixedManagedFasterHashTable
+                <TKey, TValue, TInput, TOutput, TContext, TFunctions>
+                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir, 
+                functions, treatValueAsAtomic, LogTotalSizeBytes, LogMutableFraction, 
+                LogPageSizeBits);
         }
     }
 }

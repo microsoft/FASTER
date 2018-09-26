@@ -491,11 +491,6 @@ namespace FASTER.core
         #endregion
 
         #region Recover
-        public void Recover(string filename, int buckets, ulong numBytes)
-        {
-            Recover(new LocalStorageDevice(filename, false, false, true), buckets, numBytes);
-        }
-
         public void Recover(IDevice device, int buckets, ulong numBytes)
         {
             BeginRecovery(device, 0UL, buckets, numBytes, out ulong numBytesRead);
