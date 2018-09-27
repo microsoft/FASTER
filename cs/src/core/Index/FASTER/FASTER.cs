@@ -24,6 +24,8 @@ namespace FASTER.core
 
         public long LogTailAddress => hlog.GetTailAddress();
 
+        public long EntryCount => GetEntryCount();
+
         public enum CheckpointType
         {
             INDEX_ONLY,
@@ -276,6 +278,11 @@ namespace FASTER.core
                 return false;
             }
             return true;
+        }
+
+        public void Dispose()
+        {
+            hlog.Dispose();
         }
     }
 }

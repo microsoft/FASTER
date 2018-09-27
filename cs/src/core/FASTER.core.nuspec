@@ -15,7 +15,15 @@
     <tags>key value store</tags>
     <dependencies>
       <group targetFramework="net46">
-        <dependency id="Microsoft.CodeAnalysis.CSharp.Scripting" version="2.6.1" />
+        <dependency id="Microsoft.CodeAnalysis.CSharp.Scripting" version="2.9.0" />
+        <dependency id="System.Reflection.Emit.ILGeneration" version="4.3.0" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.1" />
+      </group>
+      <group targetFramework="netstandard2.0">
+        <dependency id="Microsoft.CodeAnalysis.CSharp.Scripting" version="2.9.0" />
+        <dependency id="System.Reflection.Emit.ILGeneration" version="4.3.0" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.1" />
+        <dependency id="System.Runtime.Loader" version="4.3.0" />
       </group>
     </dependencies>
   </metadata>

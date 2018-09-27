@@ -195,7 +195,7 @@ namespace FASTER.core
         /// <summary>
         /// Dispose memory allocator
         /// </summary>
-        public void Free()
+        public void Dispose()
         {
             for (int i = 0; i < values.Length; i++)
             {

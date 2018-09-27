@@ -19,7 +19,7 @@ namespace FASTER.core
     /// user defines the customized interface and provides it to FASTER
     /// so it can return a (generated) instance for that interface.
     /// </summary>
-    public unsafe interface IFasterKV
+    public unsafe interface IFasterKV : IDisposable
     {
         /* Thread-related operations */
 
@@ -134,9 +134,14 @@ namespace FASTER.core
 
         /* Statistics */
         /// <summary>
-        /// Get size of FASTER
+        /// Get tail address of FASTER log
         /// </summary>
         long LogTailAddress { get; }
+
+        /// <summary>
+        /// Get number of (non-zero) hash entries in FASTER
+        /// </summary>
+        long EntryCount { get; }
 
         /// <summary>
         /// Dump distribution of #entries in hash table, to console

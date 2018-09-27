@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe interface IFasterKV_Mixed
+    public unsafe interface IFasterKV_Mixed : IDisposable
     {
         /* Thread-related operations */
         Guid StartSession();
@@ -35,6 +35,7 @@ namespace FASTER.core
 
         /* Statistics */
         long LogTailAddress { get; }
+        long EntryCount { get; }
         void DumpDistribution();
     }
 }
