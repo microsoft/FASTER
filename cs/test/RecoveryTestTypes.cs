@@ -173,6 +173,7 @@ namespace FASTER.test.recovery.sumstore
 
         /* Statistics */
         long LogTailAddress { get; }
+        long LogReadOnlyAddress { get; }
         void DumpDistribution();
     }
 

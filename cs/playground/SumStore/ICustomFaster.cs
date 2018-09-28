@@ -34,6 +34,7 @@ namespace SumStore
 
         /* Statistics */
         long LogTailAddress { get; }
+        long LogReadOnlyAddress { get; }
         void DumpDistribution();
     }
 }

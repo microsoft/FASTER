@@ -144,6 +144,11 @@ namespace ManagedSampleCore
         long LogTailAddress { get; }
 
         /// <summary>
+        /// Get (safe) read-only address of FASTER
+        /// </summary>
+        long LogReadOnlyAddress { get; }
+
+        /// <summary>
         /// Dump distribution of #entries in hash table, to console
         /// </summary>
         void DumpDistribution();

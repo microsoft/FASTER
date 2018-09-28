@@ -142,6 +142,11 @@ namespace FASTER.core
         long LogTailAddress { get; }
 
         /// <summary>
+        /// Get (safe) read-only address of FASTER
+        /// </summary>
+        long LogReadOnlyAddress { get; }
+
+        /// <summary>
         /// Get number of (non-zero) hash entries in FASTER
         /// </summary>
         long EntryCount { get; }

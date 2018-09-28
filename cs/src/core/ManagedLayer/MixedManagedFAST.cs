@@ -14,6 +14,7 @@ namespace FASTER.core
     {
         private IFasterKV_Mixed store;
         public long LogTailAddress => store.LogTailAddress;
+        public long LogReadOnlyAddress => store.LogReadOnlyAddress;
         public long EntryCount => store.EntryCount;
 
         public MixedManagedFast(long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir, MixedUserFunctions functions, long LogTotalSizeBytes = 17179869184, double LogMutableFraction = 0.9, int LogPageSizeBits = 25)

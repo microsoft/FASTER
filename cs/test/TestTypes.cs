@@ -168,6 +168,8 @@ namespace FASTER.test
 
         /* Statistics */
         long LogTailAddress { get; }
+        long LogReadOnlyAddress { get; }
+
         void DumpDistribution();
     }
     public unsafe class Functions

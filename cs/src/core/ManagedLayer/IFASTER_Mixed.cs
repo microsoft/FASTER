@@ -36,6 +36,8 @@ namespace FASTER.core
 
         /* Statistics */
         long LogTailAddress { get; }
+        long LogReadOnlyAddress { get; }
+
         long EntryCount { get; }
         void DumpDistribution();
     }
