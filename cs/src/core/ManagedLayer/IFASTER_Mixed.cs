@@ -24,6 +24,7 @@ namespace FASTER.core
         Status Upsert(MixedKeyWrapper* key, MixedValueWrapper* value, MixedContextWrapper* context, long lsn);
         Status RMW(MixedKeyWrapper* key, MixedInputWrapper* input, MixedContextWrapper* context, long lsn);
         bool CompletePending(bool wait);
+        bool ShiftBeginAddress(long untilAddress);
 
         /* Recovery */
         bool TakeFullCheckpoint(out Guid token);

@@ -87,6 +87,13 @@ namespace ManagedSampleCore
         /// <returns>Whether all pending operations have completed</returns>
         bool CompletePending(bool wait);
 
+        /// <summary>
+        /// Truncate the log until, but not including, untilAddress
+        /// </summary>
+        /// <param name="untilAddress">Address to shift until</param>
+        bool ShiftBeginAddress(long untilAddress);
+
+
         /* Recovery */
 
         /// <summary>

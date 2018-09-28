@@ -169,6 +169,7 @@ namespace FASTER.test.recovery.sumstore
         Status Upsert(AdId* key, NumClicks* value, Empty* context, long lsn);
         Status RMW(AdId* key, Input* input, Empty* context, long lsn);
         bool CompletePending(bool wait);
+        bool ShiftBeginAddress(long untilAddress);
 
         /* Statistics */
         long LogTailAddress { get; }

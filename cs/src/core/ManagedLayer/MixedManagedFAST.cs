@@ -317,6 +317,12 @@ namespace FASTER.core
             return ret;
         }
 
+        public bool ShiftBeginAddress(long untilAddress)
+        {
+            return store.ShiftBeginAddress(untilAddress);
+        }
+
+
         public bool TakeFullCheckpoint(out Guid token)
         {
             return store.TakeFullCheckpoint(out token);
