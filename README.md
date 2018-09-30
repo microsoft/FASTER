@@ -6,11 +6,11 @@ lookups and heavy updates. FASTER supports data larger than memory, by leveragin
 storage. It also supports consistent recovery using a new checkpointing technique that lets 
 applications trade-off performance for commit latency.
 
-What differentiates FASTER from a technical perspective are (1) its latch-free cache-optimized index; 
-(2) its unique “hybrid record log” design that combines a traditional persistent append-only log with 
-in-place updates, to shape the memory working set and retain performance; (3) its architecture as a 
-component that can be embedded in multi-threaded cloud apps; and (4) its asynchronous recovery model 
-based on group commit.
+The following features of FASTER differentiate it from a technical perspective:
+1. Latch-free cache-optimized index.
+2. Unique “hybrid record log” design that combines a traditional persistent append-only log with in-place updates, to shape the memory working set and retain performance.
+3. Architecture as a component that can be embedded in multi-threaded cloud apps. 
+4. Asynchronous recovery model based on group commit.
 
 For standard benchmarks where the working set fits in main memory, we found FASTER to achieve
 significantly higher throughput than current systems, and match or exceed the performance of pure 
