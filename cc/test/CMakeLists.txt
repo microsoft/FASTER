@@ -9,3 +9,5 @@ if(MSVC)
 ADD_FASTER_TEST(recovery_threadpool_test "recovery_test.h")
 endif()
 ADD_FASTER_TEST(utility_test "")
+endif()
+//Add Faster
