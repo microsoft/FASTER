@@ -6,10 +6,12 @@ lookups and heavy updates. FASTER supports data larger than memory, by leveragin
 storage. It also supports consistent recovery using a new checkpointing technique that lets 
 applications trade-off performance for commit latency.
 
-What differentiates FASTER from a technical perspective are (1) its latch-free cache-optimized index; 
+What differentiates FASTER from a technical perspective are :
+(1) its latch-free cache-optimized index. 
 (2) its unique “hybrid record log” design that combines a traditional persistent append-only log with 
-in-place updates, to shape the memory working set and retain performance; (3) its architecture as a 
-component that can be embedded in multi-threaded cloud apps; and (4) its asynchronous recovery model 
+in-place updates, to shape the memory working set and retain performance.
+(3) its architecture as a component that can be embedded in multi-threaded cloud apps. 
+(4) its asynchronous recovery model 
 based on group commit.
 
 For standard benchmarks where the working set fits in main memory, we found FASTER to achieve
@@ -21,13 +23,13 @@ C# and C++ versions of FASTER are very similar.
 
 # Getting Started
 
-Go to [our website](http://aka.ms/FASTER) for more details and papers.
+Visit [our website](http://aka.ms/FASTER) for more details and papers.
 
 # Build and Test
 
-For C#, see [here](https://github.com/Microsoft/FASTER/tree/master/cs).
+For C#, click [here](https://github.com/Microsoft/FASTER/tree/master/cs).
 
-For C++, see [here](https://github.com/Microsoft/FASTER/tree/master/cc).
+For C++, click [here](https://github.com/Microsoft/FASTER/tree/master/cc).
 
 # Contributing
 
