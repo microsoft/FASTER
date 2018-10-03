@@ -21,13 +21,13 @@ C# and C++ versions of FASTER are very similar.
 
 # Getting Started
 
-Go to [our website](http://aka.ms/FASTER) for more details and papers.
+Visit [our website](http://aka.ms/FASTER) for more details and papers.
 
 # Build and Test
 
-For C#, see [here](https://github.com/Microsoft/FASTER/tree/master/cs).
+For C#, click [here](https://github.com/Microsoft/FASTER/tree/master/cs).
 
-For C++, see [here](https://github.com/Microsoft/FASTER/tree/master/cc).
+For C++, click [here](https://github.com/Microsoft/FASTER/tree/master/cc).
 
 # Contributing
 
