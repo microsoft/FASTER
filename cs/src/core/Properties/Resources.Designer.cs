@@ -308,12 +308,12 @@ namespace FASTER.core.Properties {
         ///
         ///namespace FASTER.core
         ///{
-        ///    public unsafe interface IFasterKV_Mixed
+        ///    public unsafe interface IFasterKV_Mixed : IDisposable
         ///    {
         ///        /* Thread-related operations */
         ///        Guid StartSession();
         ///        long ContinueSession(Guid guid);
-        ///        void StopSe [rest of string was truncated]&quot;;.
+        ///      [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string IFASTER_Mixed {
             get {

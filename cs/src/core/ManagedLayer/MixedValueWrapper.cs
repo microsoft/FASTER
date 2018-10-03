@@ -79,7 +79,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength(MixedValueWrapper* input)
         {
-            return sizeof(void*);
+            return BlittableTypeWrapper.kSize;
         }
 
         public static void Copy(MixedValueWrapper* src, MixedValueWrapper* dst)
@@ -247,7 +247,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength(MixedValueWrapper* input)
         {
-            return sizeof(void*) + sizeof(int);
+            return BlittableTypeWrapper.kSize + sizeof(int);
         }
 
         public static void Copy(MixedValueWrapper* src, MixedValueWrapper* dst)

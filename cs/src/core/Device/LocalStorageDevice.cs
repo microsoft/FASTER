@@ -187,18 +187,14 @@ namespace FASTER.core
             return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
         }
 
-        /// <summary>
         /// Sets file size to the specified value.
         /// Does not reset file seek pointer to original location.
-        /// </summary>
-        /// <param name="size"></param>
-        /// <returns></returns>
         private bool SetFileSize(string filename, SafeFileHandle logHandle, long size)
         {
             if (SegmentSize <= 0)
                 return false;
 
-            if (Native32.EnableVolumePrivileges(ref filename, logHandle))
+            if (Native32.EnableVolumePrivileges(filename, logHandle))
             {
                 return Native32.SetFileSize(logHandle, size);
             }

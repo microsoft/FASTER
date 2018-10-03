@@ -164,9 +164,12 @@ namespace FASTER.test
         Status Upsert(KeyStruct* key, ValueStruct* value, Empty* context, long lsn);
         Status RMW(KeyStruct* key, InputStruct* input, Empty* context, long lsn);
         bool CompletePending(bool wait);
+        bool ShiftBeginAddress(long untilAddress);
 
         /* Statistics */
         long LogTailAddress { get; }
+        long LogReadOnlyAddress { get; }
+
         void DumpDistribution();
     }
     public unsafe class Functions

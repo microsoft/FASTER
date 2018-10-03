@@ -87,7 +87,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength(MixedKeyWrapper* key)
         {
-            return sizeof(void*);
+            return BlittableTypeWrapper.kSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

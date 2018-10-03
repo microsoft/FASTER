@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-
 namespace FASTER.core
 {
     using System;
@@ -9,12 +8,44 @@ namespace FASTER.core
     using System.Security;
     using Microsoft.Win32.SafeHandles;
     using System.Threading;
+    using System.IO;
 
     /// <summary>
     /// Interop with WINAPI for file I/O, threading, and NUMA functions.
     /// </summary>
     public static unsafe class Native32
     {
+        #region Native structs
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LUID
+        {
+            public uint lp;
+            public int hp;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LUID_AND_ATTRIBUTES
+        {
+            public LUID Luid;
+            public uint Attributes;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct TOKEN_PRIVILEGES
+        {
+            public uint PrivilegeCount;
+            public LUID_AND_ATTRIBUTES Privileges;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MARK_HANDLE_INFO
+        {
+            public uint UsnSourceInfo;
+            public IntPtr VolumeHandle;
+            public uint HandleInfo;
+        }
+        #endregion
+
         #region io constants and flags
 
         public const uint INFINITE = unchecked((uint)-1);
@@ -137,58 +168,6 @@ namespace FASTER.core
             [In] bool bWait);
 
 
-        [DllImport("adv-file-ops.dll", SetLastError = true)]
-        private static extern bool DoEnableProcessPrivileges();
-
-        [DllImport("adv-file-ops.dll", SetLastError = true)]
-        private static extern bool DoEnableVolumePrivileges(ref string filename, SafeFileHandle hFile);
-
-        [DllImport("adv-file-ops.dll", SetLastError = true)]
-        private static extern bool DoCreateAndSetFileSize(ref string filename, Int64 file_size);
-
-        [DllImport("adv-file-ops.dll", SetLastError = true)]
-        private static extern bool DoSetFileSize(SafeFileHandle hFile, Int64 file_size);
-
-
-        public static bool EnableProcessPrivileges()
-        {
-#if DOTNETCORE
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return false;
-#endif
-            return DoEnableProcessPrivileges();
-        }
-
-        public static bool EnableVolumePrivileges(ref string fileName, SafeFileHandle hFile)
-        {
-#if DOTNETCORE
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return false;
-#endif
-
-            return DoEnableVolumePrivileges(ref fileName, hFile);
-        }
-
-        public static bool CreateAndSetFileSize(ref string filename, long fileSize)
-        {
-#if DOTNETCORE
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return false;
-#endif
-            return DoCreateAndSetFileSize(ref filename, fileSize);
-        }
-
-        public static bool SetFileSize(SafeFileHandle hFile, long fileSize)
-        {
-#if DOTNETCORE
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return false;
-#endif
-
-            return DoSetFileSize(hFile, fileSize);
-        }
-
-
         public enum EMoveMethod : uint
         {
             Begin = 0,
@@ -251,7 +230,7 @@ namespace FASTER.core
         public static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName);
 #endregion
 
-#region thread and numa functions
+        #region Thread and NUMA functions
         [DllImport("kernel32.dll")]
         public static extern IntPtr GetCurrentThread();
         [DllImport("kernel32")]
@@ -330,6 +309,126 @@ namespace FASTER.core
             AffinitizeThreadRoundRobin(threadIdx);
             return;
         }
-#endregion
+        #endregion
+
+        #region Advanced file ops
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, ref LUID lpLuid);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr GetCurrentProcess();
+
+        [DllImport("advapi32", SetLastError = true)]
+        public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool AdjustTokenPrivileges(IntPtr tokenhandle, int disableprivs, ref TOKEN_PRIVILEGES Newstate, int BufferLengthInBytes, int PreviousState, int ReturnLengthInBytes);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("Kernel32.dll", SetLastError = true)]
+        public static extern bool DeviceIoControl(SafeFileHandle hDevice, uint IoControlCode, void* InBuffer, int nInBufferSize, IntPtr OutBuffer, int nOutBufferSize, ref uint pBytesReturned, IntPtr Overlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetFilePointerEx(SafeFileHandle hFile, long liDistanceToMove, out long lpNewFilePointer, uint dwMoveMethod);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetFileValidData(SafeFileHandle hFile, long ValidDataLength);
+
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern SafeFileHandle CreateFile(string filename, uint access, uint share, IntPtr securityAttributes, uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
+
+        public static bool EnableProcessPrivileges()
+        {
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+#endif
+
+            TOKEN_PRIVILEGES token_privileges = default(TOKEN_PRIVILEGES);
+            token_privileges.PrivilegeCount = 1;
+            token_privileges.Privileges.Attributes = 0x2;
+
+            if (!LookupPrivilegeValue(null, "SeManageVolumePrivilege",
+                ref token_privileges.Privileges.Luid)) return false;
+
+            if (!OpenProcessToken(GetCurrentProcess(), 0x20, out IntPtr token)) return false;
+
+            if (!AdjustTokenPrivileges(token, 0, ref token_privileges, 0, 0, 0)) return false;
+            if (Marshal.GetLastWin32Error() != 0) return false;
+            CloseHandle(token);
+            return true;
+        }
+
+        private static uint CTL_CODE(uint DeviceType, uint Function, uint Method, uint Access)
+        {
+            return (((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method));
+        }
+
+        public static bool EnableVolumePrivileges(string filename, SafeFileHandle handle)
+        {
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+#endif
+
+            string volume_string = "\\\\.\\" + filename.Substring(0, 2);
+
+            uint fileCreation = unchecked((uint)FileMode.Open);
+
+            SafeFileHandle volume_handle = CreateFile(volume_string, 0, 0, IntPtr.Zero, fileCreation,
+                0x80, IntPtr.Zero);
+            if (volume_handle == null)
+            {
+                return false;
+            }
+
+            MARK_HANDLE_INFO mhi;
+            mhi.UsnSourceInfo = 0x1;
+            mhi.VolumeHandle = volume_handle.DangerousGetHandle();
+            mhi.HandleInfo = 0x1;
+
+            uint bytes_returned = 0;
+            bool result = DeviceIoControl(handle, CTL_CODE(0x9, 63, 0, 0),
+                (void*)&mhi, sizeof(MARK_HANDLE_INFO), IntPtr.Zero,
+                0, ref bytes_returned, IntPtr.Zero);
+
+            if (!result)
+            {
+                return false;
+            }
+
+            volume_handle.Close();
+            return true;
+        }
+
+        public static bool SetFileSize(SafeFileHandle file_handle, long file_size)
+        {
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+#endif
+
+            if (!SetFilePointerEx(file_handle, file_size, out long newFilePtr, 0))
+            {
+                return false;
+            }
+
+            // Set a fixed file length
+            if (!SetEndOfFile(file_handle))
+            {
+                return false;
+            }
+
+            if (!SetFileValidData(file_handle, file_size))
+            {
+                return false;
+            }
+
+            return true;
+        }
+        #endregion
     }
 }

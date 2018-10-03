@@ -29,9 +29,18 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-    <None Include="$(ProjectDir)..\src\native\bin\x64\Release\readtsc.dll" Link="readtsc.dll">
+    <None Include="$(ProjectDir)nativebin\readtsc.dll" Link="readtsc.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="nativebin\**" />
+    <Compile Remove="native\**" />
+    <EmbeddedResource Remove="nativebin\**" />
+    <EmbeddedResource Remove="native\**" />
+    <None Remove="nativebin\**" />
+    <None Remove="native\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -39,7 +48,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" Version="2.2.1" />
+    <PackageReference Include="CommandLineParser" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>

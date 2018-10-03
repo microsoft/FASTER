@@ -19,14 +19,6 @@ namespace FASTER.benchmark
 
         [DllImport(lib)]
         [SuppressUnmanagedCodeSecurity]
-        public static extern int QueryPerformanceFrequency(ref Int64 frequency);
-
-        [DllImport(lib)]
-        [SuppressUnmanagedCodeSecurity]
-        private static extern void GetSystemTimePreciseAsFileTime(out long filetime);
-
-        [DllImport(lib)]
-        [SuppressUnmanagedCodeSecurity]
         private static extern void GetSystemTimeAsFileTime(out long filetime);
 
         [DllImport("readtsc.dll")]

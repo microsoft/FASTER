@@ -14,6 +14,8 @@ namespace FASTER.core
     {
         private IFasterKV_Mixed store;
         public long LogTailAddress => store.LogTailAddress;
+        public long LogReadOnlyAddress => store.LogReadOnlyAddress;
+        public long EntryCount => store.EntryCount;
 
         public MixedManagedFast(long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir, MixedUserFunctions functions, long LogTotalSizeBytes = 17179869184, double LogMutableFraction = 0.9, int LogPageSizeBits = 25)
         {
@@ -316,6 +318,12 @@ namespace FASTER.core
             return ret;
         }
 
+        public bool ShiftBeginAddress(long untilAddress)
+        {
+            return store.ShiftBeginAddress(untilAddress);
+        }
+
+
         public bool TakeFullCheckpoint(out Guid token)
         {
             return store.TakeFullCheckpoint(out token);
@@ -344,6 +352,11 @@ namespace FASTER.core
         public bool CompleteCheckpoint(bool wait)
         {
             return store.CompleteCheckpoint(wait);
+        }
+
+        public void Dispose()
+        {
+            store.Dispose();
         }
     }
 
@@ -470,7 +483,5 @@ namespace FASTER.core
             v->value = BlittableTypeWrapper.Create(default(MixedValue));
 #endif
         }
-
     }
-
 }

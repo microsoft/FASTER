@@ -262,7 +262,7 @@ namespace FASTER.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pointers[pageIndex], PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, (IntPtr)pointers[pageIndex], PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
@@ -284,7 +284,7 @@ namespace FASTER.core
                     untilAddress = (flushPage + 1) << LogPageSizeBits
                 };
 
-                WriteAsync(pointers[flushPage % BufferSize],
+                WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                                   (ulong)(AlignedPageSizeBytes * flushPage),
                                   PageSize, callback, asyncResult, device, objectLogDevice);
             }
@@ -337,7 +337,7 @@ namespace FASTER.core
 
                 PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress = -1;
 
-                WriteAsync(pointers[flushPage % BufferSize],
+                WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                                     (ulong)(AlignedPageSizeBytes * flushPage),
                                     PageSize,
                                     AsyncFlushPageCallback,
@@ -369,7 +369,7 @@ namespace FASTER.core
                 long pageStartAddress = flushPage << LogPageSizeBits;
                 long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
 
-                WriteAsync(pointers[flushPage % BufferSize],
+                WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                             (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                             PageSize,
                             AsyncFlushPageToDeviceCallback,

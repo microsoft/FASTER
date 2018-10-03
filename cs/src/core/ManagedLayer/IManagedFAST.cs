@@ -14,7 +14,7 @@ namespace FASTER.core
     /// <typeparam name="I">Input type</typeparam>
     /// <typeparam name="O">Output type</typeparam>
     /// <typeparam name="C">Context type</typeparam>
-    public interface IManagedFasterKV<K, V, I, O, C>
+    public interface IManagedFasterKV<K, V, I, O, C> : IDisposable
     {
         /* Thread-related operations */
 
@@ -85,6 +85,12 @@ namespace FASTER.core
         /// <returns>Whether all pending operations have completed</returns>
         bool CompletePending(bool wait);
 
+        /// <summary>
+        /// Truncate the log until, but not including, untilAddress
+        /// </summary>
+        /// <param name="untilAddress">Address to shift until</param>
+        bool ShiftBeginAddress(long untilAddress);
+
         /* Recovery */
 
         /// <summary>
@@ -131,9 +137,19 @@ namespace FASTER.core
         /* Statistics */
 
         /// <summary>
-        /// Get tail address of FASTER hybrid log
+        /// Get tail address of FASTER log
         /// </summary>
         long LogTailAddress { get; }
+
+        /// <summary>
+        /// Get (safe) read-only address of FASTER
+        /// </summary>
+        long LogReadOnlyAddress { get; }
+
+        /// <summary>
+        /// Get number of (non-zero) hash entries in FASTER
+        /// </summary>
+        long EntryCount { get; }
 
         /// <summary>
         /// Dump distribution of #entries in hash table, to console

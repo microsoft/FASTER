@@ -659,6 +659,28 @@ namespace FASTER.core
 			return (found == expected);
 		}
 
+        protected virtual long GetEntryCount()
+        {
+            var version = resizeInfo.version;
+            var table_size_ = state[version].size;
+            var ptable_ = state[version].tableAligned;
+            long total_entry_count = 0;
+
+            for (long bucket = 0; bucket < table_size_; ++bucket)
+            {
+                HashBucket b = *(ptable_ + bucket);
+                while (true)
+                {
+                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
+                        if (0 != b.bucket_entries[bucket_entry])
+                            ++total_entry_count;
+                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
+                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                }
+            }
+            return total_entry_count;
+        }
+
         protected virtual void _DumpDistribution(int version)
         {
             var table_size_ = state[version].size;
