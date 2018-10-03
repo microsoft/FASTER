@@ -29,9 +29,15 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-    <None Include="$(ProjectDir)..\src\native\bin\x64\Release\readtsc.dll" Link="readtsc.dll">
+    <None Include="$(ProjectDir)nativebin\readtsc.dll" Link="readtsc.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="native\**" />
+    <EmbeddedResource Remove="native\**" />
+    <None Remove="native\**" />
   </ItemGroup>
 
   <ItemGroup>

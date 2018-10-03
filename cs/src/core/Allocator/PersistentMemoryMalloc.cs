@@ -88,7 +88,7 @@ namespace FASTER.core
         // Circular buffer definition
         private byte[][] values = new byte[BufferSize][];
         private GCHandle[] handles = new GCHandle[BufferSize];
-        private IntPtr[] pointers = new IntPtr[BufferSize];
+        private long[] pointers = new long[BufferSize];
         private GCHandle ptrHandle;
         private long* nativePointers;
 
@@ -288,7 +288,7 @@ namespace FASTER.core
             // Index of page within the circular buffer
             int pageIndex = (int)(page % BufferSize);
 
-            return (*(nativePointers+pageIndex)) + offset;
+            return *(nativePointers+pageIndex) + offset;
         }
 
         /// <summary>
@@ -629,7 +629,7 @@ namespace FASTER.core
 
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
             long p = (long)handles[index].AddrOfPinnedObject();
-            pointers[index] = (IntPtr)((p + (sectorSize - 1)) & ~(sectorSize - 1));
+            pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
             values[index] = tmp;
 
             PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = FlushStatus.Flushed;

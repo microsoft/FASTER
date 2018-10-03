@@ -39,7 +39,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength(MixedInputWrapper* input)
         {
-            return sizeof(void*);
+            return BlittableTypeWrapper.kSize;
         }
         public static void Free(MixedInputWrapper* input)
         {
