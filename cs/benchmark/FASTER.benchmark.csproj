@@ -35,8 +35,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="nativebin\**" />
     <Compile Remove="native\**" />
+    <EmbeddedResource Remove="nativebin\**" />
     <EmbeddedResource Remove="native\**" />
+    <None Remove="nativebin\**" />
     <None Remove="native\**" />
   </ItemGroup>
 
