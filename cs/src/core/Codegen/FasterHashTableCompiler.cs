@@ -13,6 +13,7 @@ using System.Reflection;
 using System.Text;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 using static FASTER.core.Roslyn.Helper;
+using System.Globalization;
 
 namespace FASTER.core.Roslyn
 {
@@ -113,9 +114,9 @@ namespace FASTER.core.Roslyn
                 compilation = compilation.ReplaceSyntaxTree(oldTree, newTree);
             }
 
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogMutableFraction", LogMutableFraction.ToString());
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogTotalSizeBytes", LogTotalSizeBytes.ToString());
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogPageSizeBits", LogPageSizeBits.ToString());
+            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogMutableFraction", LogMutableFraction.ToString(CultureInfo.InvariantCulture));
+            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogTotalSizeBytes", LogTotalSizeBytes.ToString(CultureInfo.InvariantCulture));
+            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogPageSizeBits", LogPageSizeBits.ToString(CultureInfo.InvariantCulture));
 
 #if TIMING
             sw.Stop();

@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Globalization;
 
 namespace FASTER.core
 {
@@ -714,7 +715,7 @@ namespace FASTER.core
             Console.WriteLine("Histogram of #entries per bucket: ");
             for (int i=0; i<14; i++)
             {
-                Console.WriteLine(i.ToString() + ": " + histogram[i].ToString());
+                Console.WriteLine(i.ToString() + ": " + histogram[i].ToString(CultureInfo.InvariantCulture));
             }
         }
 

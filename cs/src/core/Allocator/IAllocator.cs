@@ -10,6 +10,5 @@ namespace FASTER.core
         long Allocate(int numSlots);
         long GetPhysicalAddress(long logicalAddress);
         void CheckForAllocateComplete(ref long address);
-        void Dispose();
     }
 }
