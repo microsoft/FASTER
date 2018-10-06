@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/Microsoft/FASTER.svg?branch=master)](https://travis-ci.org/Microsoft/FASTER)
+
 # Introduction
 
 Managing large application state easily and with high performance is one of the hardest problems
