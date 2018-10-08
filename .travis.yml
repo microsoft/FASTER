@@ -16,4 +16,4 @@ matrix:
         - cmake -DCMAKE_BUILD_TYPE=Release ../..
         - make -j
     - language: csharp
-      solution: FASTER.sln
+      solution: cs/FASTER.sln
