@@ -23,7 +23,7 @@ C# and C++ versions of FASTER are very similar.
 
 # Getting Started
 
-Visit [our website](http://aka.ms/FASTER) for more details and papers.
+Visit [our website](https://www.microsoft.com/en-us/research/project/FASTER/) for more details and papers.
 
 # Build and Test
 
