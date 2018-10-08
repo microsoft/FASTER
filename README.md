@@ -23,7 +23,8 @@ C# and C++ versions of FASTER are very similar.
 
 # Getting Started
 
-Visit [our website](http://aka.ms/FASTER) for more details and papers.
+Visit [our website](http://aka.ms/FASTER) for more details and papers. FASTER C# binaries are now
+available as a NuGet package at https://www.nuget.org/packages/FASTER/.
 
 # Build and Test
 
