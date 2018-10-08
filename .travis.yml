@@ -1,15 +1,19 @@
-language: cpp
-install:
-  - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-  - sudo apt update
-  - sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
-script:
-  - export CXX='g++-7'
-  - cd cc
-  - mkdir -p build/Debug build/Release
-  - cd build/Debug
-  - cmake -DCMAKE_BUILD_TYPE=Debug ../..
-  - make -j
-  - cd ../../build/Release
-  - cmake -DCMAKE_BUILD_TYPE=Release ../..
-  - make -j
+matrix:
+  include:
+    - language: cpp
+      install:
+        - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+        - sudo apt update
+        - sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
+      script:
+        - export CXX='g++-7'
+        - cd cc
+        - mkdir -p build/Debug build/Release
+        - cd build/Debug
+        - cmake -DCMAKE_BUILD_TYPE=Debug ../..
+        - make -j
+        - cd ../../build/Release
+        - cmake -DCMAKE_BUILD_TYPE=Release ../..
+        - make -j
+    - language: csharp
+      solution: FASTER.sln
