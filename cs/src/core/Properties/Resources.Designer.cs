@@ -60,651 +60,138 @@ namespace FASTER.core.Properties {
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.IO;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Runtime.Serialization;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
-        ///    {
-        ///
-        ///        private void AsyncGetFromDisk(long fromLogical [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string AsyncIO {
             get {
                 return ResourceManager.GetString("AsyncIO", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///#define CALLOC
-        ///
-        ///using System;
-        ///using System.Threading;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.IO;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public static class Config
-        ///    {
-        ///        public static string CheckpointDirectory = &quot;C:\\data&quot;;
-        ///    }
-        ///
-        ///    public struct AsyncGetFromDiskResult&lt;TContext&gt; : IAsyncResult
-        ///    {
-        ///        public TContex [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string AsyncResultTypes {
             get {
                 return ResourceManager.GetString("AsyncResultTypes", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///#pragma warning disable 0162
-        ///
-        /////#define WAIT_FOR_INDEX_CHECKPOINT
-        ///
-        ///using System;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.IO;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{   
-        ///
-        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
-        ///   {
-        ///        public cla [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string Checkpoint {
             get {
                 return ResourceManager.GetString("Checkpoint", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.IO;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public enum OperationType
-        ///    {
-        ///        READ,
-        ///        RMW,
-        ///        UPSERT,
-        ///        INSERT,
-        ///        DELETE
-        ///    }
-        ///
-        ///    public enum OperationStatus
-        ///    {
-        ///        SUCCESS,
-        ///   [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string Contexts {
             get {
                 return ResourceManager.GetString("Contexts", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///#pragma warning disable 0162
-        ///
-        ///using System;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
-        ///    { 
-        ///        public PersistentMemoryMalloc hlog;
-        ///
-        ///        public static int numPe [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string FASTER {
             get {
                 return ResourceManager.GetString("FASTER", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Collections.Generic;
-        ///using System.Linq;
-        ///using System.Text;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///using System.Runtime.InteropServices;
-        ///using System.Diagnostics;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public static class Constants
-        ///    {
-        ///        /// Size of cache line in bytes
-        ///        public const int kCacheLineBytes = 64;
-        ///
-        ///        public const bool kFol [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string FASTERBase {
             get {
                 return ResourceManager.GetString("FASTERBase", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///#pragma warning disable 0162
-        ///#define CPR
-        ///
-        ///using System;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
-        ///    {
-        ///        enum LatchOperation : byte
-        ///        {
-        ///            None,
-        /// [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string FASTERImpl {
             get {
                 return ResourceManager.GetString("FASTERImpl", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public unsafe partial class FasterKV : FasterBase, IFasterKV
-        ///    {
-        ///
-        ///        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ///        internal Guid InternalAcquire()
-        ///         [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string FASTERThread {
             get {
                 return ResourceManager.GetString("FASTERThread", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public unsafe interface IFasterKV_Mixed : IDisposable
-        ///    {
-        ///        /* Thread-related operations */
-        ///        Guid StartSession();
-        ///        long ContinueSession(Guid guid);
-        ///      [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string IFASTER_Mixed {
             get {
                 return ResourceManager.GetString("IFASTER_Mixed", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.IO;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Runtime.InteropServices;
-        ///using System.Text;
-        ///using System.Threading;
-        ///using System.Threading.Tasks;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///
-        ///
-        ///    public unsafe partial class FasterBase
-        ///    {
-        ///        // Derived class facing persistence API
-        ///        pr [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string IndexCheckpoint {
             get {
                 return ResourceManager.GetString("IndexCheckpoint", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Collections.Generic;
-        ///using System.Diagnostics;
-        ///using System.IO;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Runtime.InteropServices;
-        ///using System.Text;
-        ///using System.Threading;
-        ///using System.Threading.Tasks;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public unsafe partial class FasterBase
-        ///    {
-        ///        // Derived class exposed API
-        ///        protected void Re [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string IndexRecovery {
             get {
                 return ResourceManager.GetString("IndexRecovery", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///#define FIXED_SIZE
-        /////#define VARIABLE_SIZE
-        ///using System;
-        ///using System.Collections.Generic;
-        ///using System.Linq;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Text;
-        ///using System.Threading.Tasks;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///#if FIXED_SIZE
-        ///    public unsafe struct Layout
-        ///    {
-        ///        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ///        public static RecordInfo* GetInfo(long physicalAddress [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string Layout {
             get {
                 return ResourceManager.GetString("Layout", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    [FASTER.core.Roslyn.TypeKind(&quot;internal&quot;)]
-        ///#if BLIT_CONTEXT
-        ///    public unsafe struct MixedContextWrapper
-        ///    {
-        ///        public MixedContext context;
-        ///
-        ///        public static void Copy(MixedContextWrapper* src, MixedContextWrapper* dst)
-        ///        {
-        ///            dst-&gt;context = src-&gt;context;
-        ///        }
-        ///
-        ///        public static MixedContextWrapper* MoveToContext(MixedContextWrappe [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedContextWrapper {
             get {
                 return ResourceManager.GetString("MixedContextWrapper", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///#define GENERIC_BLIT_VALUE
-        ///
-        ///using System.Diagnostics;
-        ///using System.Runtime.CompilerServices;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    [FASTER.core.Roslyn.TypeKind(&quot;user&quot;)]
-        ///    public unsafe class MixedFunctionsWrapper
-        ///    {
-        ///        public static MixedUserFunctions userFunctions;
-        ///
-        ///        public static void RMWCompletionCallback(MixedKeyWrapper* key, MixedInputWrapper* input, MixedContextWrapper* ctx, Status s [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedFunctionsWrapper {
             get {
                 return ResourceManager.GetString("MixedFunctionsWrapper", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System.Runtime.CompilerServices;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    [FASTER.core.Roslyn.TypeKind(&quot;internal&quot;)]
-        ///#if BLIT_INPUT
-        ///    public unsafe struct MixedInputWrapper
-        ///    {
-        ///        public MixedInput input;
-        ///
-        ///        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ///        public static int GetLength(MixedInputWrapper* input)
-        ///        {
-        ///            return sizeof(MixedInputWrapper);
-        ///        }
-        ///
-        /// [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedInputWrapper {
             get {
                 return ResourceManager.GetString("MixedInputWrapper", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        /////#define BLIT_KEY
-        ///using System;
-        ///using System.IO;
-        ///using System.Runtime.CompilerServices;
-        ///
-        ///
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    [FASTER.core.Roslyn.TypeKind(&quot;internal&quot;)]
-        ///#if BLIT_KEY
-        ///    public unsafe struct MixedKeyWrapper
-        ///    {
-        ///        public MixedKey key;
-        ///
-        ///        public static long GetHashCode(MixedKeyWrapper* key)
-        ///        {
-        ///            return UserType.Convert(key).GetHashCode();
-        ///        }
-        ///
-        ///   [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedKeyWrapper {
             get {
                 return ResourceManager.GetString("MixedKeyWrapper", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using FASTER.core;
-        ///using System;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Runtime.InteropServices;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    [FASTER.core.Roslyn.TypeKind(&quot;user&quot;)]
-        ///    public unsafe class MixedManagedFast
-        ///        : IManagedFasterKV&lt;MixedKey, MixedValue, MixedInput, MixedOutput, MixedContext&gt;
-        ///    {
-        ///        private IFasterKV_Mixed store;
-        ///        public long LogTailAddress =&gt; store.LogTa [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedManagedFAST {
             get {
                 return ResourceManager.GetString("MixedManagedFAST", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System.Runtime.CompilerServices;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///
-        ///    [FASTER.core.Roslyn.TypeKind(&quot;internal&quot;)]
-        ///#if BLIT_OUTPUT
-        ///    public unsafe struct MixedOutputWrapper
-        ///    {
-        ///        public MixedOutput output;
-        ///
-        ///        public static MixedOutputWrapper* MoveToContext(MixedOutputWrapper* output)
-        ///        {
-        ///            var addr = (MixedOutputWrapper*)
-        ///                MallocFixedPageSize&lt;MixedOutpu [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedOutputWrapper {
             get {
                 return ResourceManager.GetString("MixedOutputWrapper", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.IO;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public
-        ///#if BLIT_KEY
-        ///    struct
-        ///#else
-        ///    class
-        ///#endif
-        ///        MixedKey : IFasterKey&lt;MixedKey&gt;
-        ///    {
-        ///        public long key;
-        ///
-        ///        public MixedKey Clone()
-        ///        {
-        ///            return this;
-        ///        }
-        ///        public new long GetHashCode()
-        ///        {
-        ///            return Utility.GetHashCode(key);
-        ///        }
-        ///        public long Get [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedUnwrappedTypes {
             get {
                 return ResourceManager.GetString("MixedUnwrappedTypes", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System.Runtime.CompilerServices;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public class MixedUserFunctions : IUserFunctions&lt;MixedKey, MixedValue, MixedInput, MixedOutput, MixedContext&gt;
-        ///    {
-        ///        public void ReadCompletionCallback(MixedContext ctx, MixedOutput output, Status status)
-        ///        {
-        ///        }
-        ///
-        ///        public void RMWCompletionCallback(MixedContext ctx, Status status)
-        ///        {
-        ///        }
-        ///
-        ///  [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedUserFunctions {
             get {
                 return ResourceManager.GetString("MixedUserFunctions", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.IO;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Runtime.InteropServices;
-        ///using System.Runtime.Serialization;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    [FASTER.core.Roslyn.TypeKind(&quot;internal&quot;)]
-        ///#if VALUE_ATOMIC
-        ///#if BLIT_VALUE
-        ///    public unsafe struct MixedValueWrapper
-        ///    {
-        ///        public MixedValue value;
-        ///
-        ///        [MethodImpl(MethodImplOptions.Aggr [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string MixedValueWrapper {
             get {
                 return ResourceManager.GetString("MixedValueWrapper", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///using System;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Threading;
-        ///using System.Runtime.InteropServices;
-        ///using System.Collections.Concurrent;
-        ///using System.Collections.Generic;
-        ///using System.Linq.Expressions;
-        ///using System.IO;
-        ///using System.Diagnostics;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///
-        ///	public enum FlushStatus : int { Flushed, InProgress };
-        ///
-        ///	public enum CloseStatus : int { Closed, Open };
-        ///
-        ///   [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string PersistentMemoryMalloc {
             get {
                 return ResourceManager.GetString("PersistentMemoryMalloc", resourceCulture);
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to // Copyright (c) Microsoft Corporation. All rights reserved.
-        ///// Licensed under the MIT license.
-        ///
-        ///#pragma warning disable 0162
-        ///
-        ///using System;
-        ///using System.Diagnostics;
-        ///using System.IO;
-        ///using System.Runtime.CompilerServices;
-        ///using System.Runtime.InteropServices;
-        ///using System.Threading;
-        ///
-        ///namespace FASTER.core
-        ///{
-        ///    public unsafe partial class PersistentMemoryMalloc : IAllocator
-        ///    {
-        ///        public void RecoveryReset(long tailAddress, long headAddress)
-        ///        {
-        ///            long tailPage = Ge [rest of string was truncated]&quot;;.
-        /// </summary>
         internal static string Recovery {
             get {
                 return ResourceManager.GetString("Recovery", resourceCulture);

@@ -156,11 +156,11 @@ namespace FASTER.core
         /// Invoked by users to obtain a record from disk. It uses sector aligned memory to read 
         /// the record efficiently into memory.
         /// </summary>
-        /// <typeparam name="TContext"></typeparam>
         /// <param name="fromLogical"></param>
         /// <param name="numRecords"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
+        /// <param name="result"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AsyncReadRecordToMemory(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
@@ -296,8 +296,7 @@ namespace FASTER.core
         /// Called when all threads have agreed that a page range is sealed.
         /// </summary>
         /// <param name="startPage"></param>
-        /// <param name="numPages"></param>
-        /// <param name="waitForPendingFlushComplete"></param>
+        /// <param name="untilAddress"></param>
         private void AsyncFlushPages(long startPage, long untilAddress)
         {
             long endPage = (untilAddress >> LogPageSizeBits);
@@ -352,6 +351,7 @@ namespace FASTER.core
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
         /// <param name="completed"></param>
         public void AsyncFlushPagesToDevice(long startPage, long endPage, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
         {

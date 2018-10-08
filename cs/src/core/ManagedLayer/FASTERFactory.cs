@@ -11,12 +11,12 @@ namespace FASTER.core
 {
     public static class FasterFactory
     {
-
         /// <summary>
         /// Create a storage device for the log
         /// </summary>
         /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
         /// <param name="segmentSize">Size of each chunk of the log</param>
+        /// <param name="deleteOnClose"></param>
         /// <returns>Device instance</returns>
         public static IDevice CreateLogDevice(string logPath, long segmentSize = 1L << 30, bool deleteOnClose = false)
         {
@@ -40,6 +40,7 @@ namespace FASTER.core
         /// Create a storage device for the object log (for non-blittable objects)
         /// </summary>
         /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
+        /// <param name="deleteOnClose"></param>
         /// <returns>Device instance</returns>
         public static IDevice CreateObjectLogDevice(string logPath, bool deleteOnClose = false)
         {
@@ -84,12 +85,12 @@ namespace FASTER.core
             string checkpointDir = null
             )
         {
-                
+
             return
                 HashTableManager.GetFasterHashTable
                                 <TKey, TValue, TInput, TOutput,
                                 TContext, TFunctions, TIFaster>
-                                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir, 
+                                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir,
                                 LogTotalSizeBytes, LogMutableFraction, LogPageSizeBits);
         }
 
@@ -122,8 +123,8 @@ namespace FASTER.core
         {
             return HashTableManager.GetMixedManagedFasterHashTable
                 <TKey, TValue, TInput, TOutput, TContext, TFunctions>
-                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir, 
-                functions, treatValueAsAtomic, LogTotalSizeBytes, LogMutableFraction, 
+                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir,
+                functions, treatValueAsAtomic, LogTotalSizeBytes, LogMutableFraction,
                 LogPageSizeBits);
         }
     }
