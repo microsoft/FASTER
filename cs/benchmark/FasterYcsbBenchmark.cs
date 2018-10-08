@@ -83,7 +83,7 @@ namespace FASTER.benchmark
             threadMaximumLatency = new double[threadCount];
             threadProgress = new long[threadCount];
             writeStats = new bool[threadCount];
-            freq = HiResTimer.EstimateCPUFrequency();
+            freq = Stopwatch.Frequency;
 #endif
 
             device = FasterFactory.CreateLogDevice("C:\\data\\hlog");
@@ -113,7 +113,7 @@ namespace FASTER.benchmark
             long writes_done = 0;
 
 #if DASHBOARD
-            var tstart = HiResTimer.Rdtsc();
+            var tstart = Stopwatch.GetTimestamp();
             var tstop1 = tstart;
             var lastWrittenValue = 0;
             int count = 0;
@@ -192,7 +192,7 @@ namespace FASTER.benchmark
                 if (writeStats[thread_idx])
                 {
                     var tstart1 = tstop1;
-                    tstop1 = HiResTimer.Rdtsc();
+                    tstop1 = Stopwatch.GetTimestamp();
                     threadProgress[thread_idx] = count;
                     threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
                     lastWrittenValue = count;
@@ -327,7 +327,7 @@ namespace FASTER.benchmark
             store.StartSession();
 
 #if DASHBOARD
-            var tstart = HiResTimer.Rdtsc();
+            var tstart = Stopwatch.GetTimestamp();
             var tstop1 = tstart;
             var lastWrittenValue = 0;
             int count = 0;
@@ -361,7 +361,7 @@ namespace FASTER.benchmark
                 if (writeStats[thread_idx])
                 {
                     var tstart1 = tstop1;
-                    tstop1 = HiResTimer.Rdtsc();
+                    tstop1 = Stopwatch.GetTimestamp();
                     threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
                     lastWrittenValue = count;
                     writeStats[thread_idx] = false;
@@ -435,11 +435,11 @@ namespace FASTER.benchmark
 
                     if (measureLatency)
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.Size, totalProgress);
+                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.LogTailAddress, totalProgress);
                     }
                     else
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.Size, totalProgress);
+                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.LogTailAddress, totalProgress);
                     }
                 }
             }

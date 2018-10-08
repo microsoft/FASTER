@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -21,8 +22,7 @@ namespace FASTER.benchmark
         {
             if (seed == 0)
             {
-                long counter = 0;
-                HiResTimer.QueryPerformanceCounter(ref counter);
+                long counter = Stopwatch.GetTimestamp();
                 x = (uint)(counter & 0x0FFFFFFF);
             }
             else
