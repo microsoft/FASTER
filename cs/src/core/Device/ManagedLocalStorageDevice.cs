@@ -195,6 +195,8 @@ namespace FASTER.core
         /// Sets file size to the specified value.
         /// Does not reset file seek pointer to original location.
         /// </summary>
+        /// <param name="filename"></param>
+        /// <param name="logHandle"></param>
         /// <param name="size"></param>
         /// <returns></returns>
         private bool SetFileSize(string filename, Stream logHandle, long size)

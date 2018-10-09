@@ -504,7 +504,7 @@ namespace FASTER.core
         /// Seal: make sure there are no longer any threads writing to the page
         /// Flush: send page to secondary store
         /// </summary>
-        /// <param name="untilAddress"></param>
+        /// <param name="newSafeReadOnlyAddress"></param>
         /// <param name="waitForPendingFlushComplete"></param>
         public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool waitForPendingFlushComplete = false)
         {
@@ -531,9 +531,7 @@ namespace FASTER.core
         /// Action to be performed for when all threads have 
         /// agreed that a page range is closed.
         /// </summary>
-        /// <param name="oldSafeHeadOffset"></param>
         /// <param name="newSafeHeadAddress"></param>
-        /// <param name="replaceWithCleanPage"></param>
         public void OnPagesClosed(long newSafeHeadAddress)
         {
             if (MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
