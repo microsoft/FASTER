@@ -7,24 +7,24 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using FASTER.core;
 using System.IO;
+using NUnit.Framework;
 
 namespace FASTER.test
 {
 
-    [TestClass]
+    [TestFixture]
     public class ObjectFASTERTests
     {
-        private static IManagedFasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext> fht;
-        private static IDevice log, objlog;
+        private IManagedFasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext> fht;
+        private IDevice log, objlog;
         
-        [ClassInitialize]
-        public static void Setup(TestContext t)
+        [SetUp]
+        public void Setup()
         {
-            log = FasterFactory.CreateLogDevice("hlog", deleteOnClose: true);
-            objlog = FasterFactory.CreateObjectLogDevice("hlog", deleteOnClose: true);
+            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            objlog = FasterFactory.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             fht = FasterFactory.Create
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
@@ -34,8 +34,8 @@ namespace FASTER.test
             fht.StartSession();
         }
 
-        [ClassCleanup]
-        public static void TearDown()
+        [TearDown]
+        public void TearDown()
         {
             fht.StopSession();
             fht = null;
@@ -44,7 +44,7 @@ namespace FASTER.test
 
 
 
-        [TestMethod]
+        [Test]
         public void ObjectInMemWriteRead()
         {
             var key1 = new MyKey { key = 9999999 };
@@ -57,7 +57,7 @@ namespace FASTER.test
             Assert.IsTrue(output.value.value == value.value);
         }
 
-        [TestMethod]
+        [Test]
         public void ObjectInMemWriteRead2()
         {
             var key1 = new MyKey { key = 8999998 };
@@ -80,7 +80,7 @@ namespace FASTER.test
         }
 
 
-        [TestMethod]
+        [Test]
         public void ObjectDiskWriteRead()
         {
             for (int i = 0; i < 2000; i++)

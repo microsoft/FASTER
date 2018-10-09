@@ -4,14 +4,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
 using FASTER.core;
+using NUnit.Framework;
 
 namespace FASTER.test.recovery.sumstore
 {
 
-    [TestClass]
+    [TestFixture]
     public class FullRecoveryTests
     {
         const long numUniqueKeys = (1 << 14);
@@ -25,7 +25,7 @@ namespace FASTER.test.recovery.sumstore
         private Guid token;
         private IDevice log;
 
-        [TestInitialize]
+        [SetUp]
         public void Setup()
         {
             if (test_path == null)
@@ -43,7 +43,7 @@ namespace FASTER.test.recovery.sumstore
                 (keySpace, log, checkpointDir: test_path);
         }
 
-        [TestCleanup]
+        [TearDown]
         public void TearDown()
         {
             fht.StopSession();
@@ -73,7 +73,7 @@ namespace FASTER.test.recovery.sumstore
             }
         }
 
-        [TestMethod]
+        [Test]
         public void RecoveryTest1()
         {
             Populate();

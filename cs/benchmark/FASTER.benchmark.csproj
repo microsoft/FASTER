@@ -28,12 +28,6 @@
     <OutputPath>bin\x64\Release\</OutputPath>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-    <None Include="$(ProjectDir)..\native\readtsc\Release\readtsc.dll" Link="readtsc.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
   <ItemGroup>
     <None Include="App.config" />
   </ItemGroup>

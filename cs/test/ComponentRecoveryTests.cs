@@ -4,33 +4,23 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
 using FASTER.core;
 using System.Threading;
+using NUnit.Framework;
 
 namespace FASTER.test.recovery
 {
 
-    [TestClass]
+    [TestFixture]
     public class ComponentRecoveryTests
     {
-        [TestInitialize]
-        public void Setup()
-        {
-        }
-
-        [TestCleanup]
-        public void TearDown()
-        {
-        }
-
-        [TestMethod]
+        [Test]
         public unsafe void MallocFixedPageSizeRecoveryTest()
         {
             int seed = 123;
             var rand1 = new Random(seed);
-            var device = new LocalStorageDevice("test_ofb.dat", deleteOnClose: true);
+            var device = new LocalStorageDevice(TestContext.CurrentContext.TestDirectory + "\\test_ofb.dat", deleteOnClose: true);
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
@@ -73,15 +63,15 @@ namespace FASTER.test.recovery
             }
         }
 
-        [TestMethod]
+        [Test]
         public unsafe void TestFuzzyIndexRecovery()
         {
             int seed = 123;
             int size = 1 << 16;
             long numAdds = 1 << 18;
 
-            IDevice ht_device = new LocalStorageDevice("ht.dat", deleteOnClose: true);
-            IDevice ofb_device = new LocalStorageDevice("ofb.dat", deleteOnClose: true);
+            IDevice ht_device = new LocalStorageDevice(TestContext.CurrentContext.TestDirectory + "\\ht.dat", deleteOnClose: true);
+            IDevice ofb_device = new LocalStorageDevice(TestContext.CurrentContext.TestDirectory + "\\ofb.dat", deleteOnClose: true);
 
             var hash_table1 = new FasterBase();
             hash_table1.Initialize(size, 512);

@@ -96,7 +96,7 @@ namespace FASTER.benchmark
             threadMaximumLatency = new double[threadCount];
             threadProgress = new long[threadCount];
             writeStats = new bool[threadCount];
-            freq = HiResTimer.EstimateCPUFrequency();
+            freq = Stopwatch.Frequency;
 #endif
 
 
@@ -120,7 +120,7 @@ namespace FASTER.benchmark
             long writes_done = 0;
 
 #if DASHBOARD
-            var tstart = HiResTimer.Rdtsc();
+            var tstart = Stopwatch.GetTimestamp();
             var tstop1 = tstart;
             var lastWrittenValue = 0;
             int count = 0;
@@ -183,7 +183,7 @@ namespace FASTER.benchmark
                 if (writeStats[thread_idx])
                 {
                     var tstart1 = tstop1;
-                    tstop1 = HiResTimer.Rdtsc();
+                    tstop1 = Stopwatch.GetTimestamp();
                     threadProgress[thread_idx] = count;
                     threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
                     lastWrittenValue = count;
@@ -305,7 +305,7 @@ namespace FASTER.benchmark
                 Native32.AffinitizeThreadShardedTwoNuma((uint)thread_idx);
 
 #if DASHBOARD
-            var tstart = HiResTimer.Rdtsc();
+            var tstart = Stopwatch.GetTimestamp();
             var tstop1 = tstart;
             var lastWrittenValue = 0;
             int count = 0;
@@ -330,7 +330,7 @@ namespace FASTER.benchmark
                 if (writeStats[thread_idx])
                 {
                     var tstart1 = tstop1;
-                    tstop1 = HiResTimer.Rdtsc();
+                    tstop1 = Stopwatch.GetTimestamp();
                     threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
                     lastWrittenValue = count;
                     writeStats[thread_idx] = false;
