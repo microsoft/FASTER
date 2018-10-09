@@ -101,8 +101,15 @@ namespace FASTER.core.Roslyn
 
     }
 
+    /// <summary>
+    /// Type kind attribute
+    /// </summary>
     public class TypeKindAttribute : Attribute
     {
+        /// <summary>
+        /// Attribute
+        /// </summary>
+        /// <param name="kind"></param>
         public TypeKindAttribute(string kind) { }
     }
 }

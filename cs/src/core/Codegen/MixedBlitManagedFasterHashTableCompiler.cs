@@ -248,7 +248,7 @@ namespace FASTER.core.Roslyn
         {
             return
                 $"public unsafe struct {internalTypeName} {{\r\n" +
-                $"   public fixed byte fixedBuffer[{TypeSize.GetSize(default(T))}];" +
+                $"   public fixed byte fixedBuffer[{Helper.GetSize(default(T))}];" +
                 $"}}\r\n"
                 ;
         }

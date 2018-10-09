@@ -13,7 +13,7 @@ namespace FASTER.test.recovery
 {
 
     [TestFixture]
-    public class ComponentRecoveryTests
+    internal class ComponentRecoveryTests
     {
         [Test]
         public unsafe void MallocFixedPageSizeRecoveryTest()
@@ -24,7 +24,7 @@ namespace FASTER.test.recovery
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
-            int numBucketsToAdd = 16 * MallocFixedPageSize<HashBucket>.PageSize;
+            int numBucketsToAdd = 16 * allocator.GetPageSize();
             long[] logicalAddresses = new long[numBucketsToAdd];
             for (int i = 0; i < numBucketsToAdd; i++)
             {

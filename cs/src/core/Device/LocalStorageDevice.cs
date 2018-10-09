@@ -11,6 +11,9 @@ using System.Threading;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Local storage device
+    /// </summary>
     public class LocalStorageDevice : StorageDeviceBase
     {
         private readonly bool preallocateSegment;
@@ -18,6 +21,14 @@ namespace FASTER.core
         private readonly ConcurrentDictionary<int, SafeFileHandle> logHandles;
         private readonly SafeFileHandle singleLogHandle;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="filename"></param>
+        /// <param name="segmentSize"></param>
+        /// <param name="preallocateSegment"></param>
+        /// <param name="singleSegment"></param>
+        /// <param name="deleteOnClose"></param>
         public LocalStorageDevice(
             string filename, long segmentSize = -1,
             bool preallocateSegment = false, bool singleSegment = true, bool deleteOnClose = false)
@@ -34,6 +45,15 @@ namespace FASTER.core
                 logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="segmentId"></param>
+        /// <param name="sourceAddress"></param>
+        /// <param name="destinationAddress"></param>
+        /// <param name="readLength"></param>
+        /// <param name="callback"></param>
+        /// <param name="asyncResult"></param>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, 
                                      IntPtr destinationAddress, 
                                      uint readLength, 
@@ -70,6 +90,15 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="sourceAddress"></param>
+        /// <param name="segmentId"></param>
+        /// <param name="destinationAddress"></param>
+        /// <param name="numBytesToWrite"></param>
+        /// <param name="callback"></param>
+        /// <param name="asyncResult"></param>
         public override unsafe void WriteAsync(IntPtr sourceAddress, 
                                       int segmentId,
                                       ulong destinationAddress, 
@@ -107,6 +136,12 @@ namespace FASTER.core
             }
         }
 
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="fromSegment"></param>
+        /// <param name="toSegment"></param>
         public override void DeleteSegmentRange(int fromSegment, int toSegment)
         {
             if (singleLogHandle != null)
@@ -122,6 +157,9 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
         public override void Close()
         {
             if (singleLogHandle != null)

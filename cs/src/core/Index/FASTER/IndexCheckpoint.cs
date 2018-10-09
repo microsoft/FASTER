@@ -19,7 +19,7 @@ namespace FASTER.core
     public unsafe partial class FasterBase
     {
         // Derived class facing persistence API
-        protected IndexCheckpointInfo _indexCheckpoint;
+        internal IndexCheckpointInfo _indexCheckpoint;
 
         protected void TakeIndexFuzzyCheckpoint()
         {

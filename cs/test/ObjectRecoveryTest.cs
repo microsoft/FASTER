@@ -12,7 +12,7 @@ namespace FASTER.test.recovery.objectstore
 {
 
     [TestFixture]
-    public class ObjectRecoveryTests
+    internal class ObjectRecoveryTests
     {
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);

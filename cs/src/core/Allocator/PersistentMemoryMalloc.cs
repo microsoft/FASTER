@@ -13,20 +13,25 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
+    internal interface IAllocator : IDisposable
+    {
+        long Allocate(int numSlots);
+        long GetPhysicalAddress(long logicalAddress);
+        void CheckForAllocateComplete(ref long address);
+    }
 
-	public enum FlushStatus : int { Flushed, InProgress };
+    internal enum FlushStatus : int { Flushed, InProgress };
 
-	public enum CloseStatus : int { Closed, Open };
+    internal enum CloseStatus : int { Closed, Open };
 
-    
-    public struct FullPageStatus
+    internal struct FullPageStatus
 	{
         public long LastFlushedUntilAddress;
         public FlushCloseStatus PageFlushCloseStatus;
 	}
 
     [StructLayout(LayoutKind.Explicit)]
-    public struct FlushCloseStatus
+    internal struct FlushCloseStatus
     {
         [FieldOffset(0)]
         public FlushStatus PageFlushStatus;
@@ -47,7 +52,7 @@ namespace FASTER.core
         public long PageAndOffset;
     }
 
-    public unsafe partial class PersistentMemoryMalloc : IAllocator
+    internal unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         // Epoch information
         public LightEpoch epoch;
@@ -732,6 +737,28 @@ namespace FASTER.core
                 oldValue = foundValue;
             }
             return false;
+        }
+
+        public void RecoveryReset(long tailAddress, long headAddress)
+        {
+            long tailPage = GetPage(tailAddress);
+            long offsetInPage = GetOffsetInPage(tailAddress);
+            TailPageOffset.Page = (int)tailPage;
+            TailPageOffset.Offset = (int)offsetInPage;
+            TailPageIndex = GetPageIndexForPage(TailPageOffset.Page);
+
+            // issue read request to all pages until head lag
+            HeadAddress = headAddress;
+            SafeHeadAddress = headAddress;
+            FlushedUntilAddress = headAddress;
+            ReadOnlyAddress = tailAddress;
+            SafeReadOnlyAddress = tailAddress;
+
+            for (var addr = headAddress; addr < tailAddress; addr += PageSize)
+            {
+                var pageIndex = GetPageIndexForAddress(addr);
+                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = CloseStatus.Open;
+            }
         }
     }
 }

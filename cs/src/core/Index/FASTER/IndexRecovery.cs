@@ -14,10 +14,13 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// 
+    /// </summary>
     public unsafe partial class FasterBase
     {
         // Derived class exposed API
-        protected void RecoverFuzzyIndex(IndexCheckpointInfo info)
+        internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
             var ht_version = resizeInfo.version;
             var token = info.info.token;

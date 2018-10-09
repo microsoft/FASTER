@@ -15,7 +15,7 @@ namespace FASTER.test
 {
 
     [TestFixture]
-    public class BasicFASTERTests
+    internal class BasicFASTERTests
     {
         private ICustomFaster fht;
         private IDevice log;

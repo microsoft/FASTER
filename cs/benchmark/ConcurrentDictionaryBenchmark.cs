@@ -61,7 +61,6 @@ namespace FASTER.benchmark
 
         Input[] input_;
         Input* input_ptr;
-        readonly IDevice device;
 
         ConcurrentDictionary<Key, Value> store;
 

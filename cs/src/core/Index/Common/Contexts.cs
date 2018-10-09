@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public enum OperationType
+    internal enum OperationType
     {
         READ,
         RMW,
@@ -20,7 +20,7 @@ namespace FASTER.core
         DELETE
     }
 
-    public enum OperationStatus
+    internal enum OperationStatus
     {
         SUCCESS,
         NOTFOUND,
@@ -32,7 +32,7 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
-    public unsafe struct AsyncIOContext
+    internal unsafe struct AsyncIOContext
     {
         public long id;
 
@@ -47,7 +47,7 @@ namespace FASTER.core
         public BlockingCollection<AsyncIOContext> callbackQueue;
     }
 
-    public unsafe struct PendingContext
+    internal unsafe struct PendingContext
     {
         // User provided information
 
@@ -76,7 +76,7 @@ namespace FASTER.core
         public HashBucketEntry entry;
     }
 
-    public unsafe class ExecutionContext
+    internal unsafe class ExecutionContext
     {
         public int version;
         public long serialNum;
@@ -303,7 +303,7 @@ namespace FASTER.core
         }
     }
 
-    public struct HybridLogCheckpointInfo
+    internal struct HybridLogCheckpointInfo
     {
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
@@ -331,7 +331,7 @@ namespace FASTER.core
         }
     }
 
-    public struct IndexRecoveryInfo
+    internal struct IndexRecoveryInfo
     {
         public Guid token;
         public long table_size;
@@ -404,7 +404,7 @@ namespace FASTER.core
         }
     }
 
-    public struct IndexCheckpointInfo
+    internal struct IndexCheckpointInfo
     {
         public IndexRecoveryInfo info;
         public IDevice main_ht_device;

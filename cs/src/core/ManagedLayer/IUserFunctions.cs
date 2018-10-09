@@ -5,6 +5,14 @@ using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Interface for user functions
+    /// </summary>
+    /// <typeparam name="K"></typeparam>
+    /// <typeparam name="V"></typeparam>
+    /// <typeparam name="I"></typeparam>
+    /// <typeparam name="O"></typeparam>
+    /// <typeparam name="C"></typeparam>
     public interface IUserFunctions<K, V, I, O, C>
     {
         // Callbacks

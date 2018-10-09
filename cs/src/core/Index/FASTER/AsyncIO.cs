@@ -13,6 +13,9 @@ using System.Threading;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Async IO related functions of FASTER
+    /// </summary>
     public unsafe partial class FasterKV : FasterBase, IFasterKV
     {
 
@@ -81,7 +84,7 @@ namespace FASTER.core
         }
 
 
-        protected void AsyncGetFromDiskCallback(
+        private void AsyncGetFromDiskCallback(
                     uint errorCode,
                     uint numBytes,
                     NativeOverlapped* overlap)
@@ -148,7 +151,7 @@ namespace FASTER.core
     }
 
 
-    public unsafe partial class PersistentMemoryMalloc : IAllocator
+    internal unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         #region Async file operations
 

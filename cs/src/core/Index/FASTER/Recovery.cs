@@ -12,34 +12,12 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class PersistentMemoryMalloc : IAllocator
-    {
-        public void RecoveryReset(long tailAddress, long headAddress)
-        {
-            long tailPage = GetPage(tailAddress);
-            long offsetInPage = GetOffsetInPage(tailAddress);
-            TailPageOffset.Page = (int)tailPage;
-            TailPageOffset.Offset = (int)offsetInPage;
-            TailPageIndex = GetPageIndexForPage(TailPageOffset.Page);
-
-            // issue read request to all pages until head lag
-            HeadAddress = headAddress;
-            SafeHeadAddress = headAddress;
-            FlushedUntilAddress = headAddress;
-            ReadOnlyAddress = tailAddress;
-            SafeReadOnlyAddress = tailAddress;
-            
-            for(var addr = headAddress; addr < tailAddress; addr += PageSize)
-            {
-                var pageIndex = GetPageIndexForAddress(addr);
-                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = CloseStatus.Open;
-            }
-        }
-    }
-
+    /// <summary>
+    /// Partial class for recovery code in FASTER
+    /// </summary>
     public unsafe partial class FasterKV
     {
-        protected void InternalRecover(Guid indexToken, Guid hybridLogToken)
+        private void InternalRecover(Guid indexToken, Guid hybridLogToken)
         {
             _indexCheckpoint.Recover(indexToken);
             _hybridLogCheckpoint.Recover(hybridLogToken);
@@ -132,9 +110,9 @@ namespace FASTER.core
             hlog.RecoveryReset(untilAddress, headAddress);
         }
 
-        enum ReadStatus { Pending, Done };
-        enum FlushStatus { Pending, Done };
-        class RecoveryStatus
+        private enum ReadStatus { Pending, Done };
+        private enum FlushStatus { Pending, Done };
+        private class RecoveryStatus
         {
             public long startPage;
             public long endPage;
@@ -164,7 +142,7 @@ namespace FASTER.core
             }
         }
 
-        protected void RecoverHybridLog(IndexRecoveryInfo indexRecoveryInfo,
+        private void RecoverHybridLog(IndexRecoveryInfo indexRecoveryInfo,
                                         HybridLogRecoveryInfo recoveryInfo)
         {
             var fromAddress = indexRecoveryInfo.startLogicalAddress;
@@ -241,7 +219,7 @@ namespace FASTER.core
 
         }
 
-        protected void RecoverHybridLogFromSnapshotFile(
+        private void RecoverHybridLogFromSnapshotFile(
                                         IndexRecoveryInfo indexRecoveryInfo,
                                         HybridLogRecoveryInfo recoveryInfo)
         {
