@@ -16,8 +16,16 @@ using System.Threading;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Empty type
+    /// </summary>
     public unsafe struct Empty
     {
+        /// <summary>
+        /// Move to context
+        /// </summary>
+        /// <param name="empty"></param>
+        /// <returns></returns>
         public static Empty* MoveToContext(Empty* empty)
         {
             return empty;

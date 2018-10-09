@@ -12,12 +12,18 @@ using System.IO;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// FASTER configuration
+    /// </summary>
     public static class Config
     {
+        /// <summary>
+        /// Checkpoint directory
+        /// </summary>
         public static string CheckpointDirectory = "C:\\data";
     }
 
-    public struct AsyncGetFromDiskResult<TContext> : IAsyncResult
+    internal struct AsyncGetFromDiskResult<TContext> : IAsyncResult
     {
         public TContext context;
 
@@ -30,7 +36,7 @@ namespace FASTER.core
         public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    public struct PageAsyncReadResult<TContext> : IAsyncResult
+    internal struct PageAsyncReadResult<TContext> : IAsyncResult
     {
         public long page;
         public TContext context;
@@ -60,7 +66,7 @@ namespace FASTER.core
         }
     }
 
-    public class PageAsyncFlushResult<TContext> : IAsyncResult
+    internal class PageAsyncFlushResult<TContext> : IAsyncResult
     {
         public long page;
         public TContext context;
@@ -95,7 +101,7 @@ namespace FASTER.core
         }
     }
 
-    public unsafe class HashIndexPageAsyncFlushResult : IAsyncResult
+    internal unsafe class HashIndexPageAsyncFlushResult : IAsyncResult
     {
         public HashBucket* start;
         public int numChunks;
@@ -113,7 +119,7 @@ namespace FASTER.core
 		public bool CompletedSynchronously => throw new NotImplementedException();
 	}
 
-    public struct HashIndexPageAsyncReadResult : IAsyncResult
+    internal struct HashIndexPageAsyncReadResult : IAsyncResult
     {
         public int chunkIndex;
 
@@ -126,7 +132,7 @@ namespace FASTER.core
         public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    public struct OverflowPagesFlushAsyncResult : IAsyncResult
+    internal struct OverflowPagesFlushAsyncResult : IAsyncResult
     {
         public bool IsCompleted => throw new NotImplementedException();
 
@@ -137,7 +143,7 @@ namespace FASTER.core
         public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    public struct OverflowPagesReadAsyncResult : IAsyncResult
+    internal struct OverflowPagesReadAsyncResult : IAsyncResult
     {
 
         public bool IsCompleted => throw new NotImplementedException();
@@ -149,7 +155,7 @@ namespace FASTER.core
         public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    public struct CountdownEventAsyncResult : IAsyncResult
+    internal struct CountdownEventAsyncResult : IAsyncResult
     {
         public CountdownEvent countdown;
         public Action action;
