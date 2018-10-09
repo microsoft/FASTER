@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using FASTER.core;
 using System.Runtime.CompilerServices;
 using System.IO;

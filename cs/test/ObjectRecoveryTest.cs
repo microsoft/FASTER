@@ -4,14 +4,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
 using FASTER.core;
+using NUnit.Framework;
 
 namespace FASTER.test.recovery.objectstore
 {
 
-    [TestClass]
+    [TestFixture]
     public class ObjectRecoveryTests
     {
         const long numUniqueKeys = (1 << 14);
@@ -25,7 +25,7 @@ namespace FASTER.test.recovery.objectstore
         private Guid token;
         private IDevice log, objlog;
 
-        [TestInitialize]
+        [SetUp]
         public void Setup()
         {
             if (test_path == null)
@@ -44,7 +44,7 @@ namespace FASTER.test.recovery.objectstore
                 (keySpace, log, objlog, checkpointDir: test_path, functions: new Functions());
         }
 
-        [TestCleanup]
+        [TearDown]
         public void TearDown()
         {
             fht.StopSession();
@@ -75,7 +75,7 @@ namespace FASTER.test.recovery.objectstore
             }
         }
 
-        [TestMethod]
+        [Test]
         public void ObjectRecoveryTest1()
         {
             Populate();

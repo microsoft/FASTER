@@ -7,30 +7,30 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using FASTER.core;
 using System.IO;
+using NUnit.Framework;
 
 namespace FASTER.test
 {
 
-    [TestClass]
+    [TestFixture]
     public class BasicFASTERTests
     {
         private ICustomFaster fht;
         private IDevice log;
 
-        [TestInitialize]
+        [SetUp]
         public void Setup()
         {
-            log = new LocalStorageDevice("hybridlog_native.log", deleteOnClose: true);
+            log = new LocalStorageDevice(TestContext.CurrentContext.TestDirectory + "\\hybridlog_native.log", deleteOnClose: true);
             fht = FasterFactory.Create
                 <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFaster>
                 (128, log);
             fht.StartSession();
         }
 
-        [TestCleanup]
+        [TearDown]
         public void TearDown()
         {
             fht.StopSession();
@@ -40,7 +40,7 @@ namespace FASTER.test
 
 
 
-        [TestMethod]
+        [Test]
         public unsafe void NativeInMemWriteRead()
         {
             OutputStruct output = default(OutputStruct);
@@ -64,7 +64,7 @@ namespace FASTER.test
             Assert.IsTrue(output.value.vfield2 == value.vfield2);
         }
 
-        [TestMethod]
+        [Test]
         public unsafe void NativeInMemWriteRead2()
         {
 
@@ -97,7 +97,7 @@ namespace FASTER.test
             }
         }
 
-        [TestMethod]
+        [Test]
         public unsafe void NativeInMemRMW1()
         {
             var nums = Enumerable.Range(0, 1000).ToArray();
