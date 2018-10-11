@@ -127,7 +127,7 @@ namespace SumStore
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(hybridLogToken);
+            checkpointInfo.Recover(hybridLogToken, "logs");
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

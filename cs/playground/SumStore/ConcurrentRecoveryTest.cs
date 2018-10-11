@@ -182,7 +182,7 @@ namespace SumStore
             Console.WriteLine("Recovery Done!");
 
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(token);
+            checkpointInfo.Recover(token, "logs");
 
             threadCount = checkpointInfo.numThreads;
 
@@ -300,7 +300,7 @@ namespace SumStore
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(hybridLogToken);
+            checkpointInfo.Recover(hybridLogToken, "logs");
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

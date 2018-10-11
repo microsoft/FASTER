@@ -22,6 +22,11 @@ namespace SumStore
     {
         static unsafe void Main(string[] args)
         {
+            if (args.Length == 0)
+            {
+                Console.WriteLine("Usage: SumStore.exe [single|concurrent|test] [populate|recover|continue] [guid]");
+                return;
+            }
             if (!Directory.Exists("logs"))
                 Directory.CreateDirectory("logs");
 

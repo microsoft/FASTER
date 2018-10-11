@@ -293,11 +293,23 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Recover info from token and checkpoint directory
+        /// </summary>
+        /// <param name="token"></param>
+        /// <param name="checkpointDir"></param>
+        /// <returns></returns>
+        public bool Recover(Guid token, string checkpointDir)
+        {
+            Config.CheckpointDirectory = checkpointDir;
+            return Recover(token);
+        }
+
+        /// <summary>
         ///  Recover info from token
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        public bool Recover(Guid token)
+        internal bool Recover(Guid token)
         {
             string checkpointInfoFile = DirectoryConfiguration.GetHybridLogCheckpointMetaFileName(token);
             using (var reader = new StreamReader(checkpointInfoFile))
