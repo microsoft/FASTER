@@ -49,11 +49,11 @@ namespace FASTER.core
 
         class ReadCallbackWrapper
         {
-            IOCompletionCallback callback;
-            IAsyncResult asyncResult;
+            readonly IOCompletionCallback callback;
+            readonly IAsyncResult asyncResult;
             SectorAlignedMemory memory;
-            IntPtr destinationAddress;
-            uint readLength;
+            readonly IntPtr destinationAddress;
+            readonly uint readLength;
 
             public ReadCallbackWrapper(IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, IntPtr destinationAddress, uint readLength)
             {
@@ -78,8 +78,8 @@ namespace FASTER.core
 
         class WriteCallbackWrapper
         {
-            IOCompletionCallback callback;
-            IAsyncResult asyncResult;
+            readonly IOCompletionCallback callback;
+            readonly IAsyncResult asyncResult;
             SectorAlignedMemory memory;
 
             public WriteCallbackWrapper(IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory)

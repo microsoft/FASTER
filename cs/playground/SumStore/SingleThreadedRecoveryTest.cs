@@ -25,10 +25,10 @@ namespace SumStore
         public SingleThreadedRecoveryTest()
         {
             // Create FASTER index
-            var log = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogFileName());
+            var log = FasterFactory.CreateLogDevice("logs\\hlog");
             fht = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
-                (keySpace, log);
+                (keySpace, log, checkpointDir: "logs");
         }
 
         public void Continue()

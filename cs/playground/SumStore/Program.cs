@@ -22,6 +22,9 @@ namespace SumStore
     {
         static unsafe void Main(string[] args)
         {
+            if (!Directory.Exists("logs"))
+                Directory.CreateDirectory("logs");
+
             int nextArg = 0;
             var test = default(IFasterRecoveryTest);
             var type = args[nextArg++];

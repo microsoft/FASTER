@@ -17,39 +17,62 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Sector aligned memory allocator
+    /// </summary>
     public unsafe struct SectorAlignedMemory
     {
-        public GCHandle handle;
+        /// <summary>
+        /// Actual buffer
+        /// </summary>
         public byte[] buffer;
+
+        /// <summary>
+        /// Handle
+        /// </summary>
+        internal GCHandle handle;
+
+        /// <summary>
+        /// Offset
+        /// </summary>
         public int offset;
+
+        /// <summary>
+        /// Aligned pointer
+        /// </summary>
         public byte* aligned_pointer;
 
+        /// <summary>
+        /// Valid offset
+        /// </summary>
         public int valid_offset;
+
+        /// <summary>
+        /// Required bytes
+        /// </summary>
         public int required_bytes;
+
+        /// <summary>
+        /// Available bytes
+        /// </summary>
         public int available_bytes;
 
-        public int level;
-        public NativeSectorAlignedBufferPool pool;
+        internal int level;
+        internal NativeSectorAlignedBufferPool pool;
 
+        /// <summary>
+        /// Return
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return()
         {
             pool.Return(this);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyValidBytesToAddress(byte *pt)
-        {
-            byte* ps = aligned_pointer + valid_offset;
-            byte* pe = ps + required_bytes;
-            while (ps < pe)
-            {
-                *pt = *ps;
-                pt++;
-                ps++;
-            }
-        }
-
+        /// <summary>
+        /// Get valid pointer
+        /// </summary>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte* GetValidPointer()
         {
@@ -68,10 +91,13 @@ namespace FASTER.core
         private const int levels = 32;
         private readonly int recordSize;
         private readonly int sectorSize;
-        private ConcurrentQueue<SectorAlignedMemory>[] queue;
+        private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
 
-        public static NativeSectorAlignedBufferPool Instance = new NativeSectorAlignedBufferPool(1, 512);
-
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="recordSize"></param>
+        /// <param name="sectorSize"></param>
         public NativeSectorAlignedBufferPool(int recordSize, int sectorSize)
         {
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
@@ -79,6 +105,10 @@ namespace FASTER.core
             this.sectorSize = sectorSize;
         }
 
+        /// <summary>
+        /// Return
+        /// </summary>
+        /// <param name="page"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void Return(SectorAlignedMemory page)
         {
@@ -102,6 +132,11 @@ namespace FASTER.core
             return r + 1;
         }
 
+        /// <summary>
+        /// Get buffer
+        /// </summary>
+        /// <param name="numRecords"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe SectorAlignedMemory Get(int numRecords)
         {
@@ -127,6 +162,9 @@ namespace FASTER.core
             return page;
         }
 
+        /// <summary>
+        /// Free buffer
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free()
         {

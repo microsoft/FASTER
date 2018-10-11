@@ -47,7 +47,7 @@ namespace FASTER.core
         /// when an epoch becomes safe to reclaim.
         /// </summary>
         private int drainCount = 0;
-        private EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
+        private readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
         /// Number of entries in the epoch table

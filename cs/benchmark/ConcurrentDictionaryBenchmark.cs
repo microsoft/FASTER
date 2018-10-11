@@ -109,7 +109,7 @@ namespace FASTER.benchmark
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
             else
-                Native32.AffinitizeThreadShardedTwoNuma((uint)thread_idx);
+                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
             Stopwatch sw = new Stopwatch();
             sw.Start();
@@ -301,7 +301,7 @@ namespace FASTER.benchmark
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
             else
-                Native32.AffinitizeThreadShardedTwoNuma((uint)thread_idx);
+                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();

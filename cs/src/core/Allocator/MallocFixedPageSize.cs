@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#pragma warning disable 0162
+
 #define CALLOC
 
 using System;
@@ -44,8 +46,8 @@ namespace FASTER.core
         private IntPtr[] pointers = new IntPtr[LevelSize];
 
         private T[] values0;
-        private GCHandle handles0;
-        private IntPtr pointers0;
+        private readonly GCHandle handles0;
+        private readonly IntPtr pointers0;
         private readonly int RecordSize;
         private readonly int AlignedPageSize;
 

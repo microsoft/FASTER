@@ -29,7 +29,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected long InternalContinue(Guid guid)
+        internal long InternalContinue(Guid guid)
         {
             if (_hybridLogCheckpoint.info.continueTokens != null)
             {

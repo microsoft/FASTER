@@ -33,10 +33,13 @@ namespace FASTER.core
     }
 
 
+    /// <summary>
+    /// FASTER utility functions
+    /// </summary>
     public static class Utility
     {
         /// <summary>
-        /// Helper function used to check if two keys are equal
+        /// Helper function used to check if two byte arrays are equal
         /// </summary>
         /// <param name="src"></param>
         /// <param name="dest"></param>
@@ -58,6 +61,13 @@ namespace FASTER.core
             return false;
         }
 
+        /// <summary>
+        /// Helper function used to check if two byte arrays of given length are equal
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="dst"></param>
+        /// <param name="length"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe static bool IsEqual(byte* src, byte* dst, int length)
         {
@@ -71,6 +81,12 @@ namespace FASTER.core
             return true;
         }
 
+        /// <summary>
+        /// Copy numBytes bytes from src to dest
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="dest"></param>
+        /// <param name="numBytes"></param>
         public unsafe static void Copy(byte* src, byte* dest, int numBytes)
         {
             for(int i = 0; i < numBytes; i++)
@@ -79,6 +95,11 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Get 64-bit hash code for a long value
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long GetHashCode(long input)
         {
@@ -95,6 +116,12 @@ namespace FASTER.core
         }
 
 
+        /// <summary>
+        /// Get 64-bit hash code for a byte array
+        /// </summary>
+        /// <param name="pbString"></param>
+        /// <param name="len"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe long HashBytes(byte* pbString, int len)
         {
@@ -116,30 +143,45 @@ namespace FASTER.core
         }
     
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ulong Rotr64(ulong x, int n)
+        internal static ulong Rotr64(ulong x, int n)
         {
             return (((x) >> n) | ((x) << (64 - n)));
         }
 
+        /// <summary>
+        /// Is power of 2
+        /// </summary>
+        /// <param name="x"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsPowerOfTwo(long x)
         {
             return (x > 0) && ((x & (x - 1)) == 0);
         }
 
-        static readonly int[] MultiplyDeBruijnBitPosition2 = new int[32]
+        internal static readonly int[] MultiplyDeBruijnBitPosition2 = new int[32]
         {
             0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
             31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
         };
 
+        /// <summary>
+        /// Get log base 2
+        /// </summary>
+        /// <param name="x"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLogBase2(int x)
         {
             return MultiplyDeBruijnBitPosition2[(uint)(x * 0x077CB531U) >> 27];
         }
 
-        public static int GetLogBase2(UInt64 value)
+        /// <summary>
+        /// Get log base 2
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public static int GetLogBase2(ulong value)
         {
             int i;
             for (i = -1; value != 0; i++)
@@ -148,67 +190,24 @@ namespace FASTER.core
             return (i == -1) ? 0 : i;
         }
 
+        /// <summary>
+        /// Check if power of two
+        /// </summary>
+        /// <param name="x"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool Is32Bit(long x)
         {
             return ((ulong)x < 4294967295ul);
         }
 
-        /// <summary>
-        /// Finds the first bit. Returns the "index" of the first bit that is 1 in the
-        /// given value starting from the least significant bit. Returns 0 if value
-        /// is 0.
-        /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint FindFirstBitSet(ulong value)
-        {
-            if (value == 0)
-            {
-                return 0;
-            }
-
-            ulong bit = 1;
-            uint checks = 1;
-            while ((value & bit) == 0)
-            {
-                bit <<= 1;
-                ++checks;
-            }
-            return checks;
-        }
-
-        /// <summary>
-        /// Turn on the given bit specified by mask in the target.
-        /// </summary>
-        /// <param name="mask"></param>
-        /// <param name="target"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static long TurnOnBit(long mask, long target)
-        {
-            return target |= mask;
-        }
-
-        /// <summary>
-        /// Turn on the given bit specified by mask in the target.
-        /// </summary>
-        /// <param name="mask"></param>
-        /// <param name="target"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ulong TurnOnBit(ulong mask, ulong target)
-        {
-            return target |= mask;
-        }
 
         /// <summary>
         /// A 32-bit murmur3 implementation.
         /// </summary>
         /// <param name="h"></param>
         /// <returns></returns>
-        public static int Murmur3(int h)
+        internal static int Murmur3(int h)
         {
             uint a = (uint)h;
             a ^= a >> 16;
@@ -217,35 +216,6 @@ namespace FASTER.core
             a *= 0xc2b2ae35;
             a ^= a >> 16;
             return (int)a;
-        }
-
-        public static unsafe void AsyncCountdownCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
-        {
-            try
-            {
-                if (errorCode != 0)
-                {
-                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                CountdownEventAsyncResult result = (CountdownEventAsyncResult)Overlapped.Unpack(overlap).AsyncResult;
-                if(result.countdown == null)
-                {
-                    throw new Exception("Countdown event cannot be null!");
-                }
-                result.countdown.Signal();
-                if(result.countdown.IsSet)
-                {
-                    result.action();
-                }
-                Overlapped.Free(overlap);
-            }
         }
     }
 }

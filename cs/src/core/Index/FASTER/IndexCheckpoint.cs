@@ -21,7 +21,7 @@ namespace FASTER.core
         // Derived class facing persistence API
         internal IndexCheckpointInfo _indexCheckpoint;
 
-        protected void TakeIndexFuzzyCheckpoint()
+        internal void TakeIndexFuzzyCheckpoint()
         {
             var ht_version = resizeInfo.version;
 
@@ -54,7 +54,7 @@ namespace FASTER.core
 
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of FASTER
-        protected CountdownEvent mainIndexCheckpointEvent;
+        private CountdownEvent mainIndexCheckpointEvent;
 
         private void TakeMainIndexCheckpoint(int tableVersion,
                                             IDevice device,

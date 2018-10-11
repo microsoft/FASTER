@@ -79,7 +79,7 @@ namespace FASTER.core
     }
 
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]
-    public unsafe struct HashBucket
+    internal unsafe struct HashBucket
     {
 
         public const long kPinConstant = (1L << 48);
@@ -140,7 +140,7 @@ namespace FASTER.core
     // Long value layout: [1-bit tentative][15-bit TAG][48-bit address]
     // Physical little endian memory layout: [48-bit address][15-bit TAG][1-bit tentative]
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct HashBucketEntry
+    internal struct HashBucketEntry
     {
         [FieldOffset(0)]
         public long word;
@@ -258,8 +258,7 @@ namespace FASTER.core
             epoch = LightEpoch.Instance;
         }
 
-
-        public Status Free()
+        internal Status Free()
         {
             Free(0);
             Free(1);
@@ -331,7 +330,7 @@ namespace FASTER.core
         /// <param name="entry"></param>
         /// <returns>true if such a slot exists, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool FindTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
+        internal bool FindTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
         {
             var target_entry_word = default(long);
             var entry_slot_bucket = default(HashBucket*);
@@ -380,7 +379,7 @@ namespace FASTER.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
+        internal void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
         {
             var version = resizeInfo.version;
             var masked_entry_word = hash & state[version].size_mask;

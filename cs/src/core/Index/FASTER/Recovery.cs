@@ -237,12 +237,12 @@ namespace FASTER.core
 
             // By default first page has one extra record
             var capacity = hlog.GetCapacityNumPages();
-            var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage);
-
-            recoveryStatus.recoveryDevice = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid));
-            recoveryStatus.objectLogRecoveryDevice = FasterFactory.CreateObjectLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid));
-
-            recoveryStatus.recoveryDevicePageOffset = startPage;
+            var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage)
+            {
+                recoveryDevice = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
+                objectLogRecoveryDevice = FasterFactory.CreateObjectLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
+                recoveryDevicePageOffset = startPage
+            };
 
             // Initially issue read request for all pages that can be held in memory
             int totalPagesToRead = (int)(endPage - startPage);

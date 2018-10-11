@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#pragma warning disable 1591
+
 #define EIGHT_BYTE_KEY 
 //#define FIXED_SIZE_KEY
 //#define VARIABLE_SIZE_KEY

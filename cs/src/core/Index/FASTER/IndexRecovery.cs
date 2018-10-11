@@ -90,7 +90,7 @@ namespace FASTER.core
             return completed;
         }
 
-        protected unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             if (errorCode != 0)
             {
@@ -99,7 +99,7 @@ namespace FASTER.core
             Interlocked.Decrement(ref numChunksToBeRecovered);
         }
 
-        protected void DeleteTentativeEntries()
+        internal void DeleteTentativeEntries()
         {
             HashBucketEntry entry = default(HashBucketEntry);
 
