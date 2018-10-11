@@ -33,7 +33,7 @@
   <PropertyGroup Condition="'$(TargetFramework)'!='net46'">
     <DefineConstants>$(DefineConstants);DOTNETCORE</DefineConstants>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net46|AnyCPU'">
+  <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
