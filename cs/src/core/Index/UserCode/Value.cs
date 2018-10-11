@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#pragma warning disable 1591
+
 #define EIGHT_BYTE_VALUE
 //#define FIXED_SIZE_VALUE
 //#define FIXED_SIZE_VALUE_WITH_LOCK

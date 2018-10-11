@@ -9,6 +9,9 @@ using static FASTER.core.Roslyn.Helper;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Factory to create FASTER objects
+    /// </summary>
     public static class FasterFactory
     {
         /// <summary>

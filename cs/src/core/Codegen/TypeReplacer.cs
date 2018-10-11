@@ -26,8 +26,7 @@ namespace FASTER.core.Roslyn
             var s = compilation.GetTypeByMetadataName("FASTER.core." + node.Identifier.ValueText);
             if (s == null)
                 return node;
-            SyntaxNode replacementNode;
-            if (d.TryGetValue(s, out replacementNode))
+            if (d.TryGetValue(s, out SyntaxNode replacementNode))
             {
                 return replacementNode;
             }
@@ -59,7 +58,7 @@ namespace FASTER.core.Roslyn
     class MultiDictionaryTypeReplacer : CSharpSyntaxRewriter
     {
         private readonly CSharpCompilation compilation;
-        IDictionary<string, IDictionary<ISymbol, SyntaxNode>> dictionaryMap;
+        readonly IDictionary<string, IDictionary<ISymbol, SyntaxNode>> dictionaryMap;
 
         public MultiDictionaryTypeReplacer(CSharpCompilation compilation, IDictionary<string, IDictionary<ISymbol, SyntaxNode>> dictionaries)
         {
@@ -87,8 +86,7 @@ namespace FASTER.core.Roslyn
                 .Where(a => a.Name.ToFullString().EndsWith("TypeKind"))
                 .Select(a => a.ArgumentList.Arguments[0].ToFullString().Trim('"')))
                 .FirstOrDefault();
-            IDictionary<ISymbol, SyntaxNode> d;
-            if (dictionaryMapKey != null && this.dictionaryMap.TryGetValue(dictionaryMapKey, out d))
+            if (dictionaryMapKey != null && this.dictionaryMap.TryGetValue(dictionaryMapKey, out IDictionary<ISymbol, SyntaxNode> d))
             {
                 var replacer = new TypeReplacer(this.compilation, d);
                 return replacer.Visit(node);
@@ -101,8 +99,15 @@ namespace FASTER.core.Roslyn
 
     }
 
+    /// <summary>
+    /// Type kind attribute
+    /// </summary>
     public class TypeKindAttribute : Attribute
     {
+        /// <summary>
+        /// Attribute
+        /// </summary>
+        /// <param name="kind"></param>
         public TypeKindAttribute(string kind) { }
     }
 }

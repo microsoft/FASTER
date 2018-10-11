@@ -8,7 +8,7 @@ using System;
 
 namespace FASTER.core
 {
-    public static class HashTableManager
+    internal static class HashTableManager
     {
         private const bool PersistDll =
 #if DEBUG

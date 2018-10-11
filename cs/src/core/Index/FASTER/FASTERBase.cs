@@ -13,7 +13,7 @@ using System.Globalization;
 
 namespace FASTER.core
 {
-    public static class Constants
+    internal static class Constants
     {
         /// Size of cache line in bytes
         public const int kCacheLineBytes = 64;
@@ -79,7 +79,7 @@ namespace FASTER.core
     }
 
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]
-    public unsafe struct HashBucket
+    internal unsafe struct HashBucket
     {
 
         public const long kPinConstant = (1L << 48);
@@ -140,7 +140,7 @@ namespace FASTER.core
     // Long value layout: [1-bit tentative][15-bit TAG][48-bit address]
     // Physical little endian memory layout: [48-bit address][15-bit TAG][1-bit tentative]
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct HashBucketEntry
+    internal struct HashBucketEntry
     {
         [FieldOffset(0)]
         public long word;
@@ -214,7 +214,7 @@ namespace FASTER.core
         }
     }
 
-    public unsafe struct InternalHashTable
+    internal unsafe struct InternalHashTable
     {
         public long size;
         public long size_mask;
@@ -227,40 +227,38 @@ namespace FASTER.core
     public unsafe partial class FasterBase
     {
         // Initial size of the table
-        protected long minTableSize = 16;
+        internal long minTableSize = 16;
 
         // Allocator for the hash buckets
-        protected MallocFixedPageSize<HashBucket> overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
 
         // An array of size two, that contains the old and new versions of the hash-table
-        protected internal InternalHashTable[] state = new InternalHashTable[2];
+        internal InternalHashTable[] state = new InternalHashTable[2];
 
         // Array used to denote if a specific chunk is merged or not
-        protected internal long[] splitStatus;
+        internal long[] splitStatus;
 
         // Used as an atomic counter to check if resizing is complete
-        protected long numPendingChunksToBeSplit;
+        internal long numPendingChunksToBeSplit;
 
         // Epoch set for resizing
-        protected int resizeEpoch;
+        internal int resizeEpoch;
 
-        protected LightEpoch epoch;
+        internal LightEpoch epoch;
 
-        protected ResizeInfo resizeInfo;
+        internal ResizeInfo resizeInfo;
 
-        protected long currentSize;
+        internal long currentSize;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
         public FasterBase()
         {
             epoch = LightEpoch.Instance;
         }
 
-        public long KeyCount
-        {
-            get { return currentSize; }
-        }
-
-        public Status Free()
+        internal Status Free()
         {
             Free(0);
             Free(1);
@@ -275,6 +273,11 @@ namespace FASTER.core
             return Status.OK;
         }
 
+        /// <summary>
+        /// Initialize
+        /// </summary>
+        /// <param name="size"></param>
+        /// <param name="sector_size"></param>
         public void Initialize(long size, int sector_size)
         {
             if (!Utility.IsPowerOfTwo(size))
@@ -293,6 +296,12 @@ namespace FASTER.core
             Initialize(resizeInfo.version, size, sector_size);
         }
 
+        /// <summary>
+        /// Initialize
+        /// </summary>
+        /// <param name="version"></param>
+        /// <param name="size"></param>
+        /// <param name="sector_size"></param>
         protected void Initialize(int version, long size, int sector_size)
         {
             long size_bytes = size * sizeof(HashBucket);
@@ -321,7 +330,7 @@ namespace FASTER.core
         /// <param name="entry"></param>
         /// <returns>true if such a slot exists, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool FindTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
+        internal bool FindTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
         {
             var target_entry_word = default(long);
             var entry_slot_bucket = default(HashBucket*);
@@ -370,7 +379,7 @@ namespace FASTER.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
+        internal void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
         {
             var version = resizeInfo.version;
             var masked_entry_word = hash & state[version].size_mask;
@@ -663,6 +672,10 @@ namespace FASTER.core
             return (found == expected);
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
         protected virtual long GetEntryCount()
         {
             var version = resizeInfo.version;
@@ -685,6 +698,10 @@ namespace FASTER.core
             return total_entry_count;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="version"></param>
         protected virtual void _DumpDistribution(int version)
         {
             var table_size_ = state[version].size;

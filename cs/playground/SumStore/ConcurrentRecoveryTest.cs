@@ -31,12 +31,13 @@ namespace SumStore
         {
             this.threadCount = threadCount;
             tokens = new List<Guid>();
-            var log = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogFileName());
+
+            var log = FasterFactory.CreateLogDevice("logs\\hlog");
 
             // Create FASTER index
             fht = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
-                (keySpace, log);
+                (keySpace, log, checkpointDir: "logs");
             numActiveThreads = 0;
 
             inputArrays = new BlockingCollection<Input[]>();
@@ -181,7 +182,7 @@ namespace SumStore
             Console.WriteLine("Recovery Done!");
 
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(token);
+            checkpointInfo.Recover(token, "logs");
 
             threadCount = checkpointInfo.numThreads;
 
@@ -299,7 +300,7 @@ namespace SumStore
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(hybridLogToken);
+            checkpointInfo.Recover(hybridLogToken, "logs");
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

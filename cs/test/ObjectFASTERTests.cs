@@ -15,7 +15,7 @@ namespace FASTER.test
 {
 
     [TestFixture]
-    public class ObjectFASTERTests
+    internal class ObjectFASTERTests
     {
         private IManagedFasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext> fht;
         private IDevice log, objlog;

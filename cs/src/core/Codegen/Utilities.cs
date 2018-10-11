@@ -21,6 +21,13 @@ namespace FASTER.core.Roslyn
 
     internal static class Helper
     {
+
+        public static unsafe int GetSize<T>(this T value)
+        {
+            T[] arr = new T[2];
+            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
+        }
+
         public static bool IsAnonymousTypeName(this Type type)
         {
             Contract.Requires(type != null);
@@ -226,15 +233,6 @@ namespace FASTER.core.Roslyn
             typeName = sb.ToString();
             this.typeMap.Add(t, typeName);
             return;
-        }
-    }
-
-    public static class TypeSize
-    {
-        public static unsafe int GetSize<T>(this T value)
-        {
-            T[] arr = new T[2];
-            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
         }
     }
 }

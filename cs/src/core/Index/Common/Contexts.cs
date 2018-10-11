@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public enum OperationType
+    internal enum OperationType
     {
         READ,
         RMW,
@@ -20,7 +20,7 @@ namespace FASTER.core
         DELETE
     }
 
-    public enum OperationStatus
+    internal enum OperationStatus
     {
         SUCCESS,
         NOTFOUND,
@@ -32,7 +32,7 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
-    public unsafe struct AsyncIOContext
+    internal unsafe struct AsyncIOContext
     {
         public long id;
 
@@ -47,7 +47,7 @@ namespace FASTER.core
         public BlockingCollection<AsyncIOContext> callbackQueue;
     }
 
-    public unsafe struct PendingContext
+    internal unsafe struct PendingContext
     {
         // User provided information
 
@@ -76,7 +76,7 @@ namespace FASTER.core
         public HashBucketEntry entry;
     }
 
-    public unsafe class ExecutionContext
+    internal unsafe class ExecutionContext
     {
         public int version;
         public long serialNum;
@@ -107,7 +107,7 @@ namespace FASTER.core
         }
     }
 
-    public struct DirectoryConfiguration
+    internal struct DirectoryConfiguration
     {
         public const string index_base_folder = "index-checkpoints";
         public const string index_meta_file = "info";
@@ -137,10 +137,6 @@ namespace FASTER.core
                 file.Delete();
         }
 
-        public static string GetHybridLogFileName()
-        {
-            return String.Format("{0}\\{1}", Config.CheckpointDirectory, hlog_file);
-        }
         public static string GetIndexCheckpointFolder(Guid token)
         {
             return String.Format("{0}\\{1}\\{2}", Config.CheckpointDirectory, index_base_folder, token);
@@ -199,17 +195,53 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// Recovery info for hybrid log
+    /// </summary>
     public struct HybridLogRecoveryInfo
     {
+        /// <summary>
+        /// Guid
+        /// </summary>
         public Guid guid;
+        /// <summary>
+        /// Use snapshot file
+        /// </summary>
         public int useSnapshotFile;
+        /// <summary>
+        /// Version
+        /// </summary>
         public int version;
+        /// <summary>
+        /// Number of threads
+        /// </summary>
         public int numThreads;
+        /// <summary>
+        /// Flushed logical address
+        /// </summary>
         public long flushedLogicalAddress;
+        /// <summary>
+        /// Start logical address
+        /// </summary>
         public long startLogicalAddress;
+        /// <summary>
+        /// Final logical address
+        /// </summary>
         public long finalLogicalAddress;
+        /// <summary>
+        /// Guid array
+        /// </summary>
         public Guid[] guids;
+        /// <summary>
+        /// Tokens per guid
+        /// </summary>
         public Dictionary<Guid, long> continueTokens;
+
+        /// <summary>
+        /// Initialize
+        /// </summary>
+        /// <param name="token"></param>
+        /// <param name="_version"></param>
         public void Initialize(Guid token, int _version)
         {
             guid = token;
@@ -222,6 +254,11 @@ namespace FASTER.core
             guids = new Guid[64];
             continueTokens = new Dictionary<Guid, long>();
         }
+
+        /// <summary>
+        /// Initialize from stream
+        /// </summary>
+        /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
             guids = new Guid[64];
@@ -254,7 +291,25 @@ namespace FASTER.core
                 guids[i] = Guid.Parse(value);
             }
         }
-        public bool Recover(Guid token)
+
+        /// <summary>
+        /// Recover info from token and checkpoint directory
+        /// </summary>
+        /// <param name="token"></param>
+        /// <param name="checkpointDir"></param>
+        /// <returns></returns>
+        public bool Recover(Guid token, string checkpointDir)
+        {
+            Config.CheckpointDirectory = checkpointDir;
+            return Recover(token);
+        }
+
+        /// <summary>
+        ///  Recover info from token
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        internal bool Recover(Guid token)
         {
             string checkpointInfoFile = DirectoryConfiguration.GetHybridLogCheckpointMetaFileName(token);
             using (var reader = new StreamReader(checkpointInfoFile))
@@ -283,10 +338,19 @@ namespace FASTER.core
                 return false;
             }
         }
+
+        /// <summary>
+        /// Reset
+        /// </summary>
         public void Reset()
         {
             Initialize(default(Guid), -1);
         }
+
+        /// <summary>
+        /// Write info to file
+        /// </summary>
+        /// <param name="writer"></param>
         public void Write(StreamWriter writer)
         {
             writer.WriteLine(guid);
@@ -303,7 +367,7 @@ namespace FASTER.core
         }
     }
 
-    public struct HybridLogCheckpointInfo
+    internal struct HybridLogCheckpointInfo
     {
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
@@ -331,7 +395,7 @@ namespace FASTER.core
         }
     }
 
-    public struct IndexRecoveryInfo
+    internal struct IndexRecoveryInfo
     {
         public Guid token;
         public long table_size;
@@ -404,7 +468,7 @@ namespace FASTER.core
         }
     }
 
-    public struct IndexCheckpointInfo
+    internal struct IndexCheckpointInfo
     {
         public IndexRecoveryInfo info;
         public IDevice main_ht_device;

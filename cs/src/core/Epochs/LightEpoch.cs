@@ -10,14 +10,20 @@ using System.Diagnostics;
 namespace FASTER.core
 {
 
+    /// <summary>
+    /// 
+    /// </summary>
     public unsafe class LightEpoch
     {
+        /// <summary>
+        /// 
+        /// </summary>
         public static LightEpoch Instance = new LightEpoch();
 
         /// <summary>
         /// Default invalid index entry.
         /// </summary>
-        public const int kInvalidIndex = 0;
+        private const int kInvalidIndex = 0;
 
         /// <summary>
         /// Default number of entries in the entries table
@@ -41,7 +47,7 @@ namespace FASTER.core
         /// when an epoch becomes safe to reclaim.
         /// </summary>
         private int drainCount = 0;
-        private EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
+        private readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
         /// Number of entries in the epoch table
@@ -73,6 +79,9 @@ namespace FASTER.core
             Initialize(size);
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
         ~LightEpoch()
         {
             Uninitialize();

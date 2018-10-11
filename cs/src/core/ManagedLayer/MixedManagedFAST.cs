@@ -8,25 +8,40 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Managed FASTER class
+    /// </summary>
     [FASTER.core.Roslyn.TypeKind("user")]
-    public unsafe class MixedManagedFast
+    internal unsafe class MixedManagedFast
         : IManagedFasterKV<MixedKey, MixedValue, MixedInput, MixedOutput, MixedContext>
     {
         private IFasterKV_Mixed store;
+
+        /// <summary>
+        /// 
+        /// </summary>
         public long LogTailAddress => store.LogTailAddress;
+
+        /// <summary>
+        /// 
+        /// </summary>
         public long LogReadOnlyAddress => store.LogReadOnlyAddress;
+
+        /// <summary>
+        /// 
+        /// </summary>
         public long EntryCount => store.EntryCount;
 
         public MixedManagedFast(long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir, MixedUserFunctions functions, long LogTotalSizeBytes = 17179869184, double LogMutableFraction = 0.9, int LogPageSizeBits = 25)
         {
             MixedFunctionsWrapper.userFunctions = functions;
 
-            store = HashTableManager.GetFasterHashTable
+            store = FasterFactory.Create
                 <MixedKeyWrapper, MixedValueWrapper, MixedInputWrapper,
                 MixedOutputWrapper, MixedContextWrapper, MixedFunctionsWrapper,
                 IFasterKV_Mixed>
-                (size, logDevice, objectLogDevice, checkpointDir, LogTotalSizeBytes, 
-                LogMutableFraction, LogPageSizeBits);
+                (size, logDevice, objectLogDevice,
+                LogTotalSizeBytes, LogMutableFraction, LogPageSizeBits, checkpointDir);
         }
 
         public bool CompletePending(bool wait)
@@ -361,7 +376,7 @@ namespace FASTER.core
     }
 
     [FASTER.core.Roslyn.TypeKind("user")]
-    public unsafe static class UserType
+    internal unsafe static class UserType
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref MixedKey Convert(MixedKeyWrapper* k)

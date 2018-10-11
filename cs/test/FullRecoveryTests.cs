@@ -12,7 +12,7 @@ namespace FASTER.test.recovery.sumstore
 {
 
     [TestFixture]
-    public class FullRecoveryTests
+    internal class FullRecoveryTests
     {
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);

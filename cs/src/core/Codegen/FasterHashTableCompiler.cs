@@ -38,7 +38,8 @@ namespace FASTER.core.Roslyn
                 "FASTERBase",
                 "Recovery",
                 "IndexRecovery",
-                "IndexCheckpoint"
+                "IndexCheckpoint",
+                "StateTransitions"
             };
 
 

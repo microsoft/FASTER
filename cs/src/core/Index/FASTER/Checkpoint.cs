@@ -15,11 +15,14 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
-{   
+{
 
+    /// <summary>
+    /// Checkpoint related function of FASTER
+    /// </summary>
     public unsafe partial class FasterKV : FasterBase, IFasterKV
-   {
-        public class EpochPhaseIdx
+    {
+        private class EpochPhaseIdx
         {
             public const int PrepareForIndexCheckpt = 0;
 
@@ -36,7 +39,7 @@ namespace FASTER.core
 
         #region Starting points
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected bool InternalTakeCheckpoint(CheckpointType type)
+        private bool InternalTakeCheckpoint(CheckpointType type)
         {
             if (_systemState.phase == Phase.GC)
             {
@@ -44,7 +47,7 @@ namespace FASTER.core
                 GarbageCollectBuckets(0, true);
             }
 
-            if(_systemState.phase == Phase.REST)
+            if (_systemState.phase == Phase.REST)
             {
                 var context = (long)type;
                 var currentState = SystemState.Make(Phase.REST, _systemState.version);
@@ -58,7 +61,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected bool InternalShiftBeginAddress(long untilAddress)
+        private bool InternalShiftBeginAddress(long untilAddress)
         {
             if (_systemState.phase == Phase.REST)
             {
@@ -77,7 +80,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected bool InternalGrowIndex()
+        private bool InternalGrowIndex()
         {
             if (_systemState.phase == Phase.GC)
             {
@@ -152,12 +155,12 @@ namespace FASTER.core
         /// <param name="context">optional additioanl parameter for transition.</param>
         /// <returns>true if transition succeeds.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected bool GlobalMoveToNextState(SystemState currentState, SystemState nextState, ref long context)
+        private bool GlobalMoveToNextState(SystemState currentState, SystemState nextState, ref long context)
         {
             var intermediateState = SystemState.Make(Phase.INTERMEDIATE, currentState.version);
-            
+
             // Move from S1 to I
-            if(MakeTransition(currentState, intermediateState))
+            if (MakeTransition(currentState, intermediateState))
             {
                 // Acquired ownership to make the transition from S1 to S2
                 switch (nextState.phase)
@@ -272,8 +275,8 @@ namespace FASTER.core
                                 }
 
                                 new Thread(() =>
-                                    hlog.AsyncFlushPagesToDevice(startPage, 
-                                                                 endPage, 
+                                    hlog.AsyncFlushPagesToDevice(startPage,
+                                                                 endPage,
                                                                  _hybridLogCheckpoint.snapshotFileDevice,
                                                                  _hybridLogCheckpoint.snapshotFileObjectLogDevice,
                                                                  out _hybridLogCheckpoint.flushed)).Start();
@@ -308,7 +311,7 @@ namespace FASTER.core
                         {
                             // Note that the transition must be done before bumping epoch here!
                             MakeTransition(intermediateState, nextState);
-                            epoch.BumpCurrentEpoch(() => 
+                            epoch.BumpCurrentEpoch(() =>
                             {
                                 long _context = 0;
                                 GlobalMoveToNextState(nextState, SystemState.Make(Phase.IN_PROGRESS_GROW, nextState.version), ref _context);
@@ -378,13 +381,13 @@ namespace FASTER.core
         /// Corresponding thread-local actions that must be performed when any state machine is active
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void HandleCheckpointingPhases()
+        private void HandleCheckpointingPhases()
         {
             var previousState = SystemState.Make(threadCtx.phase, threadCtx.version);
             var finalState = SystemState.Copy(ref _systemState);
 
             // Don't play around when system state is being changed
-            if(finalState.phase == Phase.INTERMEDIATE)
+            if (finalState.phase == Phase.INTERMEDIATE)
             {
                 return;
             }
@@ -418,7 +421,7 @@ namespace FASTER.core
                         }
                     case Phase.INDEX_CHECKPOINT:
                         {
-                            if(_checkpointType == CheckpointType.INDEX_ONLY)
+                            if (_checkpointType == CheckpointType.INDEX_ONLY)
                             {
                                 // Reseting the marker for a potential FULL or INDEX_ONLY checkpoint in the future
                                 threadCtx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = false;
@@ -455,7 +458,7 @@ namespace FASTER.core
                         {
                             // Need to be very careful here as threadCtx is changing
                             ExecutionContext ctx;
-                            if(previousState.phase == Phase.PREPARE)
+                            if (previousState.phase == Phase.PREPARE)
                             {
                                 ctx = threadCtx;
                             }
@@ -511,7 +514,7 @@ namespace FASTER.core
                                     notify = (_hybridLogCheckpoint.flushed != null) && _hybridLogCheckpoint.flushed.IsSet;
                                 }
 
-                                if(_checkpointType == CheckpointType.FULL)
+                                if (_checkpointType == CheckpointType.FULL)
                                 {
                                     notify = notify && IsIndexFuzzyCheckpointCompleted();
                                 }
@@ -567,14 +570,14 @@ namespace FASTER.core
         #region Helper functions 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected bool GlobalMoveToNextCheckpointState(SystemState currentState)
+        private bool GlobalMoveToNextCheckpointState(SystemState currentState)
         {
             long context = 0;
             return GlobalMoveToNextState(currentState, GetNextState(currentState, _checkpointType), ref context);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected bool MakeTransition(SystemState currentState, SystemState nextState)
+        private bool MakeTransition(SystemState currentState, SystemState nextState)
         {
             // Move from I to P2
             if (Interlocked.CompareExchange(ref _systemState.word, nextState.word, currentState.word) == currentState.word)
@@ -589,7 +592,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void AcquireSharedLatchesForAllPendingRequests()
+        private void AcquireSharedLatchesForAllPendingRequests()
         {
             foreach (var ctx in threadCtx.retryRequests)
             {
@@ -602,9 +605,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected SystemState GetNextState(SystemState start, CheckpointType type = CheckpointType.FULL)
+        private SystemState GetNextState(SystemState start, CheckpointType type = CheckpointType.FULL)
         {
-           
+
             var nextState = default(SystemState);
             nextState.word = start.word;
             switch (start.phase)
@@ -622,7 +625,7 @@ namespace FASTER.core
                     }
                     break;
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    switch(type)
+                    switch (type)
                     {
                         case CheckpointType.INDEX_ONLY:
                             nextState.phase = Phase.INDEX_CHECKPOINT;
@@ -666,7 +669,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void WriteHybridLogMetaInfo()
+        private void WriteHybridLogMetaInfo()
         {
             string filename = DirectoryConfiguration.GetHybridLogCheckpointMetaFileName(_hybridLogCheckpointToken);
             using (var file = new StreamWriter(filename, false))
@@ -677,7 +680,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void WriteHybridLogContextInfo()
+        private void WriteHybridLogContextInfo()
         {
             string filename = DirectoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.guid);
             using (var file = new StreamWriter(filename, false))
@@ -689,7 +692,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void WriteIndexMetaFile()
+        private void WriteIndexMetaFile()
         {
             string filename = DirectoryConfiguration.GetIndexCheckpointMetaFileName(_indexCheckpointToken);
             using (var file = new StreamWriter(filename, false))
@@ -701,21 +704,21 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected bool ObtainCurrentTailAddress(ref long location)
+        private bool ObtainCurrentTailAddress(ref long location)
         {
             var tailAddress = hlog.GetTailAddress();
             return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void InitializeIndexCheckpoint(Guid indexToken)
+        private void InitializeIndexCheckpoint(Guid indexToken)
         {
             DirectoryConfiguration.CreateIndexCheckpointFolder(indexToken);
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
+        private void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
         {
             DirectoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
             _hybridLogCheckpoint.Initialize(hybridLogToken, version);

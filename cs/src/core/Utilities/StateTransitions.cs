@@ -13,10 +13,10 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public enum ResizeOperationStatus : int { IN_PROGRESS, DONE };
+    internal enum ResizeOperationStatus : int { IN_PROGRESS, DONE };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public unsafe struct ResizeInfo
+    internal unsafe struct ResizeInfo
     {
         [FieldOffset(0)]
         public ResizeOperationStatus status;
@@ -28,7 +28,7 @@ namespace FASTER.core
         public long word;
     }
 
-    public enum Phase : int {
+    internal enum Phase : int {
         PREP_INDEX_CHECKPOINT, INDEX_CHECKPOINT,
         PREPARE, IN_PROGRESS,
         WAIT_PENDING, WAIT_FLUSH,
@@ -40,7 +40,7 @@ namespace FASTER.core
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public unsafe struct SystemState
+    internal unsafe struct SystemState
     {
         [FieldOffset(0)]
         public Phase phase;

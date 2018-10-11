@@ -22,21 +22,21 @@ namespace SumStore
         const long refreshInterval = (1 << 8);
         const long completePendingInterval = (1 << 12);
         const long checkpointInterval = (1 << 22);
-        int threadCount;
+        readonly int threadCount;
         int numActiveThreads;
         ICustomFasterKv fht;
         BlockingCollection<Input[]> inputArrays;
-        long[] threadNumOps;
+        readonly long[] threadNumOps;
 
         public ConcurrentTest(int threadCount)
         {
             this.threadCount = threadCount;
 
             // Create FASTER index
-            var log = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogFileName());
+            var log = FasterFactory.CreateLogDevice("logs\\hlog");
             fht = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
-                (keySpace, log);
+                (keySpace, log, checkpointDir: "logs");
             numActiveThreads = 0;
 
             inputArrays = new BlockingCollection<Input[]>();

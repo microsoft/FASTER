@@ -13,6 +13,9 @@ using System.Threading;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Async IO related functions of FASTER
+    /// </summary>
     public unsafe partial class FasterKV : FasterBase, IFasterKV
     {
 
@@ -81,7 +84,7 @@ namespace FASTER.core
         }
 
 
-        protected void AsyncGetFromDiskCallback(
+        private void AsyncGetFromDiskCallback(
                     uint errorCode,
                     uint numBytes,
                     NativeOverlapped* overlap)
@@ -148,7 +151,7 @@ namespace FASTER.core
     }
 
 
-    public unsafe partial class PersistentMemoryMalloc : IAllocator
+    internal unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         #region Async file operations
 
@@ -316,9 +319,11 @@ namespace FASTER.core
                 long pageStartAddress = flushPage << LogPageSizeBits;
                 long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
 
-                var asyncResult = new PageAsyncFlushResult<Empty>();
-                asyncResult.page = flushPage;
-                asyncResult.count = 1;
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    page = flushPage,
+                    count = 1
+                };
                 if (pageEndAddress > untilAddress)
                 {
                     asyncResult.partial = true;

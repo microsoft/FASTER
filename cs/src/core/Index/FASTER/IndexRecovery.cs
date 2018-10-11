@@ -14,10 +14,13 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// 
+    /// </summary>
     public unsafe partial class FasterBase
     {
         // Derived class exposed API
-        protected void RecoverFuzzyIndex(IndexCheckpointInfo info)
+        internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
             var ht_version = resizeInfo.version;
             var token = info.info.token;
@@ -87,7 +90,7 @@ namespace FASTER.core
             return completed;
         }
 
-        protected unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             if (errorCode != 0)
             {
@@ -96,7 +99,7 @@ namespace FASTER.core
             Interlocked.Decrement(ref numChunksToBeRecovered);
         }
 
-        protected void DeleteTentativeEntries()
+        internal void DeleteTentativeEntries()
         {
             HashBucketEntry entry = default(HashBucketEntry);
 
