@@ -73,7 +73,7 @@ namespace FASTER.core
         /// <typeparam name="TContext">Context type</typeparam>
         /// <typeparam name="TFunctions">Callback Functions</typeparam>
         /// <typeparam name="TIFaster">Interface of returned FASTER instance</typeparam>
-        /// <param name="indexSizeBuckets">Numer of buckets</param>
+        /// <param name="indexSizeBuckets">Number of buckets</param>
         /// <param name="logDevice">Log device</param>
         /// <param name="objectLogDevice">Log device for storing objects (only needed for non-blittable key/value types)</param>
         /// <param name="LogTotalSizeBytes">Total size of log (bytes)</param>
@@ -106,7 +106,7 @@ namespace FASTER.core
         /// <typeparam name="TOutput">Output type</typeparam>
         /// <typeparam name="TContext">Context type</typeparam>
         /// <typeparam name="TFunctions">Callback Functions</typeparam>
-        /// <param name="indexSizeBuckets">Numer of buckets</param>
+        /// <param name="indexSizeBuckets">Number of buckets</param>
         /// <param name="logDevice">Log device</param>
         /// <param name="objectLogDevice">Log device for storing objects (only needed for non-blittable key/value types)</param>
         /// <param name="functions">Instance of functions</param>

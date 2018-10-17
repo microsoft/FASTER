@@ -56,7 +56,7 @@ namespace FASTER.core
         /// Initial value for RMW
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="input">Input used as pameter to RMW</param>
+        /// <param name="input">Input used as parameter to RMW</param>
         /// <param name="value">Value being initialized</param>
         void InitialUpdater(K key, I input, ref V value);
 
@@ -64,7 +64,7 @@ namespace FASTER.core
         /// In-place update for RMW
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="input">Input used as pameter to RMW</param>
+        /// <param name="input">Input used as parameter to RMW</param>
         /// <param name="value">Value being updated in-place</param>
         void InPlaceUpdater(K key, I input, ref V value);
 
@@ -72,7 +72,7 @@ namespace FASTER.core
         /// Copy-update for RMW
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="input">Input used as pameter to RMW</param>
+        /// <param name="input">Input used as parameter to RMW</param>
         /// <param name="oldValue">Old value to be updated</param>
         /// <param name="newValue">New value after update</param>
         void CopyUpdater(K key, I input, V oldValue, ref V newValue);
