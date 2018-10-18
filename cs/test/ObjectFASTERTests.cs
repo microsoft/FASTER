@@ -28,8 +28,8 @@ namespace FASTER.test
 
             fht = FasterFactory.Create
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (indexSizeBuckets: 128, logDevice: log, objectLogDevice: objlog, functions: new MyFunctions(), 
-                LogMutableFraction: 0.1, LogPageSizeBits: 9, LogTotalSizeBytes: 512*16
+                (indexSizeBuckets: 128, logDevice: log, objectLogDevice: objlog, functions: new MyFunctions(),
+                logParameters: new LogParameters { MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 }
                 );
             fht.StartSession();
         }

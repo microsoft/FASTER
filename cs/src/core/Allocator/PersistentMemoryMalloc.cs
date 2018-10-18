@@ -78,7 +78,8 @@ namespace FASTER.core
             (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
         // Total HLOG size
-        private const long LogTotalSizeBytes = 1L << 34; // 29
+        private const int LogTotalSizeBits = 34;
+        private const long LogTotalSizeBytes = 1L << LogTotalSizeBits;
         private const int BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
 
         // HeadOffset lag (from tail)
