@@ -32,8 +32,8 @@ namespace FASTER.core
         /// </summary>
         public long EntryCount => store.EntryCount;
 
-        public MixedManagedFast(long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir, MixedUserFunctions functions, 
-            LogParameters logParameters, CheckpointType checkpointType)
+        public MixedManagedFast(long size, MixedUserFunctions functions, 
+            LogSettings logSettings, CheckpointSettings checkpointSettings)
         {
             MixedFunctionsWrapper.userFunctions = functions;
 
@@ -41,7 +41,7 @@ namespace FASTER.core
                 <MixedKeyWrapper, MixedValueWrapper, MixedInputWrapper,
                 MixedOutputWrapper, MixedContextWrapper, MixedFunctionsWrapper,
                 IFasterKV_Mixed>
-                (size, logDevice, objectLogDevice, logParameters, checkpointDir, checkpointType);
+                (size, logSettings, checkpointSettings);
         }
 
         public bool CompletePending(bool wait)

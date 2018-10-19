@@ -390,7 +390,7 @@ namespace FASTER.core
             started = 0;
             flushed = null;
             info.Reset();
-            snapshotFileDevice.Close();
+            if (snapshotFileDevice != null) snapshotFileDevice.Close();
             if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Close();
         }
     }

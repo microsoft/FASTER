@@ -37,7 +37,7 @@ namespace SumStore
             // Create FASTER index
             fht = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
-                (keySpace, log, checkpointDir: "logs");
+                (keySpace, new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = "logs" });
             numActiveThreads = 0;
 
             inputArrays = new BlockingCollection<Input[]>();

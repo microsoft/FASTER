@@ -40,7 +40,7 @@ namespace FASTER.test.recovery.sumstore
             fht = 
                 FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFaster>
-                (keySpace, log, checkpointDir: test_path);
+                (keySpace, new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = test_path });
         }
 
         [TearDown]
@@ -77,6 +77,7 @@ namespace FASTER.test.recovery.sumstore
         public void RecoveryTest1()
         {
             Populate();
+            log.Close();
             Setup();
             RecoverAndTest(token, token);
         }

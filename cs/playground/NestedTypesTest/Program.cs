@@ -48,8 +48,8 @@ namespace NestedTypesTest
                 MyContext
 #endif
                 , MyFunctions>
-                (128, log, null, new MyFunctions(),
-                new LogParameters { MemorySizeBits = 14, PageSizeBits = 10 }
+                (128, new MyFunctions(),
+                new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 10 }
                 );
 
             h.StartSession();

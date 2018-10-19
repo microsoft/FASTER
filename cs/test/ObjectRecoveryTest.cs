@@ -35,13 +35,16 @@ namespace FASTER.test.recovery.objectstore
                     Directory.CreateDirectory(test_path);
             }
 
-            log = FasterFactory.CreateLogDevice(test_path + "\\hlog", deleteOnClose: true);
-            objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\hlog", deleteOnClose: true);
+            log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
+            objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\hlog");
 
             fht = 
                 FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, Functions>
-                (keySpace, log, objlog, checkpointDir: test_path, functions: new Functions());
+                (
+                    keySpace, new Functions(),
+                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
+                    new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.FoldOver });
         }
 
         [TearDown]
@@ -79,6 +82,8 @@ namespace FASTER.test.recovery.objectstore
         public void ObjectRecoveryTest1()
         {
             Populate();
+            log.Close();
+            objlog.Close();
             Setup();
             RecoverAndTest(token, token);
         }

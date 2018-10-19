@@ -10,10 +10,20 @@ using static FASTER.core.Roslyn.Helper;
 namespace FASTER.core
 {
     /// <summary>
-    /// Configuration parameters for hybrid log
+    /// Configuration settings for hybrid log
     /// </summary>
-    public class LogParameters
+    public class LogSettings
     {
+        /// <summary>
+        /// Device used for main hybrid log
+        /// </summary>
+        public IDevice LogDevice = new NullDevice();
+
+        /// <summary>
+        /// Device used for serialized heap objects in hybrid log
+        /// </summary>
+        public IDevice ObjectLogDevice = new NullDevice();
+
         /// <summary>
         /// Size of page, in bits
         /// </summary>
@@ -36,17 +46,34 @@ namespace FASTER.core
     }
 
     /// <summary>
+    /// Checkpoint-related settings
+    /// </summary>
+    public class CheckpointSettings
+    {
+        /// <summary>
+        /// Directory where checkpoints are stored
+        /// </summary>
+        public string CheckpointDir = "";
+
+        /// <summary>
+        /// Type of checkpoint
+        /// </summary>
+        public CheckpointType CheckPointType = CheckpointType.Snapshot;
+    }
+
+    /// <summary>
     /// Checkpoint type
     /// </summary>
     public enum CheckpointType
     {
         /// <summary>
-        /// Take separate snapshot of in-memory
+        /// Take separate snapshot of in-memory portion of log (default)
         /// </summary>
         Snapshot,
 
         /// <summary>
         /// Flush current log (move read-only to tail)
+        /// (enables incremental checkpointing, but log grows faster)
         /// </summary>
         FoldOver
     }
@@ -118,29 +145,29 @@ namespace FASTER.core
         /// <typeparam name="TFunctions">Callback Functions</typeparam>
         /// <typeparam name="TIFaster">Interface of returned FASTER instance</typeparam>
         /// <param name="indexSizeBuckets">Numer of buckets</param>
-        /// <param name="logDevice">Log device</param>
-        /// <param name="objectLogDevice">Log device for objects</param>
-        /// <param name="logParameters">Log parameters</param>
-        /// <param name="checkpointDir">Directory for recovery checkpoints</param>
-        /// <param name="checkpointType">Type of checkpoint (snapshot or foldover)</param>
+        /// <param name="logSettings">Log Settings</param>
+        /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <returns>Instance of FASTER</returns>
         public static TIFaster
             Create<TKey, TValue, TInput, TOutput, TContext, TFunctions, TIFaster>(
-            long indexSizeBuckets, IDevice logDevice, IDevice objectLogDevice = null,
-            LogParameters logParameters = null,
-            string checkpointDir = null, CheckpointType checkpointType = CheckpointType.FoldOver
+            long indexSizeBuckets,
+            LogSettings logSettings = null,
+            CheckpointSettings checkpointSettings = null
             )
         {
-            if (logParameters == null)
-                logParameters = new LogParameters();
+            if (logSettings == null)
+                logSettings = new LogSettings();
+            if (checkpointSettings == null)
+                checkpointSettings = new CheckpointSettings();
 
             return
                 HashTableManager.GetFasterHashTable
                                 <TKey, TValue, TInput, TOutput,
                                 TContext, TFunctions, TIFaster>
-                                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir,
-                                logParameters.MemorySizeBits, logParameters.MutableFraction, logParameters.PageSizeBits, 
-                                logParameters.SegmentSizeBits, checkpointType == CheckpointType.FoldOver);
+                                (indexSizeBuckets, logSettings.LogDevice, logSettings.ObjectLogDevice, 
+                                checkpointSettings.CheckpointDir, logSettings.MemorySizeBits, 
+                                logSettings.MutableFraction, logSettings.PageSizeBits, 
+                                logSettings.SegmentSizeBits, checkpointSettings.CheckPointType == CheckpointType.FoldOver);
         }
 
         /// <summary>
@@ -153,27 +180,27 @@ namespace FASTER.core
         /// <typeparam name="TContext">Context type</typeparam>
         /// <typeparam name="TFunctions">Callback Functions</typeparam>
         /// <param name="indexSizeBuckets">Numer of buckets</param>
-        /// <param name="logDevice">Log device</param>
-        /// <param name="objectLogDevice">Log device for storing objects (only needed for non-blittable key/value types)</param>
         /// <param name="functions">Instance of functions</param>
-        /// <param name="logParameters">Log parameters</param>
-        /// <param name="checkpointDir">Directory for recovery checkpoints</param>
-        /// <param name="checkpointType">Type of checkpoint (snapshot or foldover)</param>
-        /// <param name="treatValueAsAtomic">Treat value as atomic, no auto-locking by FASTER</param>
+        /// <param name="logSettings">Log parameters</param>
+        /// <param name="checkpointSettings">Checkpoint settings</param>
+        /// <param name="treatValueAsAtomic">Treat value as atomic. If true, there is no auto-locking by FASTER</param>
         /// <returns>Instance of FASTER</returns>
         public static IManagedFasterKV<TKey, TValue, TInput, TOutput, TContext>
             Create<TKey, TValue, TInput, TOutput, TContext, TFunctions>
-            (long indexSizeBuckets, IDevice logDevice, IDevice objectLogDevice,
-            TFunctions functions,
-            LogParameters logParameters = null,
-            string checkpointDir = null, CheckpointType checkpointType = CheckpointType.FoldOver,
-            bool treatValueAsAtomic = false)
+            (long indexSizeBuckets, TFunctions functions,
+            LogSettings logSettings = null,
+            CheckpointSettings checkpointSettings = null,
+            bool treatValueAsAtomic = true)
             where TFunctions : IUserFunctions<TKey, TValue, TInput, TOutput, TContext>
         {
+            if (logSettings == null)
+                logSettings = new LogSettings();
+            if (checkpointSettings == null)
+                checkpointSettings = new CheckpointSettings();
+
             return HashTableManager.GetMixedManagedFasterHashTable
                 <TKey, TValue, TInput, TOutput, TContext, TFunctions>
-                (indexSizeBuckets, logDevice, objectLogDevice, checkpointDir,
-                functions, treatValueAsAtomic, logParameters, checkpointType);
+                (indexSizeBuckets, functions, logSettings, checkpointSettings, treatValueAsAtomic);
         }
     }
 }

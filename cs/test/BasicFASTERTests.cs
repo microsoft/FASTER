@@ -26,7 +26,7 @@ namespace FASTER.test
             log = new LocalStorageDevice(TestContext.CurrentContext.TestDirectory + "\\hybridlog_native.log", deleteOnClose: true);
             fht = FasterFactory.Create
                 <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFaster>
-                (128, log);
+                (128, new LogSettings { LogDevice = log });
             fht.StartSession();
         }
 

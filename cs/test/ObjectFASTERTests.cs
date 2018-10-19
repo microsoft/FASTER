@@ -28,8 +28,9 @@ namespace FASTER.test
 
             fht = FasterFactory.Create
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (indexSizeBuckets: 128, logDevice: log, objectLogDevice: objlog, functions: new MyFunctions(),
-                logParameters: new LogParameters { MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 }
+                (indexSizeBuckets: 128, functions: new MyFunctions(),
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver }
                 );
             fht.StartSession();
         }

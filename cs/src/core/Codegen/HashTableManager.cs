@@ -37,12 +37,14 @@ namespace FASTER.core
 
         public static IManagedFasterKV<TKey, TValue, TInput, TOutput, TContext>
             GetMixedManagedFasterHashTable<TKey, TValue, TInput, TOutput, TContext, TFunctions>
-            (long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir, TFunctions functions, bool treatValueAsAtomic, LogParameters logParameters, CheckpointType checkpointType, bool persistDll = PersistDll, bool optimizeCode = OptimizeCode)
+            (long size, TFunctions functions, 
+            LogSettings logSettings, CheckpointSettings checkpointSettings, bool treatValueAsAtomic,
+            bool persistDll = PersistDll, bool optimizeCode = OptimizeCode)
             where TFunctions : IUserFunctions<TKey, TValue, TInput, TOutput, TContext>
         {
-            var s = Roslyn.MixedBlitManagedFasterHashTableCompiler<TKey, TValue, TInput, TOutput, TContext, TFunctions>.GenerateGenericFasterHashTableClass(size, logDevice, treatValueAsAtomic, persistDll, optimizeCode);
+            var s = Roslyn.MixedBlitManagedFasterHashTableCompiler<TKey, TValue, TInput, TOutput, TContext, TFunctions>.GenerateGenericFasterHashTableClass(treatValueAsAtomic, persistDll, optimizeCode);
             var t = s.Item1;
-            var instance = Activator.CreateInstance(t, size, logDevice, objectLogDevice, checkpointDir, functions, logParameters, checkpointType);
+            var instance = Activator.CreateInstance(t, size, functions, logSettings, checkpointSettings);
             return (IManagedFasterKV<TKey, TValue, TInput, TOutput, TContext>)instance;
         }
     }
