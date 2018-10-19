@@ -104,7 +104,7 @@ namespace FASTER.core
             long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
 
-            CurrentEpoch = 1;
+            CurrentEpoch = _CurrentEpoch()
             SafeToReclaimEpoch = 0;
 
             for (int i = 0; i < kDrainListSize; i++)
@@ -202,7 +202,16 @@ namespace FASTER.core
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
         }
-
+        
+        /// <summary>
+        /// Return default CurrentEpoch and explain why we start with that default
+        /// </summary>
+        /// <returns></returns>
+        public int _CurrentEpoch()
+        {
+            return 1
+        }
+        
         /// <summary>
         /// Increment global current epoch
         /// </summary>
@@ -211,8 +220,9 @@ namespace FASTER.core
         {
             int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
             
-            if (drainCount > 0)
+            if (drainCount > 0) {
                 Drain(nextEpoch);
+            }
 
             return nextEpoch;
         }
@@ -232,7 +242,11 @@ namespace FASTER.core
             {
                 if (drainList[i].epoch == int.MaxValue)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue-1, int.MaxValue) == int.MaxValue)
+                    if (Interlocked.CompareExchange(
+                            ref drainList[i].epoch, 
+                            int.MaxValue-1, 
+                            int.MaxValue
+                        ) == int.MaxValue)
                     {
                         drainList[i].action = onDrain;
                         drainList[i].epoch = PriorEpoch;
@@ -246,7 +260,11 @@ namespace FASTER.core
 
                     if (triggerEpoch <= SafeToReclaimEpoch)
                     {
-                        if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, triggerEpoch) == triggerEpoch)
+                        if (Interlocked.CompareExchange(
+                                ref drainList[i].epoch, 
+                                int.MaxValue - 1, 
+                                triggerEpoch
+                            ) == triggerEpoch)
                         {
                             var triggerAction = drainList[i].action;
                             drainList[i].action = onDrain;
@@ -330,7 +348,9 @@ namespace FASTER.core
 
                 if (current_iteration > (numEntries * 3))
                 {
-                    throw new Exception("Unable to reserve an epoch entry, try increasing the epoch table size (kTableSize)");
+                    throw new Exception(
+                        "Unable to reserve an epoch entry, try increasing the epoch table size (kTableSize)"
+                    );
                 }
             }
         }
@@ -343,7 +363,13 @@ namespace FASTER.core
         private int ReserveEntryForThread()
         {
             // for portability(run on non-windows platform)
-            int threadId = Environment.OSVersion.Platform == PlatformID.Win32NT ? (int)Native32.GetCurrentThreadId() : Thread.CurrentThread.ManagedThreadId;
+            int threadId = 0
+            if Environment.OSVersion.Platform == PlatformID.Win32NT {
+                threadId = (int)Native32.GetCurrentThreadId()
+            } else {
+                threadId = Thread.CurrentThread.ManagedThreadId;
+            }
+            
             int startIndex = Utility.Murmur3(threadId);
             return ReserveEntry(startIndex, threadId);
         }
