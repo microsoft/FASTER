@@ -16,7 +16,7 @@ namespace ManagedSampleCore
         {
             var fht = FasterFactory.Create
                 <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, ICustomFasterKv>
-                (128, FasterFactory.CreateLogDevice(""), LogMutableFraction: 0.5);
+                (128, new LogSettings { LogDevice = FasterFactory.CreateLogDevice(""), MutableFraction = 0.5 });
 
             fht.StartSession();
 

@@ -28,7 +28,7 @@ namespace FASTER.core
         /// <summary>
         /// Default number of entries in the entries table
         /// </summary>
-        private const int kTableSize = 128;
+        public const int kTableSize = 128;
 
         /// <summary>
         /// Default drainlist size

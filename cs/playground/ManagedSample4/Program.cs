@@ -129,9 +129,8 @@ namespace ManagedSample4
             var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "hybridlog.log");
             var h = FasterFactory.Create
                 <Wrap<int>, Wrap<int>, Wrap<int>, Wrap<int>, MyContext, MyFunctions>
-                (128, log, null, new MyFunctions(),
-                LogPageSizeBits: 10,
-                LogTotalSizeBytes: 1L << 14
+                (128, new MyFunctions(),
+                new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 10 }
                 );
 
             h.StartSession();
