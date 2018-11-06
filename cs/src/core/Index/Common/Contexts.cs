@@ -251,7 +251,7 @@ namespace FASTER.core
             flushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
-            guids = new Guid[64];
+            guids = new Guid[LightEpoch.kTableSize+1];
             continueTokens = new Dictionary<Guid, long>();
         }
 
