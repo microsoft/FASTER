@@ -20,7 +20,7 @@ namespace ClassCache
             var objlog = FasterFactory.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
             var h = FasterFactory.Create
                 <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>
-                (1L << 20, log, objlog, new CacheFunctions());
+                (1L << 20, new CacheFunctions(), new LogSettings { LogDevice = log, ObjectLogDevice = objlog });
 
             h.StartSession();
 

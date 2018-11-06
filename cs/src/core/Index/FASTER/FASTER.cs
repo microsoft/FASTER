@@ -232,7 +232,10 @@ namespace FASTER.core
             {
                 CompletePending();
                 if (_systemState.phase == Phase.REST)
+                {
+                    CompletePending();
                     return true;
+                }
             } while (wait);
             return false;
         }

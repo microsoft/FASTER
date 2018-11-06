@@ -187,7 +187,7 @@ namespace FASTER.test
 
         public static void PersistenceCallback(long thread_id, long serial_num)
         {
-            Debug.WriteLine("Thread {0} repors persistence until {1}", thread_id, serial_num);
+            Debug.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
         }
 
         // Read functions

@@ -48,7 +48,7 @@ namespace FASTER.core.Roslyn
         /// 
         /// </summary>
         /// <returns>The generated type (to be instantiated). If null, then the error messages giving the reason for failing to generate the type.</returns>
-        public static Tuple<Type, string> GenerateGenericFasterHashTableClass(long size, IDevice logDevice, bool treatValueAsAtomic, bool persistGeneratedCode, bool optimizeCode)
+        public static Tuple<Type, string> GenerateGenericFasterHashTableClass(bool treatValueAsAtomic, bool persistGeneratedCode, bool optimizeCode)
         {
             var c = new MixedBlitManagedFasterHashTableCompiler<TKey, TValue, TInput, TOutput, TContext, TFunctions>(treatValueAsAtomic);
             c.Run(persistGeneratedCode, optimizeCode);

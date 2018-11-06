@@ -19,7 +19,7 @@ namespace ManagedSample2
             var fht = FasterFactory.Create
                 <KeyStruct, ValueStruct, InputStruct, OutputStruct, 
                 Empty, CustomFunctions>
-                (128, new NullDevice(), null, new CustomFunctions());
+                (128, new CustomFunctions());
 
             fht.StartSession();
 
