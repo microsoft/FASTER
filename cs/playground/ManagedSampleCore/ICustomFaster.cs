@@ -74,7 +74,7 @@ namespace ManagedSampleCore
         /// Atomic read-modify-write operation
         /// </summary>
         /// <param name="key">Key of read</param>
-        /// <param name="input">Input argument used by RMW callback to perfom operation</param>
+        /// <param name="input">Input argument used by RMW callback to perform operation</param>
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>

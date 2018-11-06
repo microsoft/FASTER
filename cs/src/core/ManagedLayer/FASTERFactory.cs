@@ -144,7 +144,7 @@ namespace FASTER.core
         /// <typeparam name="TContext">Context type</typeparam>
         /// <typeparam name="TFunctions">Callback Functions</typeparam>
         /// <typeparam name="TIFaster">Interface of returned FASTER instance</typeparam>
-        /// <param name="indexSizeBuckets">Numer of buckets</param>
+        /// <param name="indexSizeBuckets">Number of buckets</param>
         /// <param name="logSettings">Log Settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <returns>Instance of FASTER</returns>
@@ -179,7 +179,7 @@ namespace FASTER.core
         /// <typeparam name="TOutput">Output type</typeparam>
         /// <typeparam name="TContext">Context type</typeparam>
         /// <typeparam name="TFunctions">Callback Functions</typeparam>
-        /// <param name="indexSizeBuckets">Numer of buckets</param>
+        /// <param name="indexSizeBuckets">Number of buckets</param>
         /// <param name="functions">Instance of functions</param>
         /// <param name="logSettings">Log parameters</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
