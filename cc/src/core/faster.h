@@ -910,14 +910,28 @@ create_record:
 
   HashBucketEntry updated_entry{ new_address, hash.tag(), false };
 
-  if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
-    // Installed the new record in the hash table.
-    return OperationStatus::SUCCESS;
-  } else {
-    // Try again.
-    record->header.invalid = true;
-    return InternalUpsert(pending_context);
+  bool success;
+  while(!(success = atomic_entry->compare_exchange_strong(expected_entry, updated_entry))) {
+    if (expected_entry.address() < new_address) {
+      record->header.previous_address_ = expected_entry.address().control();
+    } else break;
   }
+
+  if (!success) {
+    AtomicRecordInfo* atomic_header = reinterpret_cast<AtomicRecordInfo*>(hlog.Get(expected_entry.address()));
+    RecordInfo expected_header = atomic_header->load();
+    RecordInfo updated_header = expected_header;
+    do {
+      while (expected_header.previous_address() > new_address) {
+        atomic_header = reinterpret_cast<AtomicRecordInfo*>(hlog.Get(expected_header.previous_address()));
+        expected_header = atomic_header->load();
+      }
+      record->header.previous_address_ = expected_header.previous_address_;
+      updated_header.previous_address_ = new_address.control();
+    } while (!atomic_header->compare_exchange_strong(expected_header, updated_header));
+  }
+
+  return OperationStatus::SUCCESS;
 }
 
 template <class K, class V, class D>
