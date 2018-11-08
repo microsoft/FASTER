@@ -416,20 +416,26 @@ namespace FASTER.core
                 {
                     long pos = ms.Position;
 
-                    Key* key = Layout.GetKey(ptr);
-                    Key.Serialize(key, ms);
-                    ((AddressInfo*)key)->IsDiskAddress = true;
-                    ((AddressInfo*)key)->Address = pos;
-                    ((AddressInfo*)key)->Size = (int)(ms.Position - pos);
-                    addr.Add((long)key);
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key* key = Layout.GetKey(ptr);
+                        Key.Serialize(key, ms);
+                        ((AddressInfo*)key)->IsDiskAddress = true;
+                        ((AddressInfo*)key)->Address = pos;
+                        ((AddressInfo*)key)->Size = (int)(ms.Position - pos);
+                        addr.Add((long)key);
+                    }
 
-                    pos = ms.Position;
-                    Value* value = Layout.GetValue(ptr);
-                    Value.Serialize(value, ms);
-                    ((AddressInfo*)value)->IsDiskAddress = true;
-                    ((AddressInfo*)value)->Address = pos;
-                    ((AddressInfo*)value)->Size = (int)(ms.Position - pos);
-                    addr.Add((long)value);
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        pos = ms.Position;
+                        Value* value = Layout.GetValue(ptr);
+                        Value.Serialize(value, ms);
+                        ((AddressInfo*)value)->IsDiskAddress = true;
+                        ((AddressInfo*)value)->Address = pos;
+                        ((AddressInfo*)value)->Size = (int)(ms.Position - pos);
+                        addr.Add((long)value);
+                    }
                 }
                 ptr += Layout.GetPhysicalSize(ptr);
             }
@@ -601,6 +607,15 @@ namespace FASTER.core
                 Debug.Assert(minObjAddress % sectorSize == 0);
 
                 var to_read = (int)(maxObjAddress - minObjAddress);
+
+                // Handle the case where no objects are to be written
+                if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)
+                {
+                    minObjAddress = 0;
+                    maxObjAddress = 0;
+                    to_read = 0;
+                }
+
                 var objBuffer = ioBufferPool.Get(to_read);
                 result.freeBuffer1 = objBuffer;
                 var alignedLength = (to_read + (sectorSize - 1)) & ~(sectorSize - 1);
