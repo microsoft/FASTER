@@ -229,6 +229,8 @@ namespace FASTER.core
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext);
                 }
             }
+            else
+                return OperationStatus.NOTFOUND;
 
             return OperationStatus.SUCCESS;
         }

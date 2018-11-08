@@ -131,6 +131,7 @@ namespace FASTER.core
                                 Value.Free(Layout.GetValue(physicalAddress));
                             }
                             ctx.record.Return();
+                            ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
                             AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ctx);
                         }
                         else
