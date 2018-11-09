@@ -47,29 +47,27 @@ namespace FASTER.core
             {
                 // Issue IO for objects
                 long startAddress = -1;
-                int numBytes = 0;
+                long numBytes = 0;
                 if (Key.HasObjectsToSerialize())
                 {
                     var x = (AddressInfo*)Layout.GetKey((long)record);
-                    if (x->IsDiskAddress)
-                    {
-                        numBytes += x->Size;
-                        startAddress = x->Address;
-                    }
+                    numBytes += x->Size;
+                    startAddress = x->Address;
                 }
 
                 if (Value.HasObjectsToSerialize())
                 {
                     var x = (AddressInfo*)Layout.GetValue((long)record);
-                    if (x->IsDiskAddress)
-                    {
-                        numBytes += x->Size;
-                        if (startAddress == -1)
-                            startAddress = x->Address;
-                    }
+                    numBytes += x->Size;
+                    if (startAddress == -1)
+                        startAddress = x->Address;
                 }
 
-                AsyncGetFromDisk(startAddress, numBytes,
+                // We are limited to a 2GB size per key-value
+                if (numBytes > int.MaxValue)
+                    throw new Exception("Size of key-value exceeds max of 2GB: " + numBytes);
+
+                AsyncGetFromDisk(startAddress, (int)numBytes,
                     AsyncGetFromDiskCallback, ctx, ctx.record);
                 return false;
             }
@@ -421,7 +419,6 @@ namespace FASTER.core
                     {
                         Key* key = Layout.GetKey(ptr);
                         Key.Serialize(key, ms);
-                        ((AddressInfo*)key)->IsDiskAddress = true;
                         ((AddressInfo*)key)->Address = pos;
                         ((AddressInfo*)key)->Size = (int)(ms.Position - pos);
                         addr.Add((long)key);
@@ -432,7 +429,6 @@ namespace FASTER.core
                         pos = ms.Position;
                         Value* value = Layout.GetValue(ptr);
                         Value.Serialize(value, ms);
-                        ((AddressInfo*)value)->IsDiskAddress = true;
                         ((AddressInfo*)value)->Address = pos;
                         ((AddressInfo*)value)->Size = (int)(ms.Position - pos);
                         addr.Add((long)value);
@@ -607,7 +603,12 @@ namespace FASTER.core
                 // Object log fragment should be aligned by construction
                 Debug.Assert(minObjAddress % sectorSize == 0);
 
-                var to_read = (int)(maxObjAddress - minObjAddress);
+
+                var to_read_long = maxObjAddress - minObjAddress;
+                if (to_read_long > int.MaxValue)
+                    throw new Exception("Unable to read object page, total size greater than 2GB: " + to_read_long);
+
+                var to_read = (int)to_read_long;
 
                 // Handle the case where no objects are to be written
                 if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)

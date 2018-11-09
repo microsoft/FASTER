@@ -12,31 +12,27 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public unsafe struct AddressInfo
     {
-        public const int kAddressBitOffset = 48;
+        public const int kTotalBits = sizeof(long) * 8;
 
-        public const int kSizeBits = 13;
+        public const int kAddressBits = 42;
+        public const int kSizeBits = 21;
+        public const int kMultiplierBits = kTotalBits - kAddressBits - kSizeBits;
 
-        public const int kSizeShiftInWord = 49;
-
-        public const long kSizeMaskInWord = ((1L << kSizeBits) - 1) << kSizeShiftInWord;
-
+        public const long kSizeMaskInWord = ((1L << kSizeBits) - 1) << kAddressBits;
         public const long kSizeMaskInInteger = (1L << kSizeBits) - 1;
 
-        public const long kAddressMask = (1L << kAddressBitOffset) - 1;
+        public const long kMultiplierMaskInWord = ((1L << kMultiplierBits) - 1) << (kAddressBits + kSizeBits);
+        public const long kMultiplierMaskInInteger = (1L << kMultiplierBits) - 1;
 
-        public const long kDiskBitMask = (1L << kAddressBitOffset);
+        public const long kAddressMask = (1L << kAddressBits) - 1;
 
-        public const int kTotalSizeInBytes = sizeof(long);
-
-        public const int kTotalBits = kTotalSizeInBytes * 8;
 
         [FieldOffset(0)]
         private long word;
 
-        public static void WriteInfo(AddressInfo* info, long address, bool isDiskAddress = false, int size = 0)
+        public static void WriteInfo(AddressInfo* info, long address, long size)
         {
             info->word = default(long);
-            info->IsDiskAddress = isDiskAddress;
             info->Address = address;
             info->Size = size;
         }
@@ -46,36 +42,34 @@ namespace FASTER.core
             return "RecordHeader Word = " + info->word;
         }
 
-        public bool IsDiskAddress
+        public long Size
         {
             get
             {
-                return (word & kDiskBitMask) > 0;
-            }
-
-            set
-            {
-                if (value)
-                {
-                    word |= kDiskBitMask;
-                }
-                else
-                {
-                    word &= ~kDiskBitMask;
-                }
-            }
-        }
-
-        public int Size
-        {
-            get
-            {
-                return (int)(((word & kSizeMaskInWord) >> kSizeShiftInWord) & kSizeMaskInInteger);
+                int multiplier = (int)(((word & kMultiplierMaskInWord) >> (kAddressBits + kSizeBits)) & kMultiplierMaskInInteger);
+                return (multiplier == 0 ? 512 : 1<<20)*(((word & kSizeMaskInWord) >> kAddressBits) & kSizeMaskInInteger);
             }
             set
             {
+                int multiplier = 0;
+                int val = (int)(value >> 9);
+                if ((value & ((1<<9)-1)) != 0) val++;
+
+                if (val >= (1 << kSizeBits))
+                {
+                    val = (int)(value >> 20);
+                    if ((value & ((1<<20) - 1)) != 0) val++;
+                    multiplier = 1;
+                    if (val >= (1 << kSizeBits))
+                    {
+                        throw new Exception("Unsupported object size: " + value);
+                    }
+                }
                 word &= ~kSizeMaskInWord;
-                word |= ((value & kSizeMaskInInteger) << kSizeShiftInWord);
+                word &= ~kMultiplierMaskInWord;
+
+                word |= (val & kSizeMaskInInteger) << kAddressBits;
+                word |= (multiplier & kMultiplierMaskInInteger) << (kAddressBits + kSizeBits);
             }
         }
 
@@ -83,19 +77,13 @@ namespace FASTER.core
         {
             get
             {
-                return (word & kAddressMask);
+                return word & kAddressMask;
             }
             set
             {
                 word &= ~kAddressMask;
                 word |= (value & kAddressMask);
             }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength()
-        {
-            return kTotalSizeInBytes;
         }
     }
 }

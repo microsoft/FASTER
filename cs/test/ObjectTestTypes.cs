@@ -62,7 +62,7 @@ namespace FASTER.test
             value = new BinaryReader(fromStream).ReadInt32();
         }
     }
-
+    
     public class MyInput
     {
         public int value;
@@ -113,6 +113,86 @@ namespace FASTER.test
         }
 
         public void Reader(MyKey key, MyInput input, MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+    }
+
+    public class MyLargeValue
+    {
+        public byte[] value;
+
+        public MyLargeValue()
+        {
+
+        }
+
+        public MyLargeValue(int size)
+        {
+            value = new byte[size];
+            for (int i = 0; i < size; i++)
+            {
+                value[i] = (byte)i;
+            }
+        }
+
+        public MyLargeValue Clone()
+        {
+            return this;
+        }
+
+        public void Serialize(Stream toStream)
+        {
+            var writer = new BinaryWriter(toStream);
+            writer.Write(value.Length);
+            writer.Write(value);
+        }
+
+        public void Deserialize(Stream fromStream)
+        {
+            var reader = new BinaryReader(fromStream);
+            int size = reader.ReadInt32();
+            value = reader.ReadBytes(size);
+        }
+    }
+
+    public class MyLargeOutput
+    {
+        public MyLargeValue value;
+    }
+
+    public class MyLargeFunctions : IUserFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext>
+    {
+        public void RMWCompletionCallback(MyContext ctx, Status status)
+        {
+        }
+
+        public void ReadCompletionCallback(MyContext ctx, MyLargeOutput output, Status status)
+        {
+        }
+
+        public void UpsertCompletionCallback(MyContext ctx)
+        {
+        }
+
+        public void CopyUpdater(MyKey key, MyInput input, MyLargeValue oldValue, ref MyLargeValue newValue)
+        {
+        }
+
+        public int InitialValueLength(MyKey key, MyInput input)
+        {
+            return sizeof(int);
+        }
+
+        public void InitialUpdater(MyKey key, MyInput input, ref MyLargeValue value)
+        {
+        }
+
+        public void InPlaceUpdater(MyKey key, MyInput input, ref MyLargeValue value)
+        {
+        }
+
+        public void Reader(MyKey key, MyInput input, MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
         }
