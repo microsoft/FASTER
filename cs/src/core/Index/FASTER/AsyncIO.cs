@@ -433,6 +433,36 @@ namespace FASTER.core
                         ((AddressInfo*)value)->Size = (int)(ms.Position - pos);
                         addr.Add((long)value);
                     }
+
+                    if (ms.Position > 100*(1<<20))
+                    {
+                        // write out the chunk
+                        var _s = ms.ToArray();
+                        var _objBuffer = ioBufferPool.Get(_s.Length);
+
+                        asyncResult.done = new AutoResetEvent(false);
+
+                        var _alignedLength = (_s.Length + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                        var _objAddr = Interlocked.Add(ref segmentOffsets[(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
+                        fixed (void* src = _s)
+                            Buffer.MemoryCopy(src, _objBuffer.aligned_pointer, _s.Length, _s.Length);
+
+                        foreach (var address in addr)
+                        {
+                            *((long*)address) += _objAddr;
+                        }
+                        addr.Clear();
+
+                        objlogDevice.WriteAsync(
+                            (IntPtr)_objBuffer.aligned_pointer,
+                            (int)(alignedDestinationAddress >> LogSegmentSizeBits),
+                            (ulong)_objAddr, (uint)_alignedLength, AsyncFlushPartialObjectLogCallback, asyncResult);
+                        asyncResult.done.WaitOne();
+                        _objBuffer.Return();
+                        ms.Close();
+                        ms = new MemoryStream();
+                    }
                 }
                 ptr += Layout.GetPhysicalSize(ptr);
             }
@@ -527,6 +557,26 @@ namespace FASTER.core
                 ShiftFlushedUntilAddress();
                 result.Free();
             }
+
+            Overlapped.Free(overlap);
+        }
+
+        /// <summary>
+        /// IOCompletion callback for page flush
+        /// </summary>
+        /// <param name="errorCode"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="overlap"></param>
+        private void AsyncFlushPartialObjectLogCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        {
+            if (errorCode != 0)
+            {
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+            }
+
+            // Set the page status to flushed
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+            result.done.Set();
 
             Overlapped.Free(overlap);
         }

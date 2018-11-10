@@ -77,7 +77,7 @@ namespace FASTER.core
         public IDevice objlogDevice;
         public SectorAlignedMemory freeBuffer1;
         public SectorAlignedMemory freeBuffer2;
-
+        public AutoResetEvent done;
 
         public bool IsCompleted => throw new NotImplementedException();
 
