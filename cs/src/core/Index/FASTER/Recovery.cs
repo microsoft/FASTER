@@ -154,7 +154,7 @@ namespace FASTER.core
 
             var startPage = hlog.GetPage(fromAddress);
             var endPage = hlog.GetPage(untilAddress);
-            if (untilAddress > hlog.GetStartLogicalAddress(endPage))
+            if ((untilAddress > hlog.GetStartLogicalAddress(endPage)) && (untilAddress > fromAddress))
             {
                 endPage++;
             }
@@ -274,7 +274,7 @@ namespace FASTER.core
                 var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
 
                 // Perform recovery if page in fuzzy portion of the log
-                if (fromAddress < endLogicalAddress)
+                if ((fromAddress < endLogicalAddress) && (fromAddress < untilAddress))
                 {
                     /*
                      * Handling corner-cases:
@@ -306,6 +306,8 @@ namespace FASTER.core
                 // OS thread flushes current page and issues a read request if necessary
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                 recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
+
+                // Write back records from snapshot to main hybrid log
                 hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
             }
 
