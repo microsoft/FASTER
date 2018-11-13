@@ -133,7 +133,7 @@ namespace FASTER.test
             value = new byte[size];
             for (int i = 0; i < size; i++)
             {
-                value[i] = (byte)i;
+                value[i] = (byte)(size+i);
             }
         }
 
@@ -170,9 +170,10 @@ namespace FASTER.test
 
         public void ReadCompletionCallback(MyContext ctx, MyLargeOutput output, Status status)
         {
+            Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.value.value.Length; i++)
             {
-                Assert.IsTrue(output.value.value[i] == (byte)i);
+                Assert.IsTrue(output.value.value[i] == (byte)(output.value.value.Length+i));
             }
         }
 

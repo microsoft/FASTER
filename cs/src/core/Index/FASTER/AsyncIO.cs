@@ -152,6 +152,7 @@ namespace FASTER.core
     internal unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         const int kObjectBlockSize = 100 * (1 << 20);
+        public long[] segmentOffsets = new long[SegmentBufferSize];
 
         #region Async file operations
 
@@ -360,7 +361,6 @@ namespace FASTER.core
         /// <param name="completed"></param>
         public void AsyncFlushPagesToDevice(long startPage, long endPage, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
         {
-            //Debugger.Break();
             int totalNumPages = (int)(endPage - startPage);
             completed = new CountdownEvent(totalNumPages);
 
@@ -383,9 +383,6 @@ namespace FASTER.core
                             asyncResult, device, objectLogDevice, flushPage, _segmentOffsets);
             }
         }
-
-
-        long[] segmentOffsets = new long[SegmentBufferSize];
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                                 IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
@@ -611,8 +608,6 @@ namespace FASTER.core
 
         private void AsyncReadPageCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            //Debugger.Break();
-
             if (errorCode != 0)
             {
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
