@@ -56,11 +56,11 @@ namespace FASTER.test.largeobjects
         [Test]
         public void LargeObjectTest1()
         {
-            int size = 10000000;
+            int size = 100;
             var value = new MyLargeValue(size);
 
             fht1.StartSession();
-            for (int key = 0; key < 5; key++)
+            for (int key = 0; key < 5000; key++)
                 fht1.Upsert(new MyKey { key = key }, value, null, 0);
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
@@ -70,13 +70,18 @@ namespace FASTER.test.largeobjects
             MyLargeOutput output = new MyLargeOutput();
             fht2.Recover(token);
             fht2.StartSession();
-            for (int key = 0; key < 5; key++)
+            for (int key = 0; key < 5000; key++)
             {
                 var status = fht2.Read(new MyKey { key = key }, new MyInput(), ref output, null, 0);
-                Assert.IsTrue(status == Status.OK);
-                for (int i = 0; i < size; i++)
+
+                if (status == Status.PENDING)
+                    fht2.CompletePending(true);
+                else
                 {
-                    Assert.IsTrue(output.value.value[i] == (byte)i);
+                    for (int i = 0; i < size; i++)
+                    {
+                        Assert.IsTrue(output.value.value[i] == (byte)i);
+                    }
                 }
             }
             fht2.StopSession();

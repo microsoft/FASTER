@@ -45,6 +45,8 @@ namespace FASTER.core
         public IOCompletionCallback callback;
         public int count;
         public IDevice objlogDevice;
+        public long resumeptr;
+        public long untilptr;
 
         public bool IsCompleted => throw new NotImplementedException();
 

@@ -13,6 +13,7 @@ using FASTER.core;
 using System.Runtime.CompilerServices;
 using System.IO;
 using System.Diagnostics;
+using NUnit.Framework;
 
 namespace FASTER.test
 {
@@ -169,7 +170,12 @@ namespace FASTER.test
 
         public void ReadCompletionCallback(MyContext ctx, MyLargeOutput output, Status status)
         {
+            for (int i = 0; i < output.value.value.Length; i++)
+            {
+                Assert.IsTrue(output.value.value[i] == (byte)i);
+            }
         }
+
 
         public void UpsertCompletionCallback(MyContext ctx)
         {
