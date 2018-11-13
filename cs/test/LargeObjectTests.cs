@@ -56,7 +56,7 @@ namespace FASTER.test.largeobjects
         [Test]
         public void LargeObjectTest1()
         {
-            int maxSize = 100;
+            int maxSize = 1000;
             int numOps = 5000;
             //var value = new MyLargeValue(size);
 

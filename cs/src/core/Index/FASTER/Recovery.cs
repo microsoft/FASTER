@@ -252,19 +252,15 @@ namespace FASTER.core
             int totalPagesToRead = (int)(endPage - startPage);
             int numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
 
-
-
-
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst,
+                            AsyncReadPagesCallbackForRecovery,
+                            recoveryStatus,
+                            recoveryStatus.recoveryDevicePageOffset,
+                            recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
 
             for (long page = startPage; page < endPage; page++)
             {
-                hlog.AsyncReadPagesFromDevice(page,
-                                1,
-                                AsyncReadPagesCallbackForRecovery,
-                                recoveryStatus,
-                                recoveryStatus.recoveryDevicePageOffset,
-                                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
                 // Ensure the page is read from file
                 int pageIndex = hlog.GetPageIndexForPage(page);
