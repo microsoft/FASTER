@@ -266,7 +266,7 @@ namespace FASTER.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            guids = new Guid[64];
+            guids = new Guid[LightEpoch.kTableSize + 1];
             continueTokens = new Dictionary<Guid, long>();
 
             string value = reader.ReadLine();
