@@ -236,6 +236,10 @@ namespace FASTER.core
         /// Tokens per guid
         /// </summary>
         public Dictionary<Guid, long> continueTokens;
+        /// <summary>
+        /// Object log segment offsets
+        /// </summary>
+        public long[] objectLogSegmentOffsets;
 
         /// <summary>
         /// Initialize
@@ -253,6 +257,7 @@ namespace FASTER.core
             finalLogicalAddress = 0;
             guids = new Guid[LightEpoch.kTableSize+1];
             continueTokens = new Dictionary<Guid, long>();
+            objectLogSegmentOffsets = null;
         }
 
         /// <summary>
@@ -261,7 +266,7 @@ namespace FASTER.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            guids = new Guid[64];
+            guids = new Guid[LightEpoch.kTableSize + 1];
             continueTokens = new Dictionary<Guid, long>();
 
             string value = reader.ReadLine();
@@ -289,6 +294,19 @@ namespace FASTER.core
             {
                 value = reader.ReadLine();
                 guids[i] = Guid.Parse(value);
+            }
+
+            // Read object log segment offsets
+            value = reader.ReadLine();
+            var numSegments = int.Parse(value);
+            if (numSegments > 0)
+            {
+                objectLogSegmentOffsets = new long[numSegments];
+                for (int i = 0; i < numSegments; i++)
+                {
+                    value = reader.ReadLine();
+                    objectLogSegmentOffsets[i] = long.Parse(value);
+                }
             }
         }
 
@@ -363,6 +381,16 @@ namespace FASTER.core
             for(int i = 0; i < numThreads; i++)
             {
                 writer.WriteLine(guids[i]);
+            }
+
+            //Write object log segment offsets
+            writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
+            if (objectLogSegmentOffsets != null)
+            {
+                for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
+                {
+                    writer.WriteLine(objectLogSegmentOffsets[i]);
+                }
             }
         }
     }

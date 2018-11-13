@@ -240,6 +240,8 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
+                            _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[hlog.segmentOffsets.Length];
+                            Array.Copy(hlog.segmentOffsets, _hybridLogCheckpoint.info.objectLogSegmentOffsets, hlog.segmentOffsets.Length);
                             MakeTransition(intermediateState, nextState);
                             break;
                         }

@@ -45,6 +45,8 @@ namespace FASTER.core
         public IOCompletionCallback callback;
         public int count;
         public IDevice objlogDevice;
+        public long resumeptr;
+        public long untilptr;
 
         public bool IsCompleted => throw new NotImplementedException();
 
@@ -77,7 +79,7 @@ namespace FASTER.core
         public IDevice objlogDevice;
         public SectorAlignedMemory freeBuffer1;
         public SectorAlignedMemory freeBuffer2;
-
+        public AutoResetEvent done;
 
         public bool IsCompleted => throw new NotImplementedException();
 

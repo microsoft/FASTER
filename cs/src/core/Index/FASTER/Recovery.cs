@@ -22,6 +22,10 @@ namespace FASTER.core
             _indexCheckpoint.Recover(indexToken);
             _hybridLogCheckpoint.Recover(hybridLogToken);
 
+            // Recover segment offsets for object log
+            if (_hybridLogCheckpoint.info.objectLogSegmentOffsets != null)
+                hlog.segmentOffsets = _hybridLogCheckpoint.info.objectLogSegmentOffsets;
+
             _indexCheckpoint.main_ht_device = new LocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token));
             _indexCheckpoint.ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token));
 
@@ -150,7 +154,7 @@ namespace FASTER.core
 
             var startPage = hlog.GetPage(fromAddress);
             var endPage = hlog.GetPage(untilAddress);
-            if (untilAddress > hlog.GetStartLogicalAddress(endPage))
+            if ((untilAddress > hlog.GetStartLogicalAddress(endPage)) && (untilAddress > fromAddress))
             {
                 endPage++;
             }
@@ -248,18 +252,16 @@ namespace FASTER.core
             int totalPagesToRead = (int)(endPage - startPage);
             int numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
 
-
-            hlog.AsyncReadPagesFromDevice(startPage,
-                                            numPagesToReadFirst,
-                                            AsyncReadPagesCallbackForRecovery,
-                                            recoveryStatus,
-                                            recoveryStatus.recoveryDevicePageOffset,
-                                            recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
-
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst,
+                            AsyncReadPagesCallbackForRecovery,
+                            recoveryStatus,
+                            recoveryStatus.recoveryDevicePageOffset,
+                            recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
 
             for (long page = startPage; page < endPage; page++)
             {
+
                 // Ensure the page is read from file
                 int pageIndex = hlog.GetPageIndexForPage(page);
                 while (recoveryStatus.readStatus[pageIndex] == ReadStatus.Pending)
@@ -272,7 +274,7 @@ namespace FASTER.core
                 var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
 
                 // Perform recovery if page in fuzzy portion of the log
-                if (fromAddress < endLogicalAddress)
+                if ((fromAddress < endLogicalAddress) && (fromAddress < untilAddress))
                 {
                     /*
                      * Handling corner-cases:
@@ -304,6 +306,8 @@ namespace FASTER.core
                 // OS thread flushes current page and issues a read request if necessary
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                 recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
+
+                // Write back records from snapshot to main hybrid log
                 hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
             }
 
