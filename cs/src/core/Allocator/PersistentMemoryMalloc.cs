@@ -148,7 +148,7 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="pageHandlers"></param>
-        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, IPageHandlers pageHandlers) : this(device, objectLogDevice, 0)
+        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, IPageHandlers pageHandlers) : this(device, objectLogDevice, 0, pageHandlers)
         {
             Allocate(Constants.kFirstValidAddress); // null pointer
             ReadOnlyAddress = GetTailAddress();
@@ -165,7 +165,8 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="startAddress"></param>
-        internal PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress)
+        /// <param name="pageHandlers"></param>
+        internal PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress, IPageHandlers pageHandlers)
         {
             if (BufferSize < 16)
             {
@@ -176,7 +177,7 @@ namespace FASTER.core
 
             this.objectLogDevice = objectLogDevice;
 
-            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
+            if (pageHandlers.HasObjects())
             {
                 if (objectLogDevice == null)
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
@@ -628,7 +629,7 @@ namespace FASTER.core
         
         private void ClearPage(int page, bool pageZero)
         {
-            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
+            if (pageHandlers.HasObjects())
             {
                 long ptr = pointers[page];
                 int numBytes = PageSize;

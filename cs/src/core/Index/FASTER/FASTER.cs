@@ -15,7 +15,7 @@ using System.Threading;
 namespace FASTER.core
 {
     public unsafe partial class FasterKV : FasterBase, IFasterKV, IPageHandlers
-    { 
+    {
         private PersistentMemoryMalloc hlog;
 
         private static int numPendingReads = 0;
@@ -70,7 +70,7 @@ namespace FASTER.core
                     System.Diagnostics.Debugger.Launch();
             }
         }
-        
+
         /// <summary>
         /// Create FASTER instance
         /// </summary>
@@ -102,7 +102,7 @@ namespace FASTER.core
         public bool TakeFullCheckpoint(out Guid token)
         {
             var success = InternalTakeCheckpoint(CheckpointType.FULL);
-            if(success)
+            if (success)
             {
                 token = _indexCheckpointToken;
             }
@@ -158,7 +158,7 @@ namespace FASTER.core
         public void Recover(Guid fullCheckpointToken)
         {
             InternalRecover(fullCheckpointToken, fullCheckpointToken);
-        } 
+        }
 
         /// <summary>
         /// Recover
@@ -210,7 +210,7 @@ namespace FASTER.core
             InternalRefresh();
         }
 
-        
+
         /// <summary>
         /// Complete outstanding pending operations
         /// </summary>
@@ -258,7 +258,7 @@ namespace FASTER.core
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                
+
                 status = (Status)internalStatus;
             }
             else
@@ -312,7 +312,7 @@ namespace FASTER.core
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                 status = (Status)internalStatus;
+                status = (Status)internalStatus;
             }
             else
             {
@@ -339,7 +339,7 @@ namespace FASTER.core
         {
             return InternalGrowIndex();
         }
-        
+
         /// <summary>
         /// Dispose FASTER instance
         /// </summary>
@@ -443,6 +443,80 @@ namespace FASTER.core
                 if (stream.Position > objectBlockSize)
                     return;
             }
+        }
+
+        /// <summary>
+        /// Get location and range of object log addresses for specified log page
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <param name="untilptr"></param>
+        /// <param name="objectBlockSize"></param>
+        /// <param name="startptr"></param>
+        /// <param name="size"></param>
+        public void GetObjectInfo(ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
+        {
+            long minObjAddress = long.MaxValue;
+            long maxObjAddress = long.MinValue;
+
+            while (ptr < untilptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key* key = Layout.GetKey(ptr);
+                        var addr = ((AddressInfo*)key)->Address;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                        {
+                            break;
+                        }
+
+                        if (addr < minObjAddress) minObjAddress = addr;
+                        addr += ((AddressInfo*)key)->Size;
+                        if (addr > maxObjAddress) maxObjAddress = addr;
+                    }
+
+
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        Value* value = Layout.GetValue(ptr);
+                        var addr = ((AddressInfo*)value)->Address;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                        {
+                            break;
+                        }
+
+                        if (addr < minObjAddress) minObjAddress = addr;
+                        addr += ((AddressInfo*)value)->Size;
+                        if (addr > maxObjAddress) maxObjAddress = addr;
+                    }
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+            }
+
+            // Handle the case where no objects are to be written
+            if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)
+            {
+                minObjAddress = 0;
+                maxObjAddress = 0;
+            }
+
+            startptr = minObjAddress;
+            size = maxObjAddress - minObjAddress;
+        }
+
+        /// <summary>
+        /// Whether KVS has objects to serialize/deserialize
+        /// </summary>
+        /// <returns></returns>
+        public bool HasObjects()
+        {
+            return Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize();
         }
     }
 }

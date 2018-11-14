@@ -127,7 +127,8 @@ namespace FASTER.core
                 usedObjlogDevice = this.objectLogDevice;
             }
 
-            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
+
+            if (pageHandlers.HasObjects())
             {
                 if (usedObjlogDevice == null)
                     throw new Exception("Object log device not provided");
@@ -292,9 +293,7 @@ namespace FASTER.core
                                 IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                                 IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
-            
-
-            if (!Key.HasObjectsToSerialize() && !Value.HasObjectsToSerialize())
+            if (!pageHandlers.HasObjects())
             {
                 device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
                     numBytesToWrite, callback, asyncResult);
@@ -377,7 +376,7 @@ namespace FASTER.core
             ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length,
             IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-            if (!Key.HasObjectsToSerialize() && !Value.HasObjectsToSerialize())
+            if (!pageHandlers.HasObjects())
             {
                 device.ReadAsync(alignedSourceAddress, alignedDestinationAddress,
                     aligned_read_length, callback, asyncResult);
@@ -508,17 +507,17 @@ namespace FASTER.core
             {
                 MemoryStream ms = new MemoryStream(result.freeBuffer1.buffer);
                 ms.Seek(result.freeBuffer1.offset + result.freeBuffer1.valid_offset, SeekOrigin.Begin);
-
                 pageHandlers.Deserialize(ptr, result.untilptr, ms);
-
                 ms.Dispose();
+
+                ptr = result.untilptr;
                 result.freeBuffer1.Return();
                 result.freeBuffer1.buffer = null;
                 result.resumeptr = ptr;
             }
 
             // If we have processed entire page, return
-            if (ptr >= (long)pointers[result.page % BufferSize] + PageSize)
+            if (ptr >= pointers[result.page % BufferSize] + PageSize)
             {
 
                 result.Free();
@@ -531,81 +530,25 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            long minObjAddress = long.MaxValue;
-            long maxObjAddress = long.MinValue;
-            while (ptr < pointers[result.page % BufferSize] + PageSize)
-            {
-                if (!Layout.GetInfo(ptr)->Invalid)
-                {
+            pageHandlers.GetObjectInfo(ref ptr, pointers[result.page % BufferSize] + PageSize, kObjectBlockSize, out long startptr, out long size);
 
-                    if (Key.HasObjectsToSerialize())
-                    {
-                        Key* key = Layout.GetKey(ptr);
-                        var addr = ((AddressInfo*)key)->Address;
-
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > kObjectBlockSize))
-                        {
-                            // First address after kObjectSize would be aligned at sector boundary
-                            Debug.Assert(maxObjAddress % sectorSize == 0);
-                            break;
-                        }
-
-                        if (addr < minObjAddress) minObjAddress = addr;
-                        addr += ((AddressInfo*)key)->Size;
-                        if (addr > maxObjAddress) maxObjAddress = addr;
-                    }
-
-
-                    if (Value.HasObjectsToSerialize())
-                    {
-                        Value* value = Layout.GetValue(ptr);
-                        var addr = ((AddressInfo*)value)->Address;
-
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > kObjectBlockSize))
-                        {
-                            // First address after kObjectSize would be aligned at sector boundary
-                            Debug.Assert(maxObjAddress % sectorSize == 0);
-                            break;
-                        }
-
-                        if (addr < minObjAddress) minObjAddress = addr;
-                        addr += ((AddressInfo*)value)->Size;
-                        if (addr > maxObjAddress) maxObjAddress = addr;
-                    }
-                }
-                ptr += Layout.GetPhysicalSize(ptr);
-            }
-
+            // Object log fragment should be aligned by construction
+            Debug.Assert(startptr % sectorSize == 0);
+            
             // We will be able to process all records until (but not including) ptr
             result.untilptr = ptr;
 
-            // Object log fragment should be aligned by construction
-            Debug.Assert(minObjAddress % sectorSize == 0);
+            if (size > int.MaxValue)
+                throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
 
-            var to_read_long = maxObjAddress - minObjAddress;
-            if (to_read_long > int.MaxValue)
-                throw new Exception("Unable to read object page, total size greater than 2GB: " + to_read_long);
-
-            var to_read = (int)to_read_long;
-
-            // Handle the case where no objects are to be written
-            if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)
-            {
-                minObjAddress = 0;
-                maxObjAddress = 0;
-                to_read = 0;
-            }
-
-            var objBuffer = ioBufferPool.Get(to_read);
+            var objBuffer = ioBufferPool.Get((int)size);
             result.freeBuffer1 = objBuffer;
-            var alignedLength = (to_read + (sectorSize - 1)) & ~(sectorSize - 1);
+            var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
 
             // Request objects from objlog
             result.objlogDevice.ReadAsync(
                 (int)(result.page >> (LogSegmentSizeBits-LogPageSizeBits)),
-                (ulong)minObjAddress, 
+                (ulong)startptr, 
                 (IntPtr)objBuffer.aligned_pointer, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
 
         }

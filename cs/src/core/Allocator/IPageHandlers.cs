@@ -35,5 +35,21 @@ namespace FASTER.core
         /// <param name="objectBlockSize">Size of blocks to serialize in chunks of</param>
         /// <param name="addr">List of addresses that need to be updated with offsets</param>
         void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr);
+
+        /// <summary>
+        /// Get location and range of object log addresses for specified log page
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <param name="untilptr"></param>
+        /// <param name="objectBlockSize"></param>
+        /// <param name="startptr"></param>
+        /// <param name="size"></param>
+        void GetObjectInfo(ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size);
+
+        /// <summary>
+        /// Whether KVS has objects to serialize/deserialize
+        /// </summary>
+        /// <returns></returns>
+        bool HasObjects();
     }
 }
