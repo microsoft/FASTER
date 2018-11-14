@@ -67,6 +67,8 @@
     <EmbeddedResource Include="ManagedLayer/MixedValueWrapper.cs" />
     <EmbeddedResource Include="Utilities/AsyncResultTypes.cs" />
     <EmbeddedResource Include="Utilities/StateTransitions.cs" />
+    <EmbeddedResource Include="Allocator/PersistentMemoryMalloc.cs" />
+    <EmbeddedResource Include="Allocator/PMMAsyncIO.cs" />
   </ItemGroup>
 
 </Project>

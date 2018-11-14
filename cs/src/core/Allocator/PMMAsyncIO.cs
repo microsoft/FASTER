@@ -13,21 +13,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe struct AsyncIOContext
-    {
-        public long id;
 
-        public IntPtr key;
-
-        public long logicalAddress;
-
-        public SectorAlignedMemory record;
-
-        public SectorAlignedMemory objBuffer;
-
-        public BlockingCollection<AsyncIOContext> callbackQueue;
-    }
-    
     /// <summary>
     /// Async IO related functions of PMM
     /// </summary>
@@ -88,6 +74,17 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="readPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        /// <param name="devicePageOffset"></param>
+        /// <param name="logDevice"></param>
+        /// <param name="objectLogDevice"></param>
         public void AsyncReadPagesFromDevice<TContext>(
                                 long readPageStart,
                                 int numPages,
@@ -100,6 +97,18 @@ namespace FASTER.core
                 out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
         }
 
+        /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="readPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        /// <param name="completed"></param>
+        /// <param name="devicePageOffset"></param>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
         public void AsyncReadPagesFromDevice<TContext>(
                                         long readPageStart,
                                         int numPages,
@@ -154,6 +163,14 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Flush pages asynchronously
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="flushPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
         public void AsyncFlushPages<TContext>(
                                         long flushPageStart,
                                         int numPages,

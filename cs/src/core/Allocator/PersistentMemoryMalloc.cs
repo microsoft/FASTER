@@ -13,13 +13,6 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
-    public interface IPageHandlers
-    {
-        void ClearPage(long ptr, long endptr);
-        void Deserialize(long ptr, long untilptr, MemoryStream ms);
-        void Serialize(ref long ptr, long untilptr, MemoryStream ms, int objectBlockSize, out List<long> addr);
-    }
-
     internal interface IAllocator : IDisposable
     {
         long Allocate(int numSlots);
@@ -116,20 +109,45 @@ namespace FASTER.core
         // Global address of the current tail (next element to be allocated from the circular buffer)
         private PageOffset TailPageOffset;
 
+
+        /// <summary>
+        /// Read-only address
+        /// </summary>
         public long ReadOnlyAddress;
 
+        /// <summary>
+        /// Safe read-only address
+        /// </summary>
         public long SafeReadOnlyAddress;
 
+        /// <summary>
+        /// Head address
+        /// </summary>
         public long HeadAddress;
 
+        /// <summary>
+        ///  Safe head address
+        /// </summary>
         public long SafeHeadAddress;
 
+        /// <summary>
+        /// Flushed until address
+        /// </summary>
         public long FlushedUntilAddress;
 
+        /// <summary>
+        /// Begin address
+        /// </summary>
         public long BeginAddress;
 
         private IPageHandlers pageHandlers;
 
+        /// <summary>
+        /// Create instance of PMM
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
+        /// <param name="pageHandlers"></param>
         public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, IPageHandlers pageHandlers) : this(device, objectLogDevice, 0)
         {
             Allocate(Constants.kFirstValidAddress); // null pointer
@@ -141,7 +159,13 @@ namespace FASTER.core
             this.pageHandlers = pageHandlers;
         }
 
-        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress)
+        /// <summary>
+        /// Create instance of PMM
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
+        /// <param name="startAddress"></param>
+        internal PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress)
         {
             if (BufferSize < 16)
             {
@@ -169,12 +193,16 @@ namespace FASTER.core
             Initialize(startAddress);
         }
         
+        /// <summary>
+        /// Get sector size
+        /// </summary>
+        /// <returns></returns>
         public int GetSectorSize()
         {
             return sectorSize;
         }
 
-        public void Initialize(long startAddress)
+        internal void Initialize(long startAddress)
         {
             readBufferPool = new NativeSectorAlignedBufferPool(1, sectorSize);
             long tailPage = startAddress >> LogPageSizeBits;

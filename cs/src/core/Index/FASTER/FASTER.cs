@@ -14,7 +14,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<TKey, TValue, TInput, TOutput, TContext> : FasterBase, IFasterKV, IPageHandlers
+    public unsafe partial class FasterKV : FasterBase, IFasterKV, IPageHandlers
     { 
         private PersistentMemoryMalloc hlog;
 
@@ -348,6 +348,11 @@ namespace FASTER.core
             hlog.Dispose();
         }
 
+        /// <summary>
+        /// Clear page
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="endptr">Until pointer</param>
         public void ClearPage(long ptr, long endptr)
         {
 
@@ -358,7 +363,7 @@ namespace FASTER.core
                     if (Key.HasObjectsToSerialize())
                     {
                         Key* key = Layout.GetKey(ptr);
-                        Key.Free<TKey>(key);
+                        Key.Free(key);
                     }
                     if (Value.HasObjectsToSerialize())
                     {
@@ -370,7 +375,13 @@ namespace FASTER.core
             }
         }
 
-        public void Deserialize(long ptr, long untilptr, MemoryStream ms)
+        /// <summary>
+        /// Deseialize part of page from stream
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="untilptr">Until pointer</param>
+        /// <param name="stream">Stream</param>
+        public void Deserialize(long ptr, long untilptr, Stream stream)
         {
             while (ptr < untilptr)
             {
@@ -378,50 +389,58 @@ namespace FASTER.core
                 {
                     if (Key.HasObjectsToSerialize())
                     {
-                        Key.Deserialize<TKey>(Layout.GetKey(ptr), ms);
+                        Key.Deserialize(Layout.GetKey(ptr), stream);
                     }
 
                     if (Value.HasObjectsToSerialize())
                     {
-                        Value.Deserialize(Layout.GetValue(ptr), ms);
+                        Value.Deserialize(Layout.GetValue(ptr), stream);
                     }
                 }
                 ptr += Layout.GetPhysicalSize(ptr);
             }
         }
 
-        public void Serialize(ref long ptr, long untilptr, MemoryStream ms, int objectBlockSize, out List<long> addr)
+        /// <summary>
+        /// Serialize part of page to stream
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="untilptr">Until pointer</param>
+        /// <param name="stream">Stream</param>
+        /// <param name="objectBlockSize">Size of blocks to serialize in chunks of</param>
+        /// <param name="addr">List of addresses that need to be updated with offsets</param>
+        public void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr)
         {
             addr = new List<long>();
             while (ptr < untilptr)
             {
                 if (!Layout.GetInfo(ptr)->Invalid)
                 {
-                    long pos = ms.Position;
+                    long pos = stream.Position;
 
                     if (Key.HasObjectsToSerialize())
                     {
                         Key* key = Layout.GetKey(ptr);
-                        Key.Serialize<TKey>(key, ms);
+                        Key.Serialize(key, stream);
                         ((AddressInfo*)key)->Address = pos;
-                        ((AddressInfo*)key)->Size = (int)(ms.Position - pos);
+                        ((AddressInfo*)key)->Size = (int)(stream.Position - pos);
                         addr.Add((long)key);
                     }
 
                     if (Value.HasObjectsToSerialize())
                     {
-                        pos = ms.Position;
+                        pos = stream.Position;
                         Value* value = Layout.GetValue(ptr);
-                        Value.Serialize(value, ms);
+                        Value.Serialize(value, stream);
                         ((AddressInfo*)value)->Address = pos;
-                        ((AddressInfo*)value)->Size = (int)(ms.Position - pos);
+                        ((AddressInfo*)value)->Size = (int)(stream.Position - pos);
                         addr.Add((long)value);
                     }
 
                 }
                 ptr += Layout.GetPhysicalSize(ptr);
 
-                if (ms.Position > objectBlockSize)
+                if (stream.Position > objectBlockSize)
                     return;
             }
         }

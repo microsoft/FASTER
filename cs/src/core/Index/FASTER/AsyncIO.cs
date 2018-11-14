@@ -16,7 +16,7 @@ namespace FASTER.core
     /// <summary>
     /// Async IO related functions of FASTER
     /// </summary>
-    public unsafe partial class FasterKV<TKey, TValue, TInput, TOutput, TContext> : FasterBase, IFasterKV
+    public unsafe partial class FasterKV : FasterBase, IFasterKV
     {
         private void AsyncGetFromDisk(long fromLogical,
                                       int numRecords,
@@ -74,7 +74,7 @@ namespace FASTER.core
             // Parse the key and value objects
             MemoryStream ms = new MemoryStream(ctx.objBuffer.buffer);
             ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
-            Key.Deserialize<TKey>(Layout.GetKey((long)record), ms);
+            Key.Deserialize(Layout.GetKey((long)record), ms);
             Value.Deserialize(Layout.GetValue((long)record), ms);
             ctx.objBuffer.Return();
             return true;
@@ -101,7 +101,7 @@ namespace FASTER.core
                 //We have the complete record.
                 if (RetrievedObjects(record, ctx))
                 {
-                    if (Key.Equals<TKey>((Key*)ctx.key, Layout.GetKey((long)record)))
+                    if (Key.Equals((Key*)ctx.key, Layout.GetKey((long)record)))
                     {
                         //The keys are same, so I/O is complete
                         // ctx.record = result.record;
@@ -120,7 +120,7 @@ namespace FASTER.core
                             if (Key.HasObjectsToSerialize())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                Key.Free<TKey>(Layout.GetKey(physicalAddress));
+                                Key.Free(Layout.GetKey(physicalAddress));
                             }
                             if (Value.HasObjectsToSerialize())
                             {

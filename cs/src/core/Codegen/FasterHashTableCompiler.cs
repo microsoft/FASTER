@@ -32,15 +32,15 @@ namespace FASTER.core.Roslyn
                 "Checkpoint",
                 "Contexts",
                 "Layout",
-                "PersistentMemoryMalloc",
-
                 "AsyncResultTypes",
                 "FASTERBase",
                 "Recovery",
                 "IndexRecovery",
                 "IndexCheckpoint",
-                "StateTransitions"
-            };
+                "StateTransitions",
+                "PersistentMemoryMalloc",
+                "PMMAsyncIO",
+        };
 
 
     /// <summary>

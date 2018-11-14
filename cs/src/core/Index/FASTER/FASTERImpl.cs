@@ -291,8 +291,8 @@ namespace FASTER.core
             RecordInfo.WriteInfo(recordInfo, ctx.version,
                                  true, false, false,
                                  entry.Address);
-            Key.Copy(request.key, Layout.GetKey(newPhysicalAddress));
-            Functions.SingleWriter(request.key,
+            Key.Copy((Key*)request.key, Layout.GetKey(newPhysicalAddress));
+            Functions.SingleWriter((Key*)request.key,
                                    Layout.GetValue(physicalAddress),
                                    Layout.GetValue(newPhysicalAddress));
 
@@ -1358,7 +1358,7 @@ namespace FASTER.core
                 // Issue asynchronous I/O request
                 AsyncIOContext request = default(AsyncIOContext);
                 request.id = pendingContext.id;
-                request.key = pendingContext.key;
+                request.key = (IntPtr)pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.callbackQueue = ctx.readyResponses;
                 request.record = default(SectorAlignedMemory);
