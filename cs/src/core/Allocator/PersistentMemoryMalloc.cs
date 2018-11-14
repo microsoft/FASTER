@@ -13,6 +13,13 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
+    public interface IPageHandlers
+    {
+        void ClearPage(long ptr, long endptr);
+        void Deserialize(long ptr, long untilptr, MemoryStream ms);
+        void Serialize(ref long ptr, long untilptr, MemoryStream ms, int objectBlockSize, out List<long> addr);
+    }
+
     internal interface IAllocator : IDisposable
     {
         long Allocate(int numSlots);
@@ -52,7 +59,7 @@ namespace FASTER.core
         public long PageAndOffset;
     }
 
-    internal unsafe partial class PersistentMemoryMalloc : IAllocator
+    public unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         // Epoch information
         public LightEpoch epoch;
@@ -121,7 +128,9 @@ namespace FASTER.core
 
         public long BeginAddress;
 
-        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice) : this(device, objectLogDevice, 0)
+        private IPageHandlers pageHandlers;
+
+        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, IPageHandlers pageHandlers) : this(device, objectLogDevice, 0)
         {
             Allocate(Constants.kFirstValidAddress); // null pointer
             ReadOnlyAddress = GetTailAddress();
@@ -129,6 +138,7 @@ namespace FASTER.core
             HeadAddress = ReadOnlyAddress;
             SafeHeadAddress = ReadOnlyAddress;
             BeginAddress = ReadOnlyAddress;
+            this.pageHandlers = pageHandlers;
         }
 
         public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress)
@@ -592,30 +602,12 @@ namespace FASTER.core
         {
             if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
             {
-                long ptr = (long)pointers[page];
+                long ptr = pointers[page];
                 int numBytes = PageSize;
                 long endptr = ptr + numBytes;
 
                 if (pageZero) ptr += Constants.kFirstValidAddress;
-
-                List<long> addr = new List<long>();
-                while (ptr < endptr)
-                {
-                    if (!Layout.GetInfo(ptr)->Invalid)
-                    {
-                        if (Key.HasObjectsToSerialize())
-                        {
-                            Key* key = Layout.GetKey(ptr);
-                            Key.Free(key);
-                        }
-                        if (Value.HasObjectsToSerialize())
-                        {
-                            Value* value = Layout.GetValue(ptr);
-                            Value.Free(value);
-                        }
-                    }
-                    ptr += Layout.GetPhysicalSize(ptr);
-                }
+                pageHandlers.ClearPage(ptr, endptr);
             }
             Array.Clear(values[page], 0, values[page].Length);
         }

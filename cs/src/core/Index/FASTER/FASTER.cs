@@ -7,13 +7,14 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
+    public unsafe partial class FasterKV<TKey, TValue, TInput, TOutput, TContext> : FasterBase, IFasterKV, IPageHandlers
     { 
         private PersistentMemoryMalloc hlog;
 
@@ -82,7 +83,7 @@ namespace FASTER.core
             if (checkpointDir != null)
                 Config.CheckpointDirectory = checkpointDir;
 
-            hlog = new PersistentMemoryMalloc(logDevice, objectLogDevice);
+            hlog = new PersistentMemoryMalloc(logDevice, objectLogDevice, this);
             var recordSize = Layout.EstimatePhysicalSize(null, null);
             Initialize(size, hlog.GetSectorSize());
 
@@ -345,6 +346,84 @@ namespace FASTER.core
         public void Dispose()
         {
             hlog.Dispose();
+        }
+
+        public void ClearPage(long ptr, long endptr)
+        {
+
+            while (ptr < endptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key* key = Layout.GetKey(ptr);
+                        Key.Free<TKey>(key);
+                    }
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        Value* value = Layout.GetValue(ptr);
+                        Value.Free(value);
+                    }
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+            }
+        }
+
+        public void Deserialize(long ptr, long untilptr, MemoryStream ms)
+        {
+            while (ptr < untilptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key.Deserialize<TKey>(Layout.GetKey(ptr), ms);
+                    }
+
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        Value.Deserialize(Layout.GetValue(ptr), ms);
+                    }
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+            }
+        }
+
+        public void Serialize(ref long ptr, long untilptr, MemoryStream ms, int objectBlockSize, out List<long> addr)
+        {
+            addr = new List<long>();
+            while (ptr < untilptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+                    long pos = ms.Position;
+
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key* key = Layout.GetKey(ptr);
+                        Key.Serialize<TKey>(key, ms);
+                        ((AddressInfo*)key)->Address = pos;
+                        ((AddressInfo*)key)->Size = (int)(ms.Position - pos);
+                        addr.Add((long)key);
+                    }
+
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        pos = ms.Position;
+                        Value* value = Layout.GetValue(ptr);
+                        Value.Serialize(value, ms);
+                        ((AddressInfo*)value)->Address = pos;
+                        ((AddressInfo*)value)->Size = (int)(ms.Position - pos);
+                        addr.Add((long)value);
+                    }
+
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+
+                if (ms.Position > objectBlockSize)
+                    return;
+            }
         }
     }
 }
