@@ -32,20 +32,7 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
-    internal unsafe struct AsyncIOContext
-    {
-        public long id;
 
-        public Key* key;
-
-        public long logicalAddress;
-        
-        public SectorAlignedMemory record;
-
-        public SectorAlignedMemory objBuffer;
-
-        public BlockingCollection<AsyncIOContext> callbackQueue;
-    }
 
     internal unsafe struct PendingContext
     {

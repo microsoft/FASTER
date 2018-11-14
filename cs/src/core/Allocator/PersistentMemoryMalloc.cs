@@ -52,7 +52,7 @@ namespace FASTER.core
         public long PageAndOffset;
     }
 
-    internal unsafe partial class PersistentMemoryMalloc : IAllocator
+    public unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         // Epoch information
         public LightEpoch epoch;
@@ -109,19 +109,46 @@ namespace FASTER.core
         // Global address of the current tail (next element to be allocated from the circular buffer)
         private PageOffset TailPageOffset;
 
+
+        /// <summary>
+        /// Read-only address
+        /// </summary>
         public long ReadOnlyAddress;
 
+        /// <summary>
+        /// Safe read-only address
+        /// </summary>
         public long SafeReadOnlyAddress;
 
+        /// <summary>
+        /// Head address
+        /// </summary>
         public long HeadAddress;
 
+        /// <summary>
+        ///  Safe head address
+        /// </summary>
         public long SafeHeadAddress;
 
+        /// <summary>
+        /// Flushed until address
+        /// </summary>
         public long FlushedUntilAddress;
 
+        /// <summary>
+        /// Begin address
+        /// </summary>
         public long BeginAddress;
 
-        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice) : this(device, objectLogDevice, 0)
+        private IPageHandlers pageHandlers;
+
+        /// <summary>
+        /// Create instance of PMM
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
+        /// <param name="pageHandlers"></param>
+        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, IPageHandlers pageHandlers) : this(device, objectLogDevice, 0, pageHandlers)
         {
             Allocate(Constants.kFirstValidAddress); // null pointer
             ReadOnlyAddress = GetTailAddress();
@@ -129,9 +156,17 @@ namespace FASTER.core
             HeadAddress = ReadOnlyAddress;
             SafeHeadAddress = ReadOnlyAddress;
             BeginAddress = ReadOnlyAddress;
+            this.pageHandlers = pageHandlers;
         }
 
-        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress)
+        /// <summary>
+        /// Create instance of PMM
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
+        /// <param name="startAddress"></param>
+        /// <param name="pageHandlers"></param>
+        internal PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress, IPageHandlers pageHandlers)
         {
             if (BufferSize < 16)
             {
@@ -142,7 +177,7 @@ namespace FASTER.core
 
             this.objectLogDevice = objectLogDevice;
 
-            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
+            if (pageHandlers.HasObjects())
             {
                 if (objectLogDevice == null)
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
@@ -159,12 +194,16 @@ namespace FASTER.core
             Initialize(startAddress);
         }
         
+        /// <summary>
+        /// Get sector size
+        /// </summary>
+        /// <returns></returns>
         public int GetSectorSize()
         {
             return sectorSize;
         }
 
-        public void Initialize(long startAddress)
+        internal void Initialize(long startAddress)
         {
             readBufferPool = new NativeSectorAlignedBufferPool(1, sectorSize);
             long tailPage = startAddress >> LogPageSizeBits;
@@ -590,32 +629,14 @@ namespace FASTER.core
         
         private void ClearPage(int page, bool pageZero)
         {
-            if (Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize())
+            if (pageHandlers.HasObjects())
             {
-                long ptr = (long)pointers[page];
+                long ptr = pointers[page];
                 int numBytes = PageSize;
                 long endptr = ptr + numBytes;
 
                 if (pageZero) ptr += Constants.kFirstValidAddress;
-
-                List<long> addr = new List<long>();
-                while (ptr < endptr)
-                {
-                    if (!Layout.GetInfo(ptr)->Invalid)
-                    {
-                        if (Key.HasObjectsToSerialize())
-                        {
-                            Key* key = Layout.GetKey(ptr);
-                            Key.Free(key);
-                        }
-                        if (Value.HasObjectsToSerialize())
-                        {
-                            Value* value = Layout.GetValue(ptr);
-                            Value.Free(value);
-                        }
-                    }
-                    ptr += Layout.GetPhysicalSize(ptr);
-                }
+                pageHandlers.ClearPage(ptr, endptr);
             }
             Array.Clear(values[page], 0, values[page].Length);
         }

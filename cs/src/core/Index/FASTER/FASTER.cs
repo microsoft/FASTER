@@ -7,14 +7,15 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
-    { 
+    public unsafe partial class FasterKV : FasterBase, IFasterKV, IPageHandlers
+    {
         private PersistentMemoryMalloc hlog;
 
         private static int numPendingReads = 0;
@@ -69,7 +70,7 @@ namespace FASTER.core
                     System.Diagnostics.Debugger.Launch();
             }
         }
-        
+
         /// <summary>
         /// Create FASTER instance
         /// </summary>
@@ -82,7 +83,7 @@ namespace FASTER.core
             if (checkpointDir != null)
                 Config.CheckpointDirectory = checkpointDir;
 
-            hlog = new PersistentMemoryMalloc(logDevice, objectLogDevice);
+            hlog = new PersistentMemoryMalloc(logDevice, objectLogDevice, this);
             var recordSize = Layout.EstimatePhysicalSize(null, null);
             Initialize(size, hlog.GetSectorSize());
 
@@ -101,7 +102,7 @@ namespace FASTER.core
         public bool TakeFullCheckpoint(out Guid token)
         {
             var success = InternalTakeCheckpoint(CheckpointType.FULL);
-            if(success)
+            if (success)
             {
                 token = _indexCheckpointToken;
             }
@@ -157,7 +158,7 @@ namespace FASTER.core
         public void Recover(Guid fullCheckpointToken)
         {
             InternalRecover(fullCheckpointToken, fullCheckpointToken);
-        } 
+        }
 
         /// <summary>
         /// Recover
@@ -209,7 +210,7 @@ namespace FASTER.core
             InternalRefresh();
         }
 
-        
+
         /// <summary>
         /// Complete outstanding pending operations
         /// </summary>
@@ -257,7 +258,7 @@ namespace FASTER.core
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                
+
                 status = (Status)internalStatus;
             }
             else
@@ -311,7 +312,7 @@ namespace FASTER.core
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                 status = (Status)internalStatus;
+                status = (Status)internalStatus;
             }
             else
             {
@@ -338,13 +339,184 @@ namespace FASTER.core
         {
             return InternalGrowIndex();
         }
-        
+
         /// <summary>
         /// Dispose FASTER instance
         /// </summary>
         public void Dispose()
         {
             hlog.Dispose();
+        }
+
+        /// <summary>
+        /// Clear page
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="endptr">Until pointer</param>
+        public void ClearPage(long ptr, long endptr)
+        {
+
+            while (ptr < endptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key* key = Layout.GetKey(ptr);
+                        Key.Free(key);
+                    }
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        Value* value = Layout.GetValue(ptr);
+                        Value.Free(value);
+                    }
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Deseialize part of page from stream
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="untilptr">Until pointer</param>
+        /// <param name="stream">Stream</param>
+        public void Deserialize(long ptr, long untilptr, Stream stream)
+        {
+            while (ptr < untilptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key.Deserialize(Layout.GetKey(ptr), stream);
+                    }
+
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        Value.Deserialize(Layout.GetValue(ptr), stream);
+                    }
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Serialize part of page to stream
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="untilptr">Until pointer</param>
+        /// <param name="stream">Stream</param>
+        /// <param name="objectBlockSize">Size of blocks to serialize in chunks of</param>
+        /// <param name="addr">List of addresses that need to be updated with offsets</param>
+        public void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr)
+        {
+            addr = new List<long>();
+            while (ptr < untilptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+                    long pos = stream.Position;
+
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key* key = Layout.GetKey(ptr);
+                        Key.Serialize(key, stream);
+                        ((AddressInfo*)key)->Address = pos;
+                        ((AddressInfo*)key)->Size = (int)(stream.Position - pos);
+                        addr.Add((long)key);
+                    }
+
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        pos = stream.Position;
+                        Value* value = Layout.GetValue(ptr);
+                        Value.Serialize(value, stream);
+                        ((AddressInfo*)value)->Address = pos;
+                        ((AddressInfo*)value)->Size = (int)(stream.Position - pos);
+                        addr.Add((long)value);
+                    }
+
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+
+                if (stream.Position > objectBlockSize)
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Get location and range of object log addresses for specified log page
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <param name="untilptr"></param>
+        /// <param name="objectBlockSize"></param>
+        /// <param name="startptr"></param>
+        /// <param name="size"></param>
+        public void GetObjectInfo(ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
+        {
+            long minObjAddress = long.MaxValue;
+            long maxObjAddress = long.MinValue;
+
+            while (ptr < untilptr)
+            {
+                if (!Layout.GetInfo(ptr)->Invalid)
+                {
+
+                    if (Key.HasObjectsToSerialize())
+                    {
+                        Key* key = Layout.GetKey(ptr);
+                        var addr = ((AddressInfo*)key)->Address;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                        {
+                            break;
+                        }
+
+                        if (addr < minObjAddress) minObjAddress = addr;
+                        addr += ((AddressInfo*)key)->Size;
+                        if (addr > maxObjAddress) maxObjAddress = addr;
+                    }
+
+
+                    if (Value.HasObjectsToSerialize())
+                    {
+                        Value* value = Layout.GetValue(ptr);
+                        var addr = ((AddressInfo*)value)->Address;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                        {
+                            break;
+                        }
+
+                        if (addr < minObjAddress) minObjAddress = addr;
+                        addr += ((AddressInfo*)value)->Size;
+                        if (addr > maxObjAddress) maxObjAddress = addr;
+                    }
+                }
+                ptr += Layout.GetPhysicalSize(ptr);
+            }
+
+            // Handle the case where no objects are to be written
+            if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)
+            {
+                minObjAddress = 0;
+                maxObjAddress = 0;
+            }
+
+            startptr = minObjAddress;
+            size = maxObjAddress - minObjAddress;
+        }
+
+        /// <summary>
+        /// Whether KVS has objects to serialize/deserialize
+        /// </summary>
+        /// <returns></returns>
+        public bool HasObjects()
+        {
+            return Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize();
         }
     }
 }
