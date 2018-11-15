@@ -359,6 +359,9 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            MallocFixedPageSize<HashBucket>.Instance = null;
+            MallocFixedPageSize<HashBucket>.PhysicalInstance = null;
+            overflowBucketsAllocator = null;
             hlog.Dispose();
         }
 

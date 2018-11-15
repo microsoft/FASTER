@@ -47,6 +47,7 @@ namespace FASTER.test.recovery.sumstore
         public void TearDown()
         {
             fht.StopSession();
+            fht.Dispose();
             fht = null;
             log.Close();
             DeleteDirectory(test_path);

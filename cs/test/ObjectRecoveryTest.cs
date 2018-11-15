@@ -35,8 +35,8 @@ namespace FASTER.test.recovery.objectstore
                     Directory.CreateDirectory(test_path);
             }
 
-            log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
-            objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\hlog");
+            log = FasterFactory.CreateLogDevice(test_path + "\\ort1hlog");
+            objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\ort1hlog");
 
             fht = 
                 FasterFactory.Create
@@ -51,6 +51,7 @@ namespace FASTER.test.recovery.objectstore
         public void TearDown()
         {
             fht.StopSession();
+            fht.Dispose();
             fht = null;
             log.Close();
             objlog.Close();

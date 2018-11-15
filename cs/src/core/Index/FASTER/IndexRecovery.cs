@@ -97,6 +97,7 @@ namespace FASTER.core
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
             Interlocked.Decrement(ref numChunksToBeRecovered);
+            Overlapped.Free(overlap);
         }
 
         internal void DeleteTentativeEntries()

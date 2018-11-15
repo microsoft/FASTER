@@ -502,6 +502,7 @@ namespace FASTER.core
             finally
             {
                 checkpointEvent.Signal();
+                Overlapped.Free(overlap);
             }
         }
 
@@ -608,6 +609,7 @@ namespace FASTER.core
             finally
             {
                 Interlocked.Decrement(ref numLevelsToBeRecovered);
+                Overlapped.Free(overlap);
             }
         }
         #endregion

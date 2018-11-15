@@ -91,9 +91,9 @@ namespace FASTER.core
         private readonly long ReadOnlyLagAddress;
 
         // Circular buffer definition
-        private readonly byte[][] values;
-        private readonly GCHandle[] handles;
-        private readonly long[] pointers;
+        private byte[][] values;
+        private GCHandle[] handles;
+        private long[] pointers;
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
 
@@ -218,7 +218,7 @@ namespace FASTER.core
 
             sectorSize = (int)device.SectorSize;
             epoch = LightEpoch.Instance;
-            ioBufferPool = new NativeSectorAlignedBufferPool(1, sectorSize);
+            ioBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
             AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
             
             ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
@@ -238,7 +238,7 @@ namespace FASTER.core
 
         internal void Initialize(long startAddress)
         {
-            readBufferPool = new NativeSectorAlignedBufferPool(1, sectorSize);
+            readBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
             long tailPage = startAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
 
@@ -282,6 +282,10 @@ namespace FASTER.core
                 values[i] = null;
                 PageStatusIndicator[i].PageFlushCloseStatus = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.Flushed, PageCloseStatus = PMMCloseStatus.Closed };
             }
+            handles = null;
+            pointers = null;
+            values = null;
+
             TailPageOffset.Page = 0;
             TailPageOffset.Offset = 0;
             SafeReadOnlyAddress = 0;

@@ -170,6 +170,7 @@ namespace FASTER.test
         long LogReadOnlyAddress { get; }
 
         void DumpDistribution();
+        void Dispose();
     }
     public unsafe class Functions
     {

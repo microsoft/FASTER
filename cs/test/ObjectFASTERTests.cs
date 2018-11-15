@@ -39,6 +39,7 @@ namespace FASTER.test
         public void TearDown()
         {
             fht.StopSession();
+            fht.Dispose();
             fht = null;
             log.Close();
         }

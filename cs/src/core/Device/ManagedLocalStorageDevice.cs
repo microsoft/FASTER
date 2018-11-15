@@ -35,7 +35,7 @@ namespace FASTER.core
             bool preallocateSegment = false, bool singleSegment = true, bool deleteOnClose = false)
             : base(filename, segmentSize, GetSectorSize(filename))
         {
-            pool = new NativeSectorAlignedBufferPool(1, 1);
+            pool = NativeSectorAlignedBufferPool.GetPool(1, 1);
 
             this.preallocateSegment = preallocateSegment;
             this.deleteOnClose = deleteOnClose;

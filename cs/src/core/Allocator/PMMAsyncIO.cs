@@ -355,6 +355,7 @@ namespace FASTER.core
                 }
                 else
                 {
+                    asyncResult.freeBuffer2 = _objBuffer;
                     objlogDevice.WriteAsync(
                         (IntPtr)_objBuffer.aligned_pointer,
                         (int)(alignedDestinationAddress >> LogSegmentSizeBits),

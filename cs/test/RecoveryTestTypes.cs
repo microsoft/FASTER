@@ -174,6 +174,7 @@ namespace FASTER.test.recovery.sumstore
         long LogTailAddress { get; }
         long LogReadOnlyAddress { get; }
         void DumpDistribution();
+        void Dispose();
     }
 
     public unsafe class Functions

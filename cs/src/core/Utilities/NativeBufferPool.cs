@@ -93,6 +93,16 @@ namespace FASTER.core
         private readonly int sectorSize;
         private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
 
+        private static SafeConcurrentDictionary<Tuple<int, int>, NativeSectorAlignedBufferPool> _instances
+            = new SafeConcurrentDictionary<Tuple<int, int>, NativeSectorAlignedBufferPool>();
+
+        public static NativeSectorAlignedBufferPool GetPool(int recordSize, int sectorSize)
+        {
+            return
+                _instances.GetOrAdd(new Tuple<int, int>(recordSize, sectorSize),
+                    t => new NativeSectorAlignedBufferPool(t.Item1, t.Item2));
+        }
+
         /// <summary>
         /// Constructor
         /// </summary>
