@@ -3,6 +3,7 @@ variables:
 
 jobs:
 - job: 'dotNetWindows'
+  dependsOn: 'monoLinux'
   strategy:
     maxParallel: 2
     matrix:
@@ -61,6 +62,5 @@ jobs:
   - script: |
       mono --version
       msbuild /version
-
-      nuget restore $(solution)
+      msbuild /t:restore $(solution)
       msbuild /p:Configuration=Release $(solution)
