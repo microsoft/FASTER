@@ -96,6 +96,12 @@ namespace FASTER.core
         private static SafeConcurrentDictionary<Tuple<int, int>, NativeSectorAlignedBufferPool> _instances
             = new SafeConcurrentDictionary<Tuple<int, int>, NativeSectorAlignedBufferPool>();
 
+        /// <summary>
+        /// Get cached instance of buffer pool for specified params
+        /// </summary>
+        /// <param name="recordSize">Record size</param>
+        /// <param name="sectorSize">Sector size</param>
+        /// <returns></returns>
         public static NativeSectorAlignedBufferPool GetPool(int recordSize, int sectorSize)
         {
             return
@@ -106,8 +112,8 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="recordSize"></param>
-        /// <param name="sectorSize"></param>
+        /// <param name="recordSize">Record size</param>
+        /// <param name="sectorSize">Sector size</param>
         public NativeSectorAlignedBufferPool(int recordSize, int sectorSize)
         {
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
