@@ -27,11 +27,11 @@ namespace FASTER.core
 #endif
             ;
         public static TIFaster GetFasterHashTable<TKey, TValue, TInput, TOutput, TContext, TFunctions, TIFaster>
-            (long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir, long LogTotalSizeBits, double LogMutableFraction, int LogPageSizeBits, int LogSegmentSizeBits, bool kFoldOverSnapshot, bool persistDll = PersistDll, bool optimizeCode = OptimizeCode)
+            (long size, LogSettings logSettings, CheckpointSettings checkpointSettings, bool persistDll = PersistDll, bool optimizeCode = OptimizeCode)
         {
-            var s = Roslyn.FasterHashTableCompiler<TKey, TValue, TInput, TOutput, TContext, TFunctions, TIFaster>.GenerateFasterHashTableClass(persistDll, optimizeCode, LogTotalSizeBits, LogMutableFraction, LogPageSizeBits, LogSegmentSizeBits, kFoldOverSnapshot);
+            var s = Roslyn.FasterHashTableCompiler<TKey, TValue, TInput, TOutput, TContext, TFunctions, TIFaster>.GenerateFasterHashTableClass(persistDll, optimizeCode);
             var t = s.Item1;
-            var instance = Activator.CreateInstance(t, size, logDevice, objectLogDevice, checkpointDir);
+            var instance = Activator.CreateInstance(t, size, logSettings, checkpointSettings);
             return (TIFaster)instance;
         }
 

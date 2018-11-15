@@ -130,7 +130,7 @@ namespace ManagedSample4
             var h = FasterFactory.Create
                 <Wrap<int>, Wrap<int>, Wrap<int>, Wrap<int>, MyContext, MyFunctions>
                 (128, new MyFunctions(),
-                new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 10 }
+                new LogSettings { LogDevice = log, MemorySizeBits = 29 }
                 );
 
             h.StartSession();

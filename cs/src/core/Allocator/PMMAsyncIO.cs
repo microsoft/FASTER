@@ -19,11 +19,6 @@ namespace FASTER.core
     /// </summary>
     public unsafe partial class PersistentMemoryMalloc : IAllocator
     {
-        // Size of object chunks beign written to storage
-        const int kObjectBlockSize = 100 * (1 << 20);
-        // Tail offsets per segment, in object log
-        public long[] segmentOffsets = new long[SegmentBufferSize];
-
         #region Async file operations
 
         /// <summary>
@@ -239,7 +234,7 @@ namespace FASTER.core
 
                     // Set status to in-progress
                     PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus
-                        = new FlushCloseStatus { PageFlushStatus = FlushStatus.InProgress, PageCloseStatus = CloseStatus.Open };
+                        = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open };
                 }
 
                 PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress = -1;
@@ -340,7 +335,7 @@ namespace FASTER.core
 
                 var _alignedLength = (_s.Length + (sectorSize - 1)) & ~(sectorSize - 1);
 
-                var _objAddr = Interlocked.Add(ref localSegmentOffsets[(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
+                var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
                 fixed (void* src = _s)
                     Buffer.MemoryCopy(src, _objBuffer.aligned_pointer, _s.Length, _s.Length);
 
@@ -422,12 +417,12 @@ namespace FASTER.core
                     while (true)
                     {
                         var oldStatus = PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus;
-                        if (oldStatus.PageCloseStatus == CloseStatus.Closed)
+                        if (oldStatus.PageCloseStatus == PMMCloseStatus.Closed)
                         {
                             ClearPage((int)(result.page % BufferSize), result.page == 0);
                         }
                         var newStatus = oldStatus;
-                        newStatus.PageFlushStatus = FlushStatus.Flushed;
+                        newStatus.PageFlushStatus = PMMFlushStatus.Flushed;
                         if (oldStatus.value == Interlocked.CompareExchange(ref PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus.value, newStatus.value, oldStatus.value))
                         {
                             break;

@@ -25,11 +25,6 @@ namespace FASTER.core
         public IDevice ObjectLogDevice = new NullDevice();
 
         /// <summary>
-        /// Size of page, in bits
-        /// </summary>
-        public int PageSizeBits = 25;
-
-        /// <summary>
         /// Size of a segment (group of pages), in bits
         /// </summary>
         public int SegmentSizeBits = 30;
@@ -164,10 +159,7 @@ namespace FASTER.core
                 HashTableManager.GetFasterHashTable
                                 <TKey, TValue, TInput, TOutput,
                                 TContext, TFunctions, TIFaster>
-                                (indexSizeBuckets, logSettings.LogDevice, logSettings.ObjectLogDevice, 
-                                checkpointSettings.CheckpointDir, logSettings.MemorySizeBits, 
-                                logSettings.MutableFraction, logSettings.PageSizeBits, 
-                                logSettings.SegmentSizeBits, checkpointSettings.CheckPointType == CheckpointType.FoldOver);
+                                (indexSizeBuckets, logSettings, checkpointSettings);
         }
 
         /// <summary>

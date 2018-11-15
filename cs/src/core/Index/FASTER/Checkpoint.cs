@@ -224,7 +224,7 @@ namespace FASTER.core
 
                             ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.startLogicalAddress);
 
-                            if (!Constants.kFoldOverSnapshot)
+                            if (!FoldOverSnapshot)
                             {
                                 _hybridLogCheckpoint.info.flushedLogicalAddress = hlog.FlushedUntilAddress;
                                 _hybridLogCheckpoint.info.useSnapshotFile = 1;
@@ -254,7 +254,7 @@ namespace FASTER.core
                                 WriteIndexMetaFile();
                             }
 
-                            if (Constants.kFoldOverSnapshot)
+                            if (FoldOverSnapshot)
                             {
                                 hlog.ShiftReadOnlyToTail(out long tailAddress);
 
@@ -507,7 +507,7 @@ namespace FASTER.core
                             if (!prevThreadCtx.markers[EpochPhaseIdx.WaitFlush])
                             {
                                 var notify = false;
-                                if (Constants.kFoldOverSnapshot)
+                                if (FoldOverSnapshot)
                                 {
                                     notify = (hlog.FlushedUntilAddress >= _hybridLogCheckpoint.info.finalLogicalAddress);
                                 }

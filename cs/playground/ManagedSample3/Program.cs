@@ -119,7 +119,7 @@ namespace ManagedSample3
             var h = FasterFactory.Create
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
                 (128, new MyFunctions(),
-                new LogSettings {  LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 14, PageSizeBits = 10 }
+                new LogSettings {  LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 29 }
                 );
               
             h.StartSession();
