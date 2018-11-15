@@ -32,14 +32,14 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1 = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
                 (indexSizeBuckets: 128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
                 (indexSizeBuckets: 128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
                 );
 
@@ -99,14 +99,14 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1 = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
                 (indexSizeBuckets: 128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2 = FasterFactory.Create
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
                 (indexSizeBuckets: 128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
                 );
 

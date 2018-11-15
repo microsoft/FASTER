@@ -12,6 +12,41 @@ using System.Threading;
 
 namespace FASTER.core
 {
+
+    internal enum ReadStatus { Pending, Done };
+    internal enum FlushStatus { Pending, Done };
+
+    internal class RecoveryStatus
+    {
+        public long startPage;
+        public long endPage;
+        public int capacity;
+
+        public IDevice recoveryDevice;
+        public long recoveryDevicePageOffset;
+        public IDevice objectLogRecoveryDevice;
+
+        public ReadStatus[] readStatus;
+        public FlushStatus[] flushStatus;
+
+        public RecoveryStatus(int capacity,
+                              long startPage,
+                              long endPage)
+        {
+            this.capacity = capacity;
+            this.startPage = startPage;
+            this.endPage = endPage;
+            readStatus = new ReadStatus[capacity];
+            flushStatus = new FlushStatus[capacity];
+            for (int i = 0; i < capacity; i++)
+            {
+                flushStatus[i] = FlushStatus.Done;
+                readStatus[i] = ReadStatus.Pending;
+            }
+        }
+    }
+
+
     /// <summary>
     /// Partial class for recovery code in FASTER
     /// </summary>
@@ -24,7 +59,7 @@ namespace FASTER.core
 
             // Recover segment offsets for object log
             if (_hybridLogCheckpoint.info.objectLogSegmentOffsets != null)
-                hlog.segmentOffsets = _hybridLogCheckpoint.info.objectLogSegmentOffsets;
+                Array.Copy(_hybridLogCheckpoint.info.objectLogSegmentOffsets, hlog.segmentOffsets, _hybridLogCheckpoint.info.objectLogSegmentOffsets.Length);
 
             _indexCheckpoint.main_ht_device = new LocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token));
             _indexCheckpoint.ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token));
@@ -46,7 +81,7 @@ namespace FASTER.core
 
             DeleteTentativeEntries();
 
-            if (Constants.kFoldOverSnapshot)
+            if (FoldOverSnapshot)
             {
                 RecoverHybridLog(_indexCheckpoint.info, _hybridLogCheckpoint.info);
             }
@@ -114,37 +149,6 @@ namespace FASTER.core
             hlog.RecoveryReset(untilAddress, headAddress);
         }
 
-        private enum ReadStatus { Pending, Done };
-        private enum FlushStatus { Pending, Done };
-        private class RecoveryStatus
-        {
-            public long startPage;
-            public long endPage;
-            public int capacity;
-
-            public IDevice recoveryDevice;
-            public long recoveryDevicePageOffset;
-            public IDevice objectLogRecoveryDevice;
-
-            public ReadStatus[] readStatus;
-            public FlushStatus[] flushStatus;
-
-            public RecoveryStatus(int capacity,
-                                  long startPage,
-                                  long endPage)
-            {
-                this.capacity = capacity;
-                this.startPage = startPage;
-                this.endPage = endPage;
-                readStatus = new ReadStatus[capacity];
-                flushStatus = new FlushStatus[capacity];
-                for (int i = 0; i < capacity; i++)
-                {
-                    flushStatus[i] = FlushStatus.Done;
-                    readStatus[i] = ReadStatus.Pending;
-                }
-            }
-        }
 
         private void RecoverHybridLog(IndexRecoveryInfo indexRecoveryInfo,
                                         HybridLogRecoveryInfo recoveryInfo)
@@ -422,15 +426,12 @@ namespace FASTER.core
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                // We don't write partial pages during recovery
-                Debug.Assert(result.partial == false);
-
                 int index = hlog.GetPageIndexForPage(result.page);
                 result.context.flushStatus[index] = FlushStatus.Done;
                 if (result.page + result.context.capacity < result.context.endPage)
                 {
                     long readPage = result.page + result.context.capacity;
-                    if (Constants.kFoldOverSnapshot)
+                    if (FoldOverSnapshot)
                     {
                         hlog.AsyncReadPagesFromDevice(readPage, 1, AsyncReadPagesCallbackForRecovery, result.context);
                     }

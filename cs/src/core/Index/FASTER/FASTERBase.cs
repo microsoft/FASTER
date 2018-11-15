@@ -18,8 +18,6 @@ namespace FASTER.core
         /// Size of cache line in bytes
         public const int kCacheLineBytes = 64;
 
-        public const bool kFoldOverSnapshot = false;
-
         public const bool kFineGrainedHandoverRecord = false;
 
         public const bool kFineGrainedHandoverBucket = true;

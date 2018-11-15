@@ -32,14 +32,14 @@ namespace FASTER.test.largeobjects
             fht1 = FasterFactory.Create
                 <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
                 (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = FasterFactory.Create
                 <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
                 (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
                 );
 
@@ -96,14 +96,14 @@ namespace FASTER.test.largeobjects
             fht1 = FasterFactory.Create
                 <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
                 (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2 = FasterFactory.Create
                 <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
                 (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 9, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
                 );
 

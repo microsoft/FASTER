@@ -14,6 +14,17 @@ using System.Threading;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// FASTER configuration
+    /// </summary>
+    public static class Config
+    {
+        /// <summary>
+        /// Checkpoint directory
+        /// </summary>
+        public static string CheckpointDirectory = "C:\\data";
+    }
+
     public unsafe partial class FasterKV : FasterBase, IFasterKV, IPageHandlers
     {
         private PersistentMemoryMalloc hlog;
@@ -22,6 +33,7 @@ namespace FASTER.core
 
         private const bool kCopyReadsToTail = false;
         private const bool breakWhenClassIsLoaded = false;
+        private readonly bool FoldOverSnapshot = false;
 
         /// <summary>
         /// Tail address of log
@@ -75,15 +87,17 @@ namespace FASTER.core
         /// Create FASTER instance
         /// </summary>
         /// <param name="size"></param>
-        /// <param name="logDevice"></param>
-        /// <param name="objectLogDevice"></param>
-        /// <param name="checkpointDir"></param>
-        public FasterKV(long size, IDevice logDevice, IDevice objectLogDevice, string checkpointDir = null)
+        /// <param name="logSettings"></param>
+        /// <param name="checkpointSettings"></param>
+        public FasterKV(long size, LogSettings logSettings, CheckpointSettings checkpointSettings = null)
         {
-            if (checkpointDir != null)
-                Config.CheckpointDirectory = checkpointDir;
+            if (checkpointSettings == null)
+                checkpointSettings = new CheckpointSettings();
 
-            hlog = new PersistentMemoryMalloc(logDevice, objectLogDevice, this);
+            Config.CheckpointDirectory = checkpointSettings.CheckpointDir;
+            FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
+
+            hlog = new PersistentMemoryMalloc(logSettings, this);
             var recordSize = Layout.EstimatePhysicalSize(null, null);
             Initialize(size, hlog.GetSectorSize());
 

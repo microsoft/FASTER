@@ -38,8 +38,6 @@ namespace FASTER.core.Roslyn
                 "IndexRecovery",
                 "IndexCheckpoint",
                 "StateTransitions",
-                "PersistentMemoryMalloc",
-                "PMMAsyncIO",
         };
 
 
@@ -47,10 +45,10 @@ namespace FASTER.core.Roslyn
     /// 
     /// </summary>
     /// <returns>The generated type (to be instantiated). If null, then the error messages giving the reason for failing to generate the type.</returns>
-    public static Tuple<Type, string> GenerateFasterHashTableClass(bool persistGeneratedCode, bool optimizeCode, long LogTotalSizeBits, double LogMutableFraction, int LogPageSizeBits, int LogSegmentSizeBits, bool kFoldOverSnapshot)
+    public static Tuple<Type, string> GenerateFasterHashTableClass(bool persistGeneratedCode, bool optimizeCode)
         {
             var c = new FasterHashTableCompiler<TKey, TValue, TInput, TOutput, TContext, TFunctions, TIFaster>();
-            c.Run(persistGeneratedCode, optimizeCode, LogTotalSizeBits, LogMutableFraction, LogPageSizeBits, LogSegmentSizeBits, kFoldOverSnapshot);
+            c.Run(persistGeneratedCode, optimizeCode);
             var name = String.Format("FASTER.core.Codegen_{0}.FasterKV", c.compilation.AssemblyName);
             var r = c.Compile(persistGeneratedCode);
             var a = r.Item1;
@@ -66,7 +64,7 @@ namespace FASTER.core.Roslyn
         /// <summary>
         /// Runs the transformations needed to produce a valid compilation unit.
         /// </summary>
-        public void Run(bool persistGeneratedCode, bool optimizeCode, long LogTotalSizeBits, double LogMutableFraction, int LogPageSizeBits, int LogSegmentSizeBits, bool kFoldOverSnapshot)
+        public void Run(bool persistGeneratedCode, bool optimizeCode)
         {
 #if TIMING
             Stopwatch sw = new Stopwatch();
@@ -114,12 +112,6 @@ namespace FASTER.core.Roslyn
 
                 compilation = compilation.ReplaceSyntaxTree(oldTree, newTree);
             }
-
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogMutableFraction", LogMutableFraction.ToString(CultureInfo.InvariantCulture));
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogTotalSizeBits", LogTotalSizeBits.ToString(CultureInfo.InvariantCulture));
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogPageSizeBits", LogPageSizeBits.ToString(CultureInfo.InvariantCulture));
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "LogSegmentSizeBits", LogSegmentSizeBits.ToString(CultureInfo.InvariantCulture));
-            compilation = RoslynHelpers.ReplaceConstantValue(compilation, "kFoldOverSnapshot", kFoldOverSnapshot ? "true" : "false");
 
 #if TIMING
             sw.Stop();

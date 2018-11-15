@@ -736,7 +736,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
-                if(Constants.kFoldOverSnapshot)
+                if(FoldOverSnapshot)
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
@@ -1012,7 +1012,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
-                if (Constants.kFoldOverSnapshot)
+                if (FoldOverSnapshot)
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }

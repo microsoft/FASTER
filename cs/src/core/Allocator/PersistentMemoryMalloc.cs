@@ -20,9 +20,9 @@ namespace FASTER.core
         void CheckForAllocateComplete(ref long address);
     }
 
-    internal enum FlushStatus : int { Flushed, InProgress };
+    internal enum PMMFlushStatus : int { Flushed, InProgress };
 
-    internal enum CloseStatus : int { Closed, Open };
+    internal enum PMMCloseStatus : int { Closed, Open };
 
     internal struct FullPageStatus
 	{
@@ -34,9 +34,9 @@ namespace FASTER.core
     internal struct FlushCloseStatus
     {
         [FieldOffset(0)]
-        public FlushStatus PageFlushStatus;
+        public PMMFlushStatus PageFlushStatus;
         [FieldOffset(4)]
-        public CloseStatus PageCloseStatus;
+        public PMMCloseStatus PageCloseStatus;
         [FieldOffset(0)]
         public long value;
     }
@@ -55,7 +55,7 @@ namespace FASTER.core
     public unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         // Epoch information
-        public LightEpoch epoch;
+        private LightEpoch epoch;
 
         // Read buffer pool
         NativeSectorAlignedBufferPool readBufferPool;
@@ -71,35 +71,42 @@ namespace FASTER.core
         private readonly int AlignedPageSizeBytes;
 
         // Segment size
-        private const int LogSegmentSizeBits = 30;
-        private const long SegmentSize = 1 << LogSegmentSizeBits;
-        private const long SegmentSizeMask = SegmentSize - 1;
-        private const int SegmentBufferSize = 1 +
-            (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
+        private readonly int LogSegmentSizeBits;
+        private readonly long SegmentSize;
+        private readonly long SegmentSizeMask;
+        private readonly int SegmentBufferSize;
 
         // Total HLOG size
-        private const int LogTotalSizeBits = 34;
-        private const long LogTotalSizeBytes = 1L << LogTotalSizeBits;
-        private const int BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
+        private readonly int LogTotalSizeBits;
+        private readonly long LogTotalSizeBytes;
+        private readonly int BufferSize;
 
         // HeadOffset lag (from tail)
         private const int HeadOffsetLagNumPages = 4;
-        private const int HeadOffsetLagSize = BufferSize - HeadOffsetLagNumPages;
-        private const long HeadOffsetLagAddress = (long)HeadOffsetLagSize << LogPageSizeBits;
+        private readonly int HeadOffsetLagSize;
+        private readonly long HeadOffsetLagAddress;
 
         // ReadOnlyOffset lag (from tail)
-        public const double LogMutableFraction = 0.9;
-        public const long ReadOnlyLagAddress = (long)(LogMutableFraction * BufferSize) << LogPageSizeBits;
+        private readonly double LogMutableFraction;
+        private readonly long ReadOnlyLagAddress;
 
         // Circular buffer definition
-        private byte[][] values = new byte[BufferSize][];
-        private GCHandle[] handles = new GCHandle[BufferSize];
-        private long[] pointers = new long[BufferSize];
-        private GCHandle ptrHandle;
-        private long* nativePointers;
+        private readonly byte[][] values;
+        private readonly GCHandle[] handles;
+        private readonly long[] pointers;
+        private readonly GCHandle ptrHandle;
+        private readonly long* nativePointers;
 
         // Array that indicates the status of each buffer page
-        private FullPageStatus[] PageStatusIndicator = new FullPageStatus[BufferSize];
+        private readonly FullPageStatus[] PageStatusIndicator;
+
+        // Size of object chunks beign written to storage
+        private const int kObjectBlockSize = 100 * (1 << 20);
+
+        /// <summary>
+        /// Tail offsets per segment, in object log
+        /// </summary>
+        public readonly long[] segmentOffsets;
 
         NativeSectorAlignedBufferPool ioBufferPool;
 
@@ -145,11 +152,12 @@ namespace FASTER.core
         /// <summary>
         /// Create instance of PMM
         /// </summary>
-        /// <param name="device"></param>
-        /// <param name="objectLogDevice"></param>
+        /// <param name="settings"></param>
         /// <param name="pageHandlers"></param>
-        public PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, IPageHandlers pageHandlers) : this(device, objectLogDevice, 0, pageHandlers)
+        public PersistentMemoryMalloc(LogSettings settings, IPageHandlers pageHandlers) : this(settings, 0, pageHandlers)
         {
+
+
             Allocate(Constants.kFirstValidAddress); // null pointer
             ReadOnlyAddress = GetTailAddress();
             SafeReadOnlyAddress = ReadOnlyAddress;
@@ -162,20 +170,45 @@ namespace FASTER.core
         /// <summary>
         /// Create instance of PMM
         /// </summary>
-        /// <param name="device"></param>
-        /// <param name="objectLogDevice"></param>
+        /// <param name="settings"></param>
         /// <param name="startAddress"></param>
         /// <param name="pageHandlers"></param>
-        internal PersistentMemoryMalloc(IDevice device, IDevice objectLogDevice, long startAddress, IPageHandlers pageHandlers)
+        internal PersistentMemoryMalloc(LogSettings settings, long startAddress, IPageHandlers pageHandlers)
         {
+            // Segment size
+            LogSegmentSizeBits = settings.SegmentSizeBits;
+            SegmentSize = 1 << LogSegmentSizeBits;
+            SegmentSizeMask = SegmentSize - 1;
+            SegmentBufferSize = 1 +
+                (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
+
+            // Total HLOG size
+            LogTotalSizeBits = settings.MemorySizeBits;
+            LogTotalSizeBytes = 1L << LogTotalSizeBits;
+            BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
+
+            // HeadOffset lag (from tail)
+            HeadOffsetLagSize = BufferSize - HeadOffsetLagNumPages;
+            HeadOffsetLagAddress = (long)HeadOffsetLagSize << LogPageSizeBits;
+
+            // ReadOnlyOffset lag (from tail)
+            LogMutableFraction = settings.MutableFraction;
+            ReadOnlyLagAddress = (long)(LogMutableFraction * BufferSize) << LogPageSizeBits;
+
+            values = new byte[BufferSize][];
+            handles = new GCHandle[BufferSize];
+            pointers = new long[BufferSize];
+            PageStatusIndicator = new FullPageStatus[BufferSize];
+            segmentOffsets = new long[SegmentBufferSize];
+
+
             if (BufferSize < 16)
             {
                 throw new Exception("HLOG buffer must be at least 16 pages");
             }
 
-            this.device = device;
-
-            this.objectLogDevice = objectLogDevice;
+            device = settings.LogDevice;
+            objectLogDevice = settings.ObjectLogDevice;
 
             if (pageHandlers.HasObjects())
             {
@@ -247,11 +280,8 @@ namespace FASTER.core
                 if (handles[i].IsAllocated)
                     handles[i].Free();
                 values[i] = null;
-                PageStatusIndicator[i].PageFlushCloseStatus = new FlushCloseStatus { PageFlushStatus = FlushStatus.Flushed, PageCloseStatus = CloseStatus.Closed };
+                PageStatusIndicator[i].PageFlushCloseStatus = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.Flushed, PageCloseStatus = PMMCloseStatus.Closed };
             }
-            handles = null;
-            pointers = null;
-            values = null;
             TailPageOffset.Page = 0;
             TailPageOffset.Offset = 0;
             SafeReadOnlyAddress = 0;
@@ -261,55 +291,95 @@ namespace FASTER.core
             BeginAddress = 1;
         }
 
+        /// <summary>
+        /// Get tail address
+        /// </summary>
+        /// <returns></returns>
         public long GetTailAddress()
         {
             var local = TailPageOffset;
             return ((long)local.Page << LogPageSizeBits) | (uint)local.Offset;
         }
 
-        // Simple Accessor Functions
+        /// <summary>
+        /// Get page
+        /// </summary>
+        /// <param name="logicalAddress"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPage(long logicalAddress)
         {
             return (logicalAddress >> LogPageSizeBits);
         }
 
+        /// <summary>
+        /// Get page index for page
+        /// </summary>
+        /// <param name="page"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForPage(long page)
         {
             return (int)(page % BufferSize);
         }
 
+        /// <summary>
+        /// Get page index for address
+        /// </summary>
+        /// <param name="address"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForAddress(long address)
         {
             return (int)((address >> LogPageSizeBits) % BufferSize);
         }
 
+        /// <summary>
+        /// Get capacity (number of pages)
+        /// </summary>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetCapacityNumPages()
         {
             return BufferSize;
         }
 
+        /// <summary>
+        /// Get start logical address
+        /// </summary>
+        /// <param name="page"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetStartLogicalAddress(long page)
         {
             return page << LogPageSizeBits;
         }
 
+        /// <summary>
+        /// Get page size
+        /// </summary>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPageSize()
         {
             return PageSize;
         }
 
+        /// <summary>
+        /// Get offset in page
+        /// </summary>
+        /// <param name="address"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetOffsetInPage(long address)
         {
             return address & PageSizeMask;
         }
 
+        /// <summary>
+        /// Get offset lag in pages
+        /// </summary>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetHeadOffsetLagInPages()
         {
@@ -325,14 +395,10 @@ namespace FASTER.core
         public long GetPhysicalAddress(long logicalAddress)
         {
             // Offset within page
-            int offset = (int)(logicalAddress & PageSizeMask);
-
-            // Global page address
-            long page = (logicalAddress >> LogPageSizeBits);
+            int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) -1));
 
             // Index of page within the circular buffer
-            int pageIndex = (int)(page % BufferSize);
-
+            int pageIndex = (int)(logicalAddress >> LogPageSizeBits);
             return *(nativePointers+pageIndex) + offset;
         }
 
@@ -420,8 +486,8 @@ namespace FASTER.core
             }
 
             //Invert the address if either the previous page is not flushed or if it is null
-            if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != FlushStatus.Flushed) ||
-                (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != CloseStatus.Closed) ||
+            if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
+                (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
                 (values[pageIndex] == null))
             {
                 address = -address;
@@ -483,8 +549,8 @@ namespace FASTER.core
             PageAlignedShiftHeadAddress(currentTailAddress);
 
             //Check if I can allocate pageIndex at all
-            if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != FlushStatus.Flushed) ||
-                (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != CloseStatus.Closed) ||
+            if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
+                (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
                 (values[pageIndex] == null))
             {
                 return;
@@ -515,6 +581,11 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Shift begin address
+        /// </summary>
+        /// <param name="oldBeginAddress"></param>
+        /// <param name="newBeginAddress"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ShiftBeginAddress(long oldBeginAddress, long newBeginAddress)
         {
@@ -523,26 +594,6 @@ namespace FASTER.core
                 device.DeleteAddressRange(oldBeginAddress, newBeginAddress);
                 objectLogDevice.DeleteSegmentRange((int)(oldBeginAddress >> LogSegmentSizeBits), (int)(newBeginAddress >> LogSegmentSizeBits));
             });
-        }
-
-        /// <summary>
-        /// Checks if until address has been flushed!
-        /// </summary>
-        /// <param name="address"></param>
-        /// <returns></returns>
-        public bool CheckFlushedUntil(long address)
-        {
-            return FlushedUntilAddress >= address;
-        }
-
-        public void KillFuzzyRegion()
-        {
-            while (SafeReadOnlyAddress != ReadOnlyAddress)
-            {
-                Interlocked.CompareExchange(ref SafeReadOnlyAddress,
-                                            ReadOnlyAddress,
-                                            SafeReadOnlyAddress);
-            }
         }
 
         /// <summary>
@@ -595,7 +646,7 @@ namespace FASTER.core
                     while (true)
                     {
                         var oldStatus = PageStatusIndicator[closePage].PageFlushCloseStatus;
-                        if (oldStatus.PageFlushStatus == FlushStatus.Flushed)
+                        if (oldStatus.PageFlushStatus == PMMFlushStatus.Flushed)
                         {
                             ClearPage(closePage, (closePageAddress >> LogPageSizeBits) == 0);
 
@@ -614,7 +665,7 @@ namespace FASTER.core
                             throw new Exception("Impossible");
                         }
                         var newStatus = oldStatus;
-                        newStatus.PageCloseStatus = CloseStatus.Closed;
+                        newStatus.PageCloseStatus = PMMCloseStatus.Closed;
                         if (oldStatus.value == Interlocked.CompareExchange(ref PageStatusIndicator[closePage].PageFlushCloseStatus.value, newStatus.value, oldStatus.value))
                         {
                             break;
@@ -657,8 +708,8 @@ namespace FASTER.core
             pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
             values[index] = tmp;
 
-            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = FlushStatus.Flushed;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = CloseStatus.Closed;
+            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
+            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
             Interlocked.MemoryBarrier();
         }
 
@@ -761,6 +812,11 @@ namespace FASTER.core
             return false;
         }
 
+        /// <summary>
+        /// Reset for recovery
+        /// </summary>
+        /// <param name="tailAddress"></param>
+        /// <param name="headAddress"></param>
         public void RecoveryReset(long tailAddress, long headAddress)
         {
             long tailPage = GetPage(tailAddress);
@@ -779,7 +835,7 @@ namespace FASTER.core
             for (var addr = headAddress; addr < tailAddress; addr += PageSize)
             {
                 var pageIndex = GetPageIndexForAddress(addr);
-                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = CloseStatus.Open;
+                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
             }
         }
     }
