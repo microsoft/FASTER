@@ -2,7 +2,7 @@ variables:
   solution: 'cs/FASTER.sln'
 
 jobs:
-- job: Build C# using .NET (Windows)
+- job: 'dotNetWindows'
   strategy:
     maxParallel: 2
     matrix:
@@ -36,7 +36,7 @@ jobs:
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
 
-- job: Build C++ (Linux)
+- job: 'cppLinux'
   steps:
   - script: |
       sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
@@ -54,13 +54,13 @@ jobs:
       cd ../../build/Release
       cmake -DCMAKE_BUILD_TYPE=Release ../..
       make -j
-    displayNmae: 'Build'
+    displayName: 'Build'
 
-- job: Build C# using Mono (Linux)
+- job: 'monoLinux'
   steps:
   - script: |
       mono --version
       msbuild /version
-      
+
       nuget restore $(solution)
       msbuild /p:Configuration=Release $(solution)
