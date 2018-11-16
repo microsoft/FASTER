@@ -1,13 +1,12 @@
-# .NET Desktop
-# Build and run tests for .NET Desktop or Windows classic desktop solutions.
-# Add steps that publish symbols, save build artifacts, and more:
-# https://docs.microsoft.com/vsts/pipelines/apps/windows/dot-net
-
 variables:
   solution: 'cs/FASTER.sln'
 
 jobs:
-- job: Build
+- job: 'csharpWindows'  
+  pool:
+    vmImage: vs2017-win2016    
+  displayName: 'C# (Windows)'
+
   strategy:
     maxParallel: 2
     matrix:
@@ -23,6 +22,7 @@ jobs:
       x64-Release:
         buildPlatform: 'x64'
         buildConfiguration: 'Release'
+  
   steps:
   - task: NuGetToolInstaller@0
 
@@ -40,3 +40,40 @@ jobs:
     inputs:
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
+
+- job: 'cppLinux'
+  pool:
+    vmImage: ubuntu-16.04
+  displayName: 'C++ (Linux)'
+  
+  steps:
+  - script: |
+      sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+      sudo apt update
+      sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
+    displayName: 'Install depdendencies'
+  
+  - script: |
+      export CXX='g++-7'
+      cd cc
+      mkdir -p build/Debug build/Release
+      cd build/Debug
+      cmake -DCMAKE_BUILD_TYPE=Debug ../..
+      make -j
+      cd ../../build/Release
+      cmake -DCMAKE_BUILD_TYPE=Release ../..
+      make -j
+    displayName: 'Compile'
+
+- job: 'csharpLinux'
+  pool:
+    vmImage: ubuntu-16.04
+  displayName: 'C# (Linux)'
+
+  steps:
+  - script: |
+      mono --version
+      msbuild /version
+      msbuild /t:restore $(solution)
+      msbuild /p:Configuration=Release $(solution)
+    displayName: 'Build'
