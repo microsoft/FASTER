@@ -19,7 +19,7 @@ namespace FASTER.core
         /// <summary>
         /// Key pointer
         /// </summary>
-        public IntPtr key;
+        public Key key;
 
         /// <summary>
         /// Logical address

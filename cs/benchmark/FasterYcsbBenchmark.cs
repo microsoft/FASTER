@@ -25,7 +25,7 @@ namespace FASTER.benchmark
             ReadModifyWrite = 2
         }
 
-        const bool kUseSyntheticData = true;
+        const bool kUseSyntheticData = false;
         const bool kUseSmallData = false;
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
@@ -37,7 +37,6 @@ namespace FASTER.benchmark
         Key[] init_keys_;
 
         Key[] txn_keys_;
-        Key* txn_keys_ptr;
 
         long idx_ = 0;
 
@@ -131,9 +130,7 @@ namespace FASTER.benchmark
                     chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 }
 
-                var local_txn_keys_ptr = txn_keys_ptr + chunk_idx;
-
-                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !done; ++idx, ++local_txn_keys_ptr)
+                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !done; ++idx)
                 {
                     Op op;
                     int r = (int)rng.Generate(100);
@@ -158,13 +155,13 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(local_txn_keys_ptr, &value, null, 1);
+                                store.Upsert(ref txn_keys_[idx], &value, null, 1);
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                Status result = store.Read(local_txn_keys_ptr, null, (Output*)&value, null, 1);
+                                Status result = store.Read(ref txn_keys_[idx], null, (Output*)&value, null, 1);
                                 if (result == Status.OK)
                                 {
                                     ++reads_done;
@@ -173,7 +170,7 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = store.RMW(local_txn_keys_ptr, input_ptr + (idx & 0x7), null, 1);
+                                Status result = store.RMW(ref txn_keys_[idx], input_ptr + (idx & 0x7), null, 1);
                                 if (result == Status.OK)
                                 {
                                     ++writes_done;
@@ -351,8 +348,7 @@ namespace FASTER.benchmark
                         }
                     }
 
-                    Key key = init_keys_[idx];
-                    store.Upsert(&key, &value, null, 1);
+                    store.Upsert(ref init_keys_[idx], &value, null, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -503,7 +499,6 @@ namespace FASTER.benchmark
 
                 txn_keys_ = new Key[kTxnCount];
                 GCHandle handle2 = GCHandle.Alloc(txn_keys_, GCHandleType.Pinned);
-                txn_keys_ptr = (Key*)handle2.AddrOfPinnedObject();
 
                 count = 0;
                 long offset = 0;
@@ -581,8 +576,6 @@ namespace FASTER.benchmark
             RandomGenerator generator = new RandomGenerator();
 
             txn_keys_ = new Key[kTxnCount];
-            GCHandle handle2 = GCHandle.Alloc(txn_keys_, GCHandleType.Pinned);
-            txn_keys_ptr = (Key*)handle2.AddrOfPinnedObject();
 
             for (int idx = 0; idx < kTxnCount; idx++)
             {

@@ -40,7 +40,7 @@ namespace FASTER.core
 
         public OperationType type;
 
-        public Key* key;
+        public Key key;
 
         public Input* input;
 

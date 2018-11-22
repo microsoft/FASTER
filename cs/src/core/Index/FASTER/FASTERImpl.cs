@@ -57,7 +57,7 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead(
-                                    Key* key, 
+                                    ref Key key, 
                                     Input* input, 
                                     Output* output, 
                                     Context* userContext,
@@ -70,7 +70,7 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var latestRecordVersion = -1;
 
-            var hash = Key.GetHashCode(key);
+            var hash = key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -86,10 +86,10 @@ namespace FASTER.core
                 {
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                     latestRecordVersion = Layout.GetInfo(physicalAddress)->Version;
-                    if (!Key.Equals(key, Layout.GetKey(physicalAddress)))
+                    if (!key.Equals(ref Layout.GetKey(physicalAddress)))
                     {
                         logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
-                        TraceBackForKeyMatch(key, 
+                        TraceBackForKeyMatch(ref key, 
                                              logicalAddress, 
                                              hlog.HeadAddress, 
                                              out logicalAddress, 
@@ -135,7 +135,7 @@ namespace FASTER.core
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
                 var src = Layout.GetValue(physicalAddress);
-                Functions.ConcurrentReader(key, input, src, output);
+                Functions.ConcurrentReader(ref key, input, src, output);
                 return OperationStatus.SUCCESS;
             }
 
@@ -143,7 +143,7 @@ namespace FASTER.core
             else if (logicalAddress >= hlog.HeadAddress)
             {
                 var src = Layout.GetValue(physicalAddress);
-                Functions.SingleReader(key, input, src, output);
+                Functions.SingleReader(ref key, input, src, output);
                 return OperationStatus.SUCCESS;
             }
 
@@ -175,7 +175,7 @@ namespace FASTER.core
             CreatePendingContext:
             {
                 pendingContext.type = OperationType.READ;
-                pendingContext.key = Key.MoveToContext(key);
+                pendingContext.key = key.MoveToContext(ref key);
                 pendingContext.input = Input.MoveToContext(input);
                 pendingContext.output = Output.MoveToContext(output);
                 pendingContext.userContext = Context.MoveToContext(userContext);
@@ -219,7 +219,7 @@ namespace FASTER.core
             {
                 var physicalAddress = (long)request.record.GetValidPointer();
                 Debug.Assert(Layout.GetInfo(physicalAddress)->Version <= ctx.version);
-                Functions.SingleReader(pendingContext.key,
+                Functions.SingleReader(ref pendingContext.key,
                                        pendingContext.input,
                                        Layout.GetValue(physicalAddress),
                                        pendingContext.output);
@@ -254,7 +254,7 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
 
-            var hash = Key.GetHashCode(pendingContext.key);
+            var hash = pendingContext.key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             #region Trace back record in in-memory HybridLog
@@ -264,10 +264,10 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!Key.Equals(pendingContext.key, Layout.GetKey(physicalAddress)))
+                if (!pendingContext.key.Equals(ref Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
-                    TraceBackForKeyMatch(pendingContext.key,
+                    TraceBackForKeyMatch(ref pendingContext.key,
                                             logicalAddress,
                                             hlog.HeadAddress,
                                             out logicalAddress,
@@ -291,8 +291,8 @@ namespace FASTER.core
             RecordInfo.WriteInfo(recordInfo, ctx.version,
                                  true, false, false,
                                  entry.Address);
-            Key.Copy((Key*)request.key, Layout.GetKey(newPhysicalAddress));
-            Functions.SingleWriter((Key*)request.key,
+            request.key.Copy(ref Layout.GetKey(newPhysicalAddress));
+            Functions.SingleWriter(ref request.key,
                                    Layout.GetValue(physicalAddress),
                                    Layout.GetValue(newPhysicalAddress));
 
@@ -349,7 +349,7 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalUpsert(
-                            Key* key, Value* value,
+                            ref Key key, Value* value,
                             Context* userContext,
                             ref PendingContext pendingContext)
         {
@@ -362,7 +362,7 @@ namespace FASTER.core
             var version = default(int);
             var latestRecordVersion = -1;
 
-            var hash = Key.GetHashCode(key);
+            var hash = key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -376,10 +376,10 @@ namespace FASTER.core
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = Layout.GetInfo(physicalAddress)->Version;
-                if (!Key.Equals(key, Layout.GetKey(physicalAddress)))
+                if (!key.Equals(ref Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
-                    TraceBackForKeyMatch(key,
+                    TraceBackForKeyMatch(ref key,
                                         logicalAddress,
                                         hlog.ReadOnlyAddress,
                                         out logicalAddress,
@@ -392,7 +392,7 @@ namespace FASTER.core
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
                 var dst = Layout.GetValue(physicalAddress);
-                Functions.ConcurrentWriter(key, value, dst);
+                Functions.ConcurrentWriter(ref key, value, dst);
                 return OperationStatus.SUCCESS;
             }
 
@@ -479,7 +479,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
-                Functions.ConcurrentWriter(key, value, Layout.GetValue(physicalAddress));
+                Functions.ConcurrentWriter(ref key, value, Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -491,15 +491,15 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 // Immutable region or new record
-                var recordSize = Layout.EstimatePhysicalSize(key, value);
+                var recordSize = Layout.EstimatePhysicalSize(ref key, value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(Layout.GetInfo(newPhysicalAddress),
                                         threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                Key.Copy(key, Layout.GetKey(newPhysicalAddress));
-                Functions.SingleWriter(key, value,
+                key.Copy(ref Layout.GetKey(newPhysicalAddress));
+                Functions.SingleWriter(ref key, value,
                                         Layout.GetValue(newPhysicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);
@@ -531,7 +531,7 @@ namespace FASTER.core
             CreatePendingContext:
             {
                 pendingContext.type = OperationType.UPSERT;
-                pendingContext.key = Key.MoveToContext(key);
+                pendingContext.key = key.MoveToContext(ref key);
                 pendingContext.value = Value.MoveToContext(value);
                 pendingContext.userContext = Context.MoveToContext(userContext);
                 pendingContext.entry.word = entry.word;
@@ -560,7 +560,7 @@ namespace FASTER.core
 
             if(status == OperationStatus.RETRY_NOW)
             {
-                return InternalUpsert(key, value, userContext, ref pendingContext);
+                return InternalUpsert(ref key, value, userContext, ref pendingContext);
             }
             else
             {
@@ -607,7 +607,7 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW(
-                                   Key* key, Input* input,
+                                   ref Key key, Input* input,
                                    Context* userContext,
                                    ref PendingContext pendingContext)
         {
@@ -621,7 +621,7 @@ namespace FASTER.core
             var status = default(OperationStatus);
             var latchOperation = LatchOperation.None;
 
-            var hash = Key.GetHashCode(key);
+            var hash = key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -638,7 +638,7 @@ namespace FASTER.core
                 if (!Key.Equals(key, Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
-                    TraceBackForKeyMatch(key, logicalAddress,
+                    TraceBackForKeyMatch(ref key, logicalAddress,
                                             hlog.HeadAddress,
                                             out logicalAddress,
                                             out physicalAddress);
@@ -649,7 +649,7 @@ namespace FASTER.core
             // Optimization for the most common case
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
-                Functions.InPlaceUpdater(key, input, Layout.GetValue(physicalAddress));
+                Functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
             }
 
@@ -740,7 +740,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                Functions.InPlaceUpdater(key, input, Layout.GetValue(physicalAddress));
+                Functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -787,7 +787,7 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
-                                Layout.GetInitialPhysicalSize(key, input) :
+                                Layout.GetInitialPhysicalSize(ref key, input) :
                                 Layout.GetPhysicalSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -795,15 +795,15 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(recordInfo, threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                Key.Copy(key, Layout.GetKey(newPhysicalAddress));
+                key.Copy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    Functions.InitialUpdater(key, input, Layout.GetValue(newPhysicalAddress));
+                    Functions.InitialUpdater(ref key, input, Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    Functions.CopyUpdater(key, input,
+                    Functions.CopyUpdater(ref key, input,
                                             Layout.GetValue(physicalAddress),
                                             Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
@@ -845,7 +845,7 @@ namespace FASTER.core
             CreateFailureContext:
             {
                 pendingContext.type = OperationType.RMW;
-                pendingContext.key = Key.MoveToContext(key);
+                pendingContext.key = key.MoveToContext(ref key);
                 pendingContext.input = Input.MoveToContext(input);
                 pendingContext.userContext = Context.MoveToContext(userContext);
                 pendingContext.entry.word = entry.word;
@@ -874,7 +874,7 @@ namespace FASTER.core
 
             if(status == OperationStatus.RETRY_NOW)
             {
-                return InternalRMW(key, input, userContext, ref pendingContext);
+                return InternalRMW(ref key, input, userContext, ref pendingContext);
             }
             else
             {
@@ -922,7 +922,7 @@ namespace FASTER.core
             var latchOperation = LatchOperation.None;
             var key = pendingContext.key;
 
-            var hash = Key.GetHashCode(key);
+            var hash = key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -939,7 +939,7 @@ namespace FASTER.core
                 if (!Key.Equals(key, Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
-                    TraceBackForKeyMatch(key, logicalAddress,
+                    TraceBackForKeyMatch(ref key, logicalAddress,
                                             hlog.HeadAddress,
                                             out logicalAddress,
                                             out physicalAddress);
@@ -1016,7 +1016,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                Functions.InPlaceUpdater(pendingContext.key, pendingContext.input, Layout.GetValue(physicalAddress));
+                Functions.InPlaceUpdater(ref pendingContext.key, pendingContext.input, Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; 
             }
@@ -1053,7 +1053,7 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
-                                Layout.GetInitialPhysicalSize(pendingContext.key,
+                                Layout.GetInitialPhysicalSize(ref pendingContext.key,
                                                               pendingContext.input) :
                                 Layout.GetPhysicalSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
@@ -1062,17 +1062,17 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(recordInfo, pendingContext.version,
                                         true, false, false,
                                         entry.Address);
-                Key.Copy(key, Layout.GetKey(newPhysicalAddress));
+                key.Copy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    Functions.InitialUpdater(pendingContext.key, 
+                    Functions.InitialUpdater(ref pendingContext.key, 
                                              pendingContext.input,
                                              Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    Functions.CopyUpdater(pendingContext.key, 
+                    Functions.CopyUpdater(ref pendingContext.key, 
                                             pendingContext.input,
                                             Layout.GetValue(physicalAddress),
                                             Layout.GetValue(newPhysicalAddress));
@@ -1183,7 +1183,7 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var status = default(OperationStatus);
 
-            var hash = Key.GetHashCode(pendingContext.key);
+            var hash = pendingContext.key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             #region Trace Back for Record on In-Memory HybridLog
@@ -1196,7 +1196,7 @@ namespace FASTER.core
                 if (!Key.Equals(pendingContext.key, Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
-                    TraceBackForKeyMatch(pendingContext.key,
+                    TraceBackForKeyMatch(ref pendingContext.key,
                                             logicalAddress,
                                             hlog.HeadAddress,
                                             out logicalAddress,
@@ -1214,7 +1214,7 @@ namespace FASTER.core
             #region Create record in mutable region
             if (request.logicalAddress < hlog.BeginAddress)
             {
-                recordSize = Layout.GetInitialPhysicalSize(pendingContext.key,
+                recordSize = Layout.GetInitialPhysicalSize(ref pendingContext.key,
                                                            pendingContext.input);
             }
             else
@@ -1228,17 +1228,17 @@ namespace FASTER.core
             RecordInfo.WriteInfo(recordInfo, ctx.version,
                                 true, false, false,
                                 entry.Address);
-            Key.Copy(pendingContext.key, Layout.GetKey(newPhysicalAddress));
+            pendingContext.key.Copy(ref Layout.GetKey(newPhysicalAddress));
             if (request.logicalAddress < hlog.BeginAddress)
             {
-                Functions.InitialUpdater(pendingContext.key,
+                Functions.InitialUpdater(ref pendingContext.key,
                                          pendingContext.input,
                                          Layout.GetValue(newPhysicalAddress));
                 status = OperationStatus.NOTFOUND;
             }
             else
             {
-                Functions.CopyUpdater(pendingContext.key,
+                Functions.CopyUpdater(ref pendingContext.key,
                                       pendingContext.input,
                                       Layout.GetValue(physicalAddress),
                                       Layout.GetValue(newPhysicalAddress));
@@ -1323,14 +1323,14 @@ namespace FASTER.core
                 switch (pendingContext.type)
                 {
                     case OperationType.READ:
-                        internalStatus = InternalRead(pendingContext.key,
+                        internalStatus = InternalRead(ref pendingContext.key,
                                                       pendingContext.input,
                                                       pendingContext.output,
                                                       pendingContext.userContext,
                                                       ref pendingContext);
                         break;
                     case OperationType.UPSERT:
-                        internalStatus = InternalUpsert(pendingContext.key,
+                        internalStatus = InternalUpsert(ref pendingContext.key,
                                                         pendingContext.value,
                                                         pendingContext.userContext,
                                                         ref pendingContext);
@@ -1358,7 +1358,7 @@ namespace FASTER.core
                 // Issue asynchronous I/O request
                 AsyncIOContext request = default(AsyncIOContext);
                 request.id = pendingContext.id;
-                request.key = (IntPtr)pendingContext.key;
+                request.key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.callbackQueue = ctx.readyResponses;
                 request.record = default(SectorAlignedMemory);
@@ -1381,11 +1381,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void AcquireSharedLatch(Key* key)
+        private void AcquireSharedLatch(Key key)
         {
             var bucket = default(HashBucket*);
             var slot = default(int);
-            var hash = Key.GetHashCode(key);
+            var hash = key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
@@ -1393,11 +1393,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReleaseSharedLatch(Key* key)
+        private void ReleaseSharedLatch(Key key)
         {
             var bucket = default(HashBucket*);
             var slot = default(int);
-            var hash = Key.GetHashCode(key);
+            var hash = key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
@@ -1449,7 +1449,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(
-                                    Key* key,
+                                    ref Key key,
                                     long fromLogicalAddress,
                                     long minOffset,
                                     out long foundLogicalAddress,
@@ -1459,7 +1459,7 @@ namespace FASTER.core
             while (foundLogicalAddress >= minOffset)
             {
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
-                if (Key.Equals(key, Layout.GetKey(foundPhysicalAddress)))
+                if (key.Equals(Layout.GetKey(foundPhysicalAddress)))
                 {
                     return true;
                 }
@@ -1628,7 +1628,7 @@ namespace FASTER.core
                         if (logicalAddress >= hlog.HeadAddress)
                         {
                             var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                            var hash = Key.GetHashCode(Layout.GetKey(physicalAddress));
+                            var hash = Layout.GetKey(physicalAddress).GetHashCode64();
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
@@ -1731,7 +1731,7 @@ namespace FASTER.core
             while (logicalAddress >= hlog.HeadAddress)
             {
                 var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                var hash = Key.GetHashCode(Layout.GetKey(physicalAddress));
+                var hash = Layout.GetKey(physicalAddress).GetHashCode64();
                 if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
                 {
                     return logicalAddress;

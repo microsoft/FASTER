@@ -98,7 +98,8 @@ namespace FASTER.core
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
 
             hlog = new PersistentMemoryMalloc(logSettings, this);
-            var recordSize = Layout.EstimatePhysicalSize(null, null);
+            Key key = default(Key);
+            var recordSize = Layout.EstimatePhysicalSize(ref key, null);
             Initialize(size, hlog.GetSectorSize());
 
             _systemState = default(SystemState);
@@ -265,10 +266,10 @@ namespace FASTER.core
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(Key* key, Input* input, Output* output, Context* userContext, long monotonicSerialNum)
+        public Status Read(ref Key key, Input* input, Output* output, Context* userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
-            var internalStatus = InternalRead(key, input, output, userContext, ref context);
+            var internalStatus = InternalRead(ref key, input, output, userContext, ref context);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -292,10 +293,10 @@ namespace FASTER.core
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(Key* key, Value* desiredValue, Context* userContext, long monotonicSerialNum)
+        public Status Upsert(ref Key key, Value* desiredValue, Context* userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
-            var internalStatus = InternalUpsert(key, desiredValue, userContext, ref context);
+            var internalStatus = InternalUpsert(ref key, desiredValue, userContext, ref context);
             var status = default(Status);
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -319,10 +320,10 @@ namespace FASTER.core
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(Key* key, Input* input, Context* userContext, long monotonicSerialNum)
+        public Status RMW(ref Key key, Input* input, Context* userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
-            var internalStatus = InternalRMW(key, input, userContext, ref context);
+            var internalStatus = InternalRMW(ref key, input, userContext, ref context);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -379,8 +380,7 @@ namespace FASTER.core
                 {
                     if (Key.HasObjectsToSerialize())
                     {
-                        Key* key = Layout.GetKey(ptr);
-                        Key.Free(key);
+                        Layout.GetKey(ptr).Free();
                     }
                     if (Value.HasObjectsToSerialize())
                     {
@@ -406,7 +406,7 @@ namespace FASTER.core
                 {
                     if (Key.HasObjectsToSerialize())
                     {
-                        Key.Deserialize(Layout.GetKey(ptr), stream);
+                        Layout.GetKey(ptr).Deserialize(stream);
                     }
 
                     if (Value.HasObjectsToSerialize())
@@ -437,11 +437,11 @@ namespace FASTER.core
 
                     if (Key.HasObjectsToSerialize())
                     {
-                        Key* key = Layout.GetKey(ptr);
-                        Key.Serialize(key, stream);
-                        ((AddressInfo*)key)->Address = pos;
-                        ((AddressInfo*)key)->Size = (int)(stream.Position - pos);
-                        addr.Add((long)key);
+                        Layout.GetKey(ptr).Serialize(stream);
+                        var key_address = Layout.GetKeyAddress(ptr);
+                        ((AddressInfo*)key_address)->Address = pos;
+                        ((AddressInfo*)key_address)->Size = (int)(stream.Position - pos);
+                        addr.Add(key_address);
                     }
 
                     if (Value.HasObjectsToSerialize())
@@ -482,8 +482,8 @@ namespace FASTER.core
 
                     if (Key.HasObjectsToSerialize())
                     {
-                        Key* key = Layout.GetKey(ptr);
-                        var addr = ((AddressInfo*)key)->Address;
+                        var key_addr = Layout.GetKeyAddress(ptr);
+                        var addr = ((AddressInfo*)key_addr)->Address;
 
                         // If object pointer is greater than kObjectSize from starting object pointer
                         if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
@@ -492,7 +492,7 @@ namespace FASTER.core
                         }
 
                         if (addr < minObjAddress) minObjAddress = addr;
-                        addr += ((AddressInfo*)key)->Size;
+                        addr += ((AddressInfo*)key_addr)->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
                     }
 

@@ -188,7 +188,7 @@ namespace FASTER.core
                     internalStatus = InternalRetryPendingRMW(ctx, ref pendingContext);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(pendingContext.key, 
+                    internalStatus = InternalUpsert(ref pendingContext.key, 
                                                     pendingContext.value, 
                                                     pendingContext.userContext, 
                                                     ref pendingContext);
@@ -217,12 +217,12 @@ namespace FASTER.core
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
-                        Functions.RMWCompletionCallback(pendingContext.key,
+                        Functions.RMWCompletionCallback(ref pendingContext.key,
                                                 pendingContext.input,
                                                 pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
-                        Functions.UpsertCompletionCallback(pendingContext.key,
+                        Functions.UpsertCompletionCallback(ref pendingContext.key,
                                                  pendingContext.value,
                                                  pendingContext.userContext);
                         break;
@@ -268,7 +268,7 @@ namespace FASTER.core
                 if (Key.HasObjectsToSerialize())
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
-                    Key.Free(Layout.GetKey(physicalAddress));
+                    Layout.GetKey(physicalAddress).Free();
                 }
                 if (Value.HasObjectsToSerialize())
                 {
@@ -295,7 +295,7 @@ namespace FASTER.core
 
                     if (pendingContext.type == OperationType.READ)
                     {
-                        Functions.ReadCompletionCallback(pendingContext.key, 
+                        Functions.ReadCompletionCallback(ref pendingContext.key, 
                                                          pendingContext.input, 
                                                          pendingContext.output, 
                                                          pendingContext.userContext,
@@ -303,7 +303,7 @@ namespace FASTER.core
                     }
                     else
                     {
-                        Functions.RMWCompletionCallback(pendingContext.key,
+                        Functions.RMWCompletionCallback(ref pendingContext.key,
                                                         pendingContext.input,
                                                         pendingContext.userContext,
                                                         status);

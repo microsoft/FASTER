@@ -49,7 +49,7 @@ namespace FASTER.core
                 long numBytes = 0;
                 if (Key.HasObjectsToSerialize())
                 {
-                    var x = (AddressInfo*)Layout.GetKey((long)record);
+                    var x = (AddressInfo*)Layout.GetKeyAddress((long)record);
                     numBytes += x->Size;
                     startAddress = x->Address;
                 }
@@ -74,7 +74,7 @@ namespace FASTER.core
             // Parse the key and value objects
             MemoryStream ms = new MemoryStream(ctx.objBuffer.buffer);
             ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
-            Key.Deserialize(Layout.GetKey((long)record), ms);
+            Layout.GetKey((long)record).Deserialize(ms);
             Value.Deserialize(Layout.GetValue((long)record), ms);
             ctx.objBuffer.Return();
             return true;
@@ -101,7 +101,7 @@ namespace FASTER.core
                 //We have the complete record.
                 if (RetrievedObjects(record, ctx))
                 {
-                    if (Key.Equals((Key*)ctx.key, Layout.GetKey((long)record)))
+                    if (ctx.key.Equals(Layout.GetKey((long)record)))
                     {
                         //The keys are same, so I/O is complete
                         // ctx.record = result.record;
@@ -120,7 +120,7 @@ namespace FASTER.core
                             if (Key.HasObjectsToSerialize())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                Key.Free(Layout.GetKey(physicalAddress));
+                                Layout.GetKey(physicalAddress).Free();
                             }
                             if (Value.HasObjectsToSerialize())
                             {

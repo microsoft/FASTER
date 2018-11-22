@@ -75,64 +75,52 @@ namespace FASTER.core
         public long value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public new long GetHashCode()
+        public long GetHashCode64()
         {
             return Utility.GetHashCode(value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool Equals(Key* k1, Key* k2)
+        public bool Equals(ref Key k2)
         {
-            return k1->value == k2->value;
+            return value == k2.value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static long GetHashCode(Key* key)
+        public void Copy(ref Key dst)
         {
-            return Utility.GetHashCode(*((long*)key));
+            dst.value = value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Copy(Key* src, Key* dst)
-        {
-            dst->value = src->value;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(Key* key)
+        public int GetLength()
         {
             return kSizeInBytes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int EstimateAveragePhysicalSize()
-        {
-            return kSizeInBytes;
-        }
-        
         public static bool HasObjectsToSerialize()
         {
             return false;
         }
 
-        public static void Serialize(Key* key, Stream toStream)
+        public void Serialize(Stream toStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Deserialize(Key* key, Stream fromStream)
+        public void Deserialize(Stream fromStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Free(Key* key)
+        public void Free()
         {
             throw new InvalidOperationException();
         }
 
-        public static Key* MoveToContext(Key* key)
+        public ref Key MoveToContext(ref Key key)
         {
-            return key;
+            return ref key;
         }
     }
 #elif VARIABLE_SIZE_KEY

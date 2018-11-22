@@ -19,36 +19,42 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Key* GetKey(long physicalAddress)
+        public static ref Key GetKey(long physicalAddress)
         {
-            return (Key*)((byte*)physicalAddress + RecordInfo.GetLength());
+            return ref Unsafe.AsRef<Key>((Key*)((byte*)physicalAddress + RecordInfo.GetLength()));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long GetKeyAddress(long physicalAddress)
+        {
+            return (long)((byte*)physicalAddress + RecordInfo.GetLength());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Value* GetValue(long physicalAddress)
         {
-            return (Value*)((byte*)physicalAddress + RecordInfo.GetLength() + Key.GetLength(default(Key*)));
+            return (Value*)((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetPhysicalSize(long physicalAddress)
         {
-            return RecordInfo.GetLength() + Key.GetLength(default(Key*)) + Value.GetLength(default(Value*));
+            return RecordInfo.GetLength() + default(Key).GetLength() + Value.GetLength(default(Value*));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetInitialPhysicalSize(Key* key, Input* input)
+        public static int GetInitialPhysicalSize(ref Key key, Input* input)
         {
             return 
-                RecordInfo.GetLength() + 
-                Key.GetLength(default(Key*)) + 
-                Functions.InitialValueLength(key, input);
+                RecordInfo.GetLength() +
+                key.GetLength() + 
+                Functions.InitialValueLength(ref key, input);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int EstimatePhysicalSize(Key* key, Value* value)
+        public static int EstimatePhysicalSize(ref Key key, Value* value)
         {
-            return RecordInfo.GetLength() + Key.GetLength(key) + Value.GetLength(value);
+            return RecordInfo.GetLength() + key.GetLength() + Value.GetLength(value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,7 +71,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetAveragePhysicalSize()
         {
-            return RecordInfo.GetLength() + Key.GetLength(default(Key*)) + Value.GetLength(default(Value*));
+            return RecordInfo.GetLength() + default(Key).GetLength() + Value.GetLength(default(Value*));
         }
     }
 }

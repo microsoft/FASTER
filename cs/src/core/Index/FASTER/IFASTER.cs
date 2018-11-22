@@ -60,7 +60,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status Read(Key* key, Input* input, Output* output, Context* context, long lsn);
+        Status Read(ref Key key, Input* input, Output* output, Context* context, long lsn);
 
         /// <summary>
         /// (Blind) upsert operation
@@ -70,7 +70,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status Upsert(Key* key, Value* value, Context* context, long lsn);
+        Status Upsert(ref Key key, Value* value, Context* context, long lsn);
 
         /// <summary>
         /// Atomic read-modify-write operation
@@ -80,7 +80,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status RMW(Key* key, Input* input, Context* context, long lsn);
+        Status RMW(ref Key key, Input* input, Context* context, long lsn);
 
         /// <summary>
         /// Complete all pending operations issued by this session

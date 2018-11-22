@@ -342,7 +342,6 @@ namespace FASTER.core
                                      long pagePhysicalAddress,
                                      int version)
         {
-            var key = default(Key*);
             var hash = default(long);
             var tag = default(ushort);
             var info = default(RecordInfo*);
@@ -366,8 +365,7 @@ namespace FASTER.core
 
                 if (!info->Invalid)
                 {
-                    key = Layout.GetKey(recordStart);
-                    hash = Key.GetHashCode(key);
+                    hash = Layout.GetKey(recordStart).GetHashCode64();
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default(HashBucketEntry);
