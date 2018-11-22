@@ -468,7 +468,7 @@ namespace FASTER.benchmark
                     int size = stream.Read(chunk, 0, kFileChunkSize);
                     for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
                     {
-                        init_keys_[count] = *((Key*)(chunk_ptr + idx));
+                        init_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
                     }
                     if (size == kFileChunkSize)
@@ -498,7 +498,6 @@ namespace FASTER.benchmark
                 Console.WriteLine("loading txns from " + txn_filename + " into memory...");
 
                 txn_keys_ = new Key[kTxnCount];
-                GCHandle handle2 = GCHandle.Alloc(txn_keys_, GCHandleType.Pinned);
 
                 count = 0;
                 long offset = 0;
@@ -509,7 +508,7 @@ namespace FASTER.benchmark
                     int size = stream.Read(chunk, 0, kFileChunkSize);
                     for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
                     {
-                        txn_keys_[count] = *((Key*)(chunk_ptr + idx));
+                        txn_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
                     }
                     if (size == kFileChunkSize)
