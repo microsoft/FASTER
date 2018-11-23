@@ -265,12 +265,12 @@ namespace FASTER.core
                 }
                 
                 // Delete key, value, record
-                if (Key.HasObjectsToSerialize())
+                if (keyHasObjectsToSerialize)
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
                     Layout.GetKey(physicalAddress).Free();
                 }
-                if (Value.HasObjectsToSerialize())
+                if (valueHasObjectsToSerialize)
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
                     Value.Free(Layout.GetValue(physicalAddress));

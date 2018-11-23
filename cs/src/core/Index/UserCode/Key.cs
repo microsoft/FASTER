@@ -67,7 +67,7 @@ namespace FASTER.core
     }
 #elif EIGHT_BYTE_KEY
     [StructLayout(LayoutKind.Explicit, Size = kSizeInBytes)]
-    public unsafe struct Key
+    public unsafe struct Key : IKey<Key>
     {
         public const int kSizeInBytes = sizeof(long);
 
@@ -87,9 +87,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Copy(ref Key dst)
+        public void ShallowCopy(ref Key dst)
         {
-            dst.value = value;
+            dst = this;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -98,7 +98,7 @@ namespace FASTER.core
             return kSizeInBytes;
         }
 
-        public static bool HasObjectsToSerialize()
+        public bool HasObjectsToSerialize()
         {
             return false;
         }

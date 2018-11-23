@@ -39,7 +39,7 @@ namespace FASTER.core
 
         private bool RetrievedObjects(byte* record, AsyncIOContext ctx)
         {
-            if (!Key.HasObjectsToSerialize() && !Value.HasObjectsToSerialize())
+            if (!HasObjects())
                 return true;
 
             if (ctx.objBuffer.buffer == null)
@@ -47,14 +47,14 @@ namespace FASTER.core
                 // Issue IO for objects
                 long startAddress = -1;
                 long numBytes = 0;
-                if (Key.HasObjectsToSerialize())
+                if (keyHasObjectsToSerialize)
                 {
                     var x = (AddressInfo*)Layout.GetKeyAddress((long)record);
                     numBytes += x->Size;
                     startAddress = x->Address;
                 }
 
-                if (Value.HasObjectsToSerialize())
+                if (valueHasObjectsToSerialize)
                 {
                     var x = (AddressInfo*)Layout.GetValue((long)record);
                     numBytes += x->Size;
@@ -117,12 +117,12 @@ namespace FASTER.core
                         {
 
                             // Delete key, value, record
-                            if (Key.HasObjectsToSerialize())
+                            if (keyHasObjectsToSerialize)
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
                                 Layout.GetKey(physicalAddress).Free();
                             }
-                            if (Value.HasObjectsToSerialize())
+                            if (valueHasObjectsToSerialize)
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
                                 Value.Free(Layout.GetValue(physicalAddress));

@@ -72,6 +72,9 @@ namespace FASTER.core
         private static ExecutionContext threadCtx = default(ExecutionContext);
 
 
+        private readonly bool keyHasObjectsToSerialize;
+        private readonly bool valueHasObjectsToSerialize;
+
         static FasterKV()
         {
             if (breakWhenClassIsLoaded)
@@ -96,6 +99,9 @@ namespace FASTER.core
 
             Config.CheckpointDirectory = checkpointSettings.CheckpointDir;
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
+
+            keyHasObjectsToSerialize = default(Key).HasObjectsToSerialize();
+            valueHasObjectsToSerialize = Value.HasObjectsToSerialize();
 
             hlog = new PersistentMemoryMalloc(logSettings, this);
             Key key = default(Key);
@@ -378,11 +384,11 @@ namespace FASTER.core
             {
                 if (!Layout.GetInfo(ptr)->Invalid)
                 {
-                    if (Key.HasObjectsToSerialize())
+                    if (keyHasObjectsToSerialize)
                     {
                         Layout.GetKey(ptr).Free();
                     }
-                    if (Value.HasObjectsToSerialize())
+                    if (valueHasObjectsToSerialize)
                     {
                         Value* value = Layout.GetValue(ptr);
                         Value.Free(value);
@@ -404,12 +410,12 @@ namespace FASTER.core
             {
                 if (!Layout.GetInfo(ptr)->Invalid)
                 {
-                    if (Key.HasObjectsToSerialize())
+                    if (keyHasObjectsToSerialize)
                     {
                         Layout.GetKey(ptr).Deserialize(stream);
                     }
 
-                    if (Value.HasObjectsToSerialize())
+                    if (valueHasObjectsToSerialize)
                     {
                         Value.Deserialize(Layout.GetValue(ptr), stream);
                     }
@@ -435,7 +441,7 @@ namespace FASTER.core
                 {
                     long pos = stream.Position;
 
-                    if (Key.HasObjectsToSerialize())
+                    if (keyHasObjectsToSerialize)
                     {
                         Layout.GetKey(ptr).Serialize(stream);
                         var key_address = Layout.GetKeyAddress(ptr);
@@ -444,7 +450,7 @@ namespace FASTER.core
                         addr.Add(key_address);
                     }
 
-                    if (Value.HasObjectsToSerialize())
+                    if (valueHasObjectsToSerialize)
                     {
                         pos = stream.Position;
                         Value* value = Layout.GetValue(ptr);
@@ -480,7 +486,7 @@ namespace FASTER.core
                 if (!Layout.GetInfo(ptr)->Invalid)
                 {
 
-                    if (Key.HasObjectsToSerialize())
+                    if (keyHasObjectsToSerialize)
                     {
                         var key_addr = Layout.GetKeyAddress(ptr);
                         var addr = ((AddressInfo*)key_addr)->Address;
@@ -497,7 +503,7 @@ namespace FASTER.core
                     }
 
 
-                    if (Value.HasObjectsToSerialize())
+                    if (valueHasObjectsToSerialize)
                     {
                         Value* value = Layout.GetValue(ptr);
                         var addr = ((AddressInfo*)value)->Address;
@@ -533,7 +539,7 @@ namespace FASTER.core
         /// <returns></returns>
         public bool HasObjects()
         {
-            return Key.HasObjectsToSerialize() || Value.HasObjectsToSerialize();
+            return keyHasObjectsToSerialize || valueHasObjectsToSerialize;
         }
     }
 }

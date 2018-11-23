@@ -291,7 +291,7 @@ namespace FASTER.core
             RecordInfo.WriteInfo(recordInfo, ctx.version,
                                  true, false, false,
                                  entry.Address);
-            request.key.Copy(ref Layout.GetKey(newPhysicalAddress));
+            request.key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
             Functions.SingleWriter(ref request.key,
                                    Layout.GetValue(physicalAddress),
                                    Layout.GetValue(newPhysicalAddress));
@@ -498,7 +498,7 @@ namespace FASTER.core
                                         threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                key.Copy(ref Layout.GetKey(newPhysicalAddress));
+                key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
                 Functions.SingleWriter(ref key, value,
                                         Layout.GetValue(newPhysicalAddress));
 
@@ -795,7 +795,7 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(recordInfo, threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                key.Copy(ref Layout.GetKey(newPhysicalAddress));
+                key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     Functions.InitialUpdater(ref key, input, Layout.GetValue(newPhysicalAddress));
@@ -1062,7 +1062,7 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(recordInfo, pendingContext.version,
                                         true, false, false,
                                         entry.Address);
-                key.Copy(ref Layout.GetKey(newPhysicalAddress));
+                key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     Functions.InitialUpdater(ref pendingContext.key, 
@@ -1228,7 +1228,7 @@ namespace FASTER.core
             RecordInfo.WriteInfo(recordInfo, ctx.version,
                                 true, false, false,
                                 entry.Address);
-            pendingContext.key.Copy(ref Layout.GetKey(newPhysicalAddress));
+            pendingContext.key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
             if (request.logicalAddress < hlog.BeginAddress)
             {
                 Functions.InitialUpdater(ref pendingContext.key,
