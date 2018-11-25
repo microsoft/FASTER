@@ -135,7 +135,7 @@ namespace FASTER.core
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
                 var src = Layout.GetValue(physicalAddress);
-                Functions.ConcurrentReader(ref key, input, src, output);
+                functions.ConcurrentReader(ref key, input, src, output);
                 return OperationStatus.SUCCESS;
             }
 
@@ -143,7 +143,7 @@ namespace FASTER.core
             else if (logicalAddress >= hlog.HeadAddress)
             {
                 var src = Layout.GetValue(physicalAddress);
-                Functions.SingleReader(ref key, input, src, output);
+                functions.SingleReader(ref key, input, src, output);
                 return OperationStatus.SUCCESS;
             }
 
@@ -219,7 +219,7 @@ namespace FASTER.core
             {
                 var physicalAddress = (long)request.record.GetValidPointer();
                 Debug.Assert(Layout.GetInfo(physicalAddress)->Version <= ctx.version);
-                Functions.SingleReader(ref pendingContext.key,
+                functions.SingleReader(ref pendingContext.key,
                                        pendingContext.input,
                                        Layout.GetValue(physicalAddress),
                                        pendingContext.output);
@@ -292,7 +292,7 @@ namespace FASTER.core
                                  true, false, false,
                                  entry.Address);
             request.key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
-            Functions.SingleWriter(ref request.key,
+            functions.SingleWriter(ref request.key,
                                    Layout.GetValue(physicalAddress),
                                    Layout.GetValue(newPhysicalAddress));
 
@@ -392,7 +392,7 @@ namespace FASTER.core
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
                 var dst = Layout.GetValue(physicalAddress);
-                Functions.ConcurrentWriter(ref key, value, dst);
+                functions.ConcurrentWriter(ref key, value, dst);
                 return OperationStatus.SUCCESS;
             }
 
@@ -479,7 +479,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
-                Functions.ConcurrentWriter(ref key, value, Layout.GetValue(physicalAddress));
+                functions.ConcurrentWriter(ref key, value, Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -499,7 +499,7 @@ namespace FASTER.core
                                         true, false, false,
                                         entry.Address);
                 key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
-                Functions.SingleWriter(ref key, value,
+                functions.SingleWriter(ref key, value,
                                         Layout.GetValue(newPhysicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);
@@ -649,7 +649,7 @@ namespace FASTER.core
             // Optimization for the most common case
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
-                Functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
             }
 
@@ -740,7 +740,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                Functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -787,7 +787,7 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
-                                Layout.GetInitialPhysicalSize(ref key, input) :
+                                Layout.GetInitialPhysicalSize(ref key, input, functions) :
                                 Layout.GetPhysicalSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -798,12 +798,12 @@ namespace FASTER.core
                 key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    Functions.InitialUpdater(ref key, input, Layout.GetValue(newPhysicalAddress));
+                    functions.InitialUpdater(ref key, input, Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    Functions.CopyUpdater(ref key, input,
+                    functions.CopyUpdater(ref key, input,
                                             Layout.GetValue(physicalAddress),
                                             Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
@@ -1016,7 +1016,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                Functions.InPlaceUpdater(ref pendingContext.key, pendingContext.input, Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref pendingContext.key, pendingContext.input, Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; 
             }
@@ -1054,7 +1054,7 @@ namespace FASTER.core
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
                                 Layout.GetInitialPhysicalSize(ref pendingContext.key,
-                                                              pendingContext.input) :
+                                                              pendingContext.input, functions) :
                                 Layout.GetPhysicalSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -1065,14 +1065,14 @@ namespace FASTER.core
                 key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    Functions.InitialUpdater(ref pendingContext.key, 
+                    functions.InitialUpdater(ref pendingContext.key, 
                                              pendingContext.input,
                                              Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    Functions.CopyUpdater(ref pendingContext.key, 
+                    functions.CopyUpdater(ref pendingContext.key, 
                                             pendingContext.input,
                                             Layout.GetValue(physicalAddress),
                                             Layout.GetValue(newPhysicalAddress));
@@ -1215,7 +1215,7 @@ namespace FASTER.core
             if (request.logicalAddress < hlog.BeginAddress)
             {
                 recordSize = Layout.GetInitialPhysicalSize(ref pendingContext.key,
-                                                           pendingContext.input);
+                                                           pendingContext.input, functions);
             }
             else
             {
@@ -1231,14 +1231,14 @@ namespace FASTER.core
             pendingContext.key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
             if (request.logicalAddress < hlog.BeginAddress)
             {
-                Functions.InitialUpdater(ref pendingContext.key,
+                functions.InitialUpdater(ref pendingContext.key,
                                          pendingContext.input,
                                          Layout.GetValue(newPhysicalAddress));
                 status = OperationStatus.NOTFOUND;
             }
             else
             {
-                Functions.CopyUpdater(ref pendingContext.key,
+                functions.CopyUpdater(ref pendingContext.key,
                                       pendingContext.input,
                                       Layout.GetValue(physicalAddress),
                                       Layout.GetValue(newPhysicalAddress));

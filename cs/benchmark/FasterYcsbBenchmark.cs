@@ -92,7 +92,7 @@ namespace FASTER.benchmark
 #else
             store = new FasterKV
 #endif
-                (kMaxKey / 2, new LogSettings { LogDevice = device });
+                (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device });
         }
 
         private void RunYcsb(int thread_idx)
@@ -210,6 +210,8 @@ namespace FASTER.benchmark
 
         public unsafe void Run()
         {
+            Native32.AffinitizeThreadShardedNuma((uint)0, 2);
+
             RandomGenerator rng = new RandomGenerator();
 
             LoadData();

@@ -43,12 +43,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetInitialPhysicalSize(ref Key key, Input* input)
+        public static int GetInitialPhysicalSize(ref Key key, Input* input, Functions functions)
         {
             return 
                 RecordInfo.GetLength() +
                 key.GetLength() + 
-                Functions.InitialValueLength(ref key, input);
+                functions.InitialValueLength(ref key, input);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

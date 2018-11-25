@@ -541,7 +541,7 @@ namespace FASTER.core
                             if (!prevThreadCtx.markers[EpochPhaseIdx.PersistenceCallback])
                             {
                                 // Thread local action
-                                Functions.PersistenceCallback(LightEpoch.threadEntryIndex, prevThreadCtx.serialNum);
+                                functions.PersistenceCallback(LightEpoch.threadEntryIndex, prevThreadCtx.serialNum);
 
                                 if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PersistenceCallback, prevThreadCtx.version))
                                 {

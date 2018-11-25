@@ -47,14 +47,14 @@ namespace FASTER.core
                 // Issue IO for objects
                 long startAddress = -1;
                 long numBytes = 0;
-                if (keyHasObjectsToSerialize)
+                if (default(Key).HasObjectsToSerialize())
                 {
                     var x = (AddressInfo*)Layout.GetKeyAddress((long)record);
                     numBytes += x->Size;
                     startAddress = x->Address;
                 }
 
-                if (valueHasObjectsToSerialize)
+                if (Value.HasObjectsToSerialize())
                 {
                     var x = (AddressInfo*)Layout.GetValue((long)record);
                     numBytes += x->Size;
@@ -117,12 +117,12 @@ namespace FASTER.core
                         {
 
                             // Delete key, value, record
-                            if (keyHasObjectsToSerialize)
+                            if (default(Key).HasObjectsToSerialize())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
                                 Layout.GetKey(physicalAddress).Free();
                             }
-                            if (valueHasObjectsToSerialize)
+                            if (Value.HasObjectsToSerialize())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
                                 Value.Free(Layout.GetValue(physicalAddress));
