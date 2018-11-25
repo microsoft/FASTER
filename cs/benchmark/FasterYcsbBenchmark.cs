@@ -155,7 +155,7 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(ref txn_keys_[idx], &value, null, 1);
+                                store.Upsert(ref txn_keys_[idx], ref value, null, 1);
                                 ++writes_done;
                                 break;
                             }
@@ -350,7 +350,7 @@ namespace FASTER.benchmark
                         }
                     }
 
-                    store.Upsert(ref init_keys_[idx], &value, null, 1);
+                    store.Upsert(ref init_keys_[idx], ref value, null, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;

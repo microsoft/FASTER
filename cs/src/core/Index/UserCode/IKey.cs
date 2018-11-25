@@ -7,14 +7,16 @@ namespace FASTER.core
 {
     public interface IKey<T>
     {
+        int GetLength();
+        void ShallowCopy(ref T dst);
+        void Free();
+
         long GetHashCode64();
         bool Equals(ref T k2);
-        void ShallowCopy(ref T dst);
-        int GetLength();
+
         bool HasObjectsToSerialize();
         void Serialize(Stream toStream);
         void Deserialize(Stream fromStream);
-        void Free();
         ref T MoveToContext(ref T key);
     }
 }

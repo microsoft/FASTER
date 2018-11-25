@@ -123,7 +123,7 @@ namespace FASTER.core
             }
 
 
-            if (pageHandlers.HasObjects())
+            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
             {
                 if (usedObjlogDevice == null)
                     throw new Exception("Object log device not provided");
@@ -288,7 +288,7 @@ namespace FASTER.core
                                 IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                                 IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
-            if (!pageHandlers.HasObjects())
+            if (!(pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects()))
             {
                 device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
                     numBytesToWrite, callback, asyncResult);
@@ -372,7 +372,7 @@ namespace FASTER.core
             ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length,
             IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-            if (!pageHandlers.HasObjects())
+            if (!(pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects()))
             {
                 device.ReadAsync(alignedSourceAddress, alignedDestinationAddress,
                     aligned_read_length, callback, asyncResult);

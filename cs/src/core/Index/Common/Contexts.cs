@@ -46,7 +46,7 @@ namespace FASTER.core
 
         public Output* output;
 
-        public Value* value;
+        public Value value;
 
         public Context* userContext;
 

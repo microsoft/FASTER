@@ -103,7 +103,8 @@ namespace FASTER.core
 
             hlog = new PersistentMemoryMalloc(logSettings, this);
             Key key = default(Key);
-            var recordSize = Layout.EstimatePhysicalSize(ref key, null);
+            Value value = default(Value);
+            var recordSize = Layout.EstimatePhysicalSize(ref key, ref value);
             Initialize(size, hlog.GetSectorSize());
 
             _systemState = default(SystemState);
@@ -297,10 +298,10 @@ namespace FASTER.core
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, Value* desiredValue, Context* userContext, long monotonicSerialNum)
+        public Status Upsert(ref Key key, ref Value desiredValue, Context* userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, desiredValue, userContext, ref context);
+            var internalStatus = InternalUpsert(ref key, ref desiredValue, userContext, ref context);
             var status = default(Status);
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -382,14 +383,13 @@ namespace FASTER.core
             {
                 if (!Layout.GetInfo(ptr)->Invalid)
                 {
-                    if (default(Key).HasObjectsToSerialize())
+                    if (KeyHasObjects())
                     {
                         Layout.GetKey(ptr).Free();
                     }
-                    if (Value.HasObjectsToSerialize())
+                    if (ValueHasObjects())
                     {
-                        Value* value = Layout.GetValue(ptr);
-                        Value.Free(value);
+                        Layout.GetValue(ptr).Free();
                     }
                 }
                 ptr += Layout.GetPhysicalSize(ptr);
@@ -408,14 +408,14 @@ namespace FASTER.core
             {
                 if (!Layout.GetInfo(ptr)->Invalid)
                 {
-                    if (default(Key).HasObjectsToSerialize())
+                    if (KeyHasObjects())
                     {
                         Layout.GetKey(ptr).Deserialize(stream);
                     }
 
-                    if (Value.HasObjectsToSerialize())
+                    if (ValueHasObjects())
                     {
-                        Value.Deserialize(Layout.GetValue(ptr), stream);
+                        Layout.GetValue(ptr).Deserialize(stream);
                     }
                 }
                 ptr += Layout.GetPhysicalSize(ptr);
@@ -439,7 +439,7 @@ namespace FASTER.core
                 {
                     long pos = stream.Position;
 
-                    if (default(Key).HasObjectsToSerialize())
+                    if (KeyHasObjects())
                     {
                         Layout.GetKey(ptr).Serialize(stream);
                         var key_address = Layout.GetKeyAddress(ptr);
@@ -448,14 +448,14 @@ namespace FASTER.core
                         addr.Add(key_address);
                     }
 
-                    if (Value.HasObjectsToSerialize())
+                    if (ValueHasObjects())
                     {
                         pos = stream.Position;
-                        Value* value = Layout.GetValue(ptr);
-                        Value.Serialize(value, stream);
-                        ((AddressInfo*)value)->Address = pos;
-                        ((AddressInfo*)value)->Size = (int)(stream.Position - pos);
-                        addr.Add((long)value);
+                        var value_address = Layout.GetValueAddress(ptr);
+                        Layout.GetValue(ptr).Serialize(stream);
+                        ((AddressInfo*)value_address)->Address = pos;
+                        ((AddressInfo*)value_address)->Size = (int)(stream.Position - pos);
+                        addr.Add(value_address);
                     }
 
                 }
@@ -484,7 +484,7 @@ namespace FASTER.core
                 if (!Layout.GetInfo(ptr)->Invalid)
                 {
 
-                    if (default(Key).HasObjectsToSerialize())
+                    if (KeyHasObjects())
                     {
                         var key_addr = Layout.GetKeyAddress(ptr);
                         var addr = ((AddressInfo*)key_addr)->Address;
@@ -501,10 +501,10 @@ namespace FASTER.core
                     }
 
 
-                    if (Value.HasObjectsToSerialize())
+                    if (ValueHasObjects())
                     {
-                        Value* value = Layout.GetValue(ptr);
-                        var addr = ((AddressInfo*)value)->Address;
+                        var value_addr = Layout.GetValueAddress(ptr);
+                        var addr = ((AddressInfo*)value_addr)->Address;
 
                         // If object pointer is greater than kObjectSize from starting object pointer
                         if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
@@ -513,7 +513,7 @@ namespace FASTER.core
                         }
 
                         if (addr < minObjAddress) minObjAddress = addr;
-                        addr += ((AddressInfo*)value)->Size;
+                        addr += ((AddressInfo*)value_addr)->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
                     }
                 }
@@ -532,12 +532,21 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Whether KVS has objects to serialize/deserialize
+        /// Whether KVS has keys to serialize/deserialize
         /// </summary>
         /// <returns></returns>
-        public bool HasObjects()
+        public bool KeyHasObjects()
         {
-            return default(Key).HasObjectsToSerialize() || Value.HasObjectsToSerialize();
+            return default(Key).HasObjectsToSerialize();
+        }
+
+        /// <summary>
+        /// Whether KVS has values to serialize/deserialize
+        /// </summary>
+        /// <returns></returns>
+        public bool ValueHasObjects()
+        {
+            return default(Value).HasObjectsToSerialize();
         }
     }
 }

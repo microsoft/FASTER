@@ -39,7 +39,7 @@ namespace FASTER.core
 
         private bool RetrievedObjects(byte* record, AsyncIOContext ctx)
         {
-            if (!HasObjects())
+            if (!(KeyHasObjects() || ValueHasObjects()))
                 return true;
 
             if (ctx.objBuffer.buffer == null)
@@ -47,16 +47,16 @@ namespace FASTER.core
                 // Issue IO for objects
                 long startAddress = -1;
                 long numBytes = 0;
-                if (default(Key).HasObjectsToSerialize())
+                if (KeyHasObjects())
                 {
                     var x = (AddressInfo*)Layout.GetKeyAddress((long)record);
                     numBytes += x->Size;
                     startAddress = x->Address;
                 }
 
-                if (Value.HasObjectsToSerialize())
+                if (ValueHasObjects())
                 {
-                    var x = (AddressInfo*)Layout.GetValue((long)record);
+                    var x = (AddressInfo*)Layout.GetValueAddress((long)record);
                     numBytes += x->Size;
                     if (startAddress == -1)
                         startAddress = x->Address;
@@ -75,7 +75,7 @@ namespace FASTER.core
             MemoryStream ms = new MemoryStream(ctx.objBuffer.buffer);
             ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
             Layout.GetKey((long)record).Deserialize(ms);
-            Value.Deserialize(Layout.GetValue((long)record), ms);
+            Layout.GetValue((long)record).Deserialize(ms);
             ctx.objBuffer.Return();
             return true;
         }
@@ -117,15 +117,15 @@ namespace FASTER.core
                         {
 
                             // Delete key, value, record
-                            if (default(Key).HasObjectsToSerialize())
+                            if (KeyHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
                                 Layout.GetKey(physicalAddress).Free();
                             }
-                            if (Value.HasObjectsToSerialize())
+                            if (ValueHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                Value.Free(Layout.GetValue(physicalAddress));
+                                Layout.GetValue(physicalAddress).Free();
                             }
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);

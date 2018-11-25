@@ -210,7 +210,7 @@ namespace FASTER.core
             device = settings.LogDevice;
             objectLogDevice = settings.ObjectLogDevice;
 
-            if (pageHandlers.HasObjects())
+            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
             {
                 if (objectLogDevice == null)
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
@@ -684,7 +684,7 @@ namespace FASTER.core
         
         private void ClearPage(int page, bool pageZero)
         {
-            if (pageHandlers.HasObjects())
+            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
             {
                 long ptr = pointers[page];
                 int numBytes = PageSize;

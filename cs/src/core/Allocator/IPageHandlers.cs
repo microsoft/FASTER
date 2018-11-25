@@ -47,9 +47,15 @@ namespace FASTER.core
         void GetObjectInfo(ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size);
 
         /// <summary>
-        /// Whether KVS has objects to serialize/deserialize
+        /// Whether KVS has keys to serialize/deserialize
         /// </summary>
         /// <returns></returns>
-        bool HasObjects();
+        bool KeyHasObjects();
+
+        /// <summary>
+        /// Whether KVS has values to serialize/deserialize
+        /// </summary>
+        /// <returns></returns>
+        bool ValueHasObjects();
     }
 }

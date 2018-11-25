@@ -27,7 +27,7 @@ namespace FASTER.core
         {
         }
 
-        public void UpsertCompletionCallback(ref Key key, Value* value, Context* ctx)
+        public void UpsertCompletionCallback(ref Key key, ref Value value, Context* ctx)
         {
         }
 
@@ -96,32 +96,32 @@ namespace FASTER.core
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleReader(ref Key key, Input* input, Value* value, Output* dst)
+        public void SingleReader(ref Key key, Input* input, ref Value value, Output* dst)
         {
-            Value.Copy(value, (Value*)dst);
+            value.ShallowCopy(ref Unsafe.AsRef<Value>(dst));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentReader(ref Key key, Input* input, Value* value, Output* dst)
+        public void ConcurrentReader(ref Key key, Input* input, ref Value value, Output* dst)
         {
-            Value.AcquireReadLock(value);
-            Value.Copy(value, (Value*)dst);
-            Value.ReleaseReadLock(value);
+            value.AcquireReadLock();
+            value.ShallowCopy(ref Unsafe.AsRef<Value>(dst));
+            value.ReleaseReadLock();
         }
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, Value* src, Value* dst)
+        public void SingleWriter(ref Key key, ref Value src, ref Value dst)
         {
-            Value.Copy(src, dst);
+            src.ShallowCopy(ref dst);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentWriter(ref Key key, Value* src, Value* dst)
+        public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
         {
-            Value.AcquireWriteLock(dst);
-            Value.Copy(src, dst);
-            Value.ReleaseWriteLock(dst);
+            dst.AcquireWriteLock();
+            src.ShallowCopy(ref dst);
+            dst.ReleaseWriteLock();
         }
 
         // RMW functions
@@ -129,27 +129,27 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int InitialValueLength(ref Key key, Input* input)
         {
-            return Value.GetLength(default(Value*));
+            return default(Value).GetLength();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, Input* input, Value* value)
+        public void InitialUpdater(ref Key key, Input* input, ref Value value)
         {
-            Value.Copy((Value*)input, value);
+            Unsafe.AsRef<Value>(input).ShallowCopy(ref value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InPlaceUpdater(ref Key key, Input* input, Value* value)
+        public void InPlaceUpdater(ref Key key, Input* input, ref Value value)
         {
-            Value.AcquireWriteLock(value);
-            Value.Copy((Value*)input, value);
-            Value.ReleaseWriteLock(value);
+            value.AcquireWriteLock();
+            Unsafe.AsRef<Value>(input).ShallowCopy(ref value);
+            value.ReleaseWriteLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, Input* input, Value* oldValue, Value* newValue)
+        public void CopyUpdater(ref Key key, Input* input, ref Value oldValue, ref Value newValue)
         {
-            Value.Copy((Value*)input, newValue);
+            Unsafe.AsRef<Value>(input).ShallowCopy(ref newValue);
         }
 #endif
     }

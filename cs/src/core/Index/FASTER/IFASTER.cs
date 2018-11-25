@@ -70,7 +70,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status Upsert(ref Key key, Value* value, Context* context, long lsn);
+        Status Upsert(ref Key key, ref Value value, Context* context, long lsn);
 
         /// <summary>
         /// Atomic read-modify-write operation

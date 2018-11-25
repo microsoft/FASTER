@@ -189,7 +189,7 @@ namespace FASTER.core
                     break;
                 case OperationType.UPSERT:
                     internalStatus = InternalUpsert(ref pendingContext.key, 
-                                                    pendingContext.value, 
+                                                    ref pendingContext.value, 
                                                     pendingContext.userContext, 
                                                     ref pendingContext);
                     break;
@@ -223,7 +223,7 @@ namespace FASTER.core
                         break;
                     case OperationType.UPSERT:
                         functions.UpsertCompletionCallback(ref pendingContext.key,
-                                                 pendingContext.value,
+                                                 ref pendingContext.value,
                                                  pendingContext.userContext);
                         break;
                     default:
@@ -265,15 +265,15 @@ namespace FASTER.core
                 }
                 
                 // Delete key, value, record
-                if (default(Key).HasObjectsToSerialize())
+                if (KeyHasObjects())
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
                     Layout.GetKey(physicalAddress).Free();
                 }
-                if (Value.HasObjectsToSerialize())
+                if (ValueHasObjects())
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
-                    Value.Free(Layout.GetValue(physicalAddress));
+                    Layout.GetValue(physicalAddress).Free();
                 }
                 request.record.Return();
 

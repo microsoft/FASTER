@@ -134,16 +134,14 @@ namespace FASTER.core
             // Mutable region (even fuzzy region is included here)
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
-                var src = Layout.GetValue(physicalAddress);
-                functions.ConcurrentReader(ref key, input, src, output);
+                functions.ConcurrentReader(ref key, input, ref Layout.GetValue(physicalAddress), output);
                 return OperationStatus.SUCCESS;
             }
 
             // Immutable region
             else if (logicalAddress >= hlog.HeadAddress)
             {
-                var src = Layout.GetValue(physicalAddress);
-                functions.SingleReader(ref key, input, src, output);
+                functions.SingleReader(ref key, input, ref Layout.GetValue(physicalAddress), output);
                 return OperationStatus.SUCCESS;
             }
 
@@ -221,7 +219,7 @@ namespace FASTER.core
                 Debug.Assert(Layout.GetInfo(physicalAddress)->Version <= ctx.version);
                 functions.SingleReader(ref pendingContext.key,
                                        pendingContext.input,
-                                       Layout.GetValue(physicalAddress),
+                                       ref Layout.GetValue(physicalAddress),
                                        pendingContext.output);
 
                 if (kCopyReadsToTail)
@@ -293,8 +291,8 @@ namespace FASTER.core
                                  entry.Address);
             request.key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
             functions.SingleWriter(ref request.key,
-                                   Layout.GetValue(physicalAddress),
-                                   Layout.GetValue(newPhysicalAddress));
+                                   ref Layout.GetValue(physicalAddress),
+                                   ref Layout.GetValue(newPhysicalAddress));
 
             var updatedEntry = default(HashBucketEntry);
             updatedEntry.Tag = tag;
@@ -349,7 +347,7 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalUpsert(
-                            ref Key key, Value* value,
+                            ref Key key, ref Value value,
                             Context* userContext,
                             ref PendingContext pendingContext)
         {
@@ -391,8 +389,7 @@ namespace FASTER.core
             // Optimization for most common case
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
-                var dst = Layout.GetValue(physicalAddress);
-                functions.ConcurrentWriter(ref key, value, dst);
+                functions.ConcurrentWriter(ref key, ref value, ref Layout.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
             }
 
@@ -479,7 +476,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
-                functions.ConcurrentWriter(ref key, value, Layout.GetValue(physicalAddress));
+                functions.ConcurrentWriter(ref key, ref value, ref Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -491,7 +488,7 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 // Immutable region or new record
-                var recordSize = Layout.EstimatePhysicalSize(ref key, value);
+                var recordSize = Layout.EstimatePhysicalSize(ref key, ref value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(Layout.GetInfo(newPhysicalAddress),
@@ -499,8 +496,8 @@ namespace FASTER.core
                                         true, false, false,
                                         entry.Address);
                 key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
-                functions.SingleWriter(ref key, value,
-                                        Layout.GetValue(newPhysicalAddress));
+                functions.SingleWriter(ref key, ref value,
+                                        ref Layout.GetValue(newPhysicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -532,7 +529,7 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.UPSERT;
                 pendingContext.key = key.MoveToContext(ref key);
-                pendingContext.value = Value.MoveToContext(value);
+                pendingContext.value = value.MoveToContext(ref value);
                 pendingContext.userContext = Context.MoveToContext(userContext);
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
@@ -560,7 +557,7 @@ namespace FASTER.core
 
             if(status == OperationStatus.RETRY_NOW)
             {
-                return InternalUpsert(ref key, value, userContext, ref pendingContext);
+                return InternalUpsert(ref key, ref value, userContext, ref pendingContext);
             }
             else
             {
@@ -649,7 +646,7 @@ namespace FASTER.core
             // Optimization for the most common case
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
-                functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, input, ref Layout.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
             }
 
@@ -740,7 +737,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                functions.InPlaceUpdater(ref key, input, Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, input, ref Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -798,14 +795,14 @@ namespace FASTER.core
                 key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    functions.InitialUpdater(ref key, input, Layout.GetValue(newPhysicalAddress));
+                    functions.InitialUpdater(ref key, input, ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     functions.CopyUpdater(ref key, input,
-                                            Layout.GetValue(physicalAddress),
-                                            Layout.GetValue(newPhysicalAddress));
+                                            ref Layout.GetValue(physicalAddress),
+                                            ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
                 }
                 else
@@ -1016,7 +1013,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                functions.InPlaceUpdater(ref pendingContext.key, pendingContext.input, Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref pendingContext.key, pendingContext.input, ref Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; 
             }
@@ -1067,15 +1064,15 @@ namespace FASTER.core
                 {
                     functions.InitialUpdater(ref pendingContext.key, 
                                              pendingContext.input,
-                                             Layout.GetValue(newPhysicalAddress));
+                                             ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     functions.CopyUpdater(ref pendingContext.key, 
                                             pendingContext.input,
-                                            Layout.GetValue(physicalAddress),
-                                            Layout.GetValue(newPhysicalAddress));
+                                            ref Layout.GetValue(physicalAddress),
+                                            ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
                 }
                 else
@@ -1233,15 +1230,15 @@ namespace FASTER.core
             {
                 functions.InitialUpdater(ref pendingContext.key,
                                          pendingContext.input,
-                                         Layout.GetValue(newPhysicalAddress));
+                                         ref Layout.GetValue(newPhysicalAddress));
                 status = OperationStatus.NOTFOUND;
             }
             else
             {
                 functions.CopyUpdater(ref pendingContext.key,
                                       pendingContext.input,
-                                      Layout.GetValue(physicalAddress),
-                                      Layout.GetValue(newPhysicalAddress));
+                                      ref Layout.GetValue(physicalAddress),
+                                      ref Layout.GetValue(newPhysicalAddress));
                 status = OperationStatus.SUCCESS;
             }
 
@@ -1331,7 +1328,7 @@ namespace FASTER.core
                         break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref pendingContext.key,
-                                                        pendingContext.value,
+                                                        ref pendingContext.value,
                                                         pendingContext.userContext,
                                                         ref pendingContext);
                         break;

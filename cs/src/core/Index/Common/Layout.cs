@@ -21,7 +21,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref Key GetKey(long physicalAddress)
         {
-            return ref Unsafe.AsRef<Key>((Key*)((byte*)physicalAddress + RecordInfo.GetLength()));
+            return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -31,15 +31,22 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Value* GetValue(long physicalAddress)
+        public static ref Value GetValue(long physicalAddress)
         {
-            return (Value*)((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
+            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long GetValueAddress(long physicalAddress)
+        {
+            return (long)((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
+        }
+
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetPhysicalSize(long physicalAddress)
         {
-            return RecordInfo.GetLength() + default(Key).GetLength() + Value.GetLength(default(Value*));
+            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -52,9 +59,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int EstimatePhysicalSize(ref Key key, Value* value)
+        public static int EstimatePhysicalSize(ref Key key, ref Value value)
         {
-            return RecordInfo.GetLength() + key.GetLength() + Value.GetLength(value);
+            return RecordInfo.GetLength() + key.GetLength() + value.GetLength();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -71,7 +78,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetAveragePhysicalSize()
         {
-            return RecordInfo.GetLength() + default(Key).GetLength() + Value.GetLength(default(Value*));
+            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
         }
     }
 }

@@ -18,7 +18,7 @@ namespace FASTER.core
 
 #if EIGHT_BYTE_VALUE
     [StructLayout(LayoutKind.Explicit, Size = kSizeInBytes)]
-    public unsafe struct Value
+    public unsafe struct Value : IValue<Value>
     {
         public const int kValuesStartOffset = 0;
         public const int kSizeInBytes = sizeof(long) + kValuesStartOffset;
@@ -27,76 +27,57 @@ namespace FASTER.core
         public long value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void AcquireReadLock(Value* value)
+        public void AcquireReadLock()
         {
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ReleaseReadLock(Value* value)
+        public void ReleaseReadLock()
         {
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void AcquireWriteLock(Value* value)
+        public void AcquireWriteLock()
         {
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ReleaseWriteLock(Value* value)
+        public void ReleaseWriteLock()
         {
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Copy(Value* src, Value* dst)
+        public void ShallowCopy(ref Value dst)
         {
-            dst->value = src->value;
+            dst = this;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(Value* value)
+        public int GetLength()
         {
             return kSizeInBytes;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetPhysicalSize(Value* value)
-        {
-            return kSizeInBytes;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetInitialPhysicalSize(Input* input)
-        {
-            return kSizeInBytes;
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int EstimateAveragePhysicalSize()
-        {
-            return kSizeInBytes;
-        }
-
-        public static bool HasObjectsToSerialize()
+        public bool HasObjectsToSerialize()
         {
             return false;
         }
 
-        public static void Serialize(Value* key, Stream toStream)
+        public void Serialize(Stream toStream)
         {
         }
 
-        public static void Deserialize(Value* key, Stream fromStream)
+        public void Deserialize(Stream fromStream)
         {
         }
 
-        public static void Free(Value* value)
+        public void Free()
         {
         }
 
-        public static Value* MoveToContext(Value* value)
+        public ref Value MoveToContext(ref Value value)
         {
-            return value;
+            return ref value;
         }
     }
 #elif FIXED_SIZE_VALUE_WITH_LOCK
