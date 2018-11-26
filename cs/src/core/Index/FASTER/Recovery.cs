@@ -50,7 +50,13 @@ namespace FASTER.core
     /// <summary>
     /// Partial class for recovery code in FASTER
     /// </summary>
-    public unsafe partial class FasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : IKey<Key>
+        where Value : IValue<Value>
+        where Input : IMoveToContext<Input>
+        where Output : IMoveToContext<Output>
+        where Context : IMoveToContext<Context>
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private void InternalRecover(Guid indexToken, Guid hybridLogToken)
         {

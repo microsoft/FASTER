@@ -1,72 +1,73 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core;
 using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
 namespace ManagedSampleCore
 {
-    public unsafe struct ValueStruct
+    public struct ValueStruct : IValue<ValueStruct>
     {
         public const int physicalSize = sizeof(long) + sizeof(long);
         public long vfield1;
         public long vfield2;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(ValueStruct* input)
+        public int GetLength()
         {
             return physicalSize;
         }
 
-        public static void Copy(ValueStruct* src, ValueStruct* dst)
+        public void ShallowCopy(ref ValueStruct dst)
         {
-            dst->vfield1 = src->vfield1;
-            dst->vfield2 = src->vfield2;
+            dst.vfield1 = vfield1;
+            dst.vfield2 = vfield2;
         }
 
         // Shared read/write capabilities on value
-        public static void AcquireReadLock(ValueStruct* value)
+        public void AcquireReadLock()
         {
         }
 
-        public static void ReleaseReadLock(ValueStruct* value)
+        public void ReleaseReadLock()
         {
         }
 
-        public static void AcquireWriteLock(ValueStruct* value)
+        public void AcquireWriteLock()
         {
         }
 
-        public static void ReleaseWriteLock(ValueStruct* value)
+        public void ReleaseWriteLock()
         {
         }
 
         #region Serialization
-        public static bool HasObjectsToSerialize()
+        public bool HasObjectsToSerialize()
         {
             return false;
         }
 
-        public static void Serialize(ValueStruct* key, Stream toStream)
+        public void Serialize(Stream toStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Deserialize(ValueStruct* key, Stream fromStream)
+        public void Deserialize(Stream fromStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Free(ValueStruct* key)
+        public void Free()
         {
             throw new InvalidOperationException();
         }
         #endregion
 
-        public static ValueStruct* MoveToContext(ValueStruct* value)
+        public ref ValueStruct MoveToContext(ref ValueStruct value)
         {
-            return value;
+            return ref value;
         }
     }
 }

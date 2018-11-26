@@ -19,7 +19,7 @@ namespace FASTER.core
     /// user defines the customized interface and provides it to FASTER
     /// so it can return a (generated) instance for that interface.
     /// </summary>
-    public unsafe interface IFasterKV : IDisposable
+    public unsafe interface IFasterKV<Key, Value, Input, Output, Context> : IDisposable
     {
         /* Thread-related operations */
 

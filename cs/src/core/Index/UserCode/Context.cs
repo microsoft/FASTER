@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 namespace FASTER.core
 {
     [StructLayout(LayoutKind.Explicit, Size = 12)]
-    public unsafe struct Context
+    public struct Context : IMoveToContext<Context>
     {
         [FieldOffset(0)]
         public ulong start;

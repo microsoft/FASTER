@@ -16,12 +16,19 @@ namespace FASTER.core
     /// <summary>
     /// Async IO related functions of FASTER
     /// </summary>
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : IKey<Key>
+        where Value : IValue<Value>
+        where Input : IMoveToContext<Input>
+        where Output : IMoveToContext<Output>
+        where Context : IMoveToContext<Context>
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
+
     {
         private void AsyncGetFromDisk(long fromLogical,
                                       int numRecords,
                                       IOCompletionCallback callback,
-                                      AsyncIOContext context,
+                                      AsyncIOContext<Key> context,
                                       SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             while (numPendingReads > 120)
@@ -37,7 +44,7 @@ namespace FASTER.core
             hlog.AsyncReadRecordToMemory(fromLogical, numRecords, callback, context, result);
         }
 
-        private bool RetrievedObjects(byte* record, AsyncIOContext ctx)
+        private bool RetrievedObjects(byte* record, AsyncIOContext<Key> ctx)
         {
             if (!(KeyHasObjects() || ValueHasObjects()))
                 return true;
@@ -91,7 +98,7 @@ namespace FASTER.core
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext>)Overlapped.Unpack(overlap).AsyncResult;
+            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key>>)Overlapped.Unpack(overlap).AsyncResult;
             Interlocked.Decrement(ref numPendingReads);
 
             var ctx = result.context;

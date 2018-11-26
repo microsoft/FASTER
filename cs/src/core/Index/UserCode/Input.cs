@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
-    public unsafe struct Input
+    public struct Input : IMoveToContext<Input>
     {
         public long value;
 

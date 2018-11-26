@@ -14,7 +14,13 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : IKey<Key>
+        where Value : IValue<Value>
+        where Input : IMoveToContext<Input>
+        where Output : IMoveToContext<Output>
+        where Context : IMoveToContext<Context>
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         enum LatchOperation : byte
         {
@@ -208,7 +214,7 @@ namespace FASTER.core
         /// </returns>
         internal OperationStatus InternalContinuePendingRead(
                             ExecutionContext ctx,
-                            AsyncIOContext request,
+                            AsyncIOContext<Key> request,
                             ref PendingContext pendingContext)
         {
             Debug.Assert(pendingContext.version == ctx.version);
@@ -241,7 +247,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         internal void InternalContinuePendingReadCopyToTail(
                                     ExecutionContext ctx,
-                                    AsyncIOContext request,
+                                    AsyncIOContext<Key> request,
                                     ref PendingContext pendingContext)
         {
             Debug.Assert(pendingContext.version == ctx.version);
@@ -632,7 +638,7 @@ namespace FASTER.core
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = Layout.GetInfo(physicalAddress)->Version;
-                if (!Key.Equals(key, Layout.GetKey(physicalAddress)))
+                if (!key.Equals(ref Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
                     TraceBackForKeyMatch(ref key, logicalAddress,
@@ -933,7 +939,7 @@ namespace FASTER.core
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = Layout.GetInfo(physicalAddress)->Version;
-                if (!Key.Equals(key, Layout.GetKey(physicalAddress)))
+                if (!key.Equals(ref Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
                     TraceBackForKeyMatch(ref key, logicalAddress,
@@ -1170,7 +1176,7 @@ namespace FASTER.core
         /// </returns>
         internal OperationStatus InternalContinuePendingRMW(
                                     ExecutionContext ctx,
-                                    AsyncIOContext request,
+                                    AsyncIOContext<Key> request,
                                     ref PendingContext pendingContext)
         {
             var recordSize = default(int);
@@ -1190,7 +1196,7 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!Key.Equals(pendingContext.key, Layout.GetKey(physicalAddress)))
+                if (!pendingContext.key.Equals(ref Layout.GetKey(physicalAddress)))
                 {
                     logicalAddress = Layout.GetInfo(physicalAddress)->PreviousAddress;
                     TraceBackForKeyMatch(ref pendingContext.key,
@@ -1353,7 +1359,7 @@ namespace FASTER.core
                 ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
                 // Issue asynchronous I/O request
-                AsyncIOContext request = default(AsyncIOContext);
+                AsyncIOContext<Key> request = default(AsyncIOContext<Key>);
                 request.id = pendingContext.id;
                 request.key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;

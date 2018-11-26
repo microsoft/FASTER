@@ -11,7 +11,13 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : IKey<Key>
+        where Value : IValue<Value>
+        where Input : IMoveToContext<Input>
+        where Output : IMoveToContext<Output>
+        where Context : IMoveToContext<Context>
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -91,7 +97,7 @@ namespace FASTER.core
                 totalPending = 0,
                 guid = token,
                 retryRequests = new Queue<PendingContext>(),
-                readyResponses = new BlockingCollection<AsyncIOContext>(),
+                readyResponses = new BlockingCollection<AsyncIOContext<Key>>(),
                 ioPendingRequests = new Dictionary<long, PendingContext>()
             };
 
@@ -157,7 +163,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CompleteIOPendingRequests(ExecutionContext context)
         {
-            while (context.readyResponses.TryTake(out AsyncIOContext request))
+            while (context.readyResponses.TryTake(out AsyncIOContext<Key> request))
             {
                 InternalContinuePendingRequestAndCallback(context, request);
             }
@@ -236,7 +242,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalContinuePendingRequestAndCallback(
                                     ExecutionContext ctx,
-                                    AsyncIOContext request)
+                                    AsyncIOContext<Key> request)
         {
             var handleLatches = false;
             if ((ctx.version < threadCtx.version) // Thread has already shifted to (v+1)

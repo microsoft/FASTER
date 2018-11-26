@@ -4,7 +4,6 @@
 #pragma warning disable 0162
 
 //#define DASHBOARD
-//#define USE_CODEGEN
 
 using FASTER.core;
 using System;
@@ -43,12 +42,7 @@ namespace FASTER.benchmark
         Input[] input_;
         readonly IDevice device;
 
-#if USE_CODEGEN
-        IFasterKV
-#else
-        FasterKV
-#endif
-            store;
+        FasterKV<Key, Value, Input, Output, Context, Functions> store;
 
         long total_ops_done = 0;
 
@@ -86,11 +80,7 @@ namespace FASTER.benchmark
 
             device = FasterFactory.CreateLogDevice("C:\\data\\hlog");
 
-#if USE_CODEGEN
-            store = FasterFactory.Create<Key, Value, Input, Output, Context, Functions, IFasterKV>
-#else
-            store = new FasterKV
-#endif
+            store = new FasterKV<Key, Value, Input, Output, Context, Functions>
                 (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device });
         }
 

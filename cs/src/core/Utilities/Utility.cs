@@ -19,16 +19,16 @@ namespace FASTER.core
     /// <summary>
     /// Empty type
     /// </summary>
-    public unsafe struct Empty
+    public struct Empty : IMoveToContext<Empty>
     {
         /// <summary>
         /// Move to context
         /// </summary>
         /// <param name="empty"></param>
         /// <returns></returns>
-        public static Empty* MoveToContext(Empty* empty)
+        public ref Empty MoveToContext(ref Empty empty)
         {
-            return empty;
+            return ref empty;
         }
     }
 

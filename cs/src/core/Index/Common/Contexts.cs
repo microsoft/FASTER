@@ -32,65 +32,69 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
-
-
-    internal unsafe struct PendingContext
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : IKey<Key>
+        where Value : IValue<Value>
+        where Input : IMoveToContext<Input>
+        where Output : IMoveToContext<Output>
+        where Context : IMoveToContext<Context>
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        // User provided information
 
-        public OperationType type;
-
-        public Key key;
-
-        public Input input;
-
-        public Output output;
-
-        public Value value;
-
-        public Context userContext;
-
-        // Some additional information about the previous attempt
-
-        public long id;
-
-        public int version;
-
-        public long logicalAddress;
-
-        public long serialNum;
-
-        public HashBucketEntry entry;
-    }
-
-    internal unsafe class ExecutionContext
-    {
-        public int version;
-        public long serialNum;
-        public Phase phase;
-        public bool[] markers;
-        public long totalPending;
-        public Guid guid;
-        public Queue<PendingContext> retryRequests;
-        public Dictionary<long, PendingContext> ioPendingRequests;
-        public BlockingCollection<AsyncIOContext> readyResponses;
-
-        public void Write(StreamWriter writer)
+        internal unsafe struct PendingContext
         {
-            writer.WriteLine(version);
-            writer.WriteLine(guid);
-            writer.WriteLine(serialNum);
+            // User provided information
+
+            public OperationType type;
+
+            public Key key;
+            public Value value;
+            public Input input;
+            public Output output;
+            public Context userContext;
+
+            // Some additional information about the previous attempt
+
+            public long id;
+
+            public int version;
+
+            public long logicalAddress;
+
+            public long serialNum;
+
+            public HashBucketEntry entry;
         }
-        public void Load(StreamReader reader)
+
+        internal unsafe class ExecutionContext
         {
-            string value = reader.ReadLine();
-            version = int.Parse(value);
+            public int version;
+            public long serialNum;
+            public Phase phase;
+            public bool[] markers;
+            public long totalPending;
+            public Guid guid;
+            public Queue<PendingContext> retryRequests;
+            public Dictionary<long, PendingContext> ioPendingRequests;
+            public BlockingCollection<AsyncIOContext<Key>> readyResponses;
 
-            value = reader.ReadLine();
-            guid = Guid.Parse(value);
+            public void Write(StreamWriter writer)
+            {
+                writer.WriteLine(version);
+                writer.WriteLine(guid);
+                writer.WriteLine(serialNum);
+            }
+            public void Load(StreamReader reader)
+            {
+                string value = reader.ReadLine();
+                version = int.Parse(value);
 
-            value = reader.ReadLine();
-            serialNum = long.Parse(value);
+                value = reader.ReadLine();
+                guid = Guid.Parse(value);
+
+                value = reader.ReadLine();
+                serialNum = long.Parse(value);
+            }
         }
     }
 
@@ -328,7 +332,7 @@ namespace FASTER.core
                 var guid = guids[i];
                 using (var reader = new StreamReader(DirectoryConfiguration.GetHybridLogCheckpointContextFileName(token, guid)))
                 {
-                    var ctx = new ExecutionContext();
+                    var ctx = new FasterKV<Key, Value, Input, Output, Context, Functions>.ExecutionContext();
                     ctx.Load(reader);
                     continueTokens.Add(ctx.guid, ctx.serialNum);
                 }

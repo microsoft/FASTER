@@ -4,7 +4,6 @@
 #pragma warning disable 0162
 
 //#define DASHBOARD
-//#define USE_CODEGEN
 
 using FASTER.core;
 using System;

@@ -11,7 +11,7 @@ using System.Threading;
 namespace FASTER.core
 {
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct Output
+    public struct Output : IMoveToContext<Output>
     {
         [FieldOffset(0)]
         public Value value;

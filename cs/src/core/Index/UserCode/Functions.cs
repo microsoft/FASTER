@@ -17,7 +17,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public unsafe struct Functions
+    public struct Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Context ctx, Status status)
         {
@@ -33,7 +33,7 @@ namespace FASTER.core
 
         public void PersistenceCallback(long thread_id, long serial_num)
         {
-            Debug.WriteLine("Thread {0} repors persistence until {1}", thread_id, serial_num);
+            Debug.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
         }
 #if COUNT_STORE
         // Read functions

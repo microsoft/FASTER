@@ -11,83 +11,84 @@ namespace ManagedSampleCore
     /// Callback functions for FASTER operations customized to user types
     /// See \cs\src\core\Index\UserCode\Functions.cs for template details
     /// </summary>
-    public unsafe class Functions
+    public class Functions : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
     {
-        public static void RMWCompletionCallback(KeyStruct* key, InputStruct* output, Empty* ctx, Status status)
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct output, ref Empty ctx, Status status)
         {
         }
 
-        public static void ReadCompletionCallback(KeyStruct* key, InputStruct* input, OutputStruct* output, Empty* ctx, Status status)
+        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, ref Empty ctx, Status status)
         {
         }
 
-        public static void UpsertCompletionCallback(KeyStruct* key, ValueStruct* output, Empty* ctx)
+        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, ref Empty ctx)
         {
         }
 
-        public static void PersistenceCallback(long thread_id, long serial_num)
+        public void PersistenceCallback(long thread_id, long serial_num)
         {
             Debug.WriteLine("Thread {0} repors persistence until {1}", thread_id, serial_num);
         }
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleReader(KeyStruct* key, InputStruct* input, ValueStruct* value, OutputStruct* dst)
+        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
-            ValueStruct.Copy(value, (ValueStruct*)dst);
+            dst.value = value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentReader(KeyStruct* key, InputStruct* input, ValueStruct* value, OutputStruct* dst)
+        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
-            ValueStruct.AcquireReadLock(value);
-            ValueStruct.Copy(value, (ValueStruct*)dst);
-            ValueStruct.ReleaseReadLock(value);
+            value.AcquireReadLock();
+            dst.value = value;
+            value.ReleaseReadLock();
         }
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleWriter(KeyStruct* key, ValueStruct* src, ValueStruct* dst)
+        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
-            ValueStruct.Copy(src, dst);
+            dst = src;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentWriter(KeyStruct* key, ValueStruct* src, ValueStruct* dst)
+        public void ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
-            ValueStruct.AcquireWriteLock(dst);
-            ValueStruct.Copy(src, dst);
-            ValueStruct.ReleaseWriteLock(dst);
+            dst.AcquireWriteLock();
+            dst = src;
+            dst.ReleaseWriteLock();
         }
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int InitialValueLength(KeyStruct* key, InputStruct* input)
+        public int InitialValueLength(ref KeyStruct key, ref InputStruct input)
         {
-            return ValueStruct.GetLength(default(ValueStruct*));
+            return default(ValueStruct).GetLength();
         }
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitialUpdater(KeyStruct* key, InputStruct* input, ValueStruct* value)
+        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
-            ValueStruct.Copy((ValueStruct*)input, value);
+            value.vfield1 = input.ifield1;
+            value.vfield2 = input.ifield2;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InPlaceUpdater(KeyStruct* key, InputStruct* input, ValueStruct* value)
+        public void InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
-            ValueStruct.AcquireWriteLock(value);
-            value->vfield1 += input->ifield1;
-            value->vfield2 += input->ifield2;
-            ValueStruct.ReleaseWriteLock(value);
+            value.AcquireWriteLock();
+            value.vfield1 += input.ifield1;
+            value.vfield2 += input.ifield2;
+            value.ReleaseWriteLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void CopyUpdater(KeyStruct* key, InputStruct* input, ValueStruct* oldValue, ValueStruct* newValue)
+        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
         {
-            newValue->vfield1 = oldValue->vfield1 + input->ifield1;
-            newValue->vfield2 = oldValue->vfield2 + input->ifield2;
+            newValue.vfield1 = oldValue.vfield1 + input.ifield1;
+            newValue.vfield2 = oldValue.vfield2 + input.ifield2;
         }
     }
 }
