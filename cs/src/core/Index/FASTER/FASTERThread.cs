@@ -190,7 +190,7 @@ namespace FASTER.core
                 case OperationType.UPSERT:
                     internalStatus = InternalUpsert(ref pendingContext.key, 
                                                     ref pendingContext.value, 
-                                                    pendingContext.userContext, 
+                                                    ref pendingContext.userContext, 
                                                     ref pendingContext);
                     break;
                 case OperationType.READ:
@@ -218,13 +218,13 @@ namespace FASTER.core
                 {
                     case OperationType.RMW:
                         functions.RMWCompletionCallback(ref pendingContext.key,
-                                                pendingContext.input,
-                                                pendingContext.userContext, status);
+                                                ref pendingContext.input,
+                                                ref pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
                         functions.UpsertCompletionCallback(ref pendingContext.key,
                                                  ref pendingContext.value,
-                                                 pendingContext.userContext);
+                                                 ref pendingContext.userContext);
                         break;
                     default:
                         throw new Exception("Operation type not allowed for retry");
@@ -296,16 +296,16 @@ namespace FASTER.core
                     if (pendingContext.type == OperationType.READ)
                     {
                         functions.ReadCompletionCallback(ref pendingContext.key, 
-                                                         pendingContext.input, 
-                                                         pendingContext.output, 
-                                                         pendingContext.userContext,
+                                                         ref pendingContext.input, 
+                                                         ref pendingContext.output, 
+                                                         ref pendingContext.userContext,
                                                          status);
                     }
                     else
                     {
                         functions.RMWCompletionCallback(ref pendingContext.key,
-                                                        pendingContext.input,
-                                                        pendingContext.userContext,
+                                                        ref pendingContext.input,
+                                                        ref pendingContext.userContext,
                                                         status);
                     }
                 }

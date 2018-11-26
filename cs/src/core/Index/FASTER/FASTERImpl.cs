@@ -58,9 +58,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead(
                                     ref Key key, 
-                                    Input* input, 
-                                    Output* output, 
-                                    Context* userContext,
+                                    ref Input input, 
+                                    ref Output output, 
+                                    ref Context userContext,
                                     ref PendingContext pendingContext)
         {
             var status = default(OperationStatus);
@@ -134,14 +134,14 @@ namespace FASTER.core
             // Mutable region (even fuzzy region is included here)
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
-                functions.ConcurrentReader(ref key, input, ref Layout.GetValue(physicalAddress), output);
+                functions.ConcurrentReader(ref key, ref input, ref Layout.GetValue(physicalAddress), ref output);
                 return OperationStatus.SUCCESS;
             }
 
             // Immutable region
             else if (logicalAddress >= hlog.HeadAddress)
             {
-                functions.SingleReader(ref key, input, ref Layout.GetValue(physicalAddress), output);
+                functions.SingleReader(ref key, ref input, ref Layout.GetValue(physicalAddress), ref output);
                 return OperationStatus.SUCCESS;
             }
 
@@ -174,9 +174,9 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.READ;
                 pendingContext.key = key.MoveToContext(ref key);
-                pendingContext.input = Input.MoveToContext(input);
-                pendingContext.output = Output.MoveToContext(output);
-                pendingContext.userContext = Context.MoveToContext(userContext);
+                pendingContext.input = input.MoveToContext(ref input);
+                pendingContext.output = output.MoveToContext(ref output);
+                pendingContext.userContext = userContext.MoveToContext(ref userContext);
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.version;
@@ -218,9 +218,9 @@ namespace FASTER.core
                 var physicalAddress = (long)request.record.GetValidPointer();
                 Debug.Assert(Layout.GetInfo(physicalAddress)->Version <= ctx.version);
                 functions.SingleReader(ref pendingContext.key,
-                                       pendingContext.input,
+                                       ref pendingContext.input,
                                        ref Layout.GetValue(physicalAddress),
-                                       pendingContext.output);
+                                       ref pendingContext.output);
 
                 if (kCopyReadsToTail)
                 {
@@ -348,7 +348,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalUpsert(
                             ref Key key, ref Value value,
-                            Context* userContext,
+                            ref Context userContext,
                             ref PendingContext pendingContext)
         {
             var status = default(OperationStatus);
@@ -530,7 +530,7 @@ namespace FASTER.core
                 pendingContext.type = OperationType.UPSERT;
                 pendingContext.key = key.MoveToContext(ref key);
                 pendingContext.value = value.MoveToContext(ref value);
-                pendingContext.userContext = Context.MoveToContext(userContext);
+                pendingContext.userContext = userContext.MoveToContext(ref userContext);
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.version;
@@ -557,7 +557,7 @@ namespace FASTER.core
 
             if(status == OperationStatus.RETRY_NOW)
             {
-                return InternalUpsert(ref key, ref value, userContext, ref pendingContext);
+                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext);
             }
             else
             {
@@ -604,8 +604,8 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW(
-                                   ref Key key, Input* input,
-                                   Context* userContext,
+                                   ref Key key, ref Input input,
+                                   ref Context userContext,
                                    ref PendingContext pendingContext)
         {
             var recordSize = default(int);
@@ -646,7 +646,7 @@ namespace FASTER.core
             // Optimization for the most common case
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
-                functions.InPlaceUpdater(ref key, input, ref Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, ref input, ref Layout.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
             }
 
@@ -737,7 +737,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                functions.InPlaceUpdater(ref key, input, ref Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, ref input, ref Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -784,7 +784,7 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
-                                Layout.GetInitialPhysicalSize(ref key, input, functions) :
+                                Layout.GetInitialPhysicalSize(ref key, ref input, functions) :
                                 Layout.GetPhysicalSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -795,12 +795,12 @@ namespace FASTER.core
                 key.ShallowCopy(ref Layout.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    functions.InitialUpdater(ref key, input, ref Layout.GetValue(newPhysicalAddress));
+                    functions.InitialUpdater(ref key, ref input, ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    functions.CopyUpdater(ref key, input,
+                    functions.CopyUpdater(ref key, ref input,
                                             ref Layout.GetValue(physicalAddress),
                                             ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
@@ -843,8 +843,8 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.RMW;
                 pendingContext.key = key.MoveToContext(ref key);
-                pendingContext.input = Input.MoveToContext(input);
-                pendingContext.userContext = Context.MoveToContext(userContext);
+                pendingContext.input = input.MoveToContext(ref input);
+                pendingContext.userContext = userContext.MoveToContext(ref userContext);
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.version;
@@ -871,7 +871,7 @@ namespace FASTER.core
 
             if(status == OperationStatus.RETRY_NOW)
             {
-                return InternalRMW(ref key, input, userContext, ref pendingContext);
+                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext);
             }
             else
             {
@@ -1013,7 +1013,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(Layout.GetInfo(physicalAddress)->Version == threadCtx.version);
                 }
-                functions.InPlaceUpdater(ref pendingContext.key, pendingContext.input, ref Layout.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref pendingContext.key, ref pendingContext.input, ref Layout.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; 
             }
@@ -1051,7 +1051,7 @@ namespace FASTER.core
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
                                 Layout.GetInitialPhysicalSize(ref pendingContext.key,
-                                                              pendingContext.input, functions) :
+                                                              ref pendingContext.input, functions) :
                                 Layout.GetPhysicalSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -1063,14 +1063,14 @@ namespace FASTER.core
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     functions.InitialUpdater(ref pendingContext.key, 
-                                             pendingContext.input,
+                                             ref pendingContext.input,
                                              ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     functions.CopyUpdater(ref pendingContext.key, 
-                                            pendingContext.input,
+                                            ref pendingContext.input,
                                             ref Layout.GetValue(physicalAddress),
                                             ref Layout.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
@@ -1212,7 +1212,7 @@ namespace FASTER.core
             if (request.logicalAddress < hlog.BeginAddress)
             {
                 recordSize = Layout.GetInitialPhysicalSize(ref pendingContext.key,
-                                                           pendingContext.input, functions);
+                                                           ref pendingContext.input, functions);
             }
             else
             {
@@ -1229,14 +1229,14 @@ namespace FASTER.core
             if (request.logicalAddress < hlog.BeginAddress)
             {
                 functions.InitialUpdater(ref pendingContext.key,
-                                         pendingContext.input,
+                                         ref pendingContext.input,
                                          ref Layout.GetValue(newPhysicalAddress));
                 status = OperationStatus.NOTFOUND;
             }
             else
             {
                 functions.CopyUpdater(ref pendingContext.key,
-                                      pendingContext.input,
+                                      ref pendingContext.input,
                                       ref Layout.GetValue(physicalAddress),
                                       ref Layout.GetValue(newPhysicalAddress));
                 status = OperationStatus.SUCCESS;
@@ -1321,15 +1321,15 @@ namespace FASTER.core
                 {
                     case OperationType.READ:
                         internalStatus = InternalRead(ref pendingContext.key,
-                                                      pendingContext.input,
-                                                      pendingContext.output,
-                                                      pendingContext.userContext,
+                                                      ref pendingContext.input,
+                                                      ref pendingContext.output,
+                                                      ref pendingContext.userContext,
                                                       ref pendingContext);
                         break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref pendingContext.key,
                                                         ref pendingContext.value,
-                                                        pendingContext.userContext,
+                                                        ref pendingContext.userContext,
                                                         ref pendingContext);
                         break;
                     case OperationType.RMW:

@@ -42,13 +42,13 @@ namespace FASTER.core
 
         public Key key;
 
-        public Input* input;
+        public Input input;
 
-        public Output* output;
+        public Output output;
 
         public Value value;
 
-        public Context* userContext;
+        public Context userContext;
 
         // Some additional information about the previous attempt
 

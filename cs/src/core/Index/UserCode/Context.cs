@@ -16,9 +16,9 @@ namespace FASTER.core
         [FieldOffset(8)]
         public int threadId;
 
-        public static Context* MoveToContext(Context* context)
+        public ref Context MoveToContext(ref Context context)
         {
-            return context;
+            return ref context;
         }
     }
 }

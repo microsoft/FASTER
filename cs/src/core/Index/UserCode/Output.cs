@@ -16,9 +16,9 @@ namespace FASTER.core
         [FieldOffset(0)]
         public Value value;
 
-        public static Output* MoveToContext(Output* value)
+        public ref Output MoveToContext(ref Output value)
         {
-            return value;
+            return ref value;
         }
 
     }

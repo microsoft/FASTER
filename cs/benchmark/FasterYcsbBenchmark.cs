@@ -16,7 +16,7 @@ using System.Threading;
 
 namespace FASTER.benchmark
 {
-    public unsafe class FASTER_YcsbBenchmark
+    public class FASTER_YcsbBenchmark
     {
         public enum Op : ulong
         {
@@ -41,7 +41,6 @@ namespace FASTER.benchmark
         long idx_ = 0;
 
         Input[] input_;
-        Input* input_ptr;
         readonly IDevice device;
 
 #if USE_CODEGEN
@@ -107,7 +106,12 @@ namespace FASTER.benchmark
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
+
             Value value = default(Value);
+            Input input = default(Input);
+            Output output = default(Output);
+            Context context = default(Context);
+
             long reads_done = 0;
             long writes_done = 0;
 
@@ -155,13 +159,13 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(ref txn_keys_[idx], ref value, null, 1);
+                                store.Upsert(ref txn_keys_[idx], ref value, ref context, 1);
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                Status result = store.Read(ref txn_keys_[idx], null, (Output*)&value, null, 1);
+                                Status result = store.Read(ref txn_keys_[idx], ref input, ref output, ref context, 1);
                                 if (result == Status.OK)
                                 {
                                     ++reads_done;
@@ -170,7 +174,7 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = store.RMW(ref txn_keys_[idx], input_ptr + (idx & 0x7), null, 1);
+                                Status result = store.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], ref context, 1);
                                 if (result == Status.OK)
                                 {
                                     ++writes_done;
@@ -218,11 +222,7 @@ namespace FASTER.benchmark
 
             input_ = new Input[8];
             for (int i = 0; i < 8; i++)
-            {
                 input_[i].value = i;
-            }
-            GCHandle handle = GCHandle.Alloc(input_, GCHandleType.Pinned);
-            input_ptr = (Input*)handle.AddrOfPinnedObject();
 
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
@@ -333,6 +333,7 @@ namespace FASTER.benchmark
 #endif
 
             Value value = default(Value);
+            Context context = default(Context);
 
             for (long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 chunk_idx < kInitCount;
@@ -350,7 +351,7 @@ namespace FASTER.benchmark
                         }
                     }
 
-                    store.Upsert(ref init_keys_[idx], ref value, null, 1);
+                    store.Upsert(ref init_keys_[idx], ref value, ref context, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -446,7 +447,7 @@ namespace FASTER.benchmark
 
         #region Load Data
 
-        private void LoadDataFromFile(string filePath)
+        private unsafe void LoadDataFromFile(string filePath)
         {
             string init_filename = filePath + "\\load_" + distribution + "_250M_raw.dat";
             string txn_filename = filePath + "\\run_" + distribution + "_250M_1000M_raw.dat";

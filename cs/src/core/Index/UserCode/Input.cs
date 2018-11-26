@@ -11,9 +11,9 @@ namespace FASTER.core
     {
         public long value;
 
-        public static Input* MoveToContext(Input* input)
+        public ref Input MoveToContext(ref Input input)
         {
-            return input;
+            return ref input;
         }
     }
 }
