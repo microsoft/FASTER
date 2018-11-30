@@ -55,7 +55,6 @@
     <EmbeddedResource Include="Index/FASTER/IndexCheckpoint.cs" />
     <EmbeddedResource Include="Index/FASTER/IndexRecovery.cs" />
     <EmbeddedResource Include="Index/FASTER/Recovery.cs" />
-    <EmbeddedResource Include="Index/Common/Layout.cs" />
     <EmbeddedResource Include="ManagedLayer/MixedContextWrapper.cs" />
     <EmbeddedResource Include="ManagedLayer/MixedFunctionsWrapper.cs" />
     <EmbeddedResource Include="ManagedLayer/MixedInputWrapper.cs" />

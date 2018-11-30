@@ -25,7 +25,7 @@ namespace FASTER.test
         {
             log = new LocalStorageDevice(TestContext.CurrentContext.TestDirectory + "\\hybridlog_native.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                (128, new Functions(), new LogSettings { LogDevice = log });
+                (128, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 29 });
             fht.StartSession();
         }
 

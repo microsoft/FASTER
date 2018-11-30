@@ -56,14 +56,14 @@ namespace FASTER.core
                 long numBytes = 0;
                 if (KeyHasObjects())
                 {
-                    var x = (AddressInfo*)Layout.GetKeyAddress((long)record);
+                    var x = hlog.GetKeyAddressInfo((long)record);
                     numBytes += x->Size;
                     startAddress = x->Address;
                 }
 
                 if (ValueHasObjects())
                 {
-                    var x = (AddressInfo*)Layout.GetValueAddress((long)record);
+                    var x = hlog.GetValueAddressInfo((long)record);
                     numBytes += x->Size;
                     if (startAddress == -1)
                         startAddress = x->Address;
@@ -81,8 +81,8 @@ namespace FASTER.core
             // Parse the key and value objects
             MemoryStream ms = new MemoryStream(ctx.objBuffer.buffer);
             ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
-            Layout.GetKey((long)record).Deserialize(ms);
-            Layout.GetValue((long)record).Deserialize(ms);
+            hlog.GetKey((long)record).Deserialize(ms);
+            hlog.GetValue((long)record).Deserialize(ms);
             ctx.objBuffer.Return();
             return true;
         }
@@ -103,12 +103,13 @@ namespace FASTER.core
 
             var ctx = result.context;
             var record = ctx.record.GetValidPointer();
-            if (Layout.HasTotalRecord(record, ctx.record.available_bytes, out int requiredBytes))
+            int requiredBytes = hlog.GetRecordSize((long)record);
+            if (ctx.record.available_bytes >= requiredBytes)
             {
                 //We have the complete record.
                 if (RetrievedObjects(record, ctx))
                 {
-                    if (ctx.key.Equals(Layout.GetKey((long)record)))
+                    if (ctx.key.Equals(ref hlog.GetKey((long)record)))
                     {
                         //The keys are same, so I/O is complete
                         // ctx.record = result.record;
@@ -127,12 +128,12 @@ namespace FASTER.core
                             if (KeyHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                Layout.GetKey(physicalAddress).Free();
+                                hlog.GetKey(physicalAddress).Free();
                             }
                             if (ValueHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                Layout.GetValue(physicalAddress).Free();
+                                hlog.GetValue(physicalAddress).Free();
                             }
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);

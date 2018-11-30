@@ -350,7 +350,6 @@ namespace FASTER.core
         {
             var hash = default(long);
             var tag = default(ushort);
-            var info = default(RecordInfo*);
             var pointer = default(long);
             var recordStart = default(long);
             var bucket = default(HashBucket*);
@@ -361,23 +360,23 @@ namespace FASTER.core
             while (pointer < untilLogicalAddressInPage)
             {
                 recordStart = pagePhysicalAddress + pointer;
-                info = Layout.GetInfo(recordStart);
+                ref RecordInfo info = ref hlog.GetInfo(recordStart);
 
-                if (info->IsNull())
+                if (info.IsNull())
                 {
                     pointer += RecordInfo.GetLength();
                     continue;
                 }
 
-                if (!info->Invalid)
+                if (!info.Invalid)
                 {
-                    hash = Layout.GetKey(recordStart).GetHashCode64();
+                    hash = hlog.GetKey(recordStart).GetHashCode64();
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default(HashBucketEntry);
                     FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
 
-                    if (info->Version <= version)
+                    if (info.Version <= version)
                     {
                         entry.Address = pageLogicalAddress + pointer;
                         entry.Tag = tag;
@@ -387,10 +386,10 @@ namespace FASTER.core
                     }
                     else
                     {
-                        info->Invalid = true;
-                        if (info->PreviousAddress < startRecoveryAddress)
+                        info.Invalid = true;
+                        if (info.PreviousAddress < startRecoveryAddress)
                         {
-                            entry.Address = info->PreviousAddress;
+                            entry.Address = info.PreviousAddress;
                             entry.Tag = tag;
                             entry.Pending = false;
                             entry.Tentative = false;
@@ -398,7 +397,7 @@ namespace FASTER.core
                         }
                     }
                 }
-                pointer += Layout.GetPhysicalSize(recordStart);
+                pointer += hlog.GetRecordSize(recordStart);
             }
         }
 

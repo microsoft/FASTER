@@ -274,12 +274,12 @@ namespace FASTER.core
                 if (KeyHasObjects())
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
-                    Layout.GetKey(physicalAddress).Free();
+                    hlog.GetKey(physicalAddress).Free();
                 }
                 if (ValueHasObjects())
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
-                    Layout.GetValue(physicalAddress).Free();
+                    hlog.GetValue(physicalAddress).Free();
                 }
                 request.record.Return();
 

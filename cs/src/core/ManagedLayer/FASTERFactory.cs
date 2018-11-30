@@ -27,6 +27,11 @@ namespace FASTER.core
         /// <summary>
         /// Size of a segment (group of pages), in bits
         /// </summary>
+        public int PageSizeBits = 25;
+
+        /// <summary>
+        /// Size of a segment (group of pages), in bits
+        /// </summary>
         public int SegmentSizeBits = 30;
 
         /// <summary>

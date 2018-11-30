@@ -52,10 +52,74 @@ namespace FASTER.core
         public long PageAndOffset;
     }
 
+    public unsafe class NativeAllocator<Key, Value> : PersistentMemoryMalloc
+        where Key : IKey<Key>
+        where Value : IValue<Value>
+    {
+        public NativeAllocator(LogSettings settings, IPageHandlers handlers) : base(settings, handlers)
+        { }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref RecordInfo GetInfo(long physicalAddress)
+        {
+            return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref Key GetKey(long physicalAddress)
+        {
+            return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public AddressInfo* GetKeyAddressInfo(long physicalAddress)
+        {
+            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref Value GetValue(long physicalAddress)
+        {
+            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public AddressInfo* GetValueAddressInfo(long physicalAddress)
+        {
+            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetRecordSize(long physicalAddress)
+        {
+            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetAverageRecordSize()
+        {
+            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetInitialRecordSize(ref Key key, int valueLength)
+        {
+            return
+                RecordInfo.GetLength() +
+                key.GetLength() +
+                valueLength;
+        }
+
+    }
+
+
     public unsafe partial class PersistentMemoryMalloc : IAllocator
     {
         // Epoch information
         private LightEpoch epoch;
+        private readonly int BufferSize;
+        private readonly int LogPageSizeBits; // = 25;
 
         // Read buffer pool
         NativeSectorAlignedBufferPool readBufferPool;
@@ -65,9 +129,8 @@ namespace FASTER.core
         private readonly int sectorSize;
 
         // Page size
-        private const int LogPageSizeBits = 25;
-        private const int PageSize = 1 << LogPageSizeBits;
-        private const int PageSizeMask = PageSize - 1;
+        private readonly int PageSize; // = 1 << LogPageSizeBits;
+        private readonly int PageSizeMask; // = PageSize - 1;
         private readonly int AlignedPageSizeBytes;
 
         // Segment size
@@ -79,7 +142,7 @@ namespace FASTER.core
         // Total HLOG size
         private readonly int LogTotalSizeBits;
         private readonly long LogTotalSizeBytes;
-        private readonly int BufferSize;
+        
 
         // HeadOffset lag (from tail)
         private const int HeadOffsetLagNumPages = 4;
@@ -175,6 +238,11 @@ namespace FASTER.core
         /// <param name="pageHandlers"></param>
         internal PersistentMemoryMalloc(LogSettings settings, long startAddress, IPageHandlers pageHandlers)
         {
+            // Page size
+            LogPageSizeBits = settings.PageSizeBits;
+            PageSize = 1 << LogPageSizeBits;
+            PageSizeMask = PageSize - 1;
+
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;
             SegmentSize = 1 << LogSegmentSizeBits;
@@ -402,7 +470,7 @@ namespace FASTER.core
             int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) -1));
 
             // Index of page within the circular buffer
-            int pageIndex = (int)(logicalAddress >> LogPageSizeBits);
+            int pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize-1));
             return *(nativePointers+pageIndex) + offset;
         }
 

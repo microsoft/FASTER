@@ -34,7 +34,7 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
-        private PersistentMemoryMalloc hlog;
+        private NativeAllocator<Key, Value> hlog;
 
         private static int numPendingReads = 0;
 
@@ -107,10 +107,7 @@ namespace FASTER.core
 
             this.functions = functions;
 
-            hlog = new PersistentMemoryMalloc(logSettings, this);
-            Key key = default(Key);
-            Value value = default(Value);
-            var recordSize = Layout.EstimatePhysicalSize(ref key, ref value);
+            hlog = new NativeAllocator<Key, Value>(logSettings, this);
             Initialize(size, hlog.GetSectorSize());
 
             _systemState = default(SystemState);
@@ -387,18 +384,18 @@ namespace FASTER.core
 
             while (ptr < endptr)
             {
-                if (!Layout.GetInfo(ptr)->Invalid)
+                if (!hlog.GetInfo(ptr).Invalid)
                 {
                     if (KeyHasObjects())
                     {
-                        Layout.GetKey(ptr).Free();
+                        hlog.GetKey(ptr).Free();
                     }
                     if (ValueHasObjects())
                     {
-                        Layout.GetValue(ptr).Free();
+                        hlog.GetValue(ptr).Free();
                     }
                 }
-                ptr += Layout.GetPhysicalSize(ptr);
+                ptr += hlog.GetRecordSize(ptr);
             }
         }
 
@@ -412,19 +409,19 @@ namespace FASTER.core
         {
             while (ptr < untilptr)
             {
-                if (!Layout.GetInfo(ptr)->Invalid)
+                if (!hlog.GetInfo(ptr).Invalid)
                 {
                     if (KeyHasObjects())
                     {
-                        Layout.GetKey(ptr).Deserialize(stream);
+                        hlog.GetKey(ptr).Deserialize(stream);
                     }
 
                     if (ValueHasObjects())
                     {
-                        Layout.GetValue(ptr).Deserialize(stream);
+                        hlog.GetValue(ptr).Deserialize(stream);
                     }
                 }
-                ptr += Layout.GetPhysicalSize(ptr);
+                ptr += hlog.GetRecordSize(ptr);
             }
         }
 
@@ -441,31 +438,31 @@ namespace FASTER.core
             addr = new List<long>();
             while (ptr < untilptr)
             {
-                if (!Layout.GetInfo(ptr)->Invalid)
+                if (!hlog.GetInfo(ptr).Invalid)
                 {
                     long pos = stream.Position;
 
                     if (KeyHasObjects())
                     {
-                        Layout.GetKey(ptr).Serialize(stream);
-                        var key_address = Layout.GetKeyAddress(ptr);
-                        ((AddressInfo*)key_address)->Address = pos;
-                        ((AddressInfo*)key_address)->Size = (int)(stream.Position - pos);
-                        addr.Add(key_address);
+                        hlog.GetKey(ptr).Serialize(stream);
+                        var key_address = hlog.GetKeyAddressInfo(ptr);
+                        key_address->Address = pos;
+                        key_address->Size = (int)(stream.Position - pos);
+                        addr.Add((long)key_address);
                     }
 
                     if (ValueHasObjects())
                     {
                         pos = stream.Position;
-                        var value_address = Layout.GetValueAddress(ptr);
-                        Layout.GetValue(ptr).Serialize(stream);
-                        ((AddressInfo*)value_address)->Address = pos;
-                        ((AddressInfo*)value_address)->Size = (int)(stream.Position - pos);
-                        addr.Add(value_address);
+                        var value_address = hlog.GetValueAddressInfo(ptr);
+                        hlog.GetValue(ptr).Serialize(stream);
+                        value_address->Address = pos;
+                        value_address->Size = (int)(stream.Position - pos);
+                        addr.Add((long)value_address);
                     }
 
                 }
-                ptr += Layout.GetPhysicalSize(ptr);
+                ptr += hlog.GetRecordSize(ptr);
 
                 if (stream.Position > objectBlockSize)
                     return;
@@ -487,13 +484,13 @@ namespace FASTER.core
 
             while (ptr < untilptr)
             {
-                if (!Layout.GetInfo(ptr)->Invalid)
+                if (!hlog.GetInfo(ptr).Invalid)
                 {
 
                     if (KeyHasObjects())
                     {
-                        var key_addr = Layout.GetKeyAddress(ptr);
-                        var addr = ((AddressInfo*)key_addr)->Address;
+                        var key_addr = hlog.GetKeyAddressInfo(ptr);
+                        var addr = key_addr->Address;
 
                         // If object pointer is greater than kObjectSize from starting object pointer
                         if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
@@ -502,15 +499,15 @@ namespace FASTER.core
                         }
 
                         if (addr < minObjAddress) minObjAddress = addr;
-                        addr += ((AddressInfo*)key_addr)->Size;
+                        addr += key_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
                     }
 
 
                     if (ValueHasObjects())
                     {
-                        var value_addr = Layout.GetValueAddress(ptr);
-                        var addr = ((AddressInfo*)value_addr)->Address;
+                        var value_addr = hlog.GetValueAddressInfo(ptr);
+                        var addr = value_addr->Address;
 
                         // If object pointer is greater than kObjectSize from starting object pointer
                         if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
@@ -519,11 +516,11 @@ namespace FASTER.core
                         }
 
                         if (addr < minObjAddress) minObjAddress = addr;
-                        addr += ((AddressInfo*)value_addr)->Size;
+                        addr += value_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
                     }
                 }
-                ptr += Layout.GetPhysicalSize(ptr);
+                ptr += hlog.GetRecordSize(ptr);
             }
 
             // Handle the case where no objects are to be written

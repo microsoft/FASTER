@@ -155,7 +155,7 @@ namespace FASTER.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, (IntPtr)pointers[pageIndex], PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, (IntPtr)pointers[pageIndex], (uint)PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
@@ -187,7 +187,7 @@ namespace FASTER.core
 
                 WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                                   (ulong)(AlignedPageSizeBytes * flushPage),
-                                  PageSize, callback, asyncResult, device, objectLogDevice);
+                                  (uint)PageSize, callback, asyncResult, device, objectLogDevice);
             }
         }
 
@@ -241,7 +241,7 @@ namespace FASTER.core
 
                 WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                                     (ulong)(AlignedPageSizeBytes * flushPage),
-                                    PageSize,
+                                    (uint)PageSize,
                                     AsyncFlushPageCallback,
                                     asyncResult, device, objectLogDevice);
             }
@@ -278,7 +278,7 @@ namespace FASTER.core
                 // Intended destination is flushPage
                 WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                             (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                            PageSize,
+                            (uint)PageSize,
                             AsyncFlushPageToDeviceCallback,
                             asyncResult, device, objectLogDevice, flushPage, _segmentOffsets);
             }

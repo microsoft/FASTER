@@ -11,6 +11,7 @@ using FASTER.core;
 using System.Runtime.CompilerServices;
 using System.IO;
 using System.Diagnostics;
+using NUnit.Framework;
 
 namespace FASTER.test
 {
@@ -162,6 +163,9 @@ namespace FASTER.test
 
         public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, ref Empty ctx, Status status)
         {
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output.value.vfield1 == key.kfield1);
+            Assert.IsTrue(output.value.vfield2 == key.kfield2);
         }
 
         public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, ref Empty ctx)
