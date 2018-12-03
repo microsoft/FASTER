@@ -203,9 +203,8 @@ namespace FASTER.core
                     pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
                 }
 
-                var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                startLogicalAddress, physicalAddress, recoveryInfo.version);
+                                startLogicalAddress, recoveryInfo.version);
 
                 // OS thread flushes current page and issues a read request if necessary
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -307,9 +306,8 @@ namespace FASTER.core
                         pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
                     }
 
-                    var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                     RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                    startLogicalAddress, physicalAddress, recoveryInfo.version);
+                                    startLogicalAddress, recoveryInfo.version);
 
                 }
 
@@ -345,7 +343,6 @@ namespace FASTER.core
                                      long fromLogicalAddressInPage,
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
-                                     long pagePhysicalAddress,
                                      int version)
         {
             var hash = default(long);
@@ -359,7 +356,7 @@ namespace FASTER.core
             pointer = fromLogicalAddressInPage;
             while (pointer < untilLogicalAddressInPage)
             {
-                recordStart = pagePhysicalAddress + pointer;
+                recordStart = pageLogicalAddress + pointer;
                 ref RecordInfo info = ref hlog.GetInfo(recordStart);
 
                 if (info.IsNull())

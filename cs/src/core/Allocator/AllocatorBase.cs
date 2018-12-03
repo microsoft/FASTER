@@ -11,136 +11,82 @@ using System.Linq.Expressions;
 using System.IO;
 using System.Diagnostics;
 
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
 namespace FASTER.core
 {
-    public unsafe class NativeAllocator<Key, Value> : PersistentMemoryMalloc
+    public enum PMMFlushStatus : int { Flushed, InProgress };
+
+    public enum PMMCloseStatus : int { Closed, Open };
+
+    public struct FullPageStatus
+    {
+        public long LastFlushedUntilAddress;
+        public FlushCloseStatus PageFlushCloseStatus;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct FlushCloseStatus
+    {
+        [FieldOffset(0)]
+        public PMMFlushStatus PageFlushStatus;
+        [FieldOffset(4)]
+        public PMMCloseStatus PageCloseStatus;
+        [FieldOffset(0)]
+        public long value;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct PageOffset
+    {
+        [FieldOffset(0)]
+        public int Offset;
+        [FieldOffset(4)]
+        public int Page;
+        [FieldOffset(0)]
+        public long PageAndOffset;
+    }
+
+    public unsafe abstract class AllocatorBase<Key, Value> : IDisposable
         where Key : IKey<Key>
         where Value : IValue<Value>
     {
-        public NativeAllocator(LogSettings settings, IPageHandlers handlers) : base(settings, handlers)
-        { }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref RecordInfo GetInfo(long physicalAddress)
-        {
-            return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref Key GetKey(long physicalAddress)
-        {
-            return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public AddressInfo* GetKeyAddressInfo(long physicalAddress)
-        {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref Value GetValue(long physicalAddress)
-        {
-            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public AddressInfo* GetValueAddressInfo(long physicalAddress)
-        {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetRecordSize(long physicalAddress)
-        {
-            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetAverageRecordSize()
-        {
-            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetInitialRecordSize(ref Key key, int valueLength)
-        {
-            return
-                RecordInfo.GetLength() +
-                key.GetLength() +
-                valueLength;
-        }
-
-    }
-
-
-    public unsafe partial class PersistentMemoryMalloc
-    {
         // Epoch information
-        private LightEpoch epoch;
-        private readonly int BufferSize;
-        private readonly int LogPageSizeBits; // = 25;
+        protected LightEpoch epoch;
 
-        // Read buffer pool
-        NativeSectorAlignedBufferPool readBufferPool;
-
-        private readonly IDevice device;
-        private readonly IDevice objectLogDevice;
-        private readonly int sectorSize;
+        #region Protected size definitions
+        // Buffer and log page size
+        protected readonly int BufferSize;
+        protected readonly int LogPageSizeBits;
 
         // Page size
-        private readonly int PageSize; // = 1 << LogPageSizeBits;
-        private readonly int PageSizeMask; // = PageSize - 1;
-        private readonly int AlignedPageSizeBytes;
+        protected readonly int PageSize; // = 1 << LogPageSizeBits;
+        protected readonly int PageSizeMask; // = PageSize - 1;
+        protected readonly int AlignedPageSizeBytes;
 
         // Segment size
-        private readonly int LogSegmentSizeBits;
-        private readonly long SegmentSize;
-        private readonly long SegmentSizeMask;
-        private readonly int SegmentBufferSize;
+        protected readonly int LogSegmentSizeBits;
+        protected readonly long SegmentSize;
+        protected readonly long SegmentSizeMask;
+        protected readonly int SegmentBufferSize;
 
         // Total HLOG size
-        private readonly int LogTotalSizeBits;
-        private readonly long LogTotalSizeBytes;
-        
+        protected readonly int LogTotalSizeBits;
+        protected readonly long LogTotalSizeBytes;
+
 
         // HeadOffset lag (from tail)
-        private const int HeadOffsetLagNumPages = 4;
-        private readonly int HeadOffsetLagSize;
-        private readonly long HeadOffsetLagAddress;
+        protected const int HeadOffsetLagNumPages = 4;
+        protected readonly int HeadOffsetLagSize;
+        protected readonly long HeadOffsetLagAddress;
 
         // ReadOnlyOffset lag (from tail)
-        private readonly double LogMutableFraction;
-        private readonly long ReadOnlyLagAddress;
+        protected readonly double LogMutableFraction;
+        protected readonly long ReadOnlyLagAddress;
 
-        // Circular buffer definition
-        private byte[][] values;
-        private GCHandle[] handles;
-        private long[] pointers;
-        private readonly GCHandle ptrHandle;
-        private readonly long* nativePointers;
+        #endregion
 
-        // Array that indicates the status of each buffer page
-        private readonly FullPageStatus[] PageStatusIndicator;
-
-        // Size of object chunks beign written to storage
-        private const int kObjectBlockSize = 100 * (1 << 20);
-
-        /// <summary>
-        /// Tail offsets per segment, in object log
-        /// </summary>
-        public readonly long[] segmentOffsets;
-
-        NativeSectorAlignedBufferPool ioBufferPool;
-
-        // Index in circular buffer, of the current tail page
-        private volatile int TailPageIndex;
-
-        // Global address of the current tail (next element to be allocated from the circular buffer)
-        private PageOffset TailPageOffset;
-
-
+        #region Public addresses
         /// <summary>
         /// Read-only address
         /// </summary>
@@ -171,31 +117,32 @@ namespace FASTER.core
         /// </summary>
         public long BeginAddress;
 
-        private IPageHandlers pageHandlers;
+        #endregion
+
+        #region Protected device info
+        protected readonly IDevice device;
+        protected readonly int sectorSize;
+        #endregion
+
+        #region Private page metadata
+        /// <summary>
+        /// Index in circular buffer, of the current tail page
+        /// </summary>
+        private volatile int TailPageIndex;
+
+        // Array that indicates the status of each buffer page
+        protected readonly FullPageStatus[] PageStatusIndicator;
 
         /// <summary>
-        /// Create instance of PMM
+        /// Global address of the current tail (next element to be allocated from the circular buffer) 
         /// </summary>
-        /// <param name="settings"></param>
-        /// <param name="pageHandlers"></param>
-        public PersistentMemoryMalloc(LogSettings settings, IPageHandlers pageHandlers) : this(settings, 0, pageHandlers)
-        {
-            Allocate(Constants.kFirstValidAddress); // null pointer
-            ReadOnlyAddress = GetTailAddress();
-            SafeReadOnlyAddress = ReadOnlyAddress;
-            HeadAddress = ReadOnlyAddress;
-            SafeHeadAddress = ReadOnlyAddress;
-            BeginAddress = ReadOnlyAddress;
-            this.pageHandlers = pageHandlers;
-        }
+        private PageOffset TailPageOffset;
+        #endregion
 
-        /// <summary>
-        /// Create instance of PMM
-        /// </summary>
-        /// <param name="settings"></param>
-        /// <param name="startAddress"></param>
-        /// <param name="pageHandlers"></param>
-        internal PersistentMemoryMalloc(LogSettings settings, long startAddress, IPageHandlers pageHandlers)
+        // Read buffer pool
+        protected NativeSectorAlignedBufferPool readBufferPool;
+
+        public AllocatorBase(LogSettings settings)
         {
             // Page size
             LogPageSizeBits = settings.PageSizeBits;
@@ -222,96 +169,49 @@ namespace FASTER.core
             LogMutableFraction = settings.MutableFraction;
             ReadOnlyLagAddress = (long)(LogMutableFraction * BufferSize) << LogPageSizeBits;
 
-            values = new byte[BufferSize][];
-            handles = new GCHandle[BufferSize];
-            pointers = new long[BufferSize];
-            PageStatusIndicator = new FullPageStatus[BufferSize];
-            segmentOffsets = new long[SegmentBufferSize];
-
-
             if (BufferSize < 16)
             {
                 throw new Exception("HLOG buffer must be at least 16 pages");
             }
 
+            PageStatusIndicator = new FullPageStatus[BufferSize];
+
             device = settings.LogDevice;
-            objectLogDevice = settings.ObjectLogDevice;
-
-            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
-            {
-                if (objectLogDevice == null)
-                    throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
-            }
-
             sectorSize = (int)device.SectorSize;
-            epoch = LightEpoch.Instance;
-            ioBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
             AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
-            
-            ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
-            nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
-
-            Initialize(startAddress);
-        }
-        
-        /// <summary>
-        /// Get sector size
-        /// </summary>
-        /// <returns></returns>
-        public int GetSectorSize()
-        {
-            return sectorSize;
         }
 
-        internal void Initialize(long startAddress)
+        protected void Initialize(long firstValidAddress)
         {
             readBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
-            long tailPage = startAddress >> LogPageSizeBits;
+            long tailPage = firstValidAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
 
+            Debug.Assert(tailPageIndex == 0);
             AllocatePage(tailPageIndex);
 
-            SafeReadOnlyAddress = startAddress;
-            ReadOnlyAddress = startAddress;
-            SafeHeadAddress = startAddress;
-            HeadAddress = startAddress;
-            FlushedUntilAddress = startAddress;
-            BeginAddress = startAddress;
+            SafeReadOnlyAddress = firstValidAddress;
+            ReadOnlyAddress = firstValidAddress;
+            SafeHeadAddress = firstValidAddress;
+            HeadAddress = firstValidAddress;
+            FlushedUntilAddress = firstValidAddress;
+            BeginAddress = firstValidAddress;
 
-            TailPageOffset.Page = (int)(startAddress >> LogPageSizeBits);
-            TailPageOffset.Offset = (int)(startAddress & PageSizeMask);
+            TailPageOffset.Page = (int)(firstValidAddress >> LogPageSizeBits);
+            TailPageOffset.Offset = (int)(firstValidAddress & PageSizeMask);
 
             TailPageIndex = -1;
-
-            //Handle the case when startAddress + pageSize overflows
-            //onto the next pageIndex in our buffer pages array
-            if (0 != (startAddress & PageSizeMask))
-            {
-                // Update write cache to point to current level.
-                TailPageIndex = tailPageIndex;
-                Interlocked.MemoryBarrier();
-
-                // Allocate for next page
-                int newPageIndex = (tailPageIndex + 1) % BufferSize;
-                AllocatePage(newPageIndex);
-            }
         }
 
-        /// <summary>
-        /// Dispose memory allocator
-        /// </summary>
-        public void Dispose()
+
+        public abstract ref RecordInfo GetInfo(long logicalAddress);
+        public abstract ref Key GetKey(long logicalAddress);
+        public abstract ref Value GetValue(long logicalAddress);
+
+        public virtual void Dispose()
         {
-            for (int i = 0; i < values.Length; i++)
-            {
-                if (handles[i].IsAllocated)
-                    handles[i].Free();
-                values[i] = null;
+            for (int i=0; i<PageStatusIndicator.Length; i++)
                 PageStatusIndicator[i].PageFlushCloseStatus = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.Flushed, PageCloseStatus = PMMCloseStatus.Closed };
-            }
-            handles = null;
-            pointers = null;
-            values = null;
 
             TailPageOffset.Page = 0;
             TailPageOffset.Offset = 0;
@@ -359,7 +259,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="address"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForAddress(long address)
         {
             return (int)((address >> LogPageSizeBits) % BufferSize);
@@ -369,7 +268,6 @@ namespace FASTER.core
         /// Get capacity (number of pages)
         /// </summary>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetCapacityNumPages()
         {
             return BufferSize;
@@ -380,7 +278,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="page"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetStartLogicalAddress(long page)
         {
             return page << LogPageSizeBits;
@@ -390,7 +287,6 @@ namespace FASTER.core
         /// Get page size
         /// </summary>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPageSize()
         {
             return PageSize;
@@ -401,7 +297,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="address"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetOffsetInPage(long address)
         {
             return address & PageSizeMask;
@@ -411,26 +306,9 @@ namespace FASTER.core
         /// Get offset lag in pages
         /// </summary>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetHeadOffsetLagInPages()
         {
             return HeadOffsetLagSize;
-        }
-
-        /// <summary>
-        /// Used to obtain the physical address corresponding to a logical address
-        /// </summary>
-        /// <param name="logicalAddress"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetPhysicalAddress(long logicalAddress)
-        {
-            // Offset within page
-            int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) -1));
-
-            // Index of page within the circular buffer
-            int pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize-1));
-            return *(nativePointers+pageIndex) + offset;
         }
 
         /// <summary>
@@ -452,7 +330,7 @@ namespace FASTER.core
             int page = localTailPageOffset.Page;
             int offset = localTailPageOffset.Offset - numSlots;
 
-#region HANDLE PAGE OVERFLOW
+            #region HANDLE PAGE OVERFLOW
             /* To prove correctness of the following modifications 
              * done to TailPageOffset and the allocation itself, 
              * we should use the fact that only one thread will have any 
@@ -504,7 +382,7 @@ namespace FASTER.core
                     offset = 0;
                 }
             }
-#endregion
+            #endregion
 
             long address = (((long)page) << LogPageSizeBits) | ((long)offset);
 
@@ -519,7 +397,7 @@ namespace FASTER.core
             //Invert the address if either the previous page is not flushed or if it is null
             if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
                 (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
-                (values[pageIndex] == null))
+                (!IsAllocated(pageIndex)))
             {
                 address = -address;
             }
@@ -540,7 +418,7 @@ namespace FASTER.core
                 PageAlignedShiftReadOnlyAddress(tailAddress);
                 PageAlignedShiftHeadAddress(tailAddress);
 
-                if (values[newPageIndex] == null) 
+                if ((!IsAllocated(newPageIndex)))
                 {
                     AllocatePage(newPageIndex);
                 }
@@ -582,7 +460,7 @@ namespace FASTER.core
             //Check if I can allocate pageIndex at all
             if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
                 (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
-                (values[pageIndex] == null))
+                (!IsAllocated(pageIndex)))
             {
                 return;
             }
@@ -595,7 +473,7 @@ namespace FASTER.core
             }
             return;
         }
-        
+
         /// <summary>
         /// Used by applications to make the current state of the database immutable quickly
         /// </summary>
@@ -620,11 +498,13 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ShiftBeginAddress(long oldBeginAddress, long newBeginAddress)
         {
-            epoch.BumpCurrentEpoch(() =>
-            {
-                device.DeleteAddressRange(oldBeginAddress, newBeginAddress);
-                objectLogDevice.DeleteSegmentRange((int)(oldBeginAddress >> LogSegmentSizeBits), (int)(newBeginAddress >> LogSegmentSizeBits));
-            });
+            epoch.BumpCurrentEpoch(() 
+                => DeleteAddressRange(oldBeginAddress, newBeginAddress));
+        }
+
+        protected virtual void DeleteAddressRange(long fromAddress, long toAddress)
+        {
+            device.DeleteAddressRange(fromAddress, toAddress);
         }
 
         /// <summary>
@@ -635,7 +515,7 @@ namespace FASTER.core
         /// <param name="waitForPendingFlushComplete"></param>
         public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool waitForPendingFlushComplete = false)
         {
-            if(MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
+            if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
                 Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 long startPage = oldSafeReadOnlyAddress >> LogPageSizeBits;
@@ -669,10 +549,10 @@ namespace FASTER.core
                 {
                     int closePage = (int)((closePageAddress >> LogPageSizeBits) % BufferSize);
 
-                    if (values[closePage] == null)
+                    if (!IsAllocated(closePage))
                     {
                         AllocatePage(closePage);
-                    }                    
+                    }
 
                     while (true)
                     {
@@ -687,14 +567,14 @@ namespace FASTER.core
 
                             if (thisCloseSegment != nextCloseSegment)
                             {
-                                // Last page in current segment
-                                segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
+                                SegmentClosed(thisCloseSegment);
                             }
                         }
                         else
                         {
                             throw new Exception("Impossible");
                         }
+
                         var newStatus = oldStatus;
                         newStatus.PageCloseStatus = PMMCloseStatus.Closed;
                         if (oldStatus.value == Interlocked.CompareExchange(ref PageStatusIndicator[closePage].PageFlushCloseStatus.value, newStatus.value, oldStatus.value))
@@ -708,41 +588,8 @@ namespace FASTER.core
                 }
             }
         }
-        
-        private void ClearPage(int page, bool pageZero)
-        {
-            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
-            {
-                long ptr = pointers[page];
-                int numBytes = PageSize;
-                long endptr = ptr + numBytes;
 
-                if (pageZero) ptr += Constants.kFirstValidAddress;
-                pageHandlers.ClearPage(ptr, endptr);
-            }
-            Array.Clear(values[page], 0, values[page].Length);
-        }
-
-
-        /// <summary>
-        /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
-        /// </summary>
-        /// <param name="index"></param>
-        private void AllocatePage(int index)
-        {
-            var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp = new byte[adjustedSize];
-            Array.Clear(tmp, 0, adjustedSize);
-
-            handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
-            long p = (long)handles[index].AddrOfPinnedObject();
-            pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
-            values[index] = tmp;
-
-            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
-            Interlocked.MemoryBarrier();
-        }
+        protected abstract void SegmentClosed(long segment);
 
         /// <summary>
         /// Called every time a new tail page is allocated. Here the read-only is 
@@ -778,7 +625,7 @@ namespace FASTER.core
             long desiredHeadAddress = (pageAlignedTailAddress - HeadOffsetLagAddress);
 
             long newHeadAddress = desiredHeadAddress;
-            if(currentFlushedUntilAddress < newHeadAddress)
+            if (currentFlushedUntilAddress < newHeadAddress)
             {
                 newHeadAddress = currentFlushedUntilAddress;
             }
@@ -796,7 +643,7 @@ namespace FASTER.core
         /// Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ShiftFlushedUntilAddress()
+        protected void ShiftFlushedUntilAddress()
         {
             long currentFlushedUntilAddress = FlushedUntilAddress;
             long page = GetPage(currentFlushedUntilAddress);
@@ -869,5 +716,159 @@ namespace FASTER.core
                 PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
             }
         }
+
+        public abstract int GetRecordSize(long physicalAddress);
+        public abstract int GetRecordSizeFromLogical(long logicalAddress);
+
+        public abstract int GetAverageRecordSize();
+        public abstract int GetInitialRecordSize(ref Key key, int valueLength);
+
+        public AddressInfo* GetKeyAddressInfo(long physicalAddress)
+        {
+            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
+        }
+
+        public abstract AddressInfo* GetValueAddressInfo(long physicalAddress);
+        protected abstract void AllocatePage(int index);
+        protected abstract bool IsAllocated(int pageIndex);
+
+
+        /// <summary>
+        /// Flush page range to disk
+        /// Called when all threads have agreed that a page range is sealed.
+        /// </summary>
+        /// <param name="startPage"></param>
+        /// <param name="untilAddress"></param>
+        public void AsyncFlushPages(long startPage, long untilAddress)
+        {
+            long endPage = (untilAddress >> LogPageSizeBits);
+            int numPages = (int)(endPage - startPage);
+            long offsetInEndPage = GetOffsetInPage(untilAddress);
+            if (offsetInEndPage > 0)
+            {
+                numPages++;
+            }
+
+
+            /* Request asynchronous writes to the device. If waitForPendingFlushComplete
+             * is set, then a CountDownEvent is set in the callback handle.
+             */
+            for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
+            {
+                long pageStartAddress = flushPage << LogPageSizeBits;
+                long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
+
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    page = flushPage,
+                    count = 1
+                };
+                if (pageEndAddress > untilAddress)
+                {
+                    asyncResult.partial = true;
+                    asyncResult.untilAddress = untilAddress;
+                }
+                else
+                {
+                    asyncResult.partial = false;
+                    asyncResult.untilAddress = pageEndAddress;
+
+                    // Set status to in-progress
+                    PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus
+                        = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open };
+                }
+
+                PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress = -1;
+
+                WriteAsync(flushPage, asyncResult);
+            }
+        }
+
+        /// <summary>
+        /// Flush pages from startPage (inclusive) to endPage (exclusive)
+        /// to specified log device and obj device
+        /// </summary>
+        /// <param name="startPage"></param>
+        /// <param name="endPage"></param>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
+        /// <param name="completed"></param>
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
+        {
+            int totalNumPages = (int)(endPage - startPage);
+            completed = new CountdownEvent(totalNumPages);
+
+            for (long flushPage = startPage; flushPage < endPage; flushPage++)
+            {
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    handle = completed,
+                    count = 1
+                };
+
+                long pageStartAddress = flushPage << LogPageSizeBits;
+                long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
+
+                // Intended destination is flushPage
+                WriteAsyncToDevice(startPage, flushPage, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice);
+            }
+        }
+
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+
+        /// <summary>
+        /// IOCompletion callback for page flush
+        /// </summary>
+        /// <param name="errorCode"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="overlap"></param>
+        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        {
+            if (errorCode != 0)
+            {
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+            }
+
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+
+            if (Interlocked.Decrement(ref result.count) == 0)
+            {
+                result.Free();
+            }
+            Overlapped.Free(overlap);
+        }
+
+        /// <summary>
+        /// Flush pages asynchronously
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="flushPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        public void AsyncFlushPages<TContext>(
+                                        long flushPageStart,
+                                        int numPages,
+                                        IOCompletionCallback callback,
+                                        TContext context)
+        {
+            for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
+            {
+                int pageIndex = GetPageIndexForPage(flushPage);
+                var asyncResult = new PageAsyncFlushResult<TContext>()
+                {
+                    page = flushPage,
+                    context = context,
+                    count = 1,
+                    partial = false,
+                    untilAddress = (flushPage + 1) << LogPageSizeBits
+                };
+
+                WriteAsync(flushPage, asyncResult);
+            }
+        }
+
+        protected abstract void ClearPage(int page, bool pageZero);
+        protected abstract void WriteAsync<TContext>(long flushPage, PageAsyncFlushResult<TContext> asyncResult);
     }
 }

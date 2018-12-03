@@ -73,7 +73,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
             var latestRecordVersion = -1;
 
             var hash = key.GetHashCode64();
@@ -90,16 +89,14 @@ namespace FASTER.core
                 logicalAddress = entry.Address;
                 if (logicalAddress >= hlog.HeadAddress)
                 {
-                    physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                    if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                    latestRecordVersion = hlog.GetInfo(logicalAddress).Version;
+                    if (!key.Equals(ref hlog.GetKey(logicalAddress)))
                     {
-                        logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                        logicalAddress = hlog.GetInfo(logicalAddress).PreviousAddress;
                         TraceBackForKeyMatch(ref key, 
                                              logicalAddress, 
                                              hlog.HeadAddress, 
-                                             out logicalAddress, 
-                                             out physicalAddress);
+                                             out logicalAddress);
                     }
                 }
             }
@@ -140,14 +137,14 @@ namespace FASTER.core
             // Mutable region (even fuzzy region is included here)
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
-                functions.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
+                functions.ConcurrentReader(ref key, ref input, ref hlog.GetValue(logicalAddress), ref output);
                 return OperationStatus.SUCCESS;
             }
 
             // Immutable region
             else if (logicalAddress >= hlog.HeadAddress)
             {
-                functions.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
+                functions.SingleReader(ref key, ref input, ref hlog.GetValue(logicalAddress), ref output);
                 return OperationStatus.SUCCESS;
             }
 
@@ -256,7 +253,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
 
             var hash = pendingContext.key.GetHashCode64();
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -267,15 +263,13 @@ namespace FASTER.core
             logicalAddress = entry.word & Constants.kAddressMask;
             if (logicalAddress >= hlog.HeadAddress)
             {
-                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!pendingContext.key.Equals(ref hlog.GetKey(physicalAddress)))
+                if (!pendingContext.key.Equals(ref hlog.GetKey(logicalAddress)))
                 {
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    logicalAddress = hlog.GetInfo(logicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref pendingContext.key,
                                             logicalAddress,
                                             hlog.HeadAddress,
-                                            out logicalAddress,
-                                            out physicalAddress);
+                                            out logicalAddress);
                 }
             }
             #endregion
@@ -287,18 +281,17 @@ namespace FASTER.core
             }
 
             #region Create new copy in mutable region
-            physicalAddress = (long)request.record.GetValidPointer();
+            var physicalAddress = (long)request.record.GetValidPointer();
             recordSize = hlog.GetRecordSize(physicalAddress);
             BlockAllocate(recordSize, out long newLogicalAddress);
-            var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            ref RecordInfo recordInfo = ref hlog.GetInfo(newLogicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                  true, false, false,
                                  entry.Address);
-            request.key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+            request.key.ShallowCopy(ref hlog.GetKey(newLogicalAddress));
             functions.SingleWriter(ref request.key,
-                                   ref hlog.GetValue(physicalAddress),
-                                   ref hlog.GetValue(newPhysicalAddress));
+                                   ref hlog.GetValue(logicalAddress),
+                                   ref hlog.GetValue(newLogicalAddress));
 
             var updatedEntry = default(HashBucketEntry);
             updatedEntry.Tag = tag;
@@ -313,7 +306,7 @@ namespace FASTER.core
                                             entry.word);
             if (foundEntry.word != entry.word)
             {
-                hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                hlog.GetInfo(newLogicalAddress).Invalid = true;
                 // We don't retry, just give up
             }
             #endregion
@@ -361,7 +354,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
             var latchOperation = default(LatchOperation);
             var version = default(int);
             var latestRecordVersion = -1;
@@ -378,16 +370,14 @@ namespace FASTER.core
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
-                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                latestRecordVersion = hlog.GetInfo(logicalAddress).Version;
+                if (!key.Equals(ref hlog.GetKey(logicalAddress)))
                 {
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    logicalAddress = hlog.GetInfo(logicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
                                         hlog.ReadOnlyAddress,
-                                        out logicalAddress,
-                                        out physicalAddress);
+                                        out logicalAddress);
                 }
             }
             #endregion
@@ -395,7 +385,7 @@ namespace FASTER.core
             // Optimization for most common case
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
-                functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
+                functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(logicalAddress));
                 return OperationStatus.SUCCESS;
             }
 
@@ -482,7 +472,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
-                functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
+                functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(logicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -496,14 +486,13 @@ namespace FASTER.core
                 // Immutable region or new record
                 var recordSize = GetRecordSize(ref key, ref value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
-                var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newLogicalAddress),
                                         threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+                key.ShallowCopy(ref hlog.GetKey(newLogicalAddress));
                 functions.SingleWriter(ref key, ref value,
-                                        ref hlog.GetValue(newPhysicalAddress));
+                                        ref hlog.GetValue(newLogicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -523,7 +512,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    hlog.GetInfo(newLogicalAddress).Invalid = true;
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;
                 }
@@ -618,7 +607,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
             var version = default(int);
             var latestRecordVersion = -1;
             var status = default(OperationStatus);
@@ -636,15 +624,13 @@ namespace FASTER.core
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.HeadAddress)
             {
-                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                latestRecordVersion = hlog.GetInfo(logicalAddress).Version;
+                if (!key.Equals(ref hlog.GetKey(logicalAddress)))
                 {
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    logicalAddress = hlog.GetInfo(logicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key, logicalAddress,
                                             hlog.HeadAddress,
-                                            out logicalAddress,
-                                            out physicalAddress);
+                                            out logicalAddress);
                 }
             }
             #endregion
@@ -652,7 +638,7 @@ namespace FASTER.core
             // Optimization for the most common case
             if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
             {
-                functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(logicalAddress));
                 return OperationStatus.SUCCESS;
             }
 
@@ -741,9 +727,9 @@ namespace FASTER.core
             {
                 if(FoldOverSnapshot)
                 {
-                    Debug.Assert(hlog.GetInfo(physicalAddress).Version == threadCtx.version);
+                    Debug.Assert(hlog.GetInfo(logicalAddress).Version == threadCtx.version);
                 }
-                functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(logicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -791,30 +777,29 @@ namespace FASTER.core
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
                                 hlog.GetInitialRecordSize(ref key, functions.InitialValueLength(ref key, ref input)) :
-                                hlog.GetRecordSize(physicalAddress);
+                                hlog.GetRecordSizeFromLogical(logicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
-                var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+                ref RecordInfo recordInfo = ref hlog.GetInfo(newLogicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo, threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+                key.ShallowCopy(ref hlog.GetKey(newLogicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                    functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newLogicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     functions.CopyUpdater(ref key, ref input,
-                                            ref hlog.GetValue(physicalAddress),
-                                            ref hlog.GetValue(newPhysicalAddress));
+                                            ref hlog.GetValue(logicalAddress),
+                                            ref hlog.GetValue(newLogicalAddress));
                     status = OperationStatus.SUCCESS;
                 }
                 else
                 {
                     // ah, old record slipped onto disk
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    hlog.GetInfo(newLogicalAddress).Invalid = true;
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;
                 }
@@ -837,7 +822,7 @@ namespace FASTER.core
                 else
                 {
                     // ah, CAS failed
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    hlog.GetInfo(newLogicalAddress).Invalid = true;
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;
                 }
@@ -918,7 +903,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
             var version = default(int);
             var latestRecordVersion = -1;
             var status = default(OperationStatus);
@@ -937,15 +921,13 @@ namespace FASTER.core
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.HeadAddress)
             {
-                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                latestRecordVersion = hlog.GetInfo(logicalAddress).Version;
+                if (!key.Equals(ref hlog.GetKey(logicalAddress)))
                 {
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    logicalAddress = hlog.GetInfo(logicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key, logicalAddress,
                                             hlog.HeadAddress,
-                                            out logicalAddress,
-                                            out physicalAddress);
+                                            out logicalAddress);
                 }
             }
             #endregion
@@ -1017,9 +999,9 @@ namespace FASTER.core
             {
                 if (FoldOverSnapshot)
                 {
-                    Debug.Assert(hlog.GetInfo(physicalAddress).Version == threadCtx.version);
+                    Debug.Assert(hlog.GetInfo(logicalAddress).Version == threadCtx.version);
                 }
-                functions.InPlaceUpdater(ref pendingContext.key, ref pendingContext.input, ref hlog.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref pendingContext.key, ref pendingContext.input, ref hlog.GetValue(logicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; 
             }
@@ -1057,33 +1039,32 @@ namespace FASTER.core
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
                                 hlog.GetInitialRecordSize(ref pendingContext.key, functions.InitialValueLength(ref key, ref pendingContext.input)) :
-                                hlog.GetRecordSize(physicalAddress);
+                                hlog.GetRecordSizeFromLogical(logicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
-                var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+                ref RecordInfo recordInfo = ref hlog.GetInfo(newLogicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo, pendingContext.version,
                                         true, false, false,
                                         entry.Address);
-                key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+                key.ShallowCopy(ref hlog.GetKey(newLogicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     functions.InitialUpdater(ref pendingContext.key, 
                                              ref pendingContext.input,
-                                             ref hlog.GetValue(newPhysicalAddress));
+                                             ref hlog.GetValue(newLogicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     functions.CopyUpdater(ref pendingContext.key, 
                                             ref pendingContext.input,
-                                            ref hlog.GetValue(physicalAddress),
-                                            ref hlog.GetValue(newPhysicalAddress));
+                                            ref hlog.GetValue(logicalAddress),
+                                            ref hlog.GetValue(newLogicalAddress));
                     status = OperationStatus.SUCCESS;
                 }
                 else
                 {
                     // record slipped onto disk
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    hlog.GetInfo(newLogicalAddress).Invalid = true;
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;
                 }
@@ -1106,7 +1087,7 @@ namespace FASTER.core
                 else
                 {
                     // ah, CAS failed
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    hlog.GetInfo(newLogicalAddress).Invalid = true;
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;
                 }
@@ -1182,7 +1163,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
             var status = default(OperationStatus);
 
             var hash = pendingContext.key.GetHashCode64();
@@ -1194,15 +1174,13 @@ namespace FASTER.core
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.HeadAddress)
             {
-                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!pendingContext.key.Equals(ref hlog.GetKey(physicalAddress)))
+                if (!pendingContext.key.Equals(ref hlog.GetKey(logicalAddress)))
                 {
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    logicalAddress = hlog.GetInfo(logicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref pendingContext.key,
                                             logicalAddress,
                                             hlog.HeadAddress,
-                                            out logicalAddress,
-                                            out physicalAddress);
+                                            out logicalAddress);
                 }
             }
             #endregion
@@ -1221,29 +1199,28 @@ namespace FASTER.core
             }
             else
             {
-                physicalAddress = (long)request.record.GetValidPointer();
+                var physicalAddress = (long)request.record.GetValidPointer();
                 recordSize = hlog.GetRecordSize(physicalAddress);
             }
             BlockAllocate(recordSize, out long newLogicalAddress);
-            var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            ref RecordInfo recordInfo = ref hlog.GetInfo(newLogicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                 true, false, false,
                                 entry.Address);
-            pendingContext.key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+            pendingContext.key.ShallowCopy(ref hlog.GetKey(newLogicalAddress));
             if (request.logicalAddress < hlog.BeginAddress)
             {
                 functions.InitialUpdater(ref pendingContext.key,
                                          ref pendingContext.input,
-                                         ref hlog.GetValue(newPhysicalAddress));
+                                         ref hlog.GetValue(newLogicalAddress));
                 status = OperationStatus.NOTFOUND;
             }
             else
             {
                 functions.CopyUpdater(ref pendingContext.key,
                                       ref pendingContext.input,
-                                      ref hlog.GetValue(physicalAddress),
-                                      ref hlog.GetValue(newPhysicalAddress));
+                                      ref hlog.GetValue(logicalAddress),
+                                      ref hlog.GetValue(newLogicalAddress));
                 status = OperationStatus.SUCCESS;
             }
 
@@ -1266,7 +1243,7 @@ namespace FASTER.core
             }
             else
             {
-                hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                hlog.GetInfo(newLogicalAddress).Invalid = true;
                 goto Retry;
             }
             #endregion
@@ -1454,25 +1431,22 @@ namespace FASTER.core
                                     ref Key key,
                                     long fromLogicalAddress,
                                     long minOffset,
-                                    out long foundLogicalAddress,
-                                    out long foundPhysicalAddress)
+                                    out long foundLogicalAddress)
         {
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minOffset)
             {
-                foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
-                if (key.Equals(hlog.GetKey(foundPhysicalAddress)))
+                if (key.Equals(hlog.GetKey(foundLogicalAddress)))
                 {
                     return true;
                 }
                 else
                 {
-                    foundLogicalAddress = ((RecordInfo*)foundPhysicalAddress)->PreviousAddress;
+                    foundLogicalAddress = hlog.GetInfo(foundLogicalAddress).PreviousAddress;
                     Debug.WriteLine("Tracing back");
                     continue;
                 }
             }
-            foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
         }
         #endregion
@@ -1629,8 +1603,7 @@ namespace FASTER.core
                         var logicalAddress = entry.Address;
                         if (logicalAddress >= hlog.HeadAddress)
                         {
-                            var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                            var hash = hlog.GetKey(physicalAddress).GetHashCode64();
+                            var hash = hlog.GetKey(logicalAddress).GetHashCode64();
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
@@ -1646,7 +1619,7 @@ namespace FASTER.core
                                 left++;
 
                                 // Insert previous address in right
-                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 1);
+                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(logicalAddress).PreviousAddress, 1);
                                 if (entry.Address != Constants.kInvalidAddress)
                                 {
                                     if (right == right_end)
@@ -1676,7 +1649,7 @@ namespace FASTER.core
                                 right++;
 
                                 // Insert previous address in left
-                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 0);
+                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(logicalAddress).PreviousAddress, 0);
                                 if (entry.Address != Constants.kInvalidAddress)
                                 {
                                     if (left == left_end)
@@ -1732,13 +1705,12 @@ namespace FASTER.core
         {
             while (logicalAddress >= hlog.HeadAddress)
             {
-                var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                var hash = hlog.GetKey(physicalAddress).GetHashCode64();
+                var hash = hlog.GetKey(logicalAddress).GetHashCode64();
                 if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
                 {
                     return logicalAddress;
                 }
-                logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                logicalAddress = hlog.GetInfo(logicalAddress).PreviousAddress;
             }
             return logicalAddress;
         }

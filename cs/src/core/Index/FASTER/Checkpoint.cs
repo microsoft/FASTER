@@ -335,7 +335,7 @@ namespace FASTER.core
                             numPendingChunksToBeSplit = numChunks;
                             splitStatus = new long[numChunks];
 
-                            Initialize(1 - resizeInfo.version, state[resizeInfo.version].size * 2, hlog.GetSectorSize());
+                            Initialize(1 - resizeInfo.version, state[resizeInfo.version].size * 2, sectorSize);
 
                             resizeInfo.version = 1 - resizeInfo.version;
 

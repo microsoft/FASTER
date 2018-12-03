@@ -34,13 +34,14 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
-        private NativeAllocator<Key, Value> hlog;
+        private BlittableAllocator<Key, Value> hlog;
 
         private static int numPendingReads = 0;
 
         private const bool kCopyReadsToTail = false;
         private const bool breakWhenClassIsLoaded = false;
         private readonly bool FoldOverSnapshot = false;
+        private readonly int sectorSize;
 
         /// <summary>
         /// Tail address of log
@@ -107,8 +108,9 @@ namespace FASTER.core
 
             this.functions = functions;
 
-            hlog = new NativeAllocator<Key, Value>(logSettings, this);
-            Initialize(size, hlog.GetSectorSize());
+            hlog = new BlittableAllocator<Key, Value>(logSettings, this);
+            sectorSize = (int)logSettings.LogDevice.SectorSize;
+            Initialize(size, sectorSize);
 
             _systemState = default(SystemState);
             _systemState.phase = Phase.REST;

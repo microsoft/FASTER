@@ -17,7 +17,7 @@ namespace FASTER.core
     /// <summary>
     /// Async IO related functions of PMM
     /// </summary>
-    public unsafe partial class PersistentMemoryMalloc : IAllocator
+    public unsafe partial class PersistentMemoryMalloc
     {
         #region Async file operations
 
