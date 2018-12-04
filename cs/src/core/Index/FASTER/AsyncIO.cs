@@ -26,7 +26,7 @@ namespace FASTER.core
 
     {
         private void AsyncGetFromDisk(long fromLogical,
-                                      int numRecords,
+                                      int numBytes,
                                       IOCompletionCallback callback,
                                       AsyncIOContext<Key> context,
                                       SectorAlignedMemory result = default(SectorAlignedMemory))
@@ -41,7 +41,11 @@ namespace FASTER.core
                     epoch.ProtectAndDrain();
             }
             Interlocked.Increment(ref numPendingReads);
-            hlog.AsyncReadRecordToMemory(fromLogical, numRecords, callback, context, result);
+
+            if (result.buffer == null)
+                hlog.AsyncReadRecordToMemory(fromLogical, numBytes, callback, context, result);
+            else
+                hlog.AsyncReadRecordObjectsToMemory(fromLogical, numBytes, callback, context, result);
         }
 
         private bool RetrievedObjects(byte* record, AsyncIOContext<Key> ctx)

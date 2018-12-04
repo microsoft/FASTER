@@ -137,23 +137,29 @@ namespace FASTER.core
         protected NativeSectorAlignedBufferPool readBufferPool;
 
         #region Abstract methods
+        public abstract long GetPhysicalAddress(long newLogicalAddress);
         public abstract ref RecordInfo GetInfo(long physicalAddress);
         public abstract ref Key GetKey(long physicalAddress);
         public abstract ref Value GetValue(long physicalAddress);
+        public abstract AddressInfo* GetKeyAddressInfo(long physicalAddress);
+        public abstract AddressInfo* GetValueAddressInfo(long physicalAddress);
+
         public abstract int GetRecordSize(long physicalAddress);
         public abstract int GetAverageRecordSize();
         public abstract int GetInitialRecordSize(ref Key key, int valueLength);
-        public abstract AddressInfo* GetKeyAddressInfo(long physicalAddress);
-        public abstract AddressInfo* GetValueAddressInfo(long physicalAddress);
-        protected abstract void SegmentClosed(long closePageAddress);
+
         protected abstract void AllocatePage(int index);
         protected abstract bool IsAllocated(int pageIndex);
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
         internal abstract void AsyncReadPagesFromDevice<TContext>(long readPageStart, int numPages, IOCompletionCallback callback, TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null);
-        internal abstract void AsyncReadRecordToMemory(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory));
+        internal abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory));
         protected abstract void ClearPage(int page, bool pageZero);
         protected abstract void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
+
+        public abstract bool KeyHasObjects();
+        public abstract bool ValueHasObjects();
         public abstract long[] GetSegmentOffsets();
+        protected abstract void SegmentClosed(long closePageAddress);
         #endregion
 
         public AllocatorBase(LogSettings settings)
@@ -427,10 +433,6 @@ namespace FASTER.core
 
             return (address);
         }
-
-        public abstract long GetPhysicalAddress(long newLogicalAddress);
-        public abstract bool ValueHasObjects();
-        public abstract bool KeyHasObjects();
 
         /// <summary>
         /// If allocator cannot allocate new memory as the head has not shifted or the previous page 
@@ -710,6 +712,39 @@ namespace FASTER.core
                 var pageIndex = GetPageIndexForAddress(addr);
                 PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
             }
+        }
+
+        /// <summary>
+        /// Invoked by users to obtain a record from disk. It uses sector aligned memory to read 
+        /// the record efficiently into memory.
+        /// </summary>
+        /// <param name="fromLogical"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        /// <param name="result"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        {
+            ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
+            ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
+
+            uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
+            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
+
+            var record = readBufferPool.Get((int)alignedReadLength);
+            record.valid_offset = (int)(fileOffset - alignedFileOffset);
+            record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
+            record.required_bytes = numBytes;
+
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key>>);
+            asyncResult.context = context;
+            asyncResult.context.record = record;
+            device.ReadAsync(alignedFileOffset,
+                        (IntPtr)asyncResult.context.record.aligned_pointer,
+                        alignedReadLength,
+                        callback,
+                        asyncResult);
         }
 
         /// <summary>

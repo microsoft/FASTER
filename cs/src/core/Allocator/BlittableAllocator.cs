@@ -455,47 +455,35 @@ namespace FASTER.core
         /// the record efficiently into memory.
         /// </summary>
         /// <param name="fromLogical"></param>
-        /// <param name="numRecords"></param>
+        /// <param name="numBytes"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal override void AsyncReadRecordToMemory(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        internal override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
 
-            uint alignedReadLength = (uint)((long)fileOffset + numRecords - (long)alignedFileOffset);
+            uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
             var record = readBufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
-            record.required_bytes = numRecords;
+            record.required_bytes = numBytes;
 
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key>>);
             asyncResult.context = context;
-            if (result.buffer == null)
-            {
-                asyncResult.context.record = record;
-                device.ReadAsync(alignedFileOffset,
-                            (IntPtr)asyncResult.context.record.aligned_pointer,
-                            alignedReadLength,
-                            callback,
-                            asyncResult);
-            }
-            else
-            {
-                asyncResult.context.record = result;
-                asyncResult.context.objBuffer = record;
-                objectLogDevice.ReadAsync(
-                    (int)(context.logicalAddress >> LogSegmentSizeBits),
-                    alignedFileOffset,
-                    (IntPtr)asyncResult.context.objBuffer.aligned_pointer,
-                    alignedReadLength,
-                    callback,
-                    asyncResult);
-            }
+            asyncResult.context.record = result;
+            asyncResult.context.objBuffer = record;
+            objectLogDevice.ReadAsync(
+                (int)(context.logicalAddress >> LogSegmentSizeBits),
+                alignedFileOffset,
+                (IntPtr)asyncResult.context.objBuffer.aligned_pointer,
+                alignedReadLength,
+                callback,
+                asyncResult);
         }
 
         /// <summary>
