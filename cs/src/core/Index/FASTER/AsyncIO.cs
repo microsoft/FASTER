@@ -102,6 +102,7 @@ namespace FASTER.core
             Interlocked.Decrement(ref numPendingReads);
 
             var ctx = result.context;
+
             var record = ctx.record.GetValidPointer();
             int requiredBytes = hlog.GetRecordSize((long)record);
             if (ctx.record.available_bytes >= requiredBytes)
@@ -109,7 +110,7 @@ namespace FASTER.core
                 //We have the complete record.
                 if (RetrievedObjects(record, ctx))
                 {
-                    if (ctx.key.Equals(ref hlog.GetKey((long)record)))
+                    if (ctx.key.Equals(ref hlog.GetKeyFromPhysical((long)record)))
                     {
                         //The keys are same, so I/O is complete
                         // ctx.record = result.record;
@@ -128,12 +129,12 @@ namespace FASTER.core
                             if (KeyHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                hlog.GetKey(physicalAddress).Free();
+                                hlog.GetKeyFromPhysical(physicalAddress).Free();
                             }
                             if (ValueHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                hlog.GetValue(physicalAddress).Free();
+                                hlog.GetValueFromPhysical(physicalAddress).Free();
                             }
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);

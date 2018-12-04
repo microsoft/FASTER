@@ -40,7 +40,6 @@ namespace FASTER.core
             : base(settings)
         {
             pageHandlers = handlers;
-            Allocate(Constants.kFirstValidAddress); // null pointer
 
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
@@ -61,12 +60,24 @@ namespace FASTER.core
             ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
             nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
 
-            Initialize(GetTailAddress());
+            Initialize(0);
+            Allocate(Constants.kFirstValidAddress); // null pointer
+
+            ReadOnlyAddress = GetTailAddress();
+            SafeReadOnlyAddress = ReadOnlyAddress;
+            HeadAddress = ReadOnlyAddress;
+            SafeHeadAddress = ReadOnlyAddress;
+            BeginAddress = ReadOnlyAddress;
         }
 
         public override ref RecordInfo GetInfo(long logicalAddress)
         {
             var physicalAddress = GetPhysicalAddress(logicalAddress);
+            return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
+        }
+
+        public ref RecordInfo GetInfoFromPhysical(long physicalAddress)
+        {
             return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
         }
 
@@ -76,9 +87,19 @@ namespace FASTER.core
             return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
         }
 
+        public ref Key GetKeyFromPhysical(long physicalAddress)
+        {
+            return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
+        }
+
         public override ref Value GetValue(long logicalAddress)
         {
             var physicalAddress = GetPhysicalAddress(logicalAddress);
+            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
+        }
+
+        public ref Value GetValueFromPhysical(long physicalAddress)
+        {
             return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
         }
 

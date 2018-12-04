@@ -6,6 +6,32 @@ using System.Collections.Concurrent;
 
 namespace FASTER.core
 {
+    public class RecordWrapper<Key, Value>
+    {
+        SectorAlignedMemory record;
+
+        public RecordWrapper(SectorAlignedMemory record)
+        {
+            this.record = record;
+        }
+
+        public ref Key GetKey()
+        {
+            throw new NotImplementedException();
+        }
+
+        public ref Value GetValue()
+        {
+            throw new NotImplementedException();
+        }
+
+        public ref RecordInfo GetInfo()
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+
     /// <summary>
     /// Async IO context for PMM
     /// </summary>

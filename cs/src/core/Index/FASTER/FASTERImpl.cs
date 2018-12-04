@@ -219,10 +219,10 @@ namespace FASTER.core
             if (request.logicalAddress >= hlog.BeginAddress)
             {
                 var physicalAddress = (long)request.record.GetValidPointer();
-                Debug.Assert(hlog.GetInfo(physicalAddress).Version <= ctx.version);
+                Debug.Assert(hlog.GetInfoFromPhysical(physicalAddress).Version <= ctx.version);
                 functions.SingleReader(ref pendingContext.key,
                                        ref pendingContext.input,
-                                       ref hlog.GetValue(physicalAddress),
+                                       ref hlog.GetValueFromPhysical(physicalAddress),
                                        ref pendingContext.output);
 
                 if (kCopyReadsToTail)
