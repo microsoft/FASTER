@@ -65,7 +65,9 @@ namespace FASTER.core
 
             // Recover segment offsets for object log
             if (_hybridLogCheckpoint.info.objectLogSegmentOffsets != null)
-                Array.Copy(_hybridLogCheckpoint.info.objectLogSegmentOffsets, hlog.segmentOffsets, _hybridLogCheckpoint.info.objectLogSegmentOffsets.Length);
+                Array.Copy(_hybridLogCheckpoint.info.objectLogSegmentOffsets, 
+                    hlog.GetSegmentOffsets(), 
+                    _hybridLogCheckpoint.info.objectLogSegmentOffsets.Length);
 
             _indexCheckpoint.main_ht_device = new LocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token));
             _indexCheckpoint.ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token));

@@ -34,7 +34,7 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
-        private BlittableAllocator<Key, Value> hlog;
+        private AllocatorBase<Key, Value> hlog;
 
         private static int numPendingReads = 0;
 

@@ -246,8 +246,12 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[hlog.segmentOffsets.Length];
-                            Array.Copy(hlog.segmentOffsets, _hybridLogCheckpoint.info.objectLogSegmentOffsets, hlog.segmentOffsets.Length);
+                            var seg = hlog.GetSegmentOffsets();
+                            if (seg != null)
+                            {
+                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+                            }
                             MakeTransition(intermediateState, nextState);
                             break;
                         }

@@ -149,8 +149,11 @@ namespace FASTER.core
         protected abstract void AllocatePage(int index);
         protected abstract bool IsAllocated(int pageIndex);
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+        internal abstract void AsyncReadPagesFromDevice<TContext>(long readPageStart, int numPages, IOCompletionCallback callback, TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null);
+        internal abstract void AsyncReadRecordToMemory(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory));
         protected abstract void ClearPage(int page, bool pageZero);
         protected abstract void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
+        public abstract long[] GetSegmentOffsets();
         #endregion
 
         public AllocatorBase(LogSettings settings)
@@ -424,6 +427,10 @@ namespace FASTER.core
 
             return (address);
         }
+
+        public abstract long GetPhysicalAddress(long newLogicalAddress);
+        public abstract bool ValueHasObjects();
+        public abstract bool KeyHasObjects();
 
         /// <summary>
         /// If allocator cannot allocate new memory as the head has not shifted or the previous page 

@@ -177,7 +177,7 @@ namespace FASTER.core
             Interlocked.MemoryBarrier();
         }
 
-        public long GetPhysicalAddress(long logicalAddress)
+        public override long GetPhysicalAddress(long logicalAddress)
         {
             // Offset within page
             int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
@@ -460,7 +460,7 @@ namespace FASTER.core
         /// <param name="context"></param>
         /// <param name="result"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AsyncReadRecordToMemory(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        internal override void AsyncReadRecordToMemory(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -509,7 +509,7 @@ namespace FASTER.core
         /// <param name="devicePageOffset"></param>
         /// <param name="logDevice"></param>
         /// <param name="objectLogDevice"></param>
-        public void AsyncReadPagesFromDevice<TContext>(
+        internal override void AsyncReadPagesFromDevice<TContext>(
                                 long readPageStart,
                                 int numPages,
                                 IOCompletionCallback callback,
@@ -753,7 +753,7 @@ namespace FASTER.core
         /// Whether KVS has keys to serialize/deserialize
         /// </summary>
         /// <returns></returns>
-        public bool KeyHasObjects()
+        public override bool KeyHasObjects()
         {
             return default(Key).HasObjectsToSerialize();
         }
@@ -762,10 +762,15 @@ namespace FASTER.core
         /// Whether KVS has values to serialize/deserialize
         /// </summary>
         /// <returns></returns>
-        public bool ValueHasObjects()
+        public override bool ValueHasObjects()
         {
             return default(Value).HasObjectsToSerialize();
         }
         #endregion
+
+        public override long[] GetSegmentOffsets()
+        {
+            return segmentOffsets;
+        }
     }
 }
