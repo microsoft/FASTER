@@ -20,7 +20,7 @@ namespace FASTER.core
     /// <summary>
     /// Checkpoint related function of FASTER
     /// </summary>
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>
         where Value : IValue<Value>
         where Input : IMoveToContext<Input>

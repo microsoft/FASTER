@@ -25,7 +25,7 @@ namespace FASTER.core
         public static string CheckpointDirectory = "C:\\data";
     }
 
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>
         where Value : IValue<Value>
         where Input : IMoveToContext<Input>
@@ -108,7 +108,7 @@ namespace FASTER.core
 
             this.functions = functions;
 
-            hlog = new BlittableAllocator<Key, Value>(logSettings, this);
+            hlog = new BlittableAllocator<Key, Value>(logSettings);
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
@@ -374,184 +374,6 @@ namespace FASTER.core
             MallocFixedPageSize<HashBucket>.PhysicalInstance = null;
             overflowBucketsAllocator = null;
             hlog.Dispose();
-        }
-
-        /// <summary>
-        /// Clear page
-        /// </summary>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="endptr">Until pointer</param>
-        public void ClearPage(long ptr, long endptr)
-        {
-
-            while (ptr < endptr)
-            {
-                if (!hlog.GetInfo(ptr).Invalid)
-                {
-                    if (KeyHasObjects())
-                    {
-                        hlog.GetKey(ptr).Free();
-                    }
-                    if (ValueHasObjects())
-                    {
-                        hlog.GetValue(ptr).Free();
-                    }
-                }
-                ptr += hlog.GetRecordSize(ptr);
-            }
-        }
-
-        /// <summary>
-        /// Deseialize part of page from stream
-        /// </summary>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="untilptr">Until pointer</param>
-        /// <param name="stream">Stream</param>
-        public void Deserialize(long ptr, long untilptr, Stream stream)
-        {
-            while (ptr < untilptr)
-            {
-                if (!hlog.GetInfo(ptr).Invalid)
-                {
-                    if (KeyHasObjects())
-                    {
-                        hlog.GetKey(ptr).Deserialize(stream);
-                    }
-
-                    if (ValueHasObjects())
-                    {
-                        hlog.GetValue(ptr).Deserialize(stream);
-                    }
-                }
-                ptr += hlog.GetRecordSize(ptr);
-            }
-        }
-
-        /// <summary>
-        /// Serialize part of page to stream
-        /// </summary>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="untilptr">Until pointer</param>
-        /// <param name="stream">Stream</param>
-        /// <param name="objectBlockSize">Size of blocks to serialize in chunks of</param>
-        /// <param name="addr">List of addresses that need to be updated with offsets</param>
-        public void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr)
-        {
-            addr = new List<long>();
-            while (ptr < untilptr)
-            {
-                if (!hlog.GetInfo(ptr).Invalid)
-                {
-                    long pos = stream.Position;
-
-                    if (KeyHasObjects())
-                    {
-                        hlog.GetKey(ptr).Serialize(stream);
-                        var key_address = hlog.GetKeyAddressInfo(ptr);
-                        key_address->Address = pos;
-                        key_address->Size = (int)(stream.Position - pos);
-                        addr.Add((long)key_address);
-                    }
-
-                    if (ValueHasObjects())
-                    {
-                        pos = stream.Position;
-                        var value_address = hlog.GetValueAddressInfo(ptr);
-                        hlog.GetValue(ptr).Serialize(stream);
-                        value_address->Address = pos;
-                        value_address->Size = (int)(stream.Position - pos);
-                        addr.Add((long)value_address);
-                    }
-
-                }
-                ptr += hlog.GetRecordSize(ptr);
-
-                if (stream.Position > objectBlockSize)
-                    return;
-            }
-        }
-
-        /// <summary>
-        /// Get location and range of object log addresses for specified log page
-        /// </summary>
-        /// <param name="ptr"></param>
-        /// <param name="untilptr"></param>
-        /// <param name="objectBlockSize"></param>
-        /// <param name="startptr"></param>
-        /// <param name="size"></param>
-        public void GetObjectInfo(ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
-        {
-            long minObjAddress = long.MaxValue;
-            long maxObjAddress = long.MinValue;
-
-            while (ptr < untilptr)
-            {
-                if (!hlog.GetInfo(ptr).Invalid)
-                {
-
-                    if (KeyHasObjects())
-                    {
-                        var key_addr = hlog.GetKeyAddressInfo(ptr);
-                        var addr = key_addr->Address;
-
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
-                        if (addr < minObjAddress) minObjAddress = addr;
-                        addr += key_addr->Size;
-                        if (addr > maxObjAddress) maxObjAddress = addr;
-                    }
-
-
-                    if (ValueHasObjects())
-                    {
-                        var value_addr = hlog.GetValueAddressInfo(ptr);
-                        var addr = value_addr->Address;
-
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
-                        if (addr < minObjAddress) minObjAddress = addr;
-                        addr += value_addr->Size;
-                        if (addr > maxObjAddress) maxObjAddress = addr;
-                    }
-                }
-                ptr += hlog.GetRecordSize(ptr);
-            }
-
-            // Handle the case where no objects are to be written
-            if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)
-            {
-                minObjAddress = 0;
-                maxObjAddress = 0;
-            }
-
-            startptr = minObjAddress;
-            size = maxObjAddress - minObjAddress;
-        }
-
-        /// <summary>
-        /// Whether KVS has keys to serialize/deserialize
-        /// </summary>
-        /// <returns></returns>
-        public bool KeyHasObjects()
-        {
-            return default(Key).HasObjectsToSerialize();
-        }
-
-        /// <summary>
-        /// Whether KVS has values to serialize/deserialize
-        /// </summary>
-        /// <returns></returns>
-        public bool ValueHasObjects()
-        {
-            return default(Value).HasObjectsToSerialize();
         }
     }
 }

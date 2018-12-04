@@ -20,7 +20,7 @@ namespace FASTER.test.recovery.sumstore
         const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private ICustomFaster fht;
+        private FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
         private string test_path;
         private Guid token;
         private IDevice log;
@@ -37,10 +37,9 @@ namespace FASTER.test.recovery.sumstore
 
             log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
 
-            fht = 
-                FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFaster>
-                (keySpace, new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = test_path });
+            fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
+                (keySpace, new Functions(), 
+                new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot });
         }
 
         [TearDown]
@@ -104,7 +103,7 @@ namespace FASTER.test.recovery.sumstore
             {
                 for (int i = 0; i < numOps; i++)
                 {
-                    fht.RMW(&((input + i)->adId), input + i, &context, i);
+                    fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
 
                     if ((i+1) % checkpointInterval == 0)
                     {
@@ -155,13 +154,14 @@ namespace FASTER.test.recovery.sumstore
             // Register with thread
             fht.StartSession();
 
+            Input input = default(Input);
+            Output output = default(Output);
+
             // Issue read requests
-            fixed (Input* input = inputArray)
+            for (var i = 0; i < numUniqueKeys; i++)
             {
-                for (var i = 0; i < numUniqueKeys; i++)
-                {
-                    fht.Read(&((input + i)->adId), null, (Output*)&((input + i)->numClicks), &context, i);
-                }
+                fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests

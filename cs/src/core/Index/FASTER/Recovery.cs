@@ -50,7 +50,7 @@ namespace FASTER.core
     /// <summary>
     /// Partial class for recovery code in FASTER
     /// </summary>
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>
         where Value : IValue<Value>
         where Input : IMoveToContext<Input>
@@ -203,8 +203,9 @@ namespace FASTER.core
                     pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
                 }
 
+                var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                startLogicalAddress, recoveryInfo.version);
+                                startLogicalAddress, physicalAddress, recoveryInfo.version);
 
                 // OS thread flushes current page and issues a read request if necessary
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -306,8 +307,9 @@ namespace FASTER.core
                         pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
                     }
 
+                    var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                     RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                    startLogicalAddress, recoveryInfo.version);
+                                    startLogicalAddress, physicalAddress, recoveryInfo.version);
 
                 }
 
@@ -343,6 +345,7 @@ namespace FASTER.core
                                      long fromLogicalAddressInPage,
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
+                                     long pagePhysicalAddress,
                                      int version)
         {
             var hash = default(long);
@@ -356,7 +359,7 @@ namespace FASTER.core
             pointer = fromLogicalAddressInPage;
             while (pointer < untilLogicalAddressInPage)
             {
-                recordStart = pageLogicalAddress + pointer;
+                recordStart = pagePhysicalAddress + pointer;
                 ref RecordInfo info = ref hlog.GetInfo(recordStart);
 
                 if (info.IsNull())

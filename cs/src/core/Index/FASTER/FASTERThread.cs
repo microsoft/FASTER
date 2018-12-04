@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>
         where Value : IValue<Value>
         where Input : IMoveToContext<Input>
@@ -271,12 +271,12 @@ namespace FASTER.core
                 }
                 
                 // Delete key, value, record
-                if (KeyHasObjects())
+                if (hlog.KeyHasObjects())
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
                     hlog.GetKey(physicalAddress).Free();
                 }
-                if (ValueHasObjects())
+                if (hlog.ValueHasObjects())
                 {
                     var physicalAddress = (long)request.record.GetValidPointer();
                     hlog.GetValue(physicalAddress).Free();

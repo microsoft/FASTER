@@ -60,15 +60,9 @@ namespace FASTER.core
         protected readonly int LogPageSizeBits;
 
         // Page size
-        protected readonly int PageSize; // = 1 << LogPageSizeBits;
-        protected readonly int PageSizeMask; // = PageSize - 1;
+        protected readonly int PageSize;
+        protected readonly int PageSizeMask;
         protected readonly int AlignedPageSizeBytes;
-
-        // Segment size
-        protected readonly int LogSegmentSizeBits;
-        protected readonly long SegmentSize;
-        protected readonly long SegmentSizeMask;
-        protected readonly int SegmentBufferSize;
 
         // Total HLOG size
         protected readonly int LogTotalSizeBits;
@@ -142,19 +136,29 @@ namespace FASTER.core
         // Read buffer pool
         protected NativeSectorAlignedBufferPool readBufferPool;
 
+        #region Abstract methods
+        public abstract ref RecordInfo GetInfo(long physicalAddress);
+        public abstract ref Key GetKey(long physicalAddress);
+        public abstract ref Value GetValue(long physicalAddress);
+        public abstract int GetRecordSize(long physicalAddress);
+        public abstract int GetAverageRecordSize();
+        public abstract int GetInitialRecordSize(ref Key key, int valueLength);
+        public abstract AddressInfo* GetKeyAddressInfo(long physicalAddress);
+        public abstract AddressInfo* GetValueAddressInfo(long physicalAddress);
+        protected abstract void SegmentClosed(long closePageAddress);
+        protected abstract void AllocatePage(int index);
+        protected abstract bool IsAllocated(int pageIndex);
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+        protected abstract void ClearPage(int page, bool pageZero);
+        protected abstract void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
+        #endregion
+
         public AllocatorBase(LogSettings settings)
         {
             // Page size
             LogPageSizeBits = settings.PageSizeBits;
             PageSize = 1 << LogPageSizeBits;
             PageSizeMask = PageSize - 1;
-
-            // Segment size
-            LogSegmentSizeBits = settings.SegmentSizeBits;
-            SegmentSize = 1 << LogSegmentSizeBits;
-            SegmentSizeMask = SegmentSize - 1;
-            SegmentBufferSize = 1 +
-                (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             // Total HLOG size
             LogTotalSizeBits = settings.MemorySizeBits;
@@ -203,11 +207,6 @@ namespace FASTER.core
             TailPageIndex = -1;
         }
 
-
-        public abstract ref RecordInfo GetInfo(long logicalAddress);
-        public abstract ref Key GetKey(long logicalAddress);
-        public abstract ref Value GetValue(long logicalAddress);
-
         public virtual void Dispose()
         {
             for (int i=0; i<PageStatusIndicator.Length; i++)
@@ -248,7 +247,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="page"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForPage(long page)
         {
             return (int)(page % BufferSize);
@@ -560,15 +558,7 @@ namespace FASTER.core
                         if (oldStatus.PageFlushStatus == PMMFlushStatus.Flushed)
                         {
                             ClearPage(closePage, (closePageAddress >> LogPageSizeBits) == 0);
-
-                            var thisCloseSegment = closePageAddress >> LogSegmentSizeBits;
-                            var nextClosePage = (closePageAddress >> LogPageSizeBits) + 1;
-                            var nextCloseSegment = nextClosePage >> (LogSegmentSizeBits - LogPageSizeBits);
-
-                            if (thisCloseSegment != nextCloseSegment)
-                            {
-                                SegmentClosed(thisCloseSegment);
-                            }
+                            SegmentClosed(closePageAddress);
                         }
                         else
                         {
@@ -588,8 +578,6 @@ namespace FASTER.core
                 }
             }
         }
-
-        protected abstract void SegmentClosed(long segment);
 
         /// <summary>
         /// Called every time a new tail page is allocated. Here the read-only is 
@@ -717,22 +705,6 @@ namespace FASTER.core
             }
         }
 
-        public abstract int GetRecordSize(long physicalAddress);
-        public abstract int GetRecordSizeFromLogical(long logicalAddress);
-
-        public abstract int GetAverageRecordSize();
-        public abstract int GetInitialRecordSize(ref Key key, int valueLength);
-
-        public AddressInfo* GetKeyAddressInfo(long physicalAddress)
-        {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
-        }
-
-        public abstract AddressInfo* GetValueAddressInfo(long physicalAddress);
-        protected abstract void AllocatePage(int index);
-        protected abstract bool IsAllocated(int pageIndex);
-
-
         /// <summary>
         /// Flush page range to disk
         /// Called when all threads have agreed that a page range is sealed.
@@ -780,7 +752,37 @@ namespace FASTER.core
 
                 PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress = -1;
 
-                WriteAsync(flushPage, asyncResult);
+                WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+            }
+        }
+
+        /// <summary>
+        /// Flush pages asynchronously
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="flushPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        public void AsyncFlushPages<TContext>(
+                                        long flushPageStart,
+                                        int numPages,
+                                        IOCompletionCallback callback,
+                                        TContext context)
+        {
+            for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
+            {
+                int pageIndex = GetPageIndexForPage(flushPage);
+                var asyncResult = new PageAsyncFlushResult<TContext>()
+                {
+                    page = flushPage,
+                    context = context,
+                    count = 1,
+                    partial = false,
+                    untilAddress = (flushPage + 1) << LogPageSizeBits
+                };
+
+                WriteAsync(flushPage, callback, asyncResult);
             }
         }
 
@@ -814,7 +816,49 @@ namespace FASTER.core
             }
         }
 
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+        /// <summary>
+        /// IOCompletion callback for page flush
+        /// </summary>
+        /// <param name="errorCode"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="overlap"></param>
+        private void AsyncFlushPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        {
+            if (errorCode != 0)
+            {
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+            }
+
+            // Set the page status to flushed
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+
+            if (Interlocked.Decrement(ref result.count) == 0)
+            {
+                PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress = result.untilAddress;
+
+                if (!result.partial)
+                {
+                    while (true)
+                    {
+                        var oldStatus = PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus;
+                        if (oldStatus.PageCloseStatus == PMMCloseStatus.Closed)
+                        {
+                            ClearPage((int)(result.page % BufferSize), result.page == 0);
+                        }
+                        var newStatus = oldStatus;
+                        newStatus.PageFlushStatus = PMMFlushStatus.Flushed;
+                        if (oldStatus.value == Interlocked.CompareExchange(ref PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus.value, newStatus.value, oldStatus.value))
+                        {
+                            break;
+                        }
+                    }
+                }
+                ShiftFlushedUntilAddress();
+                result.Free();
+            }
+
+            Overlapped.Free(overlap);
+        }
 
         /// <summary>
         /// IOCompletion callback for page flush
@@ -837,38 +881,5 @@ namespace FASTER.core
             }
             Overlapped.Free(overlap);
         }
-
-        /// <summary>
-        /// Flush pages asynchronously
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <param name="flushPageStart"></param>
-        /// <param name="numPages"></param>
-        /// <param name="callback"></param>
-        /// <param name="context"></param>
-        public void AsyncFlushPages<TContext>(
-                                        long flushPageStart,
-                                        int numPages,
-                                        IOCompletionCallback callback,
-                                        TContext context)
-        {
-            for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
-            {
-                int pageIndex = GetPageIndexForPage(flushPage);
-                var asyncResult = new PageAsyncFlushResult<TContext>()
-                {
-                    page = flushPage,
-                    context = context,
-                    count = 1,
-                    partial = false,
-                    untilAddress = (flushPage + 1) << LogPageSizeBits
-                };
-
-                WriteAsync(flushPage, asyncResult);
-            }
-        }
-
-        protected abstract void ClearPage(int page, bool pageZero);
-        protected abstract void WriteAsync<TContext>(long flushPage, PageAsyncFlushResult<TContext> asyncResult);
     }
 }

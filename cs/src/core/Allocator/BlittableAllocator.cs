@@ -19,6 +19,12 @@ namespace FASTER.core
         where Key : IKey<Key>
         where Value : IValue<Value>
     {
+        // Segment size
+        protected readonly int LogSegmentSizeBits;
+        protected readonly long SegmentSize;
+        protected readonly long SegmentSizeMask;
+        protected readonly int SegmentBufferSize;
+
         // Circular buffer definition
         private byte[][] values;
         private GCHandle[] handles;
@@ -34,12 +40,16 @@ namespace FASTER.core
         public readonly long[] segmentOffsets;
         // Buffer pool for object log related work
         NativeSectorAlignedBufferPool ioBufferPool;
-        private readonly IPageHandlers pageHandlers;
 
-        public BlittableAllocator(LogSettings settings, IPageHandlers handlers)
+        public BlittableAllocator(LogSettings settings)
             : base(settings)
         {
-            pageHandlers = handlers;
+            // Segment size
+            LogSegmentSizeBits = settings.SegmentSizeBits;
+            SegmentSize = 1 << LogSegmentSizeBits;
+            SegmentSizeMask = SegmentSize - 1;
+            SegmentBufferSize = 1 +
+                (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
@@ -48,7 +58,7 @@ namespace FASTER.core
 
             objectLogDevice = settings.ObjectLogDevice;
 
-            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
+            if (KeyHasObjects() || ValueHasObjects())
             {
                 if (objectLogDevice == null)
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
@@ -70,35 +80,17 @@ namespace FASTER.core
             BeginAddress = ReadOnlyAddress;
         }
 
-        public override ref RecordInfo GetInfo(long logicalAddress)
-        {
-            var physicalAddress = GetPhysicalAddress(logicalAddress);
-            return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
-        }
-
-        public ref RecordInfo GetInfoFromPhysical(long physicalAddress)
+        public override ref RecordInfo GetInfo(long physicalAddress)
         {
             return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
         }
 
-        public override ref Key GetKey(long logicalAddress)
-        {
-            var physicalAddress = GetPhysicalAddress(logicalAddress);
-            return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
-        }
-
-        public ref Key GetKeyFromPhysical(long physicalAddress)
+        public override ref Key GetKey(long physicalAddress)
         {
             return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
         }
 
-        public override ref Value GetValue(long logicalAddress)
-        {
-            var physicalAddress = GetPhysicalAddress(logicalAddress);
-            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
-        }
-
-        public ref Value GetValueFromPhysical(long physicalAddress)
+        public override ref Value GetValue(long physicalAddress)
         {
             return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
         }
@@ -108,11 +100,12 @@ namespace FASTER.core
             return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
         }
 
+        /*
         public override int GetRecordSizeFromLogical(long logicalAddress)
         {
             var physicalAddress = GetPhysicalAddress(logicalAddress);
             return GetRecordSize(physicalAddress);
-        }
+        }*/
 
         public override int GetAverageRecordSize()
         {
@@ -124,10 +117,17 @@ namespace FASTER.core
             return RecordInfo.GetLength() + key.GetLength() + valueLength;
         }
 
-        protected override void SegmentClosed(long segment)
+        protected override void SegmentClosed(long closePageAddress)
         {
-            // Last page in current segment
-            segmentOffsets[segment % SegmentBufferSize] = 0;
+            var thisCloseSegment = closePageAddress >> LogSegmentSizeBits;
+            var nextClosePage = (closePageAddress >> LogPageSizeBits) + 1;
+            var nextCloseSegment = nextClosePage >> (LogSegmentSizeBits - LogPageSizeBits);
+
+            if (thisCloseSegment != nextCloseSegment)
+            {
+                // Last page in current segment
+                segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
+            }
         }
 
         /// <summary>
@@ -145,6 +145,11 @@ namespace FASTER.core
             pointers = null;
             values = null;
             base.Dispose();
+        }
+
+        public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
+        {
+            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
         }
 
         public override AddressInfo* GetValueAddressInfo(long physicalAddress)
@@ -172,7 +177,7 @@ namespace FASTER.core
             Interlocked.MemoryBarrier();
         }
 
-        private long GetPhysicalAddress(long logicalAddress)
+        public long GetPhysicalAddress(long logicalAddress)
         {
             // Offset within page
             int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
@@ -193,12 +198,12 @@ namespace FASTER.core
             objectLogDevice.DeleteSegmentRange((int)(fromAddress >> LogSegmentSizeBits), (int)(toAddress >> LogSegmentSizeBits));
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
                     (uint)PageSize,
-                    AsyncFlushPageCallback,
+                    callback,
                     asyncResult, device, objectLogDevice);
         }
 
@@ -213,60 +218,18 @@ namespace FASTER.core
                         device, objectLogDevice, flushPage, new long[SegmentBufferSize]);
         }
 
-        /// <summary>
-        /// IOCompletion callback for page flush
-        /// </summary>
-        /// <param name="errorCode"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="overlap"></param>
-        private void AsyncFlushPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
-        {
-            if (errorCode != 0)
-            {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-            }
 
-            // Set the page status to flushed
-            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
-
-            if (Interlocked.Decrement(ref result.count) == 0)
-            {
-                PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress = result.untilAddress;
-
-                if (!result.partial)
-                {
-                    while (true)
-                    {
-                        var oldStatus = PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus;
-                        if (oldStatus.PageCloseStatus == PMMCloseStatus.Closed)
-                        {
-                            ClearPage((int)(result.page % BufferSize), result.page == 0);
-                        }
-                        var newStatus = oldStatus;
-                        newStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-                        if (oldStatus.value == Interlocked.CompareExchange(ref PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus.value, newStatus.value, oldStatus.value))
-                        {
-                            break;
-                        }
-                    }
-                }
-                ShiftFlushedUntilAddress();
-                result.Free();
-            }
-
-            Overlapped.Free(overlap);
-        }
 
         protected override void ClearPage(int page, bool pageZero)
         {
-            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
+            if (KeyHasObjects() || ValueHasObjects())
             {
                 long ptr = pointers[page];
                 int numBytes = PageSize;
                 long endptr = ptr + numBytes;
 
                 if (pageZero) ptr += Constants.kFirstValidAddress;
-                pageHandlers.ClearPage(ptr, endptr);
+                ClearPage(ptr, endptr);
             }
             Array.Clear(values[page], 0, values[page].Length);
         }
@@ -275,7 +238,7 @@ namespace FASTER.core
                         IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
-            if (!(pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects()))
+            if (!(KeyHasObjects() || ValueHasObjects()))
             {
                 device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
                     numBytesToWrite, callback, asyncResult);
@@ -312,7 +275,7 @@ namespace FASTER.core
             while (ptr < untilptr)
             {
                 MemoryStream ms = new MemoryStream();
-                pageHandlers.Serialize(ref ptr, untilptr, ms, kObjectBlockSize, out List<long> addresses);
+                Serialize(ref ptr, untilptr, ms, kObjectBlockSize, out List<long> addresses);
                 var _s = ms.ToArray();
                 ms.Close();
 
@@ -359,7 +322,7 @@ namespace FASTER.core
             ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length,
             IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-            if (!(pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects()))
+            if (!(KeyHasObjects() || ValueHasObjects()))
             {
                 device.ReadAsync(alignedSourceAddress, alignedDestinationAddress,
                     aligned_read_length, callback, asyncResult);
@@ -441,7 +404,7 @@ namespace FASTER.core
             {
                 MemoryStream ms = new MemoryStream(result.freeBuffer1.buffer);
                 ms.Seek(result.freeBuffer1.offset + result.freeBuffer1.valid_offset, SeekOrigin.Begin);
-                pageHandlers.Deserialize(ptr, result.untilptr, ms);
+                Deserialize(ptr, result.untilptr, ms);
                 ms.Dispose();
 
                 ptr = result.untilptr;
@@ -464,7 +427,7 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            pageHandlers.GetObjectInfo(ref ptr, pointers[result.page % BufferSize] + PageSize, kObjectBlockSize, out long startptr, out long size);
+            GetObjectInfo(ref ptr, pointers[result.page % BufferSize] + PageSize, kObjectBlockSize, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
@@ -588,8 +551,7 @@ namespace FASTER.core
                 usedObjlogDevice = this.objectLogDevice;
             }
 
-
-            if (pageHandlers.KeyHasObjects() || pageHandlers.ValueHasObjects())
+            if (KeyHasObjects() || ValueHasObjects())
             {
                 if (usedObjlogDevice == null)
                     throw new Exception("Object log device not provided");
@@ -624,5 +586,186 @@ namespace FASTER.core
                 ReadAsync(offsetInFile, (IntPtr)pointers[pageIndex], (uint)PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
+
+
+        #region Page handlers for objects
+        /// <summary>
+        /// Clear page
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="endptr">Until pointer</param>
+        public void ClearPage(long ptr, long endptr)
+        {
+
+            while (ptr < endptr)
+            {
+                if (!GetInfo(ptr).Invalid)
+                {
+                    if (KeyHasObjects())
+                    {
+                        GetKey(ptr).Free();
+                    }
+                    if (ValueHasObjects())
+                    {
+                        GetValue(ptr).Free();
+                    }
+                }
+                ptr += GetRecordSize(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Deseialize part of page from stream
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="untilptr">Until pointer</param>
+        /// <param name="stream">Stream</param>
+        public void Deserialize(long ptr, long untilptr, Stream stream)
+        {
+            while (ptr < untilptr)
+            {
+                if (!GetInfo(ptr).Invalid)
+                {
+                    if (KeyHasObjects())
+                    {
+                        GetKey(ptr).Deserialize(stream);
+                    }
+
+                    if (ValueHasObjects())
+                    {
+                        GetValue(ptr).Deserialize(stream);
+                    }
+                }
+                ptr += GetRecordSize(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Serialize part of page to stream
+        /// </summary>
+        /// <param name="ptr">From pointer</param>
+        /// <param name="untilptr">Until pointer</param>
+        /// <param name="stream">Stream</param>
+        /// <param name="objectBlockSize">Size of blocks to serialize in chunks of</param>
+        /// <param name="addr">List of addresses that need to be updated with offsets</param>
+        public void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr)
+        {
+            addr = new List<long>();
+            while (ptr < untilptr)
+            {
+                if (!GetInfo(ptr).Invalid)
+                {
+                    long pos = stream.Position;
+
+                    if (KeyHasObjects())
+                    {
+                        GetKey(ptr).Serialize(stream);
+                        var key_address = GetKeyAddressInfo(ptr);
+                        key_address->Address = pos;
+                        key_address->Size = (int)(stream.Position - pos);
+                        addr.Add((long)key_address);
+                    }
+
+                    if (ValueHasObjects())
+                    {
+                        pos = stream.Position;
+                        var value_address = GetValueAddressInfo(ptr);
+                        GetValue(ptr).Serialize(stream);
+                        value_address->Address = pos;
+                        value_address->Size = (int)(stream.Position - pos);
+                        addr.Add((long)value_address);
+                    }
+
+                }
+                ptr += GetRecordSize(ptr);
+
+                if (stream.Position > objectBlockSize)
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Get location and range of object log addresses for specified log page
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <param name="untilptr"></param>
+        /// <param name="objectBlockSize"></param>
+        /// <param name="startptr"></param>
+        /// <param name="size"></param>
+        public void GetObjectInfo(ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
+        {
+            long minObjAddress = long.MaxValue;
+            long maxObjAddress = long.MinValue;
+
+            while (ptr < untilptr)
+            {
+                if (!GetInfo(ptr).Invalid)
+                {
+
+                    if (KeyHasObjects())
+                    {
+                        var key_addr = GetKeyAddressInfo(ptr);
+                        var addr = key_addr->Address;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                        {
+                            break;
+                        }
+
+                        if (addr < minObjAddress) minObjAddress = addr;
+                        addr += key_addr->Size;
+                        if (addr > maxObjAddress) maxObjAddress = addr;
+                    }
+
+
+                    if (ValueHasObjects())
+                    {
+                        var value_addr = GetValueAddressInfo(ptr);
+                        var addr = value_addr->Address;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                        {
+                            break;
+                        }
+
+                        if (addr < minObjAddress) minObjAddress = addr;
+                        addr += value_addr->Size;
+                        if (addr > maxObjAddress) maxObjAddress = addr;
+                    }
+                }
+                ptr += GetRecordSize(ptr);
+            }
+
+            // Handle the case where no objects are to be written
+            if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)
+            {
+                minObjAddress = 0;
+                maxObjAddress = 0;
+            }
+
+            startptr = minObjAddress;
+            size = maxObjAddress - minObjAddress;
+        }
+
+        /// <summary>
+        /// Whether KVS has keys to serialize/deserialize
+        /// </summary>
+        /// <returns></returns>
+        public bool KeyHasObjects()
+        {
+            return default(Key).HasObjectsToSerialize();
+        }
+
+        /// <summary>
+        /// Whether KVS has values to serialize/deserialize
+        /// </summary>
+        /// <returns></returns>
+        public bool ValueHasObjects()
+        {
+            return default(Value).HasObjectsToSerialize();
+        }
+        #endregion
     }
 }

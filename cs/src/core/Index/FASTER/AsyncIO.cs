@@ -16,7 +16,7 @@ namespace FASTER.core
     /// <summary>
     /// Async IO related functions of FASTER
     /// </summary>
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IPageHandlers, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>
         where Value : IValue<Value>
         where Input : IMoveToContext<Input>
@@ -46,7 +46,7 @@ namespace FASTER.core
 
         private bool RetrievedObjects(byte* record, AsyncIOContext<Key> ctx)
         {
-            if (!(KeyHasObjects() || ValueHasObjects()))
+            if (!(hlog.KeyHasObjects() || hlog.ValueHasObjects()))
                 return true;
 
             if (ctx.objBuffer.buffer == null)
@@ -54,14 +54,14 @@ namespace FASTER.core
                 // Issue IO for objects
                 long startAddress = -1;
                 long numBytes = 0;
-                if (KeyHasObjects())
+                if (hlog.KeyHasObjects())
                 {
                     var x = hlog.GetKeyAddressInfo((long)record);
                     numBytes += x->Size;
                     startAddress = x->Address;
                 }
 
-                if (ValueHasObjects())
+                if (hlog.ValueHasObjects())
                 {
                     var x = hlog.GetValueAddressInfo((long)record);
                     numBytes += x->Size;
@@ -110,7 +110,7 @@ namespace FASTER.core
                 //We have the complete record.
                 if (RetrievedObjects(record, ctx))
                 {
-                    if (ctx.key.Equals(ref hlog.GetKeyFromPhysical((long)record)))
+                    if (ctx.key.Equals(ref hlog.GetKey((long)record)))
                     {
                         //The keys are same, so I/O is complete
                         // ctx.record = result.record;
@@ -126,15 +126,15 @@ namespace FASTER.core
                         {
 
                             // Delete key, value, record
-                            if (KeyHasObjects())
+                            if (hlog.KeyHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                hlog.GetKeyFromPhysical(physicalAddress).Free();
+                                hlog.GetKey(physicalAddress).Free();
                             }
-                            if (ValueHasObjects())
+                            if (hlog.ValueHasObjects())
                             {
                                 var physicalAddress = (long)ctx.record.GetValidPointer();
-                                hlog.GetValueFromPhysical(physicalAddress).Free();
+                                hlog.GetValue(physicalAddress).Free();
                             }
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);

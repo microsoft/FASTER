@@ -14,139 +14,215 @@ using System.Diagnostics;
 
 namespace FASTER.test.recovery.sumstore
 {
-    public unsafe struct AdId
+    public unsafe struct AdId : IKey<AdId>
     {
         public const int physicalSize = sizeof(long);
         public long adId;
 
-        public static long GetHashCode(AdId* key)
+        public long GetHashCode64()
         {
-            return Utility.GetHashCode(*((long*)key));
+            return Utility.GetHashCode(adId);
         }
-        public static bool Equals(AdId* k1, AdId* k2)
+        public bool Equals(ref AdId k2)
         {
-            return k1->adId == k2->adId;
+            return adId == k2.adId;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(AdId* key)
+        public int GetLength()
         {
             return physicalSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Copy(AdId* src, AdId* dst)
+        public void ShallowCopy(ref AdId dst)
         {
-            dst->adId = src->adId;
+            dst.adId = adId;
         }
 
-        public static AdId* MoveToContext(AdId* value)
+        public ref AdId MoveToContext(ref AdId value)
         {
-            return value;
+            return ref value;
         }
         #region Serialization
-        public static bool HasObjectsToSerialize()
+        public bool HasObjectsToSerialize()
         {
             return false;
         }
 
-        public static void Serialize(AdId* key, Stream toStream)
+        public void Serialize(Stream toStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Deserialize(AdId* key, Stream fromStream)
+        public void Deserialize(Stream fromStream)
         {
             throw new InvalidOperationException();
         }
-        public static void Free(AdId* key)
+        public void Free()
         {
             throw new InvalidOperationException();
         }
         #endregion
     }
 
-    public unsafe struct Input
+    public unsafe struct Input : IMoveToContext<Input>
     {
         public AdId adId;
         public NumClicks numClicks;
 
-        public static Input* MoveToContext(Input* value)
+        public ref Input MoveToContext(ref Input value)
         {
-            return value;
+            return ref value;
         }
 
     }
 
-    public unsafe struct NumClicks
+    public unsafe struct NumClicks : IValue<NumClicks>
     {
         public const int physicalSize = sizeof(long);
         public long numClicks;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(NumClicks* input)
+        public int GetLength()
         {
             return physicalSize;
         }
 
-        public static void Copy(NumClicks* src, NumClicks* dst)
+        public void ShallowCopy(ref NumClicks dst)
         {
-            dst->numClicks = src->numClicks;
+            dst.numClicks = numClicks;
         }
 
         // Shared read/write capabilities on value
-        public static void AcquireReadLock(NumClicks* value)
+        public void AcquireReadLock()
         {
         }
 
-        public static void ReleaseReadLock(NumClicks* value)
+        public void ReleaseReadLock()
         {
         }
 
-        public static void AcquireWriteLock(NumClicks* value)
+        public void AcquireWriteLock()
         {
         }
 
-        public static void ReleaseWriteLock(NumClicks* value)
+        public void ReleaseWriteLock()
         {
         }
 
-        public static NumClicks* MoveToContext(NumClicks* value)
+        public ref NumClicks MoveToContext(ref NumClicks value)
         {
-            return value;
+            return ref value;
         }
 
         #region Serialization
-        public static bool HasObjectsToSerialize()
+        public bool HasObjectsToSerialize()
         {
             return false;
         }
 
-        public static void Serialize(NumClicks* key, Stream toStream)
+        public void Serialize(Stream toStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Deserialize(NumClicks* key, Stream fromStream)
+        public void Deserialize(Stream fromStream)
         {
             throw new InvalidOperationException();
         }
-        public static void Free(NumClicks* key)
+        public void Free()
         {
             throw new InvalidOperationException();
         }
         #endregion
     }
 
-    public unsafe struct Output
+    public unsafe struct Output : IMoveToContext<Output>
     {
         public NumClicks value;
 
-        public static Output* MoveToContext(Output* value)
+        public ref Output MoveToContext(ref Output value)
         {
-            return value;
+            return ref value;
         }
 
+    }
+
+    public unsafe class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>
+    {
+        public void RMWCompletionCallback(ref AdId key, ref Input input, ref Empty ctx, Status status)
+        {
+        }
+
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, ref Empty ctx, Status status)
+        {
+        }
+
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, ref Empty ctx)
+        {
+        }
+
+        public void PersistenceCallback(long thread_id, long serial_num)
+        {
+            Console.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
+        }
+
+        // Read functions
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        {
+            dst.value = value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        {
+            value.AcquireReadLock();
+            dst.value = value;
+            value.ReleaseReadLock();
+        }
+
+        // Upsert functions
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        {
+            dst = src;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        {
+            dst.AcquireWriteLock();
+            dst = src;
+            dst.ReleaseWriteLock();
+        }
+
+        // RMW functions
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int InitialValueLength(ref AdId key, ref Input input)
+        {
+            return default(NumClicks).GetLength();
+        }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        {
+            value = input.numClicks;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        {
+            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        {
+            newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
+        }
     }
 
     public unsafe interface ICustomFaster
@@ -175,81 +251,5 @@ namespace FASTER.test.recovery.sumstore
         long LogReadOnlyAddress { get; }
         void DumpDistribution();
         void Dispose();
-    }
-
-    public unsafe class Functions
-    {
-        public static void RMWCompletionCallback(AdId* key, Input* input, Empty* ctx, Status status)
-        {
-        }
-
-        public static void ReadCompletionCallback(AdId* key, Input* input, Output* output, Empty* ctx, Status status)
-        {
-        }
-
-        public static void UpsertCompletionCallback(AdId* key, NumClicks* input, Empty* ctx)
-        {
-        }
-
-        public static void PersistenceCallback(long thread_id, long serial_num)
-        {
-            Console.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
-        }
-
-        // Read functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleReader(AdId* key, Input* input, NumClicks* value, Output* dst)
-        {
-            NumClicks.Copy(value, (NumClicks*)dst);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentReader(AdId* key, Input* input, NumClicks* value, Output* dst)
-        {
-            NumClicks.AcquireReadLock(value);
-            NumClicks.Copy(value, (NumClicks*)dst);
-            NumClicks.ReleaseReadLock(value);
-        }
-
-        // Upsert functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleWriter(AdId* key, NumClicks* src, NumClicks* dst)
-        {
-            NumClicks.Copy(src, dst);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentWriter(AdId* key, NumClicks* src, NumClicks* dst)
-        {
-            NumClicks.AcquireWriteLock(dst);
-            NumClicks.Copy(src, dst);
-            NumClicks.ReleaseWriteLock(dst);
-        }
-
-        // RMW functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int InitialValueLength(AdId* key, Input* input)
-        {
-            return NumClicks.GetLength(default(NumClicks*));
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitialUpdater(AdId* key, Input* input, NumClicks* value)
-        {
-            NumClicks.Copy(&input->numClicks, value);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InPlaceUpdater(AdId* key, Input* input, NumClicks* value)
-        {
-            Interlocked.Add(ref value->numClicks, input->numClicks.numClicks);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void CopyUpdater(AdId* key, Input* input, NumClicks* oldValue, NumClicks* newValue)
-        {
-            newValue->numClicks += oldValue->numClicks + input->numClicks.numClicks;
-        }
     }
 }
