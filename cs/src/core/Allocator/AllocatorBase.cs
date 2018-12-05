@@ -131,6 +131,11 @@ namespace FASTER.core
         /// Global address of the current tail (next element to be allocated from the circular buffer) 
         /// </summary>
         private PageOffset TailPageOffset;
+
+        /// <summary>
+        /// Number of pending reads
+        /// </summary>
+        private static int numPendingReads = 0;
         #endregion
 
         // Read buffer pool
@@ -152,14 +157,13 @@ namespace FASTER.core
         protected abstract bool IsAllocated(int pageIndex);
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
         internal abstract void AsyncReadPagesFromDevice<TContext>(long readPageStart, int numPages, IOCompletionCallback callback, TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null);
-        internal abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory));
+        internal abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory));
         protected abstract void ClearPage(int page, bool pageZero);
         protected abstract void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
 
         public abstract bool KeyHasObjects();
         public abstract bool ValueHasObjects();
         public abstract long[] GetSegmentOffsets();
-        protected abstract void SegmentClosed(long closePageAddress);
         #endregion
 
         public AllocatorBase(LogSettings settings)
@@ -567,7 +571,6 @@ namespace FASTER.core
                         if (oldStatus.PageFlushStatus == PMMFlushStatus.Flushed)
                         {
                             ClearPage(closePage, (closePageAddress >> LogPageSizeBits) == 0);
-                            SegmentClosed(closePageAddress);
                         }
                         else
                         {
@@ -582,7 +585,7 @@ namespace FASTER.core
                         }
                     }
 
-                    //Necessary to propagate this change to other threads
+                    // Necessary to propagate this change to other threads
                     Interlocked.MemoryBarrier();
                 }
             }
@@ -724,7 +727,7 @@ namespace FASTER.core
         /// <param name="context"></param>
         /// <param name="result"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -737,7 +740,7 @@ namespace FASTER.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>);
             asyncResult.context = context;
             asyncResult.context.record = record;
             device.ReadAsync(alignedFileOffset,
@@ -857,6 +860,95 @@ namespace FASTER.core
                 WriteAsyncToDevice(startPage, flushPage, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice);
             }
         }
+
+        public void AsyncGetFromDisk(long fromLogical,
+                              int numBytes,
+                              AsyncIOContext<Key, Value> context,
+                              SectorAlignedMemory result = default(SectorAlignedMemory))
+        {
+            while (numPendingReads > 120)
+            {
+                Thread.SpinWait(100);
+
+                // Do not protect if we are not already protected
+                // E.g., we are in an IO thread
+                if (epoch.IsProtected())
+                    epoch.ProtectAndDrain();
+            }
+            Interlocked.Increment(ref numPendingReads);
+
+            if (result.buffer == null)
+                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
+            else
+                AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
+        }
+
+        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        {
+            if (errorCode != 0)
+            {
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+            }
+
+            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)Overlapped.Unpack(overlap).AsyncResult;
+            Interlocked.Decrement(ref numPendingReads);
+
+            var ctx = result.context;
+
+            var record = ctx.record.GetValidPointer();
+            int requiredBytes = GetRecordSize((long)record);
+            if (ctx.record.available_bytes >= requiredBytes)
+            {
+                // We have the complete record.
+                if (RetrievedFullRecord(record, ref ctx))
+                {
+                    if (ctx.request_key.Equals(ref ctx.key))
+                    {
+                        // The keys are same, so I/O is complete
+                        // ctx.record = result.record;
+                        ctx.callbackQueue.Add(ctx);
+                    }
+                    else
+                    {
+                        var oldAddress = ctx.logicalAddress;
+
+                        //keys are not same. I/O is not complete
+                        ctx.logicalAddress = ((RecordInfo*)record)->PreviousAddress;
+                        if (ctx.logicalAddress != Constants.kInvalidAddress)
+                        {
+
+                            // Delete key, value, record
+                            if (KeyHasObjects())
+                            {
+                                var physicalAddress = (long)ctx.record.GetValidPointer();
+                                GetKey(physicalAddress).Free();
+                            }
+                            if (ValueHasObjects())
+                            {
+                                var physicalAddress = (long)ctx.record.GetValidPointer();
+                                GetValue(physicalAddress).Free();
+                            }
+                            ctx.record.Return();
+                            ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
+                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+                        }
+                        else
+                        {
+                            ctx.callbackQueue.Add(ctx);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                ctx.record.Return();
+                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+            }
+
+            Overlapped.Free(overlap);
+        }
+
+        protected abstract bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
 
         /// <summary>
         /// IOCompletion callback for page flush

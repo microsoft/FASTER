@@ -15,8 +15,8 @@ using System.Threading;
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
-        where Key : IKey<Key>
-        where Value : IValue<Value>
+        where Key : IKey<Key>, new()
+        where Value : IValue<Value>, new()
         where Input : IMoveToContext<Input>
         where Output : IMoveToContext<Output>
         where Context : IMoveToContext<Context>
@@ -214,19 +214,16 @@ namespace FASTER.core
         /// </returns>
         internal OperationStatus InternalContinuePendingRead(
                             ExecutionContext ctx,
-                            AsyncIOContext<Key> request,
+                            AsyncIOContext<Key, Value> request,
                             ref PendingContext pendingContext)
         {
             Debug.Assert(pendingContext.version == ctx.version);
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
-                var physicalAddress = (long)request.record.GetValidPointer();
-                Debug.Assert(hlog.GetInfo(physicalAddress).Version <= ctx.version);
-                functions.SingleReader(ref pendingContext.key,
-                                       ref pendingContext.input,
-                                       ref hlog.GetValue(physicalAddress),
-                                       ref pendingContext.output);
+                Debug.Assert(hlog.GetInfo((long)request.record.GetValidPointer()).Version <= ctx.version);
+                functions.SingleReader(ref pendingContext.key, ref pendingContext.input,
+                                       ref request.value, ref pendingContext.output);
 
                 if (kCopyReadsToTail)
                 {
@@ -247,7 +244,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         internal void InternalContinuePendingReadCopyToTail(
                                     ExecutionContext ctx,
-                                    AsyncIOContext<Key> request,
+                                    AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext)
         {
             Debug.Assert(pendingContext.version == ctx.version);
@@ -295,9 +292,9 @@ namespace FASTER.core
             RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                  true, false, false,
                                  entry.Address);
-            request.key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
-            functions.SingleWriter(ref request.key,
-                                   ref hlog.GetValue(physicalAddress),
+            pendingContext.key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+            functions.SingleWriter(ref pendingContext.key,
+                                   ref request.value,
                                    ref hlog.GetValue(newPhysicalAddress));
 
             var updatedEntry = default(HashBucketEntry);
@@ -1175,7 +1172,7 @@ namespace FASTER.core
         /// </returns>
         internal OperationStatus InternalContinuePendingRMW(
                                     ExecutionContext ctx,
-                                    AsyncIOContext<Key> request,
+                                    AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext)
         {
             var recordSize = default(int);
@@ -1358,15 +1355,14 @@ namespace FASTER.core
                 ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
                 // Issue asynchronous I/O request
-                AsyncIOContext<Key> request = default(AsyncIOContext<Key>);
+                AsyncIOContext<Key, Value> request = default(AsyncIOContext<Key, Value>);
                 request.id = pendingContext.id;
-                request.key = pendingContext.key;
+                request.request_key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.callbackQueue = ctx.readyResponses;
                 request.record = default(SectorAlignedMemory);
-                AsyncGetFromDisk(pendingContext.logicalAddress,
+                hlog.AsyncGetFromDisk(pendingContext.logicalAddress,
                                  hlog.GetAverageRecordSize(),
-                                 AsyncGetFromDiskCallback,
                                  request);
 
                 return Status.PENDING;

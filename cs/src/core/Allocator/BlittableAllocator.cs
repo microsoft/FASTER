@@ -16,8 +16,8 @@ using System.Diagnostics;
 namespace FASTER.core
 {
     public unsafe class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
-        where Key : IKey<Key>
-        where Value : IValue<Value>
+        where Key : IKey<Key>, new()
+        where Value : IValue<Value>, new()
     {
         // Segment size
         protected readonly int LogSegmentSizeBits;
@@ -115,19 +115,6 @@ namespace FASTER.core
         public override int GetInitialRecordSize(ref Key key, int valueLength)
         {
             return RecordInfo.GetLength() + key.GetLength() + valueLength;
-        }
-
-        protected override void SegmentClosed(long closePageAddress)
-        {
-            var thisCloseSegment = closePageAddress >> LogSegmentSizeBits;
-            var nextClosePage = (closePageAddress >> LogPageSizeBits) + 1;
-            var nextCloseSegment = nextClosePage >> (LogSegmentSizeBits - LogPageSizeBits);
-
-            if (thisCloseSegment != nextCloseSegment)
-            {
-                // Last page in current segment
-                segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
-            }
         }
 
         /// <summary>
@@ -232,6 +219,17 @@ namespace FASTER.core
                 ClearPage(ptr, endptr);
             }
             Array.Clear(values[page], 0, values[page].Length);
+
+            // Close segments
+            var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);
+            var nextClosePage = page + 1;
+            var nextCloseSegment = nextClosePage >> (LogSegmentSizeBits - LogPageSizeBits);
+
+            if (thisCloseSegment != nextCloseSegment)
+            {
+                // Last page in current segment
+                segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
+            }
         }
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
@@ -460,7 +458,7 @@ namespace FASTER.core
         /// <param name="context"></param>
         /// <param name="result"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        internal override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -473,7 +471,7 @@ namespace FASTER.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>);
             asyncResult.context = context;
             asyncResult.context.record = result;
             asyncResult.context.objBuffer = record;
@@ -735,6 +733,71 @@ namespace FASTER.core
 
             startptr = minObjAddress;
             size = maxObjAddress - minObjAddress;
+        }
+
+        /// <summary>
+        /// Retrieve objects from object log
+        /// </summary>
+        /// <param name="record"></param>
+        /// <param name="ctx"></param>
+        /// <returns></returns>
+        protected override bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
+        {
+            if (!KeyHasObjects())
+                GetKey((long)record).ShallowCopy(ref ctx.key);
+
+            if (!ValueHasObjects())
+                GetValue((long)record).ShallowCopy(ref ctx.value);
+
+            if (!(KeyHasObjects() || ValueHasObjects()))
+                return true;
+
+            if (ctx.objBuffer.buffer == null)
+            {
+                // Issue IO for objects
+                long startAddress = -1;
+                long numBytes = 0;
+                if (KeyHasObjects())
+                {
+                    var x = GetKeyAddressInfo((long)record);
+                    numBytes += x->Size;
+                    startAddress = x->Address;
+                }
+
+                if (ValueHasObjects())
+                {
+                    var x = GetValueAddressInfo((long)record);
+                    numBytes += x->Size;
+                    if (startAddress == -1)
+                        startAddress = x->Address;
+                }
+
+                // We are limited to a 2GB size per key-value
+                if (numBytes > int.MaxValue)
+                    throw new Exception("Size of key-value exceeds max of 2GB: " + numBytes);
+
+                AsyncGetFromDisk(startAddress, (int)numBytes, ctx, ctx.record);
+                return false;
+            }
+
+            // Parse the key and value objects
+            MemoryStream ms = new MemoryStream(ctx.objBuffer.buffer);
+            ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
+
+            if (KeyHasObjects())
+            {
+                ctx.key = new Key();
+                ctx.key.Deserialize(ms);
+            }
+
+            if (ValueHasObjects())
+            {
+                ctx.value = new Value();
+                ctx.value.Deserialize(ms);
+            }
+
+            ctx.objBuffer.Return();
+            return true;
         }
 
         /// <summary>

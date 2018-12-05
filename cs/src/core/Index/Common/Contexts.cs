@@ -33,8 +33,8 @@ namespace FASTER.core
     }
 
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
-        where Key : IKey<Key>
-        where Value : IValue<Value>
+        where Key : IKey<Key>, new()
+        where Value : IValue<Value>, new()
         where Input : IMoveToContext<Input>
         where Output : IMoveToContext<Output>
         where Context : IMoveToContext<Context>
@@ -76,7 +76,7 @@ namespace FASTER.core
             public Guid guid;
             public Queue<PendingContext> retryRequests;
             public Dictionary<long, PendingContext> ioPendingRequests;
-            public BlockingCollection<AsyncIOContext<Key>> readyResponses;
+            public BlockingCollection<AsyncIOContext<Key, Value>> readyResponses;
 
             public void Write(StreamWriter writer)
             {

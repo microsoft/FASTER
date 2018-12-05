@@ -46,7 +46,6 @@
   <ItemGroup>
     <EmbeddedResource Include="Index/FASTER/Checkpoint.cs" />
     <EmbeddedResource Include="Index/Common/Contexts.cs" />
-    <EmbeddedResource Include="Index/FASTER/AsyncIO.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTER.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTERBase.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTERImpl.cs" />

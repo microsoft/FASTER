@@ -31,7 +31,7 @@ namespace FASTER.core
         /// <param name="context"></param>
         /// <param name="result"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AsyncReadRecordToMemory<Key>(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext<Key> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        public void AsyncReadRecordToMemory<Key>(long fromLogical, int numRecords, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -44,7 +44,7 @@ namespace FASTER.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numRecords;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>);
             asyncResult.context = context;
             if (result.buffer == null)
             {

@@ -17,23 +17,15 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-    public class MyKey
+    public class MyKey : IKey<MyKey>
     {
         public int key;
-        public MyKey Clone()
-        {
-            return this;
-        }
 
         public long GetHashCode64()
         {
             return Utility.GetHashCode(key);
         }
 
-        public bool Equals(MyKey otherKey)
-        {
-            return key == otherKey.key;
-        }
         public void Serialize(Stream toStream)
         {
             new BinaryWriter(toStream).Write(key);
@@ -43,15 +35,40 @@ namespace FASTER.test
         {
             key = new BinaryReader(fromStream).ReadInt32();
         }
+
+        public int GetLength()
+        {
+            return 8;
+        }
+
+        public void ShallowCopy(ref MyKey dst)
+        {
+            dst = new MyKey { key = key };
+        }
+
+        public void Free()
+        {
+        }
+
+        public bool Equals(ref MyKey k2)
+        {
+            return key == k2.key;
+        }
+
+        public bool HasObjectsToSerialize()
+        {
+            return true;
+        }
+
+        public ref MyKey MoveToContext(ref MyKey key)
+        {
+            return ref key;
+        }
     }
 
-    public class MyValue
+    public class MyValue : IValue<MyValue>
     {
         public int value;
-        public MyValue Clone()
-        {
-            return this;
-        }
 
         public void Serialize(Stream toStream)
         {
@@ -62,60 +79,133 @@ namespace FASTER.test
         {
             value = new BinaryReader(fromStream).ReadInt32();
         }
+
+        public int GetLength()
+        {
+            return 8;
+        }
+
+        public void ShallowCopy(ref MyValue dst)
+        {
+            dst.value = value;
+        }
+
+        public void Free()
+        {
+        }
+
+        public void AcquireReadLock()
+        {
+        }
+
+        public void AcquireWriteLock()
+        {
+        }
+
+        public void ReleaseReadLock()
+        {
+        }
+
+        public void ReleaseWriteLock()
+        {
+        }
+
+        public bool HasObjectsToSerialize()
+        {
+            return true;
+        }
+
+        public ref MyValue MoveToContext(ref MyValue value)
+        {
+            return ref value;
+        }
     }
     
-    public class MyInput
+    public class MyInput : IMoveToContext<MyInput>
     {
         public int value;
+
+        public ref MyInput MoveToContext(ref MyInput input)
+        {
+            return ref input;
+        }
     }
 
-    public class MyOutput
+    public class MyOutput : IMoveToContext<MyOutput>
     {
         public MyValue value;
+
+        public ref MyOutput MoveToContext(ref MyOutput output)
+        {
+            return ref output;
+        }
     }
 
 
-    public class MyContext
+    public class MyContext : IMoveToContext<MyContext>
     {
+        public ref MyContext MoveToContext(ref MyContext context)
+        {
+            return ref context;
+        }
     }
 
-    public class MyFunctions : IUserFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
+    public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public void RMWCompletionCallback(MyContext ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(MyContext ctx, MyOutput output, Status status)
-        {
-        }
-
-        public void UpsertCompletionCallback(MyContext ctx)
-        {
-        }
-
-        public void CopyUpdater(MyKey key, MyInput input, MyValue oldValue, ref MyValue newValue)
-        {
-            newValue = new MyValue { value = oldValue.value + input.value };
-        }
-
-        public int InitialValueLength(MyKey key, MyInput input)
-        {
-            return sizeof(int);
-        }
-
-        public void InitialUpdater(MyKey key, MyInput input, ref MyValue value)
+        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value = new MyValue { value = input.value };
         }
 
-        public void InPlaceUpdater(MyKey key, MyInput input, ref MyValue value)
+        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
         }
 
-        public void Reader(MyKey key, MyInput input, MyValue value, ref MyOutput dst)
+        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        {
+            newValue = new MyValue { value = oldValue.value + input.value };
+        }
+
+        public int InitialValueLength(ref MyKey key, ref MyInput input)
+        {
+            return sizeof(int);
+        }
+
+        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
+        }
+
+        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        {
+            dst.value = src.value;
+        }
+
+        public void PersistenceCallback(long thread_id, long serial_num)
+        {
+        }
+
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyContext ctx, Status status)
+        {
+        }
+
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyContext ctx, Status status)
+        {
+        }
+
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, ref MyContext ctx)
+        {
+        }
+
+        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        {
+            dst = src;
         }
     }
 
