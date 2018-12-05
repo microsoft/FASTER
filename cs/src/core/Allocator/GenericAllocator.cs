@@ -10,12 +10,21 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.IO;
 using System.Diagnostics;
+using FASTER.core.Roslyn;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace FASTER.core
 {
-    public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    public struct Record<Key, Value>
+    {
+        public RecordInfo info;
+        public Key key;
+        public Value value;
+    }
+
+
+    public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
         where Key : IKey<Key>, new()
         where Value : IValue<Value>, new()
     {
@@ -26,11 +35,7 @@ namespace FASTER.core
         protected readonly int SegmentBufferSize;
 
         // Circular buffer definition
-        private byte[][] values;
-        private GCHandle[] handles;
-        private long[] pointers;
-        private readonly GCHandle ptrHandle;
-        private readonly long* nativePointers;
+        protected Record<Key, Value>[][] values;
 
         // Object log related variables
         private readonly IDevice objectLogDevice;
@@ -41,7 +46,7 @@ namespace FASTER.core
         // Buffer pool for object log related work
         NativeSectorAlignedBufferPool ioBufferPool;
 
-        public BlittableAllocator(LogSettings settings)
+        public GenericAllocator(LogSettings settings)
             : base(settings)
         {
             // Segment size
@@ -51,9 +56,7 @@ namespace FASTER.core
             SegmentBufferSize = 1 +
                 (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
-            values = new byte[BufferSize][];
-            handles = new GCHandle[BufferSize];
-            pointers = new long[BufferSize];
+            values = new Record<Key, Value>[BufferSize][];
             segmentOffsets = new long[SegmentBufferSize];
 
             objectLogDevice = settings.ObjectLogDevice;
@@ -66,34 +69,62 @@ namespace FASTER.core
 
             epoch = LightEpoch.Instance;
             ioBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
-
-            ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
-            nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
         }
 
         public override void Initialize()
         {
-            Initialize(Constants.kFirstValidAddress);
+            Initialize(recordSize);
+        }
+
+        /// <summary>
+        /// Get start logical address
+        /// </summary>
+        /// <param name="page"></param>
+        /// <returns></returns>
+        public override long GetStartLogicalAddress(long page)
+        {
+            if (page == 0)
+                return (page << LogPageSizeBits) + recordSize;
+
+            return page << LogPageSizeBits;
         }
 
         public override ref RecordInfo GetInfo(long physicalAddress)
         {
-            return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
+            // Offset within page
+            int offset = (int)(physicalAddress & PageSizeMask);
+
+            // Index of page within the circular buffer
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+
+            return ref values[pageIndex][offset/recordSize].info;
         }
 
         public override ref Key GetKey(long physicalAddress)
         {
-            return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
+            // Offset within page
+            int offset = (int)(physicalAddress & PageSizeMask);
+
+            // Index of page within the circular buffer
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+
+            return ref values[pageIndex][offset / recordSize].key;
         }
 
         public override ref Value GetValue(long physicalAddress)
         {
-            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
+            // Offset within page
+            int offset = (int)(physicalAddress & PageSizeMask);
+
+            // Index of page within the circular buffer
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+
+            return ref values[pageIndex][offset / recordSize].value;
         }
 
         public override int GetRecordSize(long physicalAddress)
         {
-            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
+            return recordSize; // RecordInfo.GetLength() +  default(Key).GetLength() + default(Value).GetLength();
         }
 
         /*
@@ -105,12 +136,12 @@ namespace FASTER.core
 
         public override int GetAverageRecordSize()
         {
-            return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
+            return recordSize;// RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
         }
 
         public override int GetInitialRecordSize(ref Key key, int valueLength)
         {
-            return RecordInfo.GetLength() + key.GetLength() + valueLength;
+            return recordSize; //  RecordInfo.GetLength() + key.GetLength() + valueLength;
         }
 
         /// <summary>
@@ -120,12 +151,8 @@ namespace FASTER.core
         {
             for (int i = 0; i < values.Length; i++)
             {
-                if (handles[i].IsAllocated)
-                    handles[i].Free();
                 values[i] = null;
             }
-            handles = null;
-            pointers = null;
             values = null;
             base.Dispose();
         }
@@ -137,8 +164,11 @@ namespace FASTER.core
 
         public override AddressInfo* GetValueAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + default(Key).GetLength());
+            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
         }
+
+        static readonly int recordSize = Helper.GetSize(default(Record<Key, Value>));
+        static readonly int keySize = Helper.GetSize(default(Key));
 
         /// <summary>
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
@@ -146,14 +176,11 @@ namespace FASTER.core
         /// <param name="index"></param>
         protected override void AllocatePage(int index)
         {
-            var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp = new byte[adjustedSize];
-            Array.Clear(tmp, 0, adjustedSize);
-
-            handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
-            long p = (long)handles[index].AddrOfPinnedObject();
-            pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
-            values[index] = tmp;
+            if (PageSize % recordSize == 0)
+                values[index] = new Record<Key, Value>[PageSize / recordSize];
+            else
+                values[index] = new Record<Key, Value>[1 + PageSize / recordSize];
+            Array.Clear(values[index], 0, values[index].Length);
 
             PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
             PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
@@ -162,12 +189,7 @@ namespace FASTER.core
 
         public override long GetPhysicalAddress(long logicalAddress)
         {
-            // Offset within page
-            int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
-
-            // Index of page within the circular buffer
-            int pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-            return *(nativePointers + pageIndex) + offset;
+            return logicalAddress;
         }
 
         protected override bool IsAllocated(int pageIndex)
@@ -181,9 +203,9 @@ namespace FASTER.core
             objectLogDevice.DeleteSegmentRange((int)(fromAddress >> LogSegmentSizeBits), (int)(toAddress >> LogSegmentSizeBits));
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
         {
-            WriteAsync((IntPtr)pointers[flushPage % BufferSize],
+            WriteAsync(flushPage,
                     (ulong)(AlignedPageSizeBytes * flushPage),
                     (uint)PageSize,
                     callback,
@@ -191,32 +213,21 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, IOCompletionCallback callback,
+            (long startPage, long flushPage, IOCompletionCallback callback, 
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
         {
             // We are writing to separate device, so use fresh segment offsets
-            WriteAsync((IntPtr)pointers[flushPage % BufferSize],
+            WriteAsync(flushPage,
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)PageSize, callback, asyncResult,
+                        (uint)PageSize, callback, asyncResult, 
                         device, objectLogDevice, flushPage, new long[SegmentBufferSize]);
         }
 
-        /// <summary>
-        /// Get start logical address
-        /// </summary>
-        /// <param name="page"></param>
-        /// <returns></returns>
-        public override long GetStartLogicalAddress(long page)
-        {
-            if (page == 0)
-                return (page << LogPageSizeBits) + Constants.kFirstValidAddress;
-
-            return page << LogPageSizeBits;
-        }
 
 
         protected override void ClearPage(int page, bool pageZero)
         {
+            /*
             if (KeyHasObjects() || ValueHasObjects())
             {
                 long ptr = pointers[page];
@@ -225,7 +236,8 @@ namespace FASTER.core
 
                 if (pageZero) ptr += Constants.kFirstValidAddress;
                 ClearPage(ptr, endptr);
-            }
+            }*/
+
             Array.Clear(values[page], 0, values[page].Length);
 
             // Close segments
@@ -240,16 +252,18 @@ namespace FASTER.core
             }
         }
 
-        private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
+        private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
                         IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
+            /*
             if (!(KeyHasObjects() || ValueHasObjects()))
             {
-                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
+                device.WriteAsync((IntPtr)pointers[flushPage % BufferSize], alignedDestinationAddress,
                     numBytesToWrite, callback, asyncResult);
                 return;
             }
+            */
 
             // Check if user did not override with special segment offsets
             if (localSegmentOffsets == null) localSegmentOffsets = segmentOffsets;
@@ -257,65 +271,94 @@ namespace FASTER.core
             // need to write both page and object cache
             asyncResult.count++;
 
+            var src = values[flushPage % BufferSize];
             var buffer = ioBufferPool.Get(PageSize);
-            Buffer.MemoryCopy((void*)alignedSourceAddress, buffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
+
+            fixed (RecordInfo* pin = &src[0].info)
+            {
+                Buffer.MemoryCopy((void*)pin, buffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
+            }
 
             long ptr = (long)buffer.aligned_pointer;
             List<long> addr = new List<long>();
             asyncResult.freeBuffer1 = buffer;
 
             // Correct for page 0 of HLOG
-            if (intendedDestinationPage < 0)
+            //if (intendedDestinationPage < 0)
+            //{
+            // By default, when we are not writing to a separate device, the intended 
+            // destination page (logical) is the same as actual
+            //  intendedDestinationPage = (long)(alignedDestinationAddress >> LogPageSizeBits);
+            //}
+
+            //if (intendedDestinationPage == 0)
+            //    ptr += Constants.kFirstValidAddress;
+
+            addr = new List<long>();
+            MemoryStream ms = new MemoryStream();
+            for (int i=0; i<numBytesToWrite/recordSize; i++)
             {
-                // By default, when we are not writing to a separate device, the intended 
-                // destination page (logical) is the same as actual
-                intendedDestinationPage = (long)(alignedDestinationAddress >> LogPageSizeBits);
-            }
-
-            if (intendedDestinationPage == 0)
-                ptr += Constants.kFirstValidAddress;
-
-            var untilptr = (long)buffer.aligned_pointer + numBytesToWrite;
-
-
-            while (ptr < untilptr)
-            {
-                MemoryStream ms = new MemoryStream();
-                Serialize(ref ptr, untilptr, ms, kObjectBlockSize, out List<long> addresses);
-                var _s = ms.ToArray();
-                ms.Close();
-
-                var _objBuffer = ioBufferPool.Get(_s.Length);
-
-                asyncResult.done = new AutoResetEvent(false);
-
-                var _alignedLength = (_s.Length + (sectorSize - 1)) & ~(sectorSize - 1);
-
-                var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
-                fixed (void* src = _s)
-                    Buffer.MemoryCopy(src, _objBuffer.aligned_pointer, _s.Length, _s.Length);
-
-                foreach (var address in addresses)
-                    *((long*)address) += _objAddr;
-
-                if (ptr < untilptr)
+                if (!src[i].info.Invalid)
                 {
-                    objlogDevice.WriteAsync(
-                        (IntPtr)_objBuffer.aligned_pointer,
-                        (int)(alignedDestinationAddress >> LogSegmentSizeBits),
-                        (ulong)_objAddr, (uint)_alignedLength, AsyncFlushPartialObjectLogCallback<TContext>, asyncResult);
+                    if (KeyHasObjects())
+                    {
+                        long pos = ms.Position;
+                        src[i].key.Serialize(ms);
+                        var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
+                        key_address->Address = pos;
+                        key_address->Size = (int)(ms.Position - pos);
+                        addr.Add((long)key_address);
+                    }
 
-                    // Wait for write to complete before resuming next write
-                    asyncResult.done.WaitOne();
-                    _objBuffer.Return();
+                    if (ValueHasObjects())
+                    {
+                        long pos = ms.Position;
+                        src[i].value.Serialize(ms);
+                        var value_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize + keySize));
+                        value_address->Address = pos;
+                        value_address->Size = (int)(ms.Position - pos);
+                        addr.Add((long)value_address);
+                    }
                 }
-                else
+
+                if (ms.Position > kObjectBlockSize || i == numBytesToWrite/recordSize - 1)
                 {
-                    asyncResult.freeBuffer2 = _objBuffer;
-                    objlogDevice.WriteAsync(
-                        (IntPtr)_objBuffer.aligned_pointer,
-                        (int)(alignedDestinationAddress >> LogSegmentSizeBits),
-                        (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
+                    var _s = ms.ToArray();
+                    ms.Close();
+                    ms = new MemoryStream();
+
+                    var _objBuffer = ioBufferPool.Get(_s.Length);
+
+                    asyncResult.done = new AutoResetEvent(false);
+
+                    var _alignedLength = (_s.Length + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
+                    fixed (void* src_ = _s)
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, _s.Length, _s.Length);
+
+                    foreach (var address in addr)
+                        *((long*)address) += _objAddr;
+
+                    if (i < numBytesToWrite / recordSize - 1)
+                    {
+                        objlogDevice.WriteAsync(
+                            (IntPtr)_objBuffer.aligned_pointer,
+                            (int)(alignedDestinationAddress >> LogSegmentSizeBits),
+                            (ulong)_objAddr, (uint)_alignedLength, AsyncFlushPartialObjectLogCallback<TContext>, asyncResult);
+
+                        // Wait for write to complete before resuming next write
+                        asyncResult.done.WaitOne();
+                        _objBuffer.Return();
+                    }
+                    else
+                    {
+                        asyncResult.freeBuffer2 = _objBuffer;
+                        objlogDevice.WriteAsync(
+                            (IntPtr)_objBuffer.aligned_pointer,
+                            (int)(alignedDestinationAddress >> LogSegmentSizeBits),
+                            (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
+                    }
                 }
             }
 
@@ -328,9 +371,12 @@ namespace FASTER.core
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
+            asyncResult.freeBuffer1 = readBufferPool.Get((int)aligned_read_length);
+            asyncResult.freeBuffer1.required_bytes = (int)aligned_read_length;
+
             if (!(KeyHasObjects() || ValueHasObjects()))
             {
-                device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex],
+                device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.aligned_pointer,
                     aligned_read_length, callback, asyncResult);
                 return;
             }
@@ -345,7 +391,7 @@ namespace FASTER.core
             }
             asyncResult.objlogDevice = objlogDevice;
 
-            device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex],
+            device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.aligned_pointer,
                     aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
 
@@ -401,11 +447,13 @@ namespace FASTER.core
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
 
-            long ptr = pointers[result.page % BufferSize];
+            var src = values[result.page % BufferSize];
+
+            long ptr = 0;
 
             // Correct for page 0 of HLOG
-            if (result.page == 0)
-                ptr += Constants.kFirstValidAddress;
+            //if (result.page == 0)
+            //    ptr += Constants.kFirstValidAddress;
 
             // Check if we are resuming
             if (result.resumeptr > ptr)
@@ -426,9 +474,8 @@ namespace FASTER.core
             }
 
             // If we have processed entire page, return
-            if (ptr >= pointers[result.page % BufferSize] + PageSize)
+            if (ptr >= PageSize)
             {
-
                 result.Free();
 
                 // Call the "real" page read callback
@@ -439,7 +486,7 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            GetObjectInfo(ref ptr, pointers[result.page % BufferSize] + PageSize, kObjectBlockSize, out long startptr, out long size);
+            GetObjectInfo(ref ptr, PageSize, kObjectBlockSize, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
@@ -497,6 +544,8 @@ namespace FASTER.core
                 callback,
                 asyncResult);
         }
+
+
 
 
         #region Page handlers for objects
@@ -669,10 +718,10 @@ namespace FASTER.core
         protected override bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
         {
             if (!KeyHasObjects())
-                GetKey((long)record).ShallowCopy(ref ctx.key);
+                Unsafe.AsRef<Key>(record + RecordInfo.GetLength()).ShallowCopy(ref ctx.key);
 
             if (!ValueHasObjects())
-                GetValue((long)record).ShallowCopy(ref ctx.value);
+                Unsafe.AsRef<Value>(record + RecordInfo.GetLength() + Unsafe.AsRef<Key>(record + RecordInfo.GetLength()).GetLength()).ShallowCopy(ref ctx.value);
 
             if (!(KeyHasObjects() || ValueHasObjects()))
                 return true;
@@ -698,7 +747,7 @@ namespace FASTER.core
                 }
 
                 // We are limited to a 2GB size per key-value
-                if (endAddress - startAddress > int.MaxValue)
+                if (endAddress-startAddress > int.MaxValue)
                     throw new Exception("Size of key-value exceeds max of 2GB: " + (endAddress - startAddress));
 
                 AsyncGetFromDisk(startAddress, (int)(endAddress - startAddress), ctx, ctx.record);
@@ -731,7 +780,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override bool KeyHasObjects()
         {
-            return default(Key).HasObjectsToSerialize();
+            return new Key().HasObjectsToSerialize();
         }
 
         /// <summary>
@@ -740,7 +789,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override bool ValueHasObjects()
         {
-            return default(Value).HasObjectsToSerialize();
+            return new Value().HasObjectsToSerialize();
         }
         #endregion
 
@@ -751,8 +800,10 @@ namespace FASTER.core
 
         internal override unsafe void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
-            throw new Exception("Memory pages are sector aligned - use direct copy");
-            // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);
+            fixed (RecordInfo* pin = &values[destinationPage % BufferSize][0].info)
+            {
+                Buffer.MemoryCopy(src, (void*)pin, required_bytes, required_bytes);
+            }
         }
     }
 }

@@ -108,7 +108,9 @@ namespace FASTER.core
 
             this.functions = functions;
 
-            hlog = new BlittableAllocator<Key, Value>(logSettings);
+            hlog = new GenericAllocator<Key, Value>(logSettings);
+            hlog.Initialize();
+
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 

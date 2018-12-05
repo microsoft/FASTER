@@ -62,6 +62,7 @@ namespace FASTER.core
         // Page size
         protected readonly int PageSize;
         protected readonly int PageSizeMask;
+        protected readonly int BufferSizeMask;
         protected readonly int AlignedPageSizeBytes;
 
         // Total HLOG size
@@ -142,6 +143,8 @@ namespace FASTER.core
         protected NativeSectorAlignedBufferPool readBufferPool;
 
         #region Abstract methods
+        public abstract void Initialize();
+        public abstract long GetStartLogicalAddress(long page);
         public abstract long GetPhysicalAddress(long newLogicalAddress);
         public abstract ref RecordInfo GetInfo(long physicalAddress);
         public abstract ref Key GetKey(long physicalAddress);
@@ -155,9 +158,10 @@ namespace FASTER.core
 
         protected abstract void AllocatePage(int index);
         protected abstract bool IsAllocated(int pageIndex);
+        internal abstract void PopulatePage(byte* src, int required_bytes, long destinationPage);
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
-        internal abstract void AsyncReadPagesFromDevice<TContext>(long readPageStart, int numPages, IOCompletionCallback callback, TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null);
-        internal abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory));
+        protected abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory));
+        protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
         protected abstract void ClearPage(int page, bool pageZero);
         protected abstract void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
 
@@ -177,6 +181,7 @@ namespace FASTER.core
             LogTotalSizeBits = settings.MemorySizeBits;
             LogTotalSizeBytes = 1L << LogTotalSizeBits;
             BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
+            BufferSizeMask = BufferSize - 1;
 
             // HeadOffset lag (from tail)
             HeadOffsetLagSize = BufferSize - HeadOffsetLagNumPages;
@@ -201,11 +206,15 @@ namespace FASTER.core
         protected void Initialize(long firstValidAddress)
         {
             readBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
+
             long tailPage = firstValidAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
-
             Debug.Assert(tailPageIndex == 0);
             AllocatePage(tailPageIndex);
+
+            // Allocate next page as well
+            if (firstValidAddress > 0)
+                AllocatePage(tailPageIndex + 1);
 
             SafeReadOnlyAddress = firstValidAddress;
             ReadOnlyAddress = firstValidAddress;
@@ -217,7 +226,7 @@ namespace FASTER.core
             TailPageOffset.Page = (int)(firstValidAddress >> LogPageSizeBits);
             TailPageOffset.Offset = (int)(firstValidAddress & PageSizeMask);
 
-            TailPageIndex = -1;
+            TailPageIndex = 0;
         }
 
         public virtual void Dispose()
@@ -284,15 +293,6 @@ namespace FASTER.core
             return BufferSize;
         }
 
-        /// <summary>
-        /// Get start logical address
-        /// </summary>
-        /// <param name="page"></param>
-        /// <returns></returns>
-        public long GetStartLogicalAddress(long page)
-        {
-            return page << LogPageSizeBits;
-        }
 
         /// <summary>
         /// Get page size
@@ -751,6 +751,88 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="readPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        /// <param name="devicePageOffset"></param>
+        /// <param name="logDevice"></param>
+        /// <param name="objectLogDevice"></param>
+        public void AsyncReadPagesFromDevice<TContext>(
+                                long readPageStart,
+                                int numPages,
+                                IOCompletionCallback callback,
+                                TContext context,
+                                long devicePageOffset = 0,
+                                IDevice logDevice = null, IDevice objectLogDevice = null)
+        {
+            AsyncReadPagesFromDevice(readPageStart, numPages, callback, context,
+                out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
+        }
+
+        /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="readPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        /// <param name="completed"></param>
+        /// <param name="devicePageOffset"></param>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
+        private void AsyncReadPagesFromDevice<TContext>(
+                                        long readPageStart,
+                                        int numPages,
+                                        IOCompletionCallback callback,
+                                        TContext context,
+                                        out CountdownEvent completed,
+                                        long devicePageOffset = 0,
+                                        IDevice device = null, IDevice objectLogDevice = null)
+        {
+            var usedDevice = device;
+            IDevice usedObjlogDevice = objectLogDevice;
+
+            if (device == null)
+            {
+                usedDevice = this.device;
+            }
+
+            completed = new CountdownEvent(numPages);
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            {
+                int pageIndex = (int)(readPage % BufferSize);
+                if (!IsAllocated(pageIndex))
+                {
+                    // Allocate a new page
+                    AllocatePage(pageIndex);
+                }
+                else
+                {
+                    ClearPage(pageIndex, readPage == 0);
+                }
+                var asyncResult = new PageAsyncReadResult<TContext>()
+                {
+                    page = readPage,
+                    context = context,
+                    handle = completed,
+                    count = 1
+                };
+
+                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+
+                if (device != null)
+                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+                ReadAsync(offsetInFile, pageIndex, (uint)PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
+            }
+        }
+
+        /// <summary>
         /// Flush page range to disk
         /// Called when all threads have agreed that a page range is sealed.
         /// </summary>
@@ -920,14 +1002,13 @@ namespace FASTER.core
                             // Delete key, value, record
                             if (KeyHasObjects())
                             {
-                                var physicalAddress = (long)ctx.record.GetValidPointer();
-                                GetKey(physicalAddress).Free();
+                                ctx.key.Free();
                             }
                             if (ValueHasObjects())
                             {
-                                var physicalAddress = (long)ctx.record.GetValidPointer();
-                                GetValue(physicalAddress).Free();
+                                ctx.value.Free();
                             }
+                            
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
                             AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);

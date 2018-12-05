@@ -178,11 +178,15 @@ namespace FASTER.core
             #region Create pending context
             CreatePendingContext:
             {
+
                 pendingContext.type = OperationType.READ;
                 pendingContext.key = key.MoveToContext(ref key);
                 pendingContext.input = input.MoveToContext(ref input);
                 pendingContext.output = output.MoveToContext(ref output);
-                pendingContext.userContext = userContext.MoveToContext(ref userContext);
+
+                if (userContext != null)
+                    pendingContext.userContext = userContext.MoveToContext(ref userContext);
+
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.version;
@@ -221,7 +225,7 @@ namespace FASTER.core
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
-                Debug.Assert(hlog.GetInfo((long)request.record.GetValidPointer()).Version <= ctx.version);
+                Debug.Assert(((RecordInfo*)request.record.GetValidPointer())->Version <= ctx.version);
                 functions.SingleReader(ref pendingContext.key, ref pendingContext.input,
                                        ref request.value, ref pendingContext.output);
 

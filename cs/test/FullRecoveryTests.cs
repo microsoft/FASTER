@@ -160,7 +160,8 @@ namespace FASTER.test.recovery.sumstore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                Assert.IsTrue(status == Status.OK);
                 inputArray[i].numClicks = output.value;
             }
 

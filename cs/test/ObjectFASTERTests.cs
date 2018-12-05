@@ -43,7 +43,8 @@ namespace FASTER.test
             log.Close();
         }
 
-        public void Insert()
+        [Test]
+        public void ObjectInMemWriteRead()
         {
             var key1 = new MyKey { key = 9999999 };
             var value = new MyValue { value = 23 };
@@ -53,28 +54,8 @@ namespace FASTER.test
             MyContext context = null;
 
             fht.Upsert(ref key1, ref value, ref context, 0);
-        }
-
-        public void Check()
-        {
-            var key1 = new MyKey { key = 9999999 };
-            var value = new MyValue { value = 23 };
-            MyInput input = null;
-            MyOutput output = new MyOutput();
-            MyContext context = null;
-
             fht.Read(ref key1, ref input, ref output, ref context, 0);
-        }
-
-        [Test]
-        public void ObjectInMemWriteRead()
-        {
-            Insert();
-            //GC.Collect();
-            //GC.WaitForFullGCComplete();
-            Check();
-
-            //Assert.IsTrue(output.value.value == value.value);
+            Assert.IsTrue(output.value.value == value.value);
         }
 
         [Test]

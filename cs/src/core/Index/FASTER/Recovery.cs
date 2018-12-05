@@ -150,10 +150,6 @@ namespace FASTER.core
             }
 
             var headAddress = hlog.GetStartLogicalAddress(headPage);
-            if (headAddress == 0)
-            {
-                headAddress = Constants.kFirstValidAddress;
-            }
             hlog.RecoveryReset(untilAddress, headAddress);
         }
 
@@ -413,6 +409,11 @@ namespace FASTER.core
             // Set the page status to flushed
             var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
 
+            if (result.freeBuffer1.buffer != null)
+            {
+                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                result.freeBuffer1.Return();
+            }
             int index = hlog.GetPageIndexForPage(result.page);
             result.context.readStatus[index] = ReadStatus.Done;
             Interlocked.MemoryBarrier();
