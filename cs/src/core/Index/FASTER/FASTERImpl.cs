@@ -1461,13 +1461,13 @@ namespace FASTER.core
             while (foundLogicalAddress >= minOffset)
             {
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
-                if (key.Equals(hlog.GetKey(foundPhysicalAddress)))
+                if (key.Equals(ref hlog.GetKey(foundPhysicalAddress)))
                 {
                     return true;
                 }
                 else
                 {
-                    foundLogicalAddress = ((RecordInfo*)foundPhysicalAddress)->PreviousAddress;
+                    foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
                     Debug.WriteLine("Tracing back");
                     continue;
                 }

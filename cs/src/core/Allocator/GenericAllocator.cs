@@ -176,11 +176,11 @@ namespace FASTER.core
         /// <param name="index"></param>
         protected override void AllocatePage(int index)
         {
+            Console.WriteLine("Allocating page " + index);
             if (PageSize % recordSize == 0)
                 values[index] = new Record<Key, Value>[PageSize / recordSize];
             else
-                values[index] = new Record<Key, Value>[1 + PageSize / recordSize];
-            Array.Clear(values[index], 0, values[index].Length);
+                values[index] = new Record<Key, Value>[1 + (PageSize / recordSize)];
 
             PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
             PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;

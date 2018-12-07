@@ -122,6 +122,11 @@ namespace FASTER.core
         {
             return ref key;
         }
+
+        public override string ToString()
+        {
+            return "{ " + value + " }";
+        }
     }
 #elif VARIABLE_SIZE_KEY
     public unsafe struct Key
