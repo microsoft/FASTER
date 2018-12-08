@@ -39,6 +39,18 @@ namespace FASTER.core
     public static class Utility
     {
         /// <summary>
+        /// Get size of type
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        internal static unsafe int GetSize<T>(this T value)
+        {
+            T[] arr = new T[2];
+            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
+        }
+
+        /// <summary>
         /// Helper function used to check if two byte arrays are equal
         /// </summary>
         /// <param name="src"></param>

@@ -19,18 +19,18 @@ namespace FASTER.core
         where Key : IKey<Key>, new()
         where Value : IValue<Value>, new()
     {
-        // Segment size
-        protected readonly int LogSegmentSizeBits;
-        protected readonly long SegmentSize;
-        protected readonly long SegmentSizeMask;
-        protected readonly int SegmentBufferSize;
-
         // Circular buffer definition
         private byte[][] values;
         private GCHandle[] handles;
         private long[] pointers;
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
+
+        // Segment size
+        private readonly int LogSegmentSizeBits;
+        private readonly long SegmentSize;
+        private readonly long SegmentSizeMask;
+        private readonly int SegmentBufferSize;
 
         // Object log related variables
         private readonly IDevice objectLogDevice;
@@ -95,13 +95,6 @@ namespace FASTER.core
         {
             return RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
         }
-
-        /*
-        public override int GetRecordSizeFromLogical(long logicalAddress)
-        {
-            var physicalAddress = GetPhysicalAddress(logicalAddress);
-            return GetRecordSize(physicalAddress);
-        }*/
 
         public override int GetAverageRecordSize()
         {
@@ -370,28 +363,6 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
-        /// <summary>
-        /// IOCompletion callback for page flush
-        /// </summary>
-        /// <param name="errorCode"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="overlap"></param>
-        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
-        {
-            if (errorCode != 0)
-            {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-            }
-
-            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
-
-            if (Interlocked.Decrement(ref result.count) == 0)
-            {
-                result.Free();
-            }
-            Overlapped.Free(overlap);
-        }
-
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             if (errorCode != 0)
@@ -513,13 +484,9 @@ namespace FASTER.core
                 if (!GetInfo(ptr).Invalid)
                 {
                     if (KeyHasObjects())
-                    {
                         GetKey(ptr).Free();
-                    }
                     if (ValueHasObjects())
-                    {
                         GetValue(ptr).Free();
-                    }
                 }
                 ptr += GetRecordSize(ptr);
             }
@@ -538,14 +505,9 @@ namespace FASTER.core
                 if (!GetInfo(ptr).Invalid)
                 {
                     if (KeyHasObjects())
-                    {
                         GetKey(ptr).Deserialize(stream);
-                    }
-
                     if (ValueHasObjects())
-                    {
                         GetValue(ptr).Deserialize(stream);
-                    }
                 }
                 ptr += GetRecordSize(ptr);
             }

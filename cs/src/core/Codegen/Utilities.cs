@@ -102,8 +102,6 @@ namespace FASTER.core.Roslyn
             if (default(T) == null)
                 return false;
 
-            //if (typeof(T).IsGenericType) return false;
-
             try
             {
                 var tmp = new T[1];

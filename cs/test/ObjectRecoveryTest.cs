@@ -20,7 +20,7 @@ namespace FASTER.test.recovery.objectstore
         const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private IManagedFasterKV<AdId, NumClicks, Input, Output, Empty> fht;
+        private FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
         private string test_path;
         private Guid token;
         private IDevice log, objlog;
@@ -38,9 +38,7 @@ namespace FASTER.test.recovery.objectstore
             log = FasterFactory.CreateLogDevice(test_path + "\\ort1hlog");
             objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\ort1hlog");
 
-            fht = 
-                FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions>
+            fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (
                     keySpace, new Functions(),
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
@@ -91,12 +89,14 @@ namespace FASTER.test.recovery.objectstore
 
         public unsafe void Populate()
         {
+            Empty context = default(Empty);
+
             // Prepare the dataset
-            var inputArray = new Tuple<AdId, Input>[numOps];
+            var inputArray = new ValueTuple<AdId, Input>[numOps];
             for (int i = 0; i < numOps; i++)
             {
-                inputArray[i] = new Tuple<AdId, Input>
-                    (new AdId { adId = i % numUniqueKeys }, new Input { numClicks = 1 });
+                inputArray[i] = new ValueTuple<AdId, Input>
+                    (new AdId { adId = i % numUniqueKeys }, new Input { numClicks = new NumClicks { numClicks = 1 } });
             }
 
             // Register thread with FASTER
@@ -106,7 +106,7 @@ namespace FASTER.test.recovery.objectstore
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                fht.RMW(inputArray[i].Item1, inputArray[i].Item2, default(Empty), i);
+                fht.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, ref context, i);
 
                 if ((i + 1) % checkpointInterval == 0)
                 {
@@ -142,14 +142,16 @@ namespace FASTER.test.recovery.objectstore
 
         public unsafe void RecoverAndTest(Guid cprVersion, Guid indexVersion)
         {
+            Empty context = default(Empty);
+
             // Recover
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            var inputArray = new Tuple<AdId, Input>[numUniqueKeys];
+            var inputArray = new ValueTuple<AdId, Input>[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
-                inputArray[i] = new Tuple<AdId, Input>(new AdId { adId = i }, new Input { numClicks = 0 });
+                inputArray[i] = new ValueTuple<AdId, Input>(new AdId { adId = i }, new Input { numClicks = new NumClicks { numClicks = 0 } });
             }
 
             var outputArray = new Output[numUniqueKeys];
@@ -161,10 +163,11 @@ namespace FASTER.test.recovery.objectstore
             // Register with thread
             fht.StartSession();
 
+            Input input = default(Input);
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                fht.Read(inputArray[i].Item1, null, ref outputArray[i], default(Empty), i);
+                fht.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], ref context, i);
             }
 
             // Complete all pending requests
@@ -208,11 +211,11 @@ namespace FASTER.test.recovery.objectstore
             for (long i = 0; i < numUniqueKeys; i++)
             {
                 Assert.IsTrue(
-                    expected[i] == outputArray[i].numClicks.numClicks,
+                    expected[i] == outputArray[i].value.numClicks,
                     "Debug error for AdId {0}: Expected ({1}), Found({2})", 
                     inputArray[i].Item1.adId,
                     expected[i], 
-                    outputArray[i].numClicks.numClicks);
+                    outputArray[i].value.numClicks);
             }
         }
     }

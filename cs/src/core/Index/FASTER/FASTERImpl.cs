@@ -229,7 +229,7 @@ namespace FASTER.core
                 functions.SingleReader(ref pendingContext.key, ref pendingContext.input,
                                        ref request.value, ref pendingContext.output);
 
-                if (kCopyReadsToTail)
+                if (CopyReadsToTail)
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext);
                 }

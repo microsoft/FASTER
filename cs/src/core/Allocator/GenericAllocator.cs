@@ -4,18 +4,16 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq.Expressions;
 using System.IO;
 using System.Diagnostics;
-using FASTER.core.Roslyn;
+using System.Runtime.InteropServices;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace FASTER.core
 {
+    [StructLayout(LayoutKind.Sequential)]
     public struct Record<Key, Value>
     {
         public RecordInfo info;
@@ -28,23 +26,26 @@ namespace FASTER.core
         where Key : IKey<Key>, new()
         where Value : IValue<Value>, new()
     {
-        // Segment size
-        protected readonly int LogSegmentSizeBits;
-        protected readonly long SegmentSize;
-        protected readonly long SegmentSizeMask;
-        protected readonly int SegmentBufferSize;
-
         // Circular buffer definition
-        protected Record<Key, Value>[][] values;
+        private Record<Key, Value>[][] values;
+
+        // Segment size
+        private readonly int LogSegmentSizeBits;
+        private readonly long SegmentSize;
+        private readonly long SegmentSizeMask;
+        private readonly int SegmentBufferSize;
 
         // Object log related variables
         private readonly IDevice objectLogDevice;
         // Size of object chunks beign written to storage
-        private const int kObjectBlockSize = 100 * (1 << 20);
+        private const int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Buffer pool for object log related work
         NativeSectorAlignedBufferPool ioBufferPool;
+        // Record sizes
+        private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
+        private static readonly int keySize = Utility.GetSize(default(Key));
 
         public GenericAllocator(LogSettings settings)
             : base(settings)
@@ -127,13 +128,6 @@ namespace FASTER.core
             return recordSize; // RecordInfo.GetLength() +  default(Key).GetLength() + default(Value).GetLength();
         }
 
-        /*
-        public override int GetRecordSizeFromLogical(long logicalAddress)
-        {
-            var physicalAddress = GetPhysicalAddress(logicalAddress);
-            return GetRecordSize(physicalAddress);
-        }*/
-
         public override int GetAverageRecordSize()
         {
             return recordSize;// RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
@@ -167,21 +161,20 @@ namespace FASTER.core
             return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
         }
 
-        static readonly int recordSize = Helper.GetSize(default(Record<Key, Value>));
-        static readonly int keySize = Helper.GetSize(default(Key));
-
         /// <summary>
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
         /// <param name="index"></param>
         protected override void AllocatePage(int index)
         {
-            Console.WriteLine("Allocating page " + index);
+            Record<Key, Value>[] tmp;
             if (PageSize % recordSize == 0)
-                values[index] = new Record<Key, Value>[PageSize / recordSize];
+                tmp = new Record<Key, Value>[PageSize / recordSize];
             else
-                values[index] = new Record<Key, Value>[1 + (PageSize / recordSize)];
+                tmp = new Record<Key, Value>[1 + (PageSize / recordSize)];
+            Array.Clear(tmp, 0, tmp.Length);
 
+            values[index] = tmp;
             PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
             PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
             Interlocked.MemoryBarrier();
@@ -227,17 +220,6 @@ namespace FASTER.core
 
         protected override void ClearPage(int page, bool pageZero)
         {
-            /*
-            if (KeyHasObjects() || ValueHasObjects())
-            {
-                long ptr = pointers[page];
-                int numBytes = PageSize;
-                long endptr = ptr + numBytes;
-
-                if (pageZero) ptr += Constants.kFirstValidAddress;
-                ClearPage(ptr, endptr);
-            }*/
-
             Array.Clear(values[page], 0, values[page].Length);
 
             // Close segments
@@ -321,7 +303,7 @@ namespace FASTER.core
                     }
                 }
 
-                if (ms.Position > kObjectBlockSize || i == numBytesToWrite/recordSize - 1)
+                if (ms.Position > ObjectBlockSize || i == numBytesToWrite/recordSize - 1)
                 {
                     var _s = ms.ToArray();
                     ms.Close();
@@ -416,28 +398,6 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
-        /// <summary>
-        /// IOCompletion callback for page flush
-        /// </summary>
-        /// <param name="errorCode"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="overlap"></param>
-        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
-        {
-            if (errorCode != 0)
-            {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-            }
-
-            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
-
-            if (Interlocked.Decrement(ref result.count) == 0)
-            {
-                result.Free();
-            }
-            Overlapped.Free(overlap);
-        }
-
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             if (errorCode != 0)
@@ -486,7 +446,7 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            GetObjectInfo(ref ptr, PageSize, kObjectBlockSize, out long startptr, out long size);
+            GetObjectInfo(ref ptr, PageSize, ObjectBlockSize, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
@@ -549,31 +509,6 @@ namespace FASTER.core
 
 
         #region Page handlers for objects
-        /// <summary>
-        /// Clear page
-        /// </summary>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="endptr">Until pointer</param>
-        public void ClearPage(long ptr, long endptr)
-        {
-
-            while (ptr < endptr)
-            {
-                if (!GetInfo(ptr).Invalid)
-                {
-                    if (KeyHasObjects())
-                    {
-                        GetKey(ptr).Free();
-                    }
-                    if (ValueHasObjects())
-                    {
-                        GetValue(ptr).Free();
-                    }
-                }
-                ptr += GetRecordSize(ptr);
-            }
-        }
-
         /// <summary>
         /// Deseialize part of page from stream
         /// </summary>

@@ -16,24 +16,42 @@ using System.Diagnostics;
 
 namespace FASTER.test.recovery.objectstore
 {
-    public class AdId : IFasterKey<AdId>
+    public class AdId : IKey<AdId>
     {
+        public const int physicalSize = sizeof(long);
         public long adId;
-
-        public AdId Clone()
-        {
-            return this;
-        }
 
         public long GetHashCode64()
         {
             return Utility.GetHashCode(adId);
         }
-
-        public bool Equals(AdId otherAdId)
+        public bool Equals(ref AdId k2)
         {
-            return adId == otherAdId.adId;
+            return adId == k2.adId;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetLength()
+        {
+            return physicalSize;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ShallowCopy(ref AdId dst)
+        {
+            dst = this;
+        }
+
+        public ref AdId MoveToContext(ref AdId value)
+        {
+            return ref value;
+        }
+        #region Serialization
+        public bool HasObjectsToSerialize()
+        {
+            return true;
+        }
+
         public void Serialize(Stream toStream)
         {
             new BinaryWriter(toStream).Write(adId);
@@ -43,17 +61,68 @@ namespace FASTER.test.recovery.objectstore
         {
             adId = new BinaryReader(fromStream).ReadInt64();
         }
+        public void Free()
+        {
+        }
+        #endregion
     }
 
-
-    public class NumClicks : IFasterValue<NumClicks>
+    public class Input : IMoveToContext<Input>
     {
+        public AdId adId;
+        public NumClicks numClicks;
+
+        public ref Input MoveToContext(ref Input value)
+        {
+            return ref value;
+        }
+
+    }
+
+    public class NumClicks : IValue<NumClicks>
+    {
+        public const int physicalSize = sizeof(long);
         public long numClicks;
 
-        public NumClicks Clone()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetLength()
         {
-            return this;
+            return physicalSize;
         }
+
+        public void ShallowCopy(ref NumClicks dst)
+        {
+            dst.numClicks = numClicks;
+        }
+
+        // Shared read/write capabilities on value
+        public void AcquireReadLock()
+        {
+        }
+
+        public void ReleaseReadLock()
+        {
+        }
+
+        public void AcquireWriteLock()
+        {
+        }
+
+        public void ReleaseWriteLock()
+        {
+        }
+
+        public ref NumClicks MoveToContext(ref NumClicks value)
+        {
+            return ref value;
+        }
+
+        #region Serialization
+        public bool HasObjectsToSerialize()
+        {
+            return true;
+        }
+
         public void Serialize(Stream toStream)
         {
             new BinaryWriter(toStream).Write(numClicks);
@@ -63,52 +132,96 @@ namespace FASTER.test.recovery.objectstore
         {
             numClicks = new BinaryReader(fromStream).ReadInt64();
         }
+        public void Free()
+        {
+        }
+        #endregion
     }
 
-
-    public class Input
+    public class Output : IMoveToContext<Output>
     {
-        public long numClicks;
+        public NumClicks value;
+
+        public ref Output MoveToContext(ref Output value)
+        {
+            return ref value;
+        }
+
     }
 
-    public class Output
+    public class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>
     {
-        public NumClicks numClicks;
-    }
-
-
-    public class Functions : IUserFunctions<AdId, NumClicks, Input, Output, Empty>
-    {
-        public void CopyUpdater(AdId key, Input input, NumClicks oldValue, ref NumClicks newValue)
-        {
-            newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks };
-        }
-
-        public void InitialUpdater(AdId key, Input input, ref NumClicks value)
-        {
-            value = new NumClicks { numClicks = input.numClicks };
-        }
-
-        public void InPlaceUpdater(AdId key, Input input, ref NumClicks value)
-        {
-            value.numClicks += input.numClicks;
-        }
-
-        public void ReadCompletionCallback(Empty ctx, Output output, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref Input input, ref Empty ctx, Status status)
         {
         }
 
-        public void Reader(AdId key, Input input, NumClicks value, ref Output dst)
-        {
-            dst.numClicks = value;
-        }
-
-        public void RMWCompletionCallback(Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, ref Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(Empty ctx)
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, ref Empty ctx)
         {
+        }
+
+        public void PersistenceCallback(long thread_id, long serial_num)
+        {
+            Console.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
+        }
+
+        // Read functions
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        {
+            dst.value = value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        {
+            value.AcquireReadLock();
+            dst.value = value;
+            value.ReleaseReadLock();
+        }
+
+        // Upsert functions
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        {
+            dst = src;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        {
+            dst.AcquireWriteLock();
+            dst = src;
+            dst.ReleaseWriteLock();
+        }
+
+        // RMW functions
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int InitialValueLength(ref AdId key, ref Input input)
+        {
+            return 8;
+        }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        {
+            value = input.numClicks;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        {
+            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        {
+            newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks.numClicks };
         }
     }
 }

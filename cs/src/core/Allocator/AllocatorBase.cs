@@ -15,18 +15,18 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
-    public enum PMMFlushStatus : int { Flushed, InProgress };
+    internal enum PMMFlushStatus : int { Flushed, InProgress };
 
-    public enum PMMCloseStatus : int { Closed, Open };
+    internal enum PMMCloseStatus : int { Closed, Open };
 
-    public struct FullPageStatus
+    internal struct FullPageStatus
     {
         public long LastFlushedUntilAddress;
         public FlushCloseStatus PageFlushCloseStatus;
     }
 
     [StructLayout(LayoutKind.Explicit)]
-    public struct FlushCloseStatus
+    internal struct FlushCloseStatus
     {
         [FieldOffset(0)]
         public PMMFlushStatus PageFlushStatus;
@@ -126,7 +126,7 @@ namespace FASTER.core
         private volatile int TailPageIndex;
 
         // Array that indicates the status of each buffer page
-        protected readonly FullPageStatus[] PageStatusIndicator;
+        internal readonly FullPageStatus[] PageStatusIndicator;
 
         /// <summary>
         /// Global address of the current tail (next element to be allocated from the circular buffer) 

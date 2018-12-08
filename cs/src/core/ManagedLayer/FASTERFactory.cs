@@ -9,74 +9,7 @@ using static FASTER.core.Roslyn.Helper;
 
 namespace FASTER.core
 {
-    /// <summary>
-    /// Configuration settings for hybrid log
-    /// </summary>
-    public class LogSettings
-    {
-        /// <summary>
-        /// Device used for main hybrid log
-        /// </summary>
-        public IDevice LogDevice = new NullDevice();
 
-        /// <summary>
-        /// Device used for serialized heap objects in hybrid log
-        /// </summary>
-        public IDevice ObjectLogDevice = new NullDevice();
-
-        /// <summary>
-        /// Size of a segment (group of pages), in bits
-        /// </summary>
-        public int PageSizeBits = 25;
-
-        /// <summary>
-        /// Size of a segment (group of pages), in bits
-        /// </summary>
-        public int SegmentSizeBits = 30;
-
-        /// <summary>
-        /// Total size of in-memory part of log, in bits
-        /// </summary>
-        public int MemorySizeBits = 34;
-
-        /// <summary>
-        /// Fraction of log marked as mutable (in-place updates)
-        /// </summary>
-        public double MutableFraction = 0.9;
-    }
-
-    /// <summary>
-    /// Checkpoint-related settings
-    /// </summary>
-    public class CheckpointSettings
-    {
-        /// <summary>
-        /// Directory where checkpoints are stored
-        /// </summary>
-        public string CheckpointDir = "";
-
-        /// <summary>
-        /// Type of checkpoint
-        /// </summary>
-        public CheckpointType CheckPointType = CheckpointType.Snapshot;
-    }
-
-    /// <summary>
-    /// Checkpoint type
-    /// </summary>
-    public enum CheckpointType
-    {
-        /// <summary>
-        /// Take separate snapshot of in-memory portion of log (default)
-        /// </summary>
-        Snapshot,
-
-        /// <summary>
-        /// Flush current log (move read-only to tail)
-        /// (enables incremental checkpointing, but log grows faster)
-        /// </summary>
-        FoldOver
-    }
 
     /// <summary>
     /// Factory to create FASTER objects

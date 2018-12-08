@@ -34,12 +34,9 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
-        private AllocatorBase<Key, Value> hlog;
+        private readonly AllocatorBase<Key, Value> hlog;
 
-        private static int numPendingReads = 0;
-
-        private const bool kCopyReadsToTail = false;
-        private const bool breakWhenClassIsLoaded = false;
+        private readonly bool CopyReadsToTail = false;
         private readonly bool FoldOverSnapshot = false;
         private readonly int sectorSize;
 
@@ -80,17 +77,6 @@ namespace FASTER.core
         private static ExecutionContext threadCtx = default(ExecutionContext);
 
 
-        static FasterKV()
-        {
-            if (breakWhenClassIsLoaded)
-            {
-                if (System.Diagnostics.Debugger.IsAttached)
-                    System.Diagnostics.Debugger.Break();
-                else
-                    System.Diagnostics.Debugger.Launch();
-            }
-        }
-
         /// <summary>
         /// Create FASTER instance
         /// </summary>
@@ -104,8 +90,9 @@ namespace FASTER.core
                 checkpointSettings = new CheckpointSettings();
 
             Config.CheckpointDirectory = checkpointSettings.CheckpointDir;
-            FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
 
+            FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
+            CopyReadsToTail = logSettings.CopyReadsToTail;
             this.functions = functions;
 
             hlog = new GenericAllocator<Key, Value>(logSettings);
