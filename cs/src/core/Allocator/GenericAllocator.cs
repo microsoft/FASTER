@@ -407,6 +407,12 @@ namespace FASTER.core
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
 
+            if (result.freeBuffer1.buffer != null && result.freeBuffer1.required_bytes > 0)
+            {
+                PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                result.freeBuffer1.required_bytes = 0;
+            }
+
             var src = values[result.page % BufferSize];
 
             long ptr = 0;
@@ -422,14 +428,14 @@ namespace FASTER.core
             // Deserialize all objects until untilptr
             if (ptr < result.untilptr)
             {
-                MemoryStream ms = new MemoryStream(result.freeBuffer1.buffer);
-                ms.Seek(result.freeBuffer1.offset + result.freeBuffer1.valid_offset, SeekOrigin.Begin);
+                MemoryStream ms = new MemoryStream(result.freeBuffer2.buffer);
+                ms.Seek(result.freeBuffer2.offset + result.freeBuffer2.valid_offset, SeekOrigin.Begin);
                 Deserialize(ptr, result.untilptr, ms);
                 ms.Dispose();
 
                 ptr = result.untilptr;
-                result.freeBuffer1.Return();
-                result.freeBuffer1.buffer = null;
+                result.freeBuffer2.Return();
+                result.freeBuffer2.buffer = null;
                 result.resumeptr = ptr;
             }
 
@@ -446,7 +452,7 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            GetObjectInfo(ref ptr, PageSize, ObjectBlockSize, out long startptr, out long size);
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref ptr, PageSize, ObjectBlockSize, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
@@ -458,7 +464,7 @@ namespace FASTER.core
                 throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
 
             var objBuffer = ioBufferPool.Get((int)size);
-            result.freeBuffer1 = objBuffer;
+            result.freeBuffer2 = objBuffer;
             var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
 
             // Request objects from objlog
@@ -466,7 +472,6 @@ namespace FASTER.core
                 (int)(result.page >> (LogSegmentSizeBits - LogPageSizeBits)),
                 (ulong)startptr,
                 (IntPtr)objBuffer.aligned_pointer, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
-
         }
 
         /// <summary>
@@ -523,11 +528,13 @@ namespace FASTER.core
                 {
                     if (KeyHasObjects())
                     {
+                        GetKey(ptr) = new Key();
                         GetKey(ptr).Deserialize(stream);
-                    }
+                    } 
 
                     if (ValueHasObjects())
                     {
+                        GetValue(ptr) = new Value();
                         GetValue(ptr).Deserialize(stream);
                     }
                 }
@@ -582,12 +589,13 @@ namespace FASTER.core
         /// <summary>
         /// Get location and range of object log addresses for specified log page
         /// </summary>
+        /// <param name="raw"></param>
         /// <param name="ptr"></param>
         /// <param name="untilptr"></param>
         /// <param name="objectBlockSize"></param>
         /// <param name="startptr"></param>
         /// <param name="size"></param>
-        public void GetObjectInfo(ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
+        public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
         {
             long minObjAddress = long.MaxValue;
             long maxObjAddress = long.MinValue;
@@ -596,10 +604,9 @@ namespace FASTER.core
             {
                 if (!GetInfo(ptr).Invalid)
                 {
-
                     if (KeyHasObjects())
                     {
-                        var key_addr = GetKeyAddressInfo(ptr);
+                        var key_addr = GetKeyAddressInfo((long)raw + ptr);
                         var addr = key_addr->Address;
 
                         // If object pointer is greater than kObjectSize from starting object pointer
@@ -616,7 +623,7 @@ namespace FASTER.core
 
                     if (ValueHasObjects())
                     {
-                        var value_addr = GetValueAddressInfo(ptr);
+                        var value_addr = GetValueAddressInfo((long)raw + ptr);
                         var addr = value_addr->Address;
 
                         // If object pointer is greater than kObjectSize from starting object pointer

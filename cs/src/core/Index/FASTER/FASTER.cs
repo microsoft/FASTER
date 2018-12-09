@@ -95,7 +95,11 @@ namespace FASTER.core
             CopyReadsToTail = logSettings.CopyReadsToTail;
             this.functions = functions;
 
-            hlog = new GenericAllocator<Key, Value>(logSettings);
+            if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
+                hlog = new BlittableAllocator<Key, Value>(logSettings);
+            else
+                hlog = new GenericAllocator<Key, Value>(logSettings);
+
             hlog.Initialize();
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;

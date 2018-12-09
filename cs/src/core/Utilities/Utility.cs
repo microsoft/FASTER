@@ -51,6 +51,29 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Is type blittable
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        internal static bool IsBlittable<T>()
+        {
+            if (default(T) == null)
+                return false;
+
+            try
+            {
+                var tmp = new T[1];
+                var h = GCHandle.Alloc(tmp, GCHandleType.Pinned);
+                h.Free();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Helper function used to check if two byte arrays are equal
         /// </summary>
         /// <param name="src"></param>

@@ -209,7 +209,7 @@ namespace FASTER.test
         }
     }
 
-    public class MyLargeValue
+    public class MyLargeValue : IValue<MyLargeValue>
     {
         public byte[] value;
 
@@ -227,11 +227,6 @@ namespace FASTER.test
             }
         }
 
-        public MyLargeValue Clone()
-        {
-            return this;
-        }
-
         public void Serialize(Stream toStream)
         {
             var writer = new BinaryWriter(toStream);
@@ -245,20 +240,65 @@ namespace FASTER.test
             int size = reader.ReadInt32();
             value = reader.ReadBytes(size);
         }
-    }
 
-    public class MyLargeOutput
-    {
-        public MyLargeValue value;
-    }
+        public int GetLength()
+        {
+            return 8;
+        }
 
-    public class MyLargeFunctions : IUserFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext>
-    {
-        public void RMWCompletionCallback(MyContext ctx, Status status)
+        public void ShallowCopy(ref MyLargeValue dst)
+        {
+            dst = this;
+        }
+
+        public void Free()
         {
         }
 
-        public void ReadCompletionCallback(MyContext ctx, MyLargeOutput output, Status status)
+        public void AcquireReadLock()
+        {
+        }
+
+        public void AcquireWriteLock()
+        {
+        }
+
+        public void ReleaseReadLock()
+        {
+        }
+
+        public void ReleaseWriteLock()
+        {
+        }
+
+        public bool HasObjectsToSerialize()
+        {
+            return true;
+        }
+
+        public ref MyLargeValue MoveToContext(ref MyLargeValue value)
+        {
+            return ref value;
+        }
+    }
+
+    public class MyLargeOutput : IMoveToContext<MyLargeOutput>
+    {
+        public MyLargeValue value;
+
+        public ref MyLargeOutput MoveToContext(ref MyLargeOutput input)
+        {
+            return ref input;
+        }
+    }
+
+    public class MyLargeFunctions : IFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext>
+    {
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyContext ctx, Status status)
+        {
+        }
+
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, ref MyContext ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.value.value.Length; i++)
@@ -268,30 +308,49 @@ namespace FASTER.test
         }
 
 
-        public void UpsertCompletionCallback(MyContext ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, ref MyContext ctx)
         {
         }
 
-        public void CopyUpdater(MyKey key, MyInput input, MyLargeValue oldValue, ref MyLargeValue newValue)
+        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue oldValue, ref MyLargeValue newValue)
         {
         }
 
-        public int InitialValueLength(MyKey key, MyInput input)
+        public int InitialValueLength(ref MyKey key, ref MyInput input)
         {
             return sizeof(int);
         }
 
-        public void InitialUpdater(MyKey key, MyInput input, ref MyLargeValue value)
+        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
         {
         }
 
-        public void InPlaceUpdater(MyKey key, MyInput input, ref MyLargeValue value)
+        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
         {
         }
 
-        public void Reader(MyKey key, MyInput input, MyLargeValue value, ref MyLargeOutput dst)
+        public void SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
+        }
+
+        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        {
+            dst = src;
+        }
+
+        public void PersistenceCallback(long thread_id, long serial_num)
+        {
+        }
+
+        public void SingleWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        {
+            dst = src;
         }
     }
 }
