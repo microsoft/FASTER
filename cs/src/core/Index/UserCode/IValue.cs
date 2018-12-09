@@ -8,11 +8,6 @@ namespace FASTER.core
         void ShallowCopy(ref Value dst);
         void Free();
 
-        void AcquireReadLock();
-        void AcquireWriteLock();
-        void ReleaseReadLock();
-        void ReleaseWriteLock();
-
         bool HasObjectsToSerialize();
         void Serialize(Stream toStream);
         void Deserialize(Stream fromStream);

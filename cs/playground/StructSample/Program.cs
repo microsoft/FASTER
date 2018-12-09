@@ -8,13 +8,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ManagedSampleCore
+namespace StructSampleCore
 {
     public class Program
     {
         static void Main(string[] args)
         {
-            // This sample uses the unsafe API of FASTER, and works only for blittable struct types
+            // This sample uses blittable structs the unsafe API of FASTER, and works only for blittable struct types
             // Your structs have to implement certain static methods (see the structs for details)
             // You also define the interface (ICustomFaster) that will be returned by the factory
             // This sample represents the highest performance level for FASTER, at the expense of

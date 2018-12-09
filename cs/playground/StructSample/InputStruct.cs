@@ -4,7 +4,7 @@
 using FASTER.core;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSampleCore
+namespace StructSampleCore
 {
     public struct InputStruct : IMoveToContext<InputStruct>
     {

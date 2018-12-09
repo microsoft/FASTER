@@ -1,14 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net46</TargetFramework>
+    <TargetFramework>netcoreapp2.0</TargetFramework>
     <Platforms>x64</Platforms>
-    <RuntimeIdentifier>win7-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win7-x64;linux-x64</RuntimeIdentifiers>
+    <HighEntropyVA>true</HighEntropyVA>
   </PropertyGroup>
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <RootNamespace>ManagedSample4</RootNamespace>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <RootNamespace>StructSampleCore</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <Prefer32Bit>true</Prefer32Bit>
@@ -26,11 +28,11 @@
     <Optimize>true</Optimize>
     <OutputPath>bin\x64\Release\</OutputPath>
   </PropertyGroup>
+
   <ItemGroup>
-    <Compile Remove="Generated\**" />
-    <EmbeddedResource Remove="Generated\**" />
-    <None Remove="Generated\**" />
+    <None Include="App.config" />
   </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
   </ItemGroup>

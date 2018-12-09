@@ -104,9 +104,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
         {
-            value.AcquireReadLock();
             dst.value = value;
-            value.ReleaseReadLock();
         }
 
         // Upsert functions
@@ -119,9 +117,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
         {
-            dst.AcquireWriteLock();
             src.ShallowCopy(ref dst);
-            dst.ReleaseWriteLock();
         }
 
         // RMW functions

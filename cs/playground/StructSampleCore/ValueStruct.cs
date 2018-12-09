@@ -6,22 +6,13 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSampleCore
+namespace StructSampleCore
 {
-    public struct KeyStruct : IKey<KeyStruct>
+    public struct ValueStruct : IValue<ValueStruct>
     {
         public const int physicalSize = sizeof(long) + sizeof(long);
-        public long kfield1;
-        public long kfield2;
-
-        public long GetHashCode64()
-        {
-            return Utility.GetHashCode(kfield1);
-        }
-        public bool Equals(ref KeyStruct k2)
-        {
-            return kfield1 == k2.kfield1 && kfield2 == k2.kfield2;
-        }
+        public long vfield1;
+        public long vfield2;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetLength()
@@ -29,11 +20,27 @@ namespace ManagedSampleCore
             return physicalSize;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ShallowCopy(ref KeyStruct dst)
+        public void ShallowCopy(ref ValueStruct dst)
         {
-            dst.kfield1 = kfield1;
-            dst.kfield2 = kfield2;
+            dst.vfield1 = vfield1;
+            dst.vfield2 = vfield2;
+        }
+
+        // Shared read/write capabilities on value
+        public void AcquireReadLock()
+        {
+        }
+
+        public void ReleaseReadLock()
+        {
+        }
+
+        public void AcquireWriteLock()
+        {
+        }
+
+        public void ReleaseWriteLock()
+        {
         }
 
         #region Serialization
@@ -58,9 +65,9 @@ namespace ManagedSampleCore
         }
         #endregion
 
-        public ref KeyStruct MoveToContext(ref KeyStruct key)
+        public ref ValueStruct MoveToContext(ref ValueStruct value)
         {
-            return ref key;
+            return ref value;
         }
     }
 }

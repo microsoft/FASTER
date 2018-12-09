@@ -6,61 +6,61 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace StructSample
+namespace StructSampleCore
 {
-    public unsafe struct KeyStruct
+    public struct KeyStruct : IKey<KeyStruct>
     {
         public const int physicalSize = sizeof(long) + sizeof(long);
         public long kfield1;
         public long kfield2;
 
-        public static long GetHashCode(KeyStruct* key)
+        public long GetHashCode64()
         {
-            return Utility.GetHashCode(*((long*)key));
+            return Utility.GetHashCode(kfield1);
         }
-        public static bool Equals(KeyStruct* k1, KeyStruct* k2)
+        public bool Equals(ref KeyStruct k2)
         {
-            return k1->kfield1 == k2->kfield1 && k1->kfield2 == k2->kfield2;
+            return kfield1 == k2.kfield1 && kfield2 == k2.kfield2;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(KeyStruct* key)
+        public int GetLength()
         {
             return physicalSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Copy(KeyStruct* src, KeyStruct* dst)
+        public void ShallowCopy(ref KeyStruct dst)
         {
-            dst->kfield1 = src->kfield1;
-            dst->kfield2 = src->kfield2;
+            dst.kfield1 = kfield1;
+            dst.kfield2 = kfield2;
         }
 
         #region Serialization
-        public static bool HasObjectsToSerialize()
+        public bool HasObjectsToSerialize()
         {
             return false;
         }
 
-        public static void Serialize(KeyStruct* key, Stream toStream)
+        public void Serialize(Stream toStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Deserialize(KeyStruct* key, Stream fromStream)
+        public void Deserialize(Stream fromStream)
         {
             throw new InvalidOperationException();
         }
 
-        public static void Free(KeyStruct* key)
+        public void Free()
         {
             throw new InvalidOperationException();
         }
         #endregion
 
-        public static KeyStruct* MoveToContext(KeyStruct* key)
+        public ref KeyStruct MoveToContext(ref KeyStruct key)
         {
-            return key;
+            return ref key;
         }
     }
 }

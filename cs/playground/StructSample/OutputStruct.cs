@@ -3,7 +3,7 @@
 
 using FASTER.core;
 
-namespace ManagedSampleCore
+namespace StructSampleCore
 {
     public struct OutputStruct : IMoveToContext<OutputStruct>
     {

@@ -6,7 +6,7 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSampleCore
+namespace StructSampleCore
 {
     public struct ValueStruct : IValue<ValueStruct>
     {

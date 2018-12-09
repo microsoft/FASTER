@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace ClassCache
 {
-    public class CacheKey : IFasterKey<CacheKey>
+    public class CacheKey : IKey<CacheKey>
     {
         public long key;
 
@@ -22,7 +22,7 @@ namespace ClassCache
             key = first;
         }
 
-        public bool Equals(CacheKey other)
+        public bool Equals(ref CacheKey other)
         {
             return key == other.key;
         }
@@ -30,11 +30,6 @@ namespace ClassCache
         public long GetHashCode64()
         {
             return Utility.GetHashCode(key);
-        }
-
-        public CacheKey Clone()
-        {
-            return this;
         }
 
         public void Deserialize(Stream fromStream)
@@ -46,9 +41,34 @@ namespace ClassCache
         {
             throw new NotImplementedException();
         }
+
+        public int GetLength()
+        {
+            return 8;
+        }
+
+        public void ShallowCopy(ref CacheKey dst)
+        {
+            dst = this;
+        }
+
+        public void Free()
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool HasObjectsToSerialize()
+        {
+            return true;
+        }
+
+        public ref CacheKey MoveToContext(ref CacheKey key)
+        {
+            return ref key;
+        }
     }
 
-    public class CacheValue : IFasterValue<CacheValue>
+    public class CacheValue : IValue<CacheValue>
     {
         public long value;
 
@@ -59,64 +79,125 @@ namespace ClassCache
             value = first;
         }
 
-        public CacheValue Clone()
-        {
-            return this;
-        }
-
         public void Deserialize(Stream fromStream)
         {
-            throw new NotImplementedException();
+        }
+
+        public void Free()
+        {
+        }
+
+        public int GetLength()
+        {
+            return 8;
+        }
+
+        public bool HasObjectsToSerialize()
+        {
+            return true;
+        }
+
+        public ref CacheValue MoveToContext(ref CacheValue value)
+        {
+            return ref value;
         }
 
         public void Serialize(Stream toStream)
         {
-            throw new NotImplementedException();
+        }
+
+        public void ShallowCopy(ref CacheValue dst)
+        {
+            dst = this;
         }
     }
 
-    public struct CacheInput
+    public struct CacheInput : IMoveToContext<CacheInput>
     {
+        public ref CacheInput MoveToContext(ref CacheInput input)
+        {
+            return ref input;
+        }
     }
 
-    public struct CacheOutput
+    public struct CacheOutput : IMoveToContext<CacheOutput>
     {
         public CacheValue value;
+
+        public ref CacheOutput MoveToContext(ref CacheOutput input)
+        {
+            return ref input;
+        }
     }
 
-    public struct CacheContext
+    public struct CacheContext : IMoveToContext<CacheContext>
     {
+        public ref CacheContext MoveToContext(ref CacheContext input)
+        {
+            return ref input;
+        }
     }
 
-    public class CacheFunctions : IUserFunctions<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
+    public class CacheFunctions : IFunctions<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
     {
-        public void CopyUpdater(CacheKey key, CacheInput input, CacheValue oldValue, ref CacheValue newValue)
-        {
-        }
-
-        public void InitialUpdater(CacheKey key, CacheInput input, ref CacheValue value)
-        {
-        }
-
-        public void InPlaceUpdater(CacheKey key, CacheInput input, ref CacheValue value)
-        {
-        }
-
-        public void ReadCompletionCallback(CacheContext ctx, CacheOutput output, Status status)
-        {
-        }
-
-        public void Reader(CacheKey key, CacheInput input, CacheValue value, ref CacheOutput dst)
+        public void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
         {
             dst.value = value;
         }
 
-        public void RMWCompletionCallback(CacheContext ctx, Status status)
+        public void ConcurrentWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
         {
+            dst = src;
         }
 
-        public void UpsertCompletionCallback(CacheContext ctx)
+        public void CopyUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue oldValue, ref CacheValue newValue)
         {
+            throw new NotImplementedException();
+        }
+
+        public void InitialUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue value)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int InitialValueLength(ref CacheKey key, ref CacheInput input)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void InPlaceUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue value)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void PersistenceCallback(long thread_id, long serial_num)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, ref CacheContext ctx, Status status)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RMWCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheContext ctx, Status status)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void SingleWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
+        {
+            dst = src;
+        }
+
+        public void UpsertCompletionCallback(ref CacheKey key, ref CacheValue value, ref CacheContext ctx)
+        {
+            throw new NotImplementedException();
         }
     }
 }

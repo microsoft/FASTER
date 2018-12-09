@@ -5,7 +5,7 @@ using FASTER.core;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSampleCore
+namespace StructSampleCore
 {
     /// <summary>
     /// Callback functions for FASTER operations customized to user types
@@ -40,9 +40,7 @@ namespace ManagedSampleCore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
-            value.AcquireReadLock();
             dst.value = value;
-            value.ReleaseReadLock();
         }
 
         // Upsert functions

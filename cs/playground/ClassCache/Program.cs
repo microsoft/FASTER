@@ -16,11 +16,15 @@ namespace ClassCache
     {
         static void Main(string[] args)
         {
+            var context = default(CacheContext);
+
             var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "hybridlog");
             var objlog = FasterFactory.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
-            var h = FasterFactory.Create
-                <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>
-                (1L << 20, new CacheFunctions(), new LogSettings { LogDevice = log, ObjectLogDevice = objlog });
+            var h = new FasterKV
+                <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>(
+                1L << 20, new CacheFunctions(),
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog }
+                );
 
             h.StartSession();
 
@@ -39,8 +43,9 @@ namespace ClassCache
                         Console.WriteLine($"{i}: {workingSet / 1048576}M");
                     }
                 }
-
-                h.Upsert(new CacheKey(i), new CacheValue(i), default(CacheContext), 0);
+                var key = new CacheKey(i);
+                var value = new CacheValue(i);
+                h.Upsert(ref key, ref value, ref context, 0);
             }
             sw.Stop();
             Console.WriteLine("Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds/1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
@@ -52,13 +57,14 @@ namespace ClassCache
 
             int statusPending = 0;
             var o = new CacheOutput();
-
+            var input = default(CacheInput);
             sw.Restart();
             for (int i = 0; i < max; i++)
             {
-                long key = rnd.Next(max);
+                long k = rnd.Next(max);
 
-                var status = h.Read(new CacheKey(key), default(CacheInput), ref o, default(CacheContext), 0);
+                var key = new CacheKey(k);
+                var status = h.Read(ref key, ref input, ref o, ref context, 0);
 
                 switch (status)
                 {
@@ -68,7 +74,7 @@ namespace ClassCache
                     case Status.ERROR:
                         throw new Exception("Error!");
                 }
-                if (o.value.value != key)
+                if (o.value.value != key.key)
                     throw new Exception("Read error!");
             }
             sw.Stop();

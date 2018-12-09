@@ -1,18 +1,19 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core;
 using System.Runtime.CompilerServices;
 
-namespace StructSample
+namespace StructSampleCore
 {
-    public unsafe struct InputStruct
+    public struct InputStruct : IMoveToContext<InputStruct>
     {
         public long ifield1;
         public long ifield2;
 
-        public static InputStruct* MoveToContext(InputStruct* input)
+        public ref InputStruct MoveToContext(ref InputStruct input)
         {
-            return input;
+            return ref input;
         }
     }
 }
