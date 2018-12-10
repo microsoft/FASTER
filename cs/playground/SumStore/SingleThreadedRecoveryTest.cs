@@ -20,15 +20,17 @@ namespace SumStore
         const long refreshInterval = (1 << 8);
         const long completePendingInterval = (1 << 12);
         const long checkpointInterval = (1 << 20);
-        ICustomFasterKv fht;
+        FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
 
         public SingleThreadedRecoveryTest()
         {
             // Create FASTER index
             var log = FasterFactory.CreateLogDevice("logs\\hlog");
-            fht = FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
-                (keySpace, new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = "logs" });
+            fht = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, Functions>
+                (keySpace, new Functions(),
+                new LogSettings { LogDevice = log },
+                new CheckpointSettings { CheckpointDir = "logs" });
         }
 
         public void Continue()
@@ -36,7 +38,7 @@ namespace SumStore
             throw new NotImplementedException();
         }
 
-        public unsafe void Populate()
+        public void Populate()
         {
             List<Guid> tokens = new List<Guid>();
 
@@ -54,28 +56,25 @@ namespace SumStore
             fht.StartSession();
 
             // Prpcess the batch of input data
-            fixed (Input* input = inputArray)
+            for (int i = 0; i < numOps; i++)
             {
-                for (int i = 0; i < numOps; i++)
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+
+                if (i % checkpointInterval == 0)
                 {
-                    fht.RMW(&((input + i)->adId), input + i, &context, i);
+                    if(fht.TakeFullCheckpoint(out Guid token))
+                    {
+                        tokens.Add(token);
+                    }
+                }
 
-                    if (i % checkpointInterval == 0)
-                    {
-                        if(fht.TakeFullCheckpoint(out Guid token))
-                        {
-                            tokens.Add(token);
-                        }
-                    }
-
-                    if (i % completePendingInterval == 0)
-                    {
-                        fht.CompletePending(false);
-                    }
-                    else if (i % refreshInterval == 0)
-                    {
-                        fht.Refresh();
-                    }
+                if (i % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (i % refreshInterval == 0)
+                {
+                    fht.Refresh();
                 }
             }
 
@@ -93,7 +92,7 @@ namespace SumStore
             Console.ReadLine();
         }
 
-        public unsafe void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
+        public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
         {
             // Recover
             fht.Recover(indexToken, hybridLogToken);
@@ -109,14 +108,14 @@ namespace SumStore
 
             // Register with thread
             fht.StartSession();
+            Input input = default(Input);
+            Output output = default(Output);
 
             // Issue read requests
-            fixed (Input* input = inputArray)
+            for (var i = 0; i < numUniqueKeys; i++)
             {
-                for (var i = 0; i < numUniqueKeys; i++)
-                {
-                    fht.Read(&((input + i)->adId), null, (Output*)&((input + i)->numClicks), &context, i);
-                }
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests

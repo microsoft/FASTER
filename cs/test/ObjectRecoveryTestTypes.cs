@@ -42,10 +42,6 @@ namespace FASTER.test.recovery.objectstore
             dst = this;
         }
 
-        public ref AdId MoveToContext(ref AdId value)
-        {
-            return ref value;
-        }
         #region Serialization
         public bool HasObjectsToSerialize()
         {
@@ -67,16 +63,10 @@ namespace FASTER.test.recovery.objectstore
         #endregion
     }
 
-    public class Input : IMoveToContext<Input>
+    public class Input
     {
         public AdId adId;
         public NumClicks numClicks;
-
-        public ref Input MoveToContext(ref Input value)
-        {
-            return ref value;
-        }
-
     }
 
     public class NumClicks : IValue<NumClicks>
@@ -112,11 +102,6 @@ namespace FASTER.test.recovery.objectstore
         {
         }
 
-        public ref NumClicks MoveToContext(ref NumClicks value)
-        {
-            return ref value;
-        }
-
         #region Serialization
         public bool HasObjectsToSerialize()
         {
@@ -138,15 +123,9 @@ namespace FASTER.test.recovery.objectstore
         #endregion
     }
 
-    public class Output : IMoveToContext<Output>
+    public class Output
     {
         public NumClicks value;
-
-        public ref Output MoveToContext(ref Output value)
-        {
-            return ref value;
-        }
-
     }
 
     public class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>

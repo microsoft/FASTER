@@ -5,20 +5,15 @@
 
 using System.Runtime.InteropServices;
 
-namespace FASTER.core
+namespace FASTER.benchmark
 {
     [StructLayout(LayoutKind.Explicit, Size = 12)]
-    public struct Context : IMoveToContext<Context>
+    public struct Context
     {
         [FieldOffset(0)]
         public ulong start;
 
         [FieldOffset(8)]
         public int threadId;
-
-        public ref Context MoveToContext(ref Context context)
-        {
-            return ref context;
-        }
     }
 }

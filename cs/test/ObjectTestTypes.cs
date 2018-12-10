@@ -59,11 +59,6 @@ namespace FASTER.test
         {
             return true;
         }
-
-        public ref MyKey MoveToContext(ref MyKey key)
-        {
-            return ref key;
-        }
     }
 
     public class MyValue : IValue<MyValue>
@@ -114,40 +109,21 @@ namespace FASTER.test
         {
             return true;
         }
-
-        public ref MyValue MoveToContext(ref MyValue value)
-        {
-            return ref value;
-        }
     }
     
-    public class MyInput : IMoveToContext<MyInput>
+    public class MyInput
     {
         public int value;
-
-        public ref MyInput MoveToContext(ref MyInput input)
-        {
-            return ref input;
-        }
     }
 
-    public class MyOutput : IMoveToContext<MyOutput>
+    public class MyOutput
     {
         public MyValue value;
-
-        public ref MyOutput MoveToContext(ref MyOutput output)
-        {
-            return ref output;
-        }
     }
 
 
-    public class MyContext : IMoveToContext<MyContext>
+    public class MyContext
     {
-        public ref MyContext MoveToContext(ref MyContext context)
-        {
-            return ref context;
-        }
     }
 
     public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
@@ -275,21 +251,11 @@ namespace FASTER.test
         {
             return true;
         }
-
-        public ref MyLargeValue MoveToContext(ref MyLargeValue value)
-        {
-            return ref value;
-        }
     }
 
-    public class MyLargeOutput : IMoveToContext<MyLargeOutput>
+    public class MyLargeOutput
     {
         public MyLargeValue value;
-
-        public ref MyLargeOutput MoveToContext(ref MyLargeOutput input)
-        {
-            return ref input;
-        }
     }
 
     public class MyLargeFunctions : IFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext>

@@ -5,15 +5,10 @@
 
 using System.Runtime.CompilerServices;
 
-namespace FASTER.core
+namespace FASTER.benchmark
 {
-    public struct Input : IMoveToContext<Input>
+    public struct Input
     {
         public long value;
-
-        public ref Input MoveToContext(ref Input input)
-        {
-            return ref input;
-        }
     }
 }

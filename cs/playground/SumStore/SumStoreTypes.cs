@@ -12,7 +12,7 @@ using System.Runtime.CompilerServices;
 using System.IO;
 using System.Diagnostics;
 
-namespace FASTER.test.recovery.sumstore
+namespace SumStore
 {
     public struct AdId : IKey<AdId>
     {

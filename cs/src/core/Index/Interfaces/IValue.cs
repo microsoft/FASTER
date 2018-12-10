@@ -6,11 +6,9 @@ namespace FASTER.core
     {
         int GetLength();
         void ShallowCopy(ref Value dst);
-        void Free();
 
         bool HasObjectsToSerialize();
         void Serialize(Stream toStream);
         void Deserialize(Stream fromStream);
-        ref Value MoveToContext(ref Value value);
     }
 }

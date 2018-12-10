@@ -61,11 +61,6 @@ namespace ClassCache
         {
             return true;
         }
-
-        public ref CacheKey MoveToContext(ref CacheKey key)
-        {
-            return ref key;
-        }
     }
 
     public class CacheValue : IValue<CacheValue>
@@ -97,11 +92,6 @@ namespace ClassCache
             return true;
         }
 
-        public ref CacheValue MoveToContext(ref CacheValue value)
-        {
-            return ref value;
-        }
-
         public void Serialize(Stream toStream)
         {
         }
@@ -112,30 +102,17 @@ namespace ClassCache
         }
     }
 
-    public struct CacheInput : IMoveToContext<CacheInput>
+    public struct CacheInput
     {
-        public ref CacheInput MoveToContext(ref CacheInput input)
-        {
-            return ref input;
-        }
     }
 
-    public struct CacheOutput : IMoveToContext<CacheOutput>
+    public struct CacheOutput
     {
         public CacheValue value;
-
-        public ref CacheOutput MoveToContext(ref CacheOutput input)
-        {
-            return ref input;
-        }
     }
 
-    public struct CacheContext : IMoveToContext<CacheContext>
+    public struct CacheContext
     {
-        public ref CacheContext MoveToContext(ref CacheContext input)
-        {
-            return ref input;
-        }
     }
 
     public class CacheFunctions : IFunctions<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>

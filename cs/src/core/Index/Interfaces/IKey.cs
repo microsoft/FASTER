@@ -9,7 +9,6 @@ namespace FASTER.core
     {
         int GetLength();
         void ShallowCopy(ref T dst);
-        void Free();
 
         long GetHashCode64();
         bool Equals(ref T k2);
@@ -17,6 +16,5 @@ namespace FASTER.core
         bool HasObjectsToSerialize();
         void Serialize(Stream toStream);
         void Deserialize(Stream fromStream);
-        ref T MoveToContext(ref T key);
     }
 }

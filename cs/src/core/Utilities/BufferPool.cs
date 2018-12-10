@@ -58,7 +58,7 @@ namespace FASTER.core
         public int available_bytes;
 
         internal int level;
-        internal NativeSectorAlignedBufferPool pool;
+        internal SectorAlignedBufferPool pool;
 
         /// <summary>
         /// Return
@@ -81,20 +81,20 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// NativeSectorAlignedBufferPool is a pool of memory. 
+    /// SectorAlignedBufferPool is a pool of memory. 
     /// Internally, it is organized as an array of concurrent queues where each concurrent
     /// queue represents a memory of size in particular range. queue[i] contains memory 
     /// segments each of size (2^i * sectorSize).
     /// </summary>
-    public class NativeSectorAlignedBufferPool
+    public class SectorAlignedBufferPool
     {
         private const int levels = 32;
         private readonly int recordSize;
         private readonly int sectorSize;
         private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
 
-        private static SafeConcurrentDictionary<Tuple<int, int>, NativeSectorAlignedBufferPool> _instances
-            = new SafeConcurrentDictionary<Tuple<int, int>, NativeSectorAlignedBufferPool>();
+        private static SafeConcurrentDictionary<Tuple<int, int>, SectorAlignedBufferPool> _instances
+            = new SafeConcurrentDictionary<Tuple<int, int>, SectorAlignedBufferPool>();
 
         /// <summary>
         /// Get cached instance of buffer pool for specified params
@@ -102,11 +102,11 @@ namespace FASTER.core
         /// <param name="recordSize">Record size</param>
         /// <param name="sectorSize">Sector size</param>
         /// <returns></returns>
-        public static NativeSectorAlignedBufferPool GetPool(int recordSize, int sectorSize)
+        public static SectorAlignedBufferPool GetPool(int recordSize, int sectorSize)
         {
             return
                 _instances.GetOrAdd(new Tuple<int, int>(recordSize, sectorSize),
-                    t => new NativeSectorAlignedBufferPool(t.Item1, t.Item2));
+                    t => new SectorAlignedBufferPool(t.Item1, t.Item2));
         }
 
         /// <summary>
@@ -114,7 +114,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="recordSize">Record size</param>
         /// <param name="sectorSize">Sector size</param>
-        public NativeSectorAlignedBufferPool(int recordSize, int sectorSize)
+        public SectorAlignedBufferPool(int recordSize, int sectorSize)
         {
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
             this.recordSize = recordSize;

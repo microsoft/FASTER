@@ -42,7 +42,7 @@ namespace FASTER.core
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Buffer pool for object log related work
-        NativeSectorAlignedBufferPool ioBufferPool;
+        SectorAlignedBufferPool ioBufferPool;
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private static readonly int keySize = Utility.GetSize(default(Key));
@@ -69,7 +69,7 @@ namespace FASTER.core
             }
 
             epoch = LightEpoch.Instance;
-            ioBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
+            ioBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
         }
 
         public override void Initialize()
@@ -740,7 +740,7 @@ namespace FASTER.core
             return segmentOffsets;
         }
 
-        internal override unsafe void PopulatePage(byte* src, int required_bytes, long destinationPage)
+        internal override void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
             fixed (RecordInfo* pin = &values[destinationPage % BufferSize][0].info)
             {

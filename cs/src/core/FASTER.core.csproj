@@ -50,23 +50,11 @@
     <EmbeddedResource Include="Index/FASTER/FASTERBase.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTERImpl.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTERThread.cs" />
-    <EmbeddedResource Include="ManagedLayer/IFASTER_Mixed.cs" />
     <EmbeddedResource Include="Index/FASTER/IndexCheckpoint.cs" />
     <EmbeddedResource Include="Index/FASTER/IndexRecovery.cs" />
     <EmbeddedResource Include="Index/FASTER/Recovery.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedContextWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedFunctionsWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedInputWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedKeyWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedManagedFAST.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedOutputWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedUnwrappedTypes.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedUserFunctions.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedValueWrapper.cs" />
     <EmbeddedResource Include="Utilities/AsyncResultTypes.cs" />
     <EmbeddedResource Include="Utilities/StateTransitions.cs" />
-    <EmbeddedResource Include="Allocator/PersistentMemoryMalloc.cs" />
-    <EmbeddedResource Include="Allocator/PMMAsyncIO.cs" />
   </ItemGroup>
 
 </Project>

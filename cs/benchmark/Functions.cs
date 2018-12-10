@@ -7,15 +7,11 @@
 //#define COUNT_STORE
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading;
 using System.Diagnostics;
-using System.Threading.Tasks;
+using FASTER.core;
 
-namespace FASTER.core
+namespace FASTER.benchmark
 {
     public struct Functions : IFunctions<Key, Value, Input, Output, Context>
     {

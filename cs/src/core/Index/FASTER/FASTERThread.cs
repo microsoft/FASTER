@@ -14,9 +14,6 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>, new()
         where Value : IValue<Value>, new()
-        where Input : IMoveToContext<Input>
-        where Output : IMoveToContext<Output>
-        where Context : IMoveToContext<Context>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
 
@@ -76,7 +73,7 @@ namespace FASTER.core
         {
             Debug.Assert(threadCtx.retryRequests.Count == 0 &&
                     threadCtx.ioPendingRequests.Count == 0);
-            if (prevThreadCtx != default(ExecutionContext))
+            if (prevThreadCtx != default(FasterExecutionContext))
             {
                 Debug.Assert(prevThreadCtx.retryRequests.Count == 0 &&
                     prevThreadCtx.ioPendingRequests.Count == 0);
@@ -86,9 +83,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitLocalContext(ref ExecutionContext context, Guid token)
+        internal void InitLocalContext(ref FasterExecutionContext context, Guid token)
         {
-            context = new ExecutionContext
+            context = new FasterExecutionContext
             {
                 phase = _systemState.phase,
                 version = _systemState.version,
@@ -150,7 +147,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompleteRetryRequests(ExecutionContext context)
+        internal void CompleteRetryRequests(FasterExecutionContext context)
         {
             int count = context.retryRequests.Count;
             for (int i = 0; i < count; i++)
@@ -161,7 +158,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompleteIOPendingRequests(ExecutionContext context)
+        internal void CompleteIOPendingRequests(FasterExecutionContext context)
         {
             while (context.readyResponses.TryTake(out AsyncIOContext<Key, Value> request))
             {
@@ -171,7 +168,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRetryRequestAndCallback(
-                                    ExecutionContext ctx,
+                                    FasterExecutionContext ctx,
                                     PendingContext pendingContext)
         {
             var status = default(Status);
@@ -241,7 +238,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalContinuePendingRequestAndCallback(
-                                    ExecutionContext ctx,
+                                    FasterExecutionContext ctx,
                                     AsyncIOContext<Key, Value> request)
         {
             var handleLatches = false;
@@ -270,15 +267,6 @@ namespace FASTER.core
                     internalStatus = InternalContinuePendingRMW(ctx, request, ref pendingContext); ;
                 }
                 
-                // Delete key, value, record
-                if (hlog.KeyHasObjects())
-                {
-                    request.key.Free();
-                }
-                if (hlog.ValueHasObjects())
-                {
-                    request.value.Free();
-                }
                 request.record.Return();
 
                 // Handle operation status

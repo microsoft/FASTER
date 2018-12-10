@@ -11,14 +11,14 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
+using FASTER.core;
 
-namespace FASTER.core
+namespace FASTER.benchmark
 {
 
 #if EIGHT_BYTE_VALUE
     [StructLayout(LayoutKind.Explicit, Size = kSizeInBytes)]
-    public unsafe struct Value : IValue<Value>
+    public struct Value : IValue<Value>
     {
         public const int kValuesStartOffset = 0;
         public const int kSizeInBytes = sizeof(long) + kValuesStartOffset;
@@ -69,15 +69,6 @@ namespace FASTER.core
 
         public void Deserialize(Stream fromStream)
         {
-        }
-
-        public void Free()
-        {
-        }
-
-        public ref Value MoveToContext(ref Value value)
-        {
-            return ref value;
         }
     }
 #elif FIXED_SIZE_VALUE_WITH_LOCK

@@ -140,7 +140,7 @@ namespace FASTER.core
         #endregion
 
         // Read buffer pool
-        protected NativeSectorAlignedBufferPool readBufferPool;
+        protected SectorAlignedBufferPool readBufferPool;
 
         #region Abstract methods
         public abstract void Initialize();
@@ -205,7 +205,7 @@ namespace FASTER.core
 
         protected void Initialize(long firstValidAddress)
         {
-            readBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
+            readBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
 
             long tailPage = firstValidAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
@@ -998,17 +998,6 @@ namespace FASTER.core
                         ctx.logicalAddress = ((RecordInfo*)record)->PreviousAddress;
                         if (ctx.logicalAddress != Constants.kInvalidAddress)
                         {
-
-                            // Delete key, value, record
-                            if (KeyHasObjects())
-                            {
-                                ctx.key.Free();
-                            }
-                            if (ValueHasObjects())
-                            {
-                                ctx.value.Free();
-                            }
-                            
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
                             AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);

@@ -82,7 +82,7 @@ namespace FASTER.test.recovery.sumstore
             RecoverAndTest(token, token);
         }
 
-        public unsafe void Populate()
+        public void Populate()
         {
             Empty context;
 
@@ -99,34 +99,31 @@ namespace FASTER.test.recovery.sumstore
 
             // Prpcess the batch of input data
             bool first = true;
-            fixed (Input* input = inputArray)
+            for (int i = 0; i < numOps; i++)
             {
-                for (int i = 0; i < numOps; i++)
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+
+                if ((i+1) % checkpointInterval == 0)
                 {
-                    fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+                    if (first)
+                        while (!fht.TakeFullCheckpoint(out token))
+                            fht.Refresh();
+                    else
+                        while (!fht.TakeFullCheckpoint(out Guid nextToken))
+                            fht.Refresh();
 
-                    if ((i+1) % checkpointInterval == 0)
-                    {
-                        if (first)
-                            while (!fht.TakeFullCheckpoint(out token))
-                                fht.Refresh();
-                        else
-                            while (!fht.TakeFullCheckpoint(out Guid nextToken))
-                                fht.Refresh();
+                    fht.CompleteCheckpoint(true);
 
-                        fht.CompleteCheckpoint(true);
+                    first = false;
+                }
 
-                        first = false;
-                    }
-
-                    if (i % completePendingInterval == 0)
-                    {
-                        fht.CompletePending(false);
-                    }
-                    else if (i % refreshInterval == 0)
-                    {
-                        fht.Refresh();
-                    }
+                if (i % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (i % refreshInterval == 0)
+                {
+                    fht.Refresh();
                 }
             }
 
@@ -137,7 +134,7 @@ namespace FASTER.test.recovery.sumstore
             fht.StopSession();
         }
 
-        public unsafe void RecoverAndTest(Guid cprVersion, Guid indexVersion)
+        public void RecoverAndTest(Guid cprVersion, Guid indexVersion)
         {
             // Recover
             fht.Recover(cprVersion, indexVersion);

@@ -8,15 +8,12 @@
 //#define VARIABLE_SIZE_KEY
 
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
+using FASTER.core;
 
-namespace FASTER.core
+namespace FASTER.benchmark
 {
 #if FIXED_SIZE_KEY
     [StructLayout(LayoutKind.Explicit, Size = kSizeInBytes)]
@@ -67,7 +64,7 @@ namespace FASTER.core
     }
 #elif EIGHT_BYTE_KEY
     [StructLayout(LayoutKind.Explicit, Size = kSizeInBytes)]
-    public unsafe struct Key : IKey<Key>
+    public struct Key : IKey<Key>
     {
         public const int kSizeInBytes = sizeof(long);
 
@@ -116,11 +113,6 @@ namespace FASTER.core
         public void Free()
         {
             throw new InvalidOperationException();
-        }
-
-        public ref Key MoveToContext(ref Key key)
-        {
-            return ref key;
         }
 
         public override string ToString()

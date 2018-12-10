@@ -19,17 +19,8 @@ namespace FASTER.core
     /// <summary>
     /// Empty type
     /// </summary>
-    public struct Empty : IMoveToContext<Empty>
+    public struct Empty
     {
-        /// <summary>
-        /// Move to context
-        /// </summary>
-        /// <param name="empty"></param>
-        /// <returns></returns>
-        public ref Empty MoveToContext(ref Empty empty)
-        {
-            return ref empty;
-        }
     }
 
 

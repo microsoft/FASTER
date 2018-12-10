@@ -5,13 +5,8 @@ using FASTER.core;
 
 namespace StructSampleCore
 {
-    public struct OutputStruct : IMoveToContext<OutputStruct>
+    public struct OutputStruct
     {
         public ValueStruct value;
-
-        public ref OutputStruct MoveToContext(ref OutputStruct output)
-        {
-            return ref output;
-        }
     }
 }

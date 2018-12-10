@@ -8,18 +8,12 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace FASTER.core
+namespace FASTER.benchmark
 {
     [StructLayout(LayoutKind.Explicit)]
-    public struct Output : IMoveToContext<Output>
+    public struct Output
     {
         [FieldOffset(0)]
         public Value value;
-
-        public ref Output MoveToContext(ref Output value)
-        {
-            return ref value;
-        }
-
     }
 }

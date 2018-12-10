@@ -20,7 +20,7 @@ namespace FASTER.core
         private readonly bool deleteOnClose;
         private readonly ConcurrentDictionary<int, Stream> logHandles;
         private readonly Stream singleLogHandle;
-        private NativeSectorAlignedBufferPool pool;
+        private SectorAlignedBufferPool pool;
 
         /// <summary>
         /// 
@@ -35,7 +35,7 @@ namespace FASTER.core
             bool preallocateSegment = false, bool singleSegment = true, bool deleteOnClose = false)
             : base(filename, segmentSize, GetSectorSize(filename))
         {
-            pool = NativeSectorAlignedBufferPool.GetPool(1, 1);
+            pool = SectorAlignedBufferPool.GetPool(1, 1);
 
             this.preallocateSegment = preallocateSegment;
             this.deleteOnClose = deleteOnClose;

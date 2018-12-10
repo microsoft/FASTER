@@ -24,7 +24,7 @@ namespace SumStore
         const long checkpointInterval = (1 << 22);
         readonly int threadCount;
         int numActiveThreads;
-        ICustomFasterKv fht;
+        FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
         BlockingCollection<Input[]> inputArrays;
         readonly long[] threadNumOps;
 
@@ -34,9 +34,11 @@ namespace SumStore
 
             // Create FASTER index
             var log = FasterFactory.CreateLogDevice("logs\\hlog");
-            fht = FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
-                (keySpace, new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = "logs" });
+            fht = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, Functions>
+                (keySpace, new Functions(), 
+                new LogSettings { LogDevice = log }, 
+                new CheckpointSettings { CheckpointDir = "logs" });
             numActiveThreads = 0;
 
             inputArrays = new BlockingCollection<Input[]>();
@@ -44,7 +46,7 @@ namespace SumStore
             Prepare();
         }
 
-        public unsafe void Prepare()
+        public void Prepare()
         {
             Console.WriteLine("Creating Input Arrays");
 
@@ -69,7 +71,7 @@ namespace SumStore
             }
         }
 
-        private unsafe void CreateInputArrays(int threadId)
+        private void CreateInputArrays(int threadId)
         {
             var inputArray = new Input[numOps];
             for (int i = 0; i < numOps; i++)
@@ -82,7 +84,7 @@ namespace SumStore
         }
 
 
-        public unsafe void Populate()
+        public void Populate()
         {
             Thread[] workers = new Thread[threadCount];
             for (int idx = 0; idx < threadCount; ++idx)
@@ -109,7 +111,7 @@ namespace SumStore
             Test();
         }
 
-        private unsafe void PopulateWorker(int threadId)
+        private void PopulateWorker(int threadId)
         {
             Native32.AffinitizeThreadRoundRobin((uint)threadId);
 
@@ -131,20 +133,17 @@ namespace SumStore
             var random = new Random(threadId + 1);
             threadNumOps[threadId] = (numOps / 2) + random.Next() % (numOps / 4);
             
-            fixed (Input* input = inputArray)
+            for (long i = 0; i < threadNumOps[threadId]; i++)
             {
-                for (long i = 0; i < threadNumOps[threadId]; i++)
-                {
-                    fht.RMW(&((input + i)->adId), input + i, &context, i);
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
 
-                    if (i % completePendingInterval == 0)
-                    {
-                        fht.CompletePending(false);
-                    }
-                    else if (i % refreshInterval == 0)
-                    {
-                        fht.Refresh();
-                    }
+                if (i % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (i % refreshInterval == 0)
+                {
+                    fht.Refresh();
                 }
             }
 
@@ -159,7 +158,7 @@ namespace SumStore
             Console.WriteLine("Populate successful on thread {0}", threadId);
         }
 
-        public unsafe void Test()
+        public void Test()
         {
 
             // Create array for reading
@@ -173,14 +172,14 @@ namespace SumStore
 
             // Register with thread
             fht.StartSession();
+            Input input = default(Input);
+            Output output = default(Output);
 
             // Issue read requests
-            fixed (Input* input = inputArray)
+            for (var i = 0; i < numUniqueKeys; i++)
             {
-                for (var i = 0; i < numUniqueKeys; i++)
-                {
-                    fht.Read(&((input + i)->adId), null, (Output*)&((input + i)->numClicks), &context, i);
-                }
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests

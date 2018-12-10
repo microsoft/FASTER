@@ -64,11 +64,6 @@ namespace FASTER.test
             throw new InvalidOperationException();
         }
         #endregion
-
-        public ref KeyStruct MoveToContext(ref KeyStruct key)
-        {
-            return ref key;
-        }
     }
 
     public struct ValueStruct : IValue<ValueStruct>
@@ -127,32 +122,17 @@ namespace FASTER.test
             throw new InvalidOperationException();
         }
         #endregion
-
-        public ref ValueStruct MoveToContext(ref ValueStruct value)
-        {
-            return ref value;
-        }
     }
 
-    public struct InputStruct : IMoveToContext<InputStruct>
+    public struct InputStruct
     {
         public long ifield1;
         public long ifield2;
-
-        public ref InputStruct MoveToContext(ref InputStruct input)
-        {
-            return ref input;
-        }
     }
 
-    public struct OutputStruct : IMoveToContext<OutputStruct>
+    public struct OutputStruct
     {
         public ValueStruct value;
-
-        public ref OutputStruct MoveToContext(ref OutputStruct output)
-        {
-            return ref output;
-        }
     }
 
     public class Functions : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>

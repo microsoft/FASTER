@@ -6,14 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace StructSampleCore
 {
-    public struct InputStruct : IMoveToContext<InputStruct>
+    public struct InputStruct
     {
         public long ifield1;
         public long ifield2;
-
-        public ref InputStruct MoveToContext(ref InputStruct input)
-        {
-            return ref input;
-        }
     }
 }

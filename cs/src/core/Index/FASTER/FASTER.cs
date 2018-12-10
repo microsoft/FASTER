@@ -28,9 +28,6 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>, new()
         where Value : IValue<Value>, new()
-        where Input : IMoveToContext<Input>
-        where Output : IMoveToContext<Output>
-        where Context : IMoveToContext<Context>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
@@ -71,10 +68,10 @@ namespace FASTER.core
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
 
         [ThreadStatic]
-        private static ExecutionContext prevThreadCtx = default(ExecutionContext);
+        private static FasterExecutionContext prevThreadCtx = default(FasterExecutionContext);
 
         [ThreadStatic]
-        private static ExecutionContext threadCtx = default(ExecutionContext);
+        private static FasterExecutionContext threadCtx = default(FasterExecutionContext);
 
 
         /// <summary>

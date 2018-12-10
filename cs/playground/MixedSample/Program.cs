@@ -53,11 +53,6 @@ namespace MixedSample
         {
             return true;
         }
-
-        public ref MyKey MoveToContext(ref MyKey key)
-        {
-            throw new NotImplementedException();
-        }
     }
 
     public class MyValue : IValue<MyValue>
@@ -93,38 +88,20 @@ namespace MixedSample
         {
             return true;
         }
-
-        public ref MyValue MoveToContext(ref MyValue value)
-        {
-            throw new NotImplementedException();
-        }
     }
 
-    public class MyInput : IMoveToContext<MyInput>
+    public class MyInput
     {
-        public ref MyInput MoveToContext(ref MyInput input)
-        {
-            throw new NotImplementedException();
-        }
     }
 
-    public class MyOutput : IMoveToContext<MyOutput>
+    public class MyOutput
     {
         public MyValue value;
-
-        public ref MyOutput MoveToContext(ref MyOutput input)
-        {
-            throw new NotImplementedException();
-        }
     }
 
 
-    public class MyContext : IMoveToContext<MyContext>
+    public class MyContext
     {
-        public ref MyContext MoveToContext(ref MyContext input)
-        {
-            throw new NotImplementedException();
-        }
     }
 
     public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>

@@ -39,7 +39,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public unsafe void NativeDiskWriteRead()
+        public void NativeDiskWriteRead()
         {
             InputStruct input = default(InputStruct);
             Empty context = default(Empty);

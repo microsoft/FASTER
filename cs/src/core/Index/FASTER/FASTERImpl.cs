@@ -17,9 +17,6 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>, new()
         where Value : IValue<Value>, new()
-        where Input : IMoveToContext<Input>
-        where Output : IMoveToContext<Output>
-        where Context : IMoveToContext<Context>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         enum LatchOperation : byte
@@ -180,13 +177,10 @@ namespace FASTER.core
             {
 
                 pendingContext.type = OperationType.READ;
-                pendingContext.key = key.MoveToContext(ref key);
-                pendingContext.input = input.MoveToContext(ref input);
-                pendingContext.output = output.MoveToContext(ref output);
-
-                if (userContext != null)
-                    pendingContext.userContext = userContext.MoveToContext(ref userContext);
-
+                pendingContext.key = key;
+                pendingContext.input = input;
+                pendingContext.output = output;
+                pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.version;
@@ -217,7 +211,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         internal OperationStatus InternalContinuePendingRead(
-                            ExecutionContext ctx,
+                            FasterExecutionContext ctx,
                             AsyncIOContext<Key, Value> request,
                             ref PendingContext pendingContext)
         {
@@ -247,7 +241,7 @@ namespace FASTER.core
         /// <param name="request">Async response from disk.</param>
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         internal void InternalContinuePendingReadCopyToTail(
-                                    ExecutionContext ctx,
+                                    FasterExecutionContext ctx,
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext)
         {
@@ -535,9 +529,9 @@ namespace FASTER.core
             CreatePendingContext:
             {
                 pendingContext.type = OperationType.UPSERT;
-                pendingContext.key = key.MoveToContext(ref key);
-                pendingContext.value = value.MoveToContext(ref value);
-                pendingContext.userContext = userContext.MoveToContext(ref userContext);
+                pendingContext.key = key;
+                pendingContext.value = value;
+                pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.version;
@@ -849,9 +843,9 @@ namespace FASTER.core
             CreateFailureContext:
             {
                 pendingContext.type = OperationType.RMW;
-                pendingContext.key = key.MoveToContext(ref key);
-                pendingContext.input = input.MoveToContext(ref input);
-                pendingContext.userContext = userContext.MoveToContext(ref userContext);
+                pendingContext.key = key;
+                pendingContext.input = input;
+                pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.version;
@@ -912,7 +906,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         internal OperationStatus InternalRetryPendingRMW(
-                            ExecutionContext ctx,
+                            FasterExecutionContext ctx,
                             ref PendingContext pendingContext)
         {
             var recordSize = default(int);
@@ -1175,7 +1169,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         internal OperationStatus InternalContinuePendingRMW(
-                                    ExecutionContext ctx,
+                                    FasterExecutionContext ctx,
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext)
         {
@@ -1304,7 +1298,7 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus(
-                    ExecutionContext ctx,
+                    FasterExecutionContext ctx,
                     PendingContext pendingContext,
                     OperationStatus status)
         {

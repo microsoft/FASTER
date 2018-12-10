@@ -39,7 +39,7 @@ namespace FASTER.core
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Buffer pool for object log related work
-        NativeSectorAlignedBufferPool ioBufferPool;
+        SectorAlignedBufferPool ioBufferPool;
 
         public BlittableAllocator(LogSettings settings)
             : base(settings)
@@ -65,7 +65,7 @@ namespace FASTER.core
             }
 
             epoch = LightEpoch.Instance;
-            ioBufferPool = NativeSectorAlignedBufferPool.GetPool(1, sectorSize);
+            ioBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
 
             ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
             nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
@@ -210,15 +210,6 @@ namespace FASTER.core
 
         protected override void ClearPage(int page, bool pageZero)
         {
-            if (KeyHasObjects() || ValueHasObjects())
-            {
-                long ptr = pointers[page];
-                int numBytes = PageSize;
-                long endptr = ptr + numBytes;
-
-                if (pageZero) ptr += Constants.kFirstValidAddress;
-                ClearPage(ptr, endptr);
-            }
             Array.Clear(values[page], 0, values[page].Length);
 
             // Close segments
@@ -471,26 +462,6 @@ namespace FASTER.core
 
 
         #region Page handlers for objects
-        /// <summary>
-        /// Clear page
-        /// </summary>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="endptr">Until pointer</param>
-        public void ClearPage(long ptr, long endptr)
-        {
-
-            while (ptr < endptr)
-            {
-                if (!GetInfo(ptr).Invalid)
-                {
-                    if (KeyHasObjects())
-                        GetKey(ptr).Free();
-                    if (ValueHasObjects())
-                        GetValue(ptr).Free();
-                }
-                ptr += GetRecordSize(ptr);
-            }
-        }
 
         /// <summary>
         /// Deseialize part of page from stream
@@ -711,7 +682,7 @@ namespace FASTER.core
             return segmentOffsets;
         }
 
-        internal override unsafe void PopulatePage(byte* src, int required_bytes, long destinationPage)
+        internal override void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
             throw new Exception("Memory pages are sector aligned - use direct copy");
             // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);

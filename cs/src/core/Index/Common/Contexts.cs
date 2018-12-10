@@ -32,16 +32,39 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
+    internal class SerializedFasterExecutionContext
+    {
+        public int version;
+        public long serialNum;
+        public Guid guid;
+
+        public void Write(StreamWriter writer)
+        {
+            writer.WriteLine(version);
+            writer.WriteLine(guid);
+            writer.WriteLine(serialNum);
+        }
+
+        public void Load(StreamReader reader)
+        {
+            string value = reader.ReadLine();
+            version = int.Parse(value);
+
+            value = reader.ReadLine();
+            guid = Guid.Parse(value);
+
+            value = reader.ReadLine();
+            serialNum = long.Parse(value);
+        }
+    }
+
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>, new()
         where Value : IValue<Value>, new()
-        where Input : IMoveToContext<Input>
-        where Output : IMoveToContext<Output>
-        where Context : IMoveToContext<Context>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
 
-        internal unsafe struct PendingContext
+        internal struct PendingContext
         {
             // User provided information
 
@@ -66,35 +89,14 @@ namespace FASTER.core
             public HashBucketEntry entry;
         }
 
-        internal unsafe class ExecutionContext
+        internal class FasterExecutionContext : SerializedFasterExecutionContext
         {
-            public int version;
-            public long serialNum;
             public Phase phase;
             public bool[] markers;
             public long totalPending;
-            public Guid guid;
             public Queue<PendingContext> retryRequests;
             public Dictionary<long, PendingContext> ioPendingRequests;
             public BlockingCollection<AsyncIOContext<Key, Value>> readyResponses;
-
-            public void Write(StreamWriter writer)
-            {
-                writer.WriteLine(version);
-                writer.WriteLine(guid);
-                writer.WriteLine(serialNum);
-            }
-            public void Load(StreamReader reader)
-            {
-                string value = reader.ReadLine();
-                version = int.Parse(value);
-
-                value = reader.ReadLine();
-                guid = Guid.Parse(value);
-
-                value = reader.ReadLine();
-                serialNum = long.Parse(value);
-            }
         }
     }
 
@@ -332,7 +334,7 @@ namespace FASTER.core
                 var guid = guids[i];
                 using (var reader = new StreamReader(DirectoryConfiguration.GetHybridLogCheckpointContextFileName(token, guid)))
                 {
-                    var ctx = new FasterKV<Key, Value, Input, Output, Context, Functions>.ExecutionContext();
+                    var ctx = new SerializedFasterExecutionContext();
                     ctx.Load(reader);
                     continueTokens.Add(ctx.guid, ctx.serialNum);
                 }
