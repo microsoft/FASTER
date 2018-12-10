@@ -58,11 +58,6 @@ namespace FASTER.test
         {
             throw new InvalidOperationException();
         }
-
-        public void Free()
-        {
-            throw new InvalidOperationException();
-        }
         #endregion
     }
 
@@ -84,23 +79,6 @@ namespace FASTER.test
             dst.vfield2 = vfield2;
         }
 
-        // Shared read/write capabilities on value
-        public void AcquireReadLock()
-        {
-        }
-
-        public void ReleaseReadLock()
-        {
-        }
-
-        public void AcquireWriteLock()
-        {
-        }
-
-        public void ReleaseWriteLock()
-        {
-        }
-
         #region Serialization
         public bool HasObjectsToSerialize()
         {
@@ -113,11 +91,6 @@ namespace FASTER.test
         }
 
         public void Deserialize(Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void Free()
         {
             throw new InvalidOperationException();
         }
@@ -167,9 +140,7 @@ namespace FASTER.test
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
-            value.AcquireReadLock();
             dst.value = value;
-            value.ReleaseReadLock();
         }
 
         // Upsert functions
@@ -182,9 +153,7 @@ namespace FASTER.test
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
-            dst.AcquireWriteLock();
             dst = src;
-            dst.ReleaseWriteLock();
         }
 
         // RMW functions
@@ -205,10 +174,8 @@ namespace FASTER.test
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
-            value.AcquireWriteLock();
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
-            value.ReleaseWriteLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -46,10 +46,6 @@ namespace FASTER.test
             dst = new MyKey { key = key };
         }
 
-        public void Free()
-        {
-        }
-
         public bool Equals(ref MyKey k2)
         {
             return key == k2.key;
@@ -84,27 +80,6 @@ namespace FASTER.test
         {
             dst.value = value;
         }
-
-        public void Free()
-        {
-        }
-
-        public void AcquireReadLock()
-        {
-        }
-
-        public void AcquireWriteLock()
-        {
-        }
-
-        public void ReleaseReadLock()
-        {
-        }
-
-        public void ReleaseWriteLock()
-        {
-        }
-
         public bool HasObjectsToSerialize()
         {
             return true;
@@ -225,26 +200,6 @@ namespace FASTER.test
         public void ShallowCopy(ref MyLargeValue dst)
         {
             dst = this;
-        }
-
-        public void Free()
-        {
-        }
-
-        public void AcquireReadLock()
-        {
-        }
-
-        public void AcquireWriteLock()
-        {
-        }
-
-        public void ReleaseReadLock()
-        {
-        }
-
-        public void ReleaseWriteLock()
-        {
         }
 
         public bool HasObjectsToSerialize()

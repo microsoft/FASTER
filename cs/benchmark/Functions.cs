@@ -133,9 +133,7 @@ namespace FASTER.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InPlaceUpdater(ref Key key, ref Input input, ref Value value)
         {
-            value.AcquireWriteLock();
             value.value += input.value;
-            value.ReleaseWriteLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

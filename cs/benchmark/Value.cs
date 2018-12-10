@@ -27,26 +27,6 @@ namespace FASTER.benchmark
         public long value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AcquireReadLock()
-        {
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ReleaseReadLock()
-        {
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AcquireWriteLock()
-        {
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ReleaseWriteLock()
-        {
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ShallowCopy(ref Value dst)
         {
             dst = this;

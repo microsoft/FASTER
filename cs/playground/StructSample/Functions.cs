@@ -53,9 +53,7 @@ namespace StructSampleCore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
-            dst.AcquireWriteLock();
             dst = src;
-            dst.ReleaseWriteLock();
         }
 
         // RMW functions
@@ -76,10 +74,8 @@ namespace StructSampleCore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
-            value.AcquireWriteLock();
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
-            value.ReleaseWriteLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

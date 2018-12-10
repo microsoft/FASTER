@@ -52,11 +52,6 @@ namespace ClassCache
             dst = this;
         }
 
-        public void Free()
-        {
-            throw new NotImplementedException();
-        }
-
         public bool HasObjectsToSerialize()
         {
             return true;
@@ -75,10 +70,6 @@ namespace ClassCache
         }
 
         public void Deserialize(Stream fromStream)
-        {
-        }
-
-        public void Free()
         {
         }
 

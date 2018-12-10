@@ -110,11 +110,6 @@ namespace FASTER.benchmark
             throw new InvalidOperationException();
         }
 
-        public void Free()
-        {
-            throw new InvalidOperationException();
-        }
-
         public override string ToString()
         {
             return "{ " + value + " }";

@@ -51,16 +51,6 @@ namespace StructSampleCore
         {
             throw new InvalidOperationException();
         }
-
-        public void Free()
-        {
-            throw new InvalidOperationException();
-        }
         #endregion
-
-        public ref KeyStruct MoveToContext(ref KeyStruct key)
-        {
-            return ref key;
-        }
     }
 }

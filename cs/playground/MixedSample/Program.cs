@@ -45,10 +45,6 @@ namespace MixedSample
             dst = this;
         }
 
-        public void Free()
-        {
-        }
-
         public bool HasObjectsToSerialize()
         {
             return true;
@@ -77,11 +73,6 @@ namespace MixedSample
         public void ShallowCopy(ref MyValue dst)
         {
             dst = this;
-        }
-
-        public void Free()
-        {
-            throw new NotImplementedException();
         }
 
         public bool HasObjectsToSerialize()

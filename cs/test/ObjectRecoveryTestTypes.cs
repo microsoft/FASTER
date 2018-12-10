@@ -57,9 +57,6 @@ namespace FASTER.test.recovery.objectstore
         {
             adId = new BinaryReader(fromStream).ReadInt64();
         }
-        public void Free()
-        {
-        }
         #endregion
     }
 
@@ -85,23 +82,6 @@ namespace FASTER.test.recovery.objectstore
             dst.numClicks = numClicks;
         }
 
-        // Shared read/write capabilities on value
-        public void AcquireReadLock()
-        {
-        }
-
-        public void ReleaseReadLock()
-        {
-        }
-
-        public void AcquireWriteLock()
-        {
-        }
-
-        public void ReleaseWriteLock()
-        {
-        }
-
         #region Serialization
         public bool HasObjectsToSerialize()
         {
@@ -116,9 +96,6 @@ namespace FASTER.test.recovery.objectstore
         public void Deserialize(Stream fromStream)
         {
             numClicks = new BinaryReader(fromStream).ReadInt64();
-        }
-        public void Free()
-        {
         }
         #endregion
     }
@@ -157,9 +134,7 @@ namespace FASTER.test.recovery.objectstore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
-            value.AcquireReadLock();
             dst.value = value;
-            value.ReleaseReadLock();
         }
 
         // Upsert functions
@@ -172,9 +147,7 @@ namespace FASTER.test.recovery.objectstore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
-            dst.AcquireWriteLock();
             dst = src;
-            dst.ReleaseWriteLock();
         }
 
         // RMW functions

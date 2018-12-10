@@ -26,23 +26,6 @@ namespace StructSampleCore
             dst.vfield2 = vfield2;
         }
 
-        // Shared read/write capabilities on value
-        public void AcquireReadLock()
-        {
-        }
-
-        public void ReleaseReadLock()
-        {
-        }
-
-        public void AcquireWriteLock()
-        {
-        }
-
-        public void ReleaseWriteLock()
-        {
-        }
-
         #region Serialization
         public bool HasObjectsToSerialize()
         {
@@ -58,16 +41,6 @@ namespace StructSampleCore
         {
             throw new InvalidOperationException();
         }
-
-        public void Free()
-        {
-            throw new InvalidOperationException();
-        }
         #endregion
-
-        public ref ValueStruct MoveToContext(ref ValueStruct value)
-        {
-            return ref value;
-        }
     }
 }

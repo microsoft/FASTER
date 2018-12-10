@@ -55,10 +55,6 @@ namespace SumStore
         {
             throw new InvalidOperationException();
         }
-        public void Free()
-        {
-            throw new InvalidOperationException();
-        }
         #endregion
     }
 
@@ -84,23 +80,6 @@ namespace SumStore
             dst.numClicks = numClicks;
         }
 
-        // Shared read/write capabilities on value
-        public void AcquireReadLock()
-        {
-        }
-
-        public void ReleaseReadLock()
-        {
-        }
-
-        public void AcquireWriteLock()
-        {
-        }
-
-        public void ReleaseWriteLock()
-        {
-        }
-
         #region Serialization
         public bool HasObjectsToSerialize()
         {
@@ -113,10 +92,6 @@ namespace SumStore
         }
 
         public void Deserialize(Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        public void Free()
         {
             throw new InvalidOperationException();
         }
@@ -157,9 +132,7 @@ namespace SumStore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
-            value.AcquireReadLock();
             dst.value = value;
-            value.ReleaseReadLock();
         }
 
         // Upsert functions
@@ -172,9 +145,7 @@ namespace SumStore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
-            dst.AcquireWriteLock();
             dst = src;
-            dst.ReleaseWriteLock();
         }
 
         // RMW functions
