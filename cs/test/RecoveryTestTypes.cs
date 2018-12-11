@@ -91,13 +91,6 @@ namespace FASTER.test.recovery.sumstore
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int InitialValueLength(ref AdId key, ref Input input)
-        {
-            return Utility.GetSize(default(NumClicks));
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
             value = input.numClicks;

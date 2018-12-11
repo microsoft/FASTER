@@ -3,10 +3,6 @@
 
 #pragma warning disable 1591
 
-#define EIGHT_BYTE_KEY 
-//#define FIXED_SIZE_KEY
-//#define VARIABLE_SIZE_KEY
-
 using System;
 using System.IO;
 using System.Runtime.CompilerServices;

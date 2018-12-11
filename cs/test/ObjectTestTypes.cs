@@ -95,11 +95,6 @@ namespace FASTER.test
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public int InitialValueLength(ref MyKey key, ref MyInput input)
-        {
-            return sizeof(int);
-        }
-
         public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
@@ -198,11 +193,6 @@ namespace FASTER.test
 
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue oldValue, ref MyLargeValue newValue)
         {
-        }
-
-        public int InitialValueLength(ref MyKey key, ref MyInput input)
-        {
-            return sizeof(int);
         }
 
         public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)

@@ -10,6 +10,11 @@ using NUnit.Framework;
 
 namespace FASTER.test.recovery.objectstore
 {
+    internal struct StructTuple<T1, T2>
+    {
+        public T1 Item1;
+        public T2 Item2;
+    }
 
     [TestFixture]
     internal class ObjectRecoveryTests
@@ -94,11 +99,14 @@ namespace FASTER.test.recovery.objectstore
             Empty context = default(Empty);
 
             // Prepare the dataset
-            var inputArray = new ValueTuple<AdId, Input>[numOps];
+            var inputArray = new StructTuple<AdId, Input>[numOps];
             for (int i = 0; i < numOps; i++)
             {
-                inputArray[i] = new ValueTuple<AdId, Input>
-                    (new AdId { adId = i % numUniqueKeys }, new Input { numClicks = new NumClicks { numClicks = 1 } });
+                inputArray[i] = new StructTuple<AdId, Input>
+                {
+                    Item1 = new AdId { adId = i % numUniqueKeys },
+                    Item2 = new Input { numClicks = new NumClicks { numClicks = 1 } }
+                };
             }
 
             // Register thread with FASTER
@@ -150,10 +158,14 @@ namespace FASTER.test.recovery.objectstore
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            var inputArray = new ValueTuple<AdId, Input>[numUniqueKeys];
+            var inputArray = new StructTuple<AdId, Input>[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
-                inputArray[i] = new ValueTuple<AdId, Input>(new AdId { adId = i }, new Input { numClicks = new NumClicks { numClicks = 0 } });
+                inputArray[i] = new StructTuple<AdId, Input>
+                {
+                    Item1 = new AdId { adId = i },
+                    Item2 = new Input { numClicks = new NumClicks { numClicks = 0 } }
+                };
             }
 
             var outputArray = new Output[numUniqueKeys];

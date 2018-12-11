@@ -6,7 +6,6 @@
         void ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
         void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue);
         void InitialUpdater(ref Key key, ref Input input, ref Value value);
-        int InitialValueLength(ref Key key, ref Input input);
         void InPlaceUpdater(ref Key key, ref Input input, ref Value value);
         void PersistenceCallback(long thread_id, long serial_num);
         void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Context ctx, Status status);

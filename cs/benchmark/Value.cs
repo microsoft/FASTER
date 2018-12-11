@@ -15,7 +15,6 @@ using FASTER.core;
 
 namespace FASTER.benchmark
 {
-
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct Value
     {

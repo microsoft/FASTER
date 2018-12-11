@@ -94,11 +94,6 @@ namespace MixedSample
             throw new NotImplementedException();
         }
 
-        public int InitialValueLength(ref MyKey key, ref MyInput input)
-        {
-            throw new NotImplementedException();
-        }
-
         public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             throw new NotImplementedException();

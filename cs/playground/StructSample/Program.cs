@@ -14,11 +14,10 @@ namespace StructSampleCore
     {
         static void Main(string[] args)
         {
-            // This sample uses blittable structs the unsafe API of FASTER, and works only for blittable struct types
-            // Your structs have to implement certain static methods (see the structs for details)
-            // You also define the interface (ICustomFaster) that will be returned by the factory
-            // This sample represents the highest performance level for FASTER, at the expense of
-            // supporting limited types.
+            // This sample uses "blittable" structs, which enables the "high speed" mode for FASTER.
+            // Keys have to implement the IKey<> interface. User also provides a functions type
+            // that is used for callbacks and for operations. In this mode, the user does not
+            // provide serializers.
 
             var fht = 
                 new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>

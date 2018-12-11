@@ -97,13 +97,6 @@ namespace FASTER.test
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int InitialValueLength(ref KeyStruct key, ref InputStruct input)
-        {
-            return 16;
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
             value.vfield1 = input.ifield1;

@@ -41,7 +41,7 @@ namespace FASTER.test
 
 
         [Test]
-        public unsafe void NativeInMemWriteRead()
+        public void NativeInMemWriteRead()
         {
             InputStruct input = default(InputStruct);
             OutputStruct output = default(OutputStruct);

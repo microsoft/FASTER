@@ -154,7 +154,7 @@ namespace FASTER.core
 
         public abstract int GetRecordSize(long physicalAddress);
         public abstract int GetAverageRecordSize();
-        public abstract int GetInitialRecordSize(ref Key key, int valueLength);
+        public abstract int GetInitialRecordSize<Input>(ref Key key, ref Input input);
         public abstract int GetRecordSize(ref Key key, ref Value value);
 
         protected abstract void AllocatePage(int index);

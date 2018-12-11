@@ -106,11 +106,6 @@ namespace ClassCache
             throw new NotImplementedException();
         }
 
-        public int InitialValueLength(ref CacheKey key, ref CacheInput input)
-        {
-            throw new NotImplementedException();
-        }
-
         public void InPlaceUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue value)
         {
             throw new NotImplementedException();

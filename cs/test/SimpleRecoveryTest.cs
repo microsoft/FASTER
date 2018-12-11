@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#if FALSE
 using System;
 using System.Text;
 using System.Threading;
@@ -18,28 +17,28 @@ namespace FASTER.test.recovery.sumstore.simple
     [TestFixture]
     internal class SimpleRecoveryTests
     {
-        private ICustomFaster fht1;
-        private ICustomFaster fht2;
+        private new FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht1;
+        private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht2;
         private IDevice log;
 
 
         [Test]
-        public unsafe void SimpleRecoveryTest1()
+        public void SimpleRecoveryTest1()
         {
             log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
-            fht1 = FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
-                (indexSizeBuckets: 128,
+            fht1 = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
                 );
 
-            fht2 = FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
-                (indexSizeBuckets: 128,
+            fht2 = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
                 );
@@ -53,38 +52,35 @@ namespace FASTER.test.recovery.sumstore.simple
             }
 
             NumClicks value;
-            Input inputArg;
-            Output output;
+            Input inputArg = default(Input);
+            Output output = default(Output);
+            Empty context = default(Empty);
 
 
-            fixed (AdId* input = inputArray)
+            fht1.StartSession();
+            for (int key = 0; key < numOps; key++)
             {
-
-                fht1.StartSession();
-                for (int key = 0; key < numOps; key++)
-                {
-                    value.numClicks = key;
-                    fht1.Upsert(input + key, &value, null, 0);
-                }
-                fht1.TakeFullCheckpoint(out Guid token);
-                fht1.CompleteCheckpoint(true);
-                fht1.StopSession();
-
-                fht2.Recover(token);
-                fht2.StartSession();
-                for (int key = 0; key < numOps; key++)
-                {
-                    var status = fht2.Read(input + key, &inputArg, &output, null, 0);
-
-                    if (status == Status.PENDING)
-                        fht2.CompletePending(true);
-                    else
-                    {
-                        Assert.IsTrue(output.value.numClicks == key);
-                    }
-                }
-                fht2.StopSession();
+                value.numClicks = key;
+                fht1.Upsert(ref inputArray[key], ref value, ref context, 0);
             }
+            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.CompleteCheckpoint(true);
+            fht1.StopSession();
+
+            fht2.Recover(token);
+            fht2.StartSession();
+            for (int key = 0; key < numOps; key++)
+            {
+                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, ref context, 0);
+
+                if (status == Status.PENDING)
+                    fht2.CompletePending(true);
+                else
+                {
+                    Assert.IsTrue(output.value.numClicks == key);
+                }
+            }
+            fht2.StopSession();
 
             log.Close();
             fht1.Dispose();
@@ -93,22 +89,22 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         [Test]
-        public unsafe void SimpleRecoveryTest2()
+        public void SimpleRecoveryTest2()
         {
             log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
-            fht1 = FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
-                (indexSizeBuckets: 128,
+            fht1 = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
                 );
 
-            fht2 = FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions, ICustomFaster>
-                (indexSizeBuckets: 128,
+            fht2 = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
                 );
@@ -122,115 +118,100 @@ namespace FASTER.test.recovery.sumstore.simple
             }
 
             NumClicks value;
-            Input inputArg;
-            Output output;
+            Input inputArg = default(Input);
+            Output output = default(Output);
+            Empty context = default(Empty);
 
 
-            fixed (AdId* input = inputArray)
+            fht1.StartSession();
+            for (int key = 0; key < numOps; key++)
             {
-
-                fht1.StartSession();
-                for (int key = 0; key < numOps; key++)
-                {
-                    value.numClicks = key;
-                    fht1.Upsert(input + key, &value, null, 0);
-                }
-                fht1.TakeFullCheckpoint(out Guid token);
-                fht1.CompleteCheckpoint(true);
-                fht1.StopSession();
-
-                fht2.Recover(token);
-                fht2.StartSession();
-                for (int key = 0; key < numOps; key++)
-                {
-                    var status = fht2.Read(input + key, &inputArg, &output, null, 0);
-
-                    if (status == Status.PENDING)
-                        fht2.CompletePending(true);
-                    else
-                    {
-                        Assert.IsTrue(output.value.numClicks == key);
-                    }
-                }
-                fht2.StopSession();
+                value.numClicks = key;
+                fht1.Upsert(ref inputArray[key], ref value, ref context, 0);
             }
+            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.CompleteCheckpoint(true);
+            fht1.StopSession();
+
+            fht2.Recover(token);
+            fht2.StartSession();
+            for (int key = 0; key < numOps; key++)
+            {
+                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, ref context, 0);
+
+                if (status == Status.PENDING)
+                    fht2.CompletePending(true);
+                else
+                {
+                    Assert.IsTrue(output.value.numClicks == key);
+                }
+            }
+            fht2.StopSession();
 
             log.Close();
             fht1.Dispose();
             fht2.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints").Delete(true);
         }
-
-
     }
 
-    public unsafe class SimpleFunctions
+    public class SimpleFunctions : IFunctions<AdId, NumClicks, Input, Output, Empty>
     {
-        public static void RMWCompletionCallback(AdId* key, Input* input, Empty* ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref Input input, ref Empty ctx, Status status)
         {
         }
 
-        public static void ReadCompletionCallback(AdId* key, Input* input, Output* output, Empty* ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output->value.numClicks == key->adId);
+            Assert.IsTrue(output.value.numClicks == key.adId);
         }
 
-        public static void UpsertCompletionCallback(AdId* key, NumClicks* input, Empty* ctx)
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, ref Empty ctx)
         {
         }
 
-        public static void PersistenceCallback(long thread_id, long serial_num)
+        public void PersistenceCallback(long thread_id, long serial_num)
         {
             Console.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
         }
 
         // Read functions
-        public static void SingleReader(AdId* key, Input* input, NumClicks* value, Output* dst)
+        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
-            NumClicks.Copy(value, (NumClicks*)dst);
+            dst.value = value;
         }
 
-        public static void ConcurrentReader(AdId* key, Input* input, NumClicks* value, Output* dst)
+        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
-            NumClicks.AcquireReadLock(value);
-            NumClicks.Copy(value, (NumClicks*)dst);
-            NumClicks.ReleaseReadLock(value);
+            dst.value = value;
         }
 
         // Upsert functions
-        public static void SingleWriter(AdId* key, NumClicks* src, NumClicks* dst)
+        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
-            NumClicks.Copy(src, dst);
+            dst = src;
         }
 
-        public static void ConcurrentWriter(AdId* key, NumClicks* src, NumClicks* dst)
+        public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
-            NumClicks.AcquireWriteLock(dst);
-            NumClicks.Copy(src, dst);
-            NumClicks.ReleaseWriteLock(dst);
+            dst = src;
         }
 
         // RMW functions
-        public static int InitialValueLength(AdId* key, Input* input)
+        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
-            return NumClicks.GetLength(default(NumClicks*));
+            value = input.numClicks;
         }
 
-        public static void InitialUpdater(AdId* key, Input* input, NumClicks* value)
+        public void InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
-            NumClicks.Copy(&input->numClicks, value);
+            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
         }
 
-        public static void InPlaceUpdater(AdId* key, Input* input, NumClicks* value)
+        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
         {
-            Interlocked.Add(ref value->numClicks, input->numClicks.numClicks);
-        }
-
-        public static void CopyUpdater(AdId* key, Input* input, NumClicks* oldValue, NumClicks* newValue)
-        {
-            newValue->numClicks += oldValue->numClicks + input->numClicks.numClicks;
+            newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }
     }
 }
-#endif

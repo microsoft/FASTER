@@ -22,4 +22,21 @@ namespace StructSampleCore
             return kfield1 == k2.kfield1 && kfield2 == k2.kfield2;
         }
     }
+
+    public struct ValueStruct
+    {
+        public long vfield1;
+        public long vfield2;
+    }
+
+    public struct InputStruct
+    {
+        public long ifield1;
+        public long ifield2;
+    }
+
+    public struct OutputStruct
+    {
+        public ValueStruct value;
+    }
 }

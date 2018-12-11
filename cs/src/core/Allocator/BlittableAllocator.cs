@@ -87,7 +87,7 @@ namespace FASTER.core
             return recordSize;
         }
 
-        public override int GetInitialRecordSize(ref Key key, int valueLength)
+        public override int GetInitialRecordSize<Input>(ref Key key, ref Input input)
         {
             return recordSize;
         }

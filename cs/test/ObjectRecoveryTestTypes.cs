@@ -121,13 +121,6 @@ namespace FASTER.test.recovery.objectstore
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int InitialValueLength(ref AdId key, ref Input input)
-        {
-            return 8;
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
             value = input.numClicks;
