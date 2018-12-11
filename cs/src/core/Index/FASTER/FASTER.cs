@@ -77,10 +77,11 @@ namespace FASTER.core
         /// <summary>
         /// Create FASTER instance
         /// </summary>
-        /// <param name="size"></param>
-        /// <param name="functions"></param>
-        /// <param name="logSettings"></param>
-        /// <param name="checkpointSettings"></param>
+        /// <param name="size">Size of core index (#cache lines)</param>
+        /// <param name="functions">Callback functions</param>
+        /// <param name="logSettings">Log settings</param>
+        /// <param name="checkpointSettings">Checkpoint settings</param>
+        /// <param name="serializerSettings">Serializer settings</param>
         public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null)
         {
             if (checkpointSettings == null)

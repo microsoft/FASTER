@@ -11,8 +11,6 @@ using System.Linq.Expressions;
 using System.IO;
 using System.Diagnostics;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-
 namespace FASTER.core
 {
     internal enum PMMFlushStatus : int { Flushed, InProgress };
@@ -47,36 +45,77 @@ namespace FASTER.core
         public long PageAndOffset;
     }
 
+    /// <summary>
+    /// Base class for hybrid log memory allocator
+    /// </summary>
+    /// <typeparam name="Key"></typeparam>
+    /// <typeparam name="Value"></typeparam>
     public unsafe abstract class AllocatorBase<Key, Value> : IDisposable
         where Key : IKey<Key>, new()
         where Value : new()
     {
-        // Epoch information
+        /// <summary>
+        /// Epoch information
+        /// </summary>
         protected LightEpoch epoch;
 
         #region Protected size definitions
-        // Buffer and log page size
+        /// <summary>
+        /// Buffer size
+        /// </summary>
         protected readonly int BufferSize;
+        /// <summary>
+        /// Log page size
+        /// </summary>
         protected readonly int LogPageSizeBits;
 
-        // Page size
+        /// <summary>
+        /// Page size
+        /// </summary>
         protected readonly int PageSize;
+        /// <summary>
+        /// Page size mask
+        /// </summary>
         protected readonly int PageSizeMask;
+        /// <summary>
+        /// Buffer size mask
+        /// </summary>
         protected readonly int BufferSizeMask;
+        /// <summary>
+        /// Aligned page size in bytes
+        /// </summary>
         protected readonly int AlignedPageSizeBytes;
 
-        // Total HLOG size
+        /// <summary>
+        /// Total hybrid log size (bits)
+        /// </summary>
         protected readonly int LogTotalSizeBits;
+        /// <summary>
+        /// Total hybrid log size (bytes)
+        /// </summary>
         protected readonly long LogTotalSizeBytes;
 
 
-        // HeadOffset lag (from tail)
+        /// <summary>
+        /// HeadOffset lag (from tail)
+        /// </summary>
         protected const int HeadOffsetLagNumPages = 4;
+        /// <summary>
+        /// HeadOffset lag size
+        /// </summary>
         protected readonly int HeadOffsetLagSize;
+        /// <summary>
+        /// HeadOFfset lag address
+        /// </summary>
         protected readonly long HeadOffsetLagAddress;
 
-        // ReadOnlyOffset lag (from tail)
+        /// <summary>
+        /// Log mutable fraction
+        /// </summary>
         protected readonly double LogMutableFraction;
+        /// <summary>
+        /// ReadOnlyOffset lag (from tail)
+        /// </summary>
         protected readonly long ReadOnlyLagAddress;
 
         #endregion
@@ -115,7 +154,13 @@ namespace FASTER.core
         #endregion
 
         #region Protected device info
+        /// <summary>
+        /// Device
+        /// </summary>
         protected readonly IDevice device;
+        /// <summary>
+        /// Sector size
+        /// </summary>
         protected readonly int sectorSize;
         #endregion
 
@@ -139,38 +184,180 @@ namespace FASTER.core
         private static int numPendingReads = 0;
         #endregion
 
-        // Read buffer pool
+        /// <summary>
+        /// Read buffer pool
+        /// </summary>
         protected SectorAlignedBufferPool readBufferPool;
 
         #region Abstract methods
+        /// <summary>
+        /// Initialize
+        /// </summary>
         public abstract void Initialize();
+        /// <summary>
+        /// Get start logical address
+        /// </summary>
+        /// <param name="page"></param>
+        /// <returns></returns>
         public abstract long GetStartLogicalAddress(long page);
+        /// <summary>
+        /// Get physical address
+        /// </summary>
+        /// <param name="newLogicalAddress"></param>
+        /// <returns></returns>
         public abstract long GetPhysicalAddress(long newLogicalAddress);
+        /// <summary>
+        /// Get address info
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <returns></returns>
         public abstract ref RecordInfo GetInfo(long physicalAddress);
+        /// <summary>
+        /// Get key
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <returns></returns>
         public abstract ref Key GetKey(long physicalAddress);
+        /// <summary>
+        /// Get value
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <returns></returns>
         public abstract ref Value GetValue(long physicalAddress);
+        /// <summary>
+        /// Get address info for key
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <returns></returns>
         public abstract AddressInfo* GetKeyAddressInfo(long physicalAddress);
+        /// <summary>
+        /// Get address info for value
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <returns></returns>
         public abstract AddressInfo* GetValueAddressInfo(long physicalAddress);
 
+        /// <summary>
+        /// Get record size
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <returns></returns>
         public abstract int GetRecordSize(long physicalAddress);
+        /// <summary>
+        /// Get average record size
+        /// </summary>
+        /// <returns></returns>
         public abstract int GetAverageRecordSize();
+        /// <summary>
+        /// Get initial record size
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
         public abstract int GetInitialRecordSize<Input>(ref Key key, ref Input input);
+        /// <summary>
+        /// Get record size
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
         public abstract int GetRecordSize(ref Key key, ref Value value);
 
+        /// <summary>
+        /// Allocate page
+        /// </summary>
+        /// <param name="index"></param>
         protected abstract void AllocatePage(int index);
+        /// <summary>
+        /// Whether page is allocated
+        /// </summary>
+        /// <param name="pageIndex"></param>
+        /// <returns></returns>
         protected abstract bool IsAllocated(int pageIndex);
+        /// <summary>
+        /// Populate page
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="required_bytes"></param>
+        /// <param name="destinationPage"></param>
         internal abstract void PopulatePage(byte* src, int required_bytes, long destinationPage);
+        /// <summary>
+        /// Write async to device
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="startPage"></param>
+        /// <param name="flushPage"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+        /// <summary>
+        /// Read objects to memory (async)
+        /// </summary>
+        /// <param name="fromLogical"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        /// <param name="result"></param>
         protected abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory));
+        /// <summary>
+        /// Read page (async)
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="alignedSourceAddress"></param>
+        /// <param name="destinationPageIndex"></param>
+        /// <param name="aligned_read_length"></param>
+        /// <param name="callback"></param>
+        /// <param name="asyncResult"></param>
+        /// <param name="device"></param>
+        /// <param name="objlogDevice"></param>
         protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
+        /// <summary>
+        /// Clear page
+        /// </summary>
+        /// <param name="page"></param>
+        /// <param name="pageZero"></param>
         protected abstract void ClearPage(int page, bool pageZero);
+        /// <summary>
+        /// Write page (async)
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="flushPage"></param>
+        /// <param name="callback"></param>
+        /// <param name="asyncResult"></param>
         protected abstract void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
-
+        /// <summary>
+        /// Retrieve full record
+        /// </summary>
+        /// <param name="record"></param>
+        /// <param name="ctx"></param>
+        /// <returns></returns>
+        protected abstract bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
+        /// <summary>
+        /// Whether key has objects
+        /// </summary>
+        /// <returns></returns>
         public abstract bool KeyHasObjects();
+
+        /// <summary>
+        /// Whether value has objects
+        /// </summary>
+        /// <returns></returns>
         public abstract bool ValueHasObjects();
+
+        /// <summary>
+        /// Get segment offsets
+        /// </summary>
+        /// <returns></returns>
         public abstract long[] GetSegmentOffsets();
         #endregion
 
+        /// <summary>
+        /// Instantiate base allocator
+        /// </summary>
+        /// <param name="settings"></param>
         public AllocatorBase(LogSettings settings)
         {
             // Page size
@@ -204,6 +391,10 @@ namespace FASTER.core
             AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
         }
 
+        /// <summary>
+        /// Initialize allocator
+        /// </summary>
+        /// <param name="firstValidAddress"></param>
         protected void Initialize(long firstValidAddress)
         {
             readBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
@@ -230,6 +421,9 @@ namespace FASTER.core
             TailPageIndex = 0;
         }
 
+        /// <summary>
+        /// Dispose allocator
+        /// </summary>
         public virtual void Dispose()
         {
             for (int i=0; i<PageStatusIndicator.Length; i++)
@@ -514,6 +708,11 @@ namespace FASTER.core
                 => DeleteAddressRange(oldBeginAddress, newBeginAddress));
         }
 
+        /// <summary>
+        /// Delete address range
+        /// </summary>
+        /// <param name="fromAddress"></param>
+        /// <param name="toAddress"></param>
         protected virtual void DeleteAddressRange(long fromAddress, long toAddress)
         {
             device.DeleteAddressRange(fromAddress, toAddress);
@@ -944,6 +1143,13 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Async get from disk
+        /// </summary>
+        /// <param name="fromLogical"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="context"></param>
+        /// <param name="result"></param>
         public void AsyncGetFromDisk(long fromLogical,
                               int numBytes,
                               AsyncIOContext<Key, Value> context,
@@ -1019,8 +1225,6 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
-        protected abstract bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
-
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>
@@ -1087,11 +1291,21 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
+        /// <summary>
+        /// Shallow copy
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="dst"></param>
         public virtual void ShallowCopy(ref Key src, ref Key dst)
         {
             dst = src;
         }
 
+        /// <summary>
+        /// Shallow copy
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="dst"></param>
         public virtual void ShallowCopy(ref Value src, ref Value dst)
         {
             dst = src;

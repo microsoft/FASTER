@@ -17,7 +17,7 @@ namespace FASTER.test.recovery.sumstore.simple
     [TestFixture]
     internal class SimpleRecoveryTests
     {
-        private new FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht1;
+        private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht1;
         private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht2;
         private IDevice log;
 

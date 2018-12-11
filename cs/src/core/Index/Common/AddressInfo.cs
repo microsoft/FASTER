@@ -9,30 +9,29 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// AddressInfo struct
+    /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public unsafe struct AddressInfo
     {
-        public const int kTotalBits = sizeof(long) * 8;
-
-        public const int kAddressBits = 42;
-        public const int kSizeBits = 21;
-        public const int kMultiplierBits = kTotalBits - kAddressBits - kSizeBits;
-
-        public const long kSizeMaskInWord = ((1L << kSizeBits) - 1) << kAddressBits;
-        public const long kSizeMaskInInteger = (1L << kSizeBits) - 1;
-
-        public const long kMultiplierMaskInWord = ((1L << kMultiplierBits) - 1) << (kAddressBits + kSizeBits);
-        public const long kMultiplierMaskInInteger = (1L << kMultiplierBits) - 1;
-
-        public const long kAddressMask = (1L << kAddressBits) - 1;
+        private const int kMultiplierBits = 1;
+        private static readonly int kTotalBits = sizeof(IntPtr) * 8;
+        private static readonly int kAddressBits = 42*kTotalBits/64;
+        private static readonly int kSizeBits = kTotalBits - kAddressBits - kMultiplierBits;
+        private static readonly long kSizeMaskInWord = ((1L << kSizeBits) - 1) << kAddressBits;
+        private static readonly long kSizeMaskInInteger = (1L << kSizeBits) - 1;
+        private static readonly long kMultiplierMaskInWord = ((1L << kMultiplierBits) - 1) << (kAddressBits + kSizeBits);
+        private const long kMultiplierMaskInInteger = (1L << kMultiplierBits) - 1;
+        private static readonly long kAddressMask = (1L << kAddressBits) - 1;
 
 
         [FieldOffset(0)]
-        private long word;
+        private IntPtr word;
 
         public static void WriteInfo(AddressInfo* info, long address, long size)
         {
-            info->word = default(long);
+            info->word = default(IntPtr);
             info->Address = address;
             info->Size = size;
         }
@@ -46,8 +45,8 @@ namespace FASTER.core
         {
             get
             {
-                int multiplier = (int)(((word & kMultiplierMaskInWord) >> (kAddressBits + kSizeBits)) & kMultiplierMaskInInteger);
-                return (multiplier == 0 ? 512 : 1<<20)*(((word & kSizeMaskInWord) >> kAddressBits) & kSizeMaskInInteger);
+                int multiplier = (int)((((long)word & kMultiplierMaskInWord) >> (kAddressBits + kSizeBits)) & kMultiplierMaskInInteger);
+                return (multiplier == 0 ? 512 : 1<<20)*((((long)word & kSizeMaskInWord) >> kAddressBits) & kSizeMaskInInteger);
             }
             set
             {
@@ -65,11 +64,12 @@ namespace FASTER.core
                         throw new Exception("Unsupported object size: " + value);
                     }
                 }
-                word &= ~kSizeMaskInWord;
-                word &= ~kMultiplierMaskInWord;
-
-                word |= (val & kSizeMaskInInteger) << kAddressBits;
-                word |= (multiplier & kMultiplierMaskInInteger) << (kAddressBits + kSizeBits);
+                var _word = (long)word;
+                _word &= ~kSizeMaskInWord;
+                _word &= ~kMultiplierMaskInWord;
+                _word |= (val & kSizeMaskInInteger) << kAddressBits;
+                _word |= (multiplier & kMultiplierMaskInInteger) << (kAddressBits + kSizeBits);
+                word = (IntPtr)_word;
             }
         }
 
@@ -77,12 +77,14 @@ namespace FASTER.core
         {
             get
             {
-                return word & kAddressMask;
+                return (long)word & kAddressMask;
             }
             set
             {
-                word &= ~kAddressMask;
-                word |= (value & kAddressMask);
+                var _word = (long)word;
+                _word &= ~kAddressMask;
+                _word |= (value & kAddressMask);
+                word = (IntPtr)_word;
             }
         }
     }
