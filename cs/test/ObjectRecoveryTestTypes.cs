@@ -18,7 +18,6 @@ namespace FASTER.test.recovery.objectstore
 {
     public class AdId : IKey<AdId>
     {
-        public const int physicalSize = sizeof(long);
         public long adId;
 
         public long GetHashCode64()
@@ -29,36 +28,21 @@ namespace FASTER.test.recovery.objectstore
         {
             return adId == k2.adId;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetLength()
-        {
-            return physicalSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ShallowCopy(ref AdId dst)
-        {
-            dst = this;
-        }
-
-        #region Serialization
-        public bool HasObjectsToSerialize()
-        {
-            return true;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            new BinaryWriter(toStream).Write(adId);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            adId = new BinaryReader(fromStream).ReadInt64();
-        }
-        #endregion
     }
+
+    public class AdIdSerializer : BinaryObjectSerializer<AdId>
+    {
+        public override void Deserialize(ref AdId obj)
+        {
+            obj.adId = reader.ReadInt64();
+        }
+
+        public override void Serialize(ref AdId obj)
+        {
+            writer.Write(obj.adId);
+        }
+    }
+
 
     public class Input
     {
@@ -66,39 +50,24 @@ namespace FASTER.test.recovery.objectstore
         public NumClicks numClicks;
     }
 
-    public class NumClicks : IValue<NumClicks>
+    public class NumClicks
     {
-        public const int physicalSize = sizeof(long);
         public long numClicks;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetLength()
-        {
-            return physicalSize;
-        }
-
-        public void ShallowCopy(ref NumClicks dst)
-        {
-            dst.numClicks = numClicks;
-        }
-
-        #region Serialization
-        public bool HasObjectsToSerialize()
-        {
-            return true;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            new BinaryWriter(toStream).Write(numClicks);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            numClicks = new BinaryReader(fromStream).ReadInt64();
-        }
-        #endregion
     }
+
+    public class NumClicksSerializer : BinaryObjectSerializer<NumClicks>
+    {
+        public override void Deserialize(ref NumClicks obj)
+        {
+            obj.numClicks = reader.ReadInt64();
+        }
+
+        public override void Serialize(ref NumClicks obj)
+        {
+            writer.Write(obj.numClicks);
+        }
+    }
+
 
     public class Output
     {

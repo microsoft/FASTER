@@ -16,7 +16,6 @@ namespace FASTER.test.recovery.sumstore
 {
     public struct AdId : IKey<AdId>
     {
-        public const int physicalSize = sizeof(long);
         public long adId;
 
         public long GetHashCode64()
@@ -27,35 +26,6 @@ namespace FASTER.test.recovery.sumstore
         {
             return adId == k2.adId;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetLength()
-        {
-            return physicalSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ShallowCopy(ref AdId dst)
-        {
-            dst.adId = adId;
-        }
-
-        #region Serialization
-        public bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
     }
 
     public struct Input
@@ -64,38 +34,9 @@ namespace FASTER.test.recovery.sumstore
         public NumClicks numClicks;
     }
 
-    public struct NumClicks : IValue<NumClicks>
+    public struct NumClicks
     {
-        public const int physicalSize = sizeof(long);
         public long numClicks;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetLength()
-        {
-            return physicalSize;
-        }
-
-        public void ShallowCopy(ref NumClicks dst)
-        {
-            dst.numClicks = numClicks;
-        }
-
-        #region Serialization
-        public bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
     }
 
     public struct Output
@@ -152,7 +93,7 @@ namespace FASTER.test.recovery.sumstore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int InitialValueLength(ref AdId key, ref Input input)
         {
-            return default(NumClicks).GetLength();
+            return Utility.GetSize(default(NumClicks));
         }
 
 

@@ -26,66 +26,43 @@ namespace FASTER.test
             return Utility.GetHashCode(key);
         }
 
-        public void Serialize(Stream toStream)
-        {
-            new BinaryWriter(toStream).Write(key);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            key = new BinaryReader(fromStream).ReadInt32();
-        }
-
-        public int GetLength()
-        {
-            return 8;
-        }
-
-        public void ShallowCopy(ref MyKey dst)
-        {
-            dst = new MyKey { key = key };
-        }
-
         public bool Equals(ref MyKey k2)
         {
             return key == k2.key;
         }
+    }
 
-        public bool HasObjectsToSerialize()
+    public class MyKeySerializer : BinaryObjectSerializer<MyKey>
+    {
+        public override void Deserialize(ref MyKey obj)
         {
-            return true;
+            obj.key = reader.ReadInt32();
+        }
+
+        public override void Serialize(ref MyKey obj)
+        {
+            writer.Write(obj.key);
         }
     }
 
-    public class MyValue : IValue<MyValue>
+    public class MyValue
     {
         public int value;
+    }
 
-        public void Serialize(Stream toStream)
+    public class MyValueSerializer : BinaryObjectSerializer<MyValue>
+    {
+        public override void Deserialize(ref MyValue obj)
         {
-            new BinaryWriter(toStream).Write(value);
+            obj.value = reader.ReadInt32();
         }
 
-        public void Deserialize(Stream fromStream)
+        public override void Serialize(ref MyValue obj)
         {
-            value = new BinaryReader(fromStream).ReadInt32();
-        }
-
-        public int GetLength()
-        {
-            return 8;
-        }
-
-        public void ShallowCopy(ref MyValue dst)
-        {
-            dst.value = value;
-        }
-        public bool HasObjectsToSerialize()
-        {
-            return true;
+            writer.Write(obj.value);
         }
     }
-    
+
     public class MyInput
     {
         public int value;
@@ -160,7 +137,7 @@ namespace FASTER.test
         }
     }
 
-    public class MyLargeValue : IValue<MyLargeValue>
+    public class MyLargeValue
     {
         public byte[] value;
 
@@ -177,34 +154,20 @@ namespace FASTER.test
                 value[i] = (byte)(size+i);
             }
         }
+    }
 
-        public void Serialize(Stream toStream)
+    public class MyLargeValueSerializer : BinaryObjectSerializer<MyLargeValue>
+    {
+        public override void Deserialize(ref MyLargeValue obj)
         {
-            var writer = new BinaryWriter(toStream);
-            writer.Write(value.Length);
-            writer.Write(value);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            var reader = new BinaryReader(fromStream);
             int size = reader.ReadInt32();
-            value = reader.ReadBytes(size);
+            obj.value = reader.ReadBytes(size);
         }
 
-        public int GetLength()
+        public override void Serialize(ref MyLargeValue obj)
         {
-            return 8;
-        }
-
-        public void ShallowCopy(ref MyLargeValue dst)
-        {
-            dst = this;
-        }
-
-        public bool HasObjectsToSerialize()
-        {
-            return true;
+            writer.Write(obj.value.Length);
+            writer.Write(obj.value);
         }
     }
 

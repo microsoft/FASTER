@@ -29,7 +29,8 @@ namespace FASTER.test
             fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
                 (128, new MyFunctions(),
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
             fht.StartSession();
         }

@@ -16,7 +16,7 @@ namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>, new()
-        where Value : IValue<Value>, new()
+        where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         enum LatchOperation : byte
@@ -290,7 +290,7 @@ namespace FASTER.core
             RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                  true, false, false,
                                  entry.Address);
-            pendingContext.key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+            hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
             functions.SingleWriter(ref pendingContext.key,
                                    ref request.value,
                                    ref hlog.GetValue(newPhysicalAddress));
@@ -489,14 +489,14 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 // Immutable region or new record
-                var recordSize = GetRecordSize(ref key, ref value);
+                var recordSize = hlog.GetRecordSize(ref key, ref value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                         threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref key, ref value,
                                         ref hlog.GetValue(newPhysicalAddress));
 
@@ -793,7 +793,7 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(ref recordInfo, threadCtx.version,
                                         true, false, false,
                                         entry.Address);
-                key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
@@ -1059,7 +1059,7 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(ref recordInfo, pendingContext.version,
                                         true, false, false,
                                         entry.Address);
-                key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     functions.InitialUpdater(ref pendingContext.key,
@@ -1225,7 +1225,7 @@ namespace FASTER.core
             RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                 true, false, false,
                                 entry.Address);
-            pendingContext.key.ShallowCopy(ref hlog.GetKey(newPhysicalAddress));
+            hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
             if (request.logicalAddress < hlog.BeginAddress)
             {
                 functions.InitialUpdater(ref pendingContext.key,
@@ -1740,11 +1740,7 @@ namespace FASTER.core
 
         #region Compute sizes
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int GetRecordSize(ref Key key, ref Value value)
-        {
-            return RecordInfo.GetLength() + key.GetLength() + value.GetLength();
-        }
+
         #endregion
 
     }

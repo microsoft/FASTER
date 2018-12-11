@@ -459,7 +459,7 @@ namespace FASTER.benchmark
                 {
                     stream.Position = offset;
                     int size = stream.Read(chunk, 0, kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
+                    for (int idx = 0; idx < size; idx += 8)
                     {
                         init_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
@@ -499,7 +499,7 @@ namespace FASTER.benchmark
                 {
                     stream.Position = offset;
                     int size = stream.Read(chunk, 0, kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
+                    for (int idx = 0; idx < size; idx += 8)
                     {
                         txn_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;

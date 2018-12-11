@@ -10,7 +10,6 @@ namespace StructSampleCore
 {
     public struct KeyStruct : IKey<KeyStruct>
     {
-        public const int physicalSize = sizeof(long) + sizeof(long);
         public long kfield1;
         public long kfield2;
 
@@ -22,35 +21,5 @@ namespace StructSampleCore
         {
             return kfield1 == k2.kfield1 && kfield2 == k2.kfield2;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetLength()
-        {
-            return physicalSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ShallowCopy(ref KeyStruct dst)
-        {
-            dst.kfield1 = kfield1;
-            dst.kfield2 = kfield2;
-        }
-
-        #region Serialization
-        public bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
     }
 }

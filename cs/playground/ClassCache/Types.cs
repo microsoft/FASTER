@@ -31,34 +31,22 @@ namespace ClassCache
         {
             return Utility.GetHashCode(key);
         }
+    }
 
-        public void Deserialize(Stream fromStream)
+    public class CacheKeySerializer : BinaryObjectSerializer<CacheKey>
+    {
+        public override void Deserialize(ref CacheKey obj)
         {
-            throw new NotImplementedException();
+            obj.key = reader.ReadInt64();
         }
 
-        public void Serialize(Stream toStream)
+        public override void Serialize(ref CacheKey obj)
         {
-            throw new NotImplementedException();
-        }
-
-        public int GetLength()
-        {
-            return 8;
-        }
-
-        public void ShallowCopy(ref CacheKey dst)
-        {
-            dst = this;
-        }
-
-        public bool HasObjectsToSerialize()
-        {
-            return true;
+            writer.Write(obj.key);
         }
     }
 
-    public class CacheValue : IValue<CacheValue>
+    public class CacheValue
     {
         public long value;
 
@@ -68,28 +56,18 @@ namespace ClassCache
         {
             value = first;
         }
+    }
 
-        public void Deserialize(Stream fromStream)
+    public class CacheValueSerializer : BinaryObjectSerializer<CacheValue>
+    {
+        public override void Deserialize(ref CacheValue obj)
         {
+            obj.value = reader.ReadInt64();
         }
 
-        public int GetLength()
+        public override void Serialize(ref CacheValue obj)
         {
-            return 8;
-        }
-
-        public bool HasObjectsToSerialize()
-        {
-            return true;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-        }
-
-        public void ShallowCopy(ref CacheValue dst)
-        {
-            dst = this;
+            writer.Write(obj.value);
         }
     }
 

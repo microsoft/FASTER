@@ -107,13 +107,13 @@ namespace FASTER.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SingleWriter(ref Key key, ref Value src, ref Value dst)
         {
-            src.ShallowCopy(ref dst);
+            dst = src;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
         {
-            src.ShallowCopy(ref dst);
+            dst = src;
         }
 
         // RMW functions
@@ -121,7 +121,7 @@ namespace FASTER.benchmark
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int InitialValueLength(ref Key key, ref Input input)
         {
-            return default(Value).GetLength();
+            return 8;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

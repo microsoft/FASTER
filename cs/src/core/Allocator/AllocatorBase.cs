@@ -48,8 +48,8 @@ namespace FASTER.core
     }
 
     public unsafe abstract class AllocatorBase<Key, Value> : IDisposable
-        where Key : IKey<Key>
-        where Value : IValue<Value>
+        where Key : IKey<Key>, new()
+        where Value : new()
     {
         // Epoch information
         protected LightEpoch epoch;
@@ -155,6 +155,7 @@ namespace FASTER.core
         public abstract int GetRecordSize(long physicalAddress);
         public abstract int GetAverageRecordSize();
         public abstract int GetInitialRecordSize(ref Key key, int valueLength);
+        public abstract int GetRecordSize(ref Key key, ref Value value);
 
         protected abstract void AllocatePage(int index);
         protected abstract bool IsAllocated(int pageIndex);
@@ -1084,6 +1085,16 @@ namespace FASTER.core
                 result.Free();
             }
             Overlapped.Free(overlap);
+        }
+
+        public virtual void ShallowCopy(ref Key src, ref Key dst)
+        {
+            dst = src;
+        }
+
+        public virtual void ShallowCopy(ref Value src, ref Value dst)
+        {
+            dst = src;
         }
     }
 }

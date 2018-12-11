@@ -27,7 +27,7 @@ namespace FASTER.core
 
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : IKey<Key>, new()
-        where Value : IValue<Value>, new()
+        where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
@@ -81,7 +81,7 @@ namespace FASTER.core
         /// <param name="functions"></param>
         /// <param name="logSettings"></param>
         /// <param name="checkpointSettings"></param>
-        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null)
+        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null)
         {
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
@@ -95,7 +95,7 @@ namespace FASTER.core
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
                 hlog = new BlittableAllocator<Key, Value>(logSettings);
             else
-                hlog = new GenericAllocator<Key, Value>(logSettings);
+                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings);
 
             hlog.Initialize();
 

@@ -17,7 +17,6 @@ namespace FASTER.test
 {
     public struct KeyStruct : IKey<KeyStruct>
     {
-        public const int physicalSize = sizeof(long) + sizeof(long);
         public long kfield1;
         public long kfield2;
 
@@ -29,72 +28,12 @@ namespace FASTER.test
         {
             return kfield1 == k2.kfield1 && kfield2 == k2.kfield2;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetLength()
-        {
-            return physicalSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ShallowCopy(ref KeyStruct dst)
-        {
-            dst.kfield1 = kfield1;
-            dst.kfield2 = kfield2;
-        }
-
-        #region Serialization
-        public bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
     }
 
-    public struct ValueStruct : IValue<ValueStruct>
+    public struct ValueStruct
     {
-        public const int physicalSize = sizeof(long) + sizeof(long);
         public long vfield1;
         public long vfield2;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetLength()
-        {
-            return physicalSize;
-        }
-
-        public void ShallowCopy(ref ValueStruct dst)
-        {
-            dst.vfield1 = vfield1;
-            dst.vfield2 = vfield2;
-        }
-
-        #region Serialization
-        public bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
     }
 
     public struct InputStruct
@@ -160,7 +99,7 @@ namespace FASTER.test
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int InitialValueLength(ref KeyStruct key, ref InputStruct input)
         {
-            return default(ValueStruct).GetLength();
+            return 16;
         }
 
 

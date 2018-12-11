@@ -60,7 +60,7 @@ namespace StructSampleCore
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int InitialValueLength(ref KeyStruct key, ref InputStruct input)
         {
-            return default(ValueStruct).GetLength();
+            return 16;
         }
 
 

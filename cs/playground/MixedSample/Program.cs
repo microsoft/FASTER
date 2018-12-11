@@ -24,60 +24,37 @@ namespace MixedSample
         {
             return key == otherKey.key;
         }
+    }
 
-        public void Serialize(Stream toStream)
+    public class MyKeySerializer : BinaryObjectSerializer<MyKey>
+    {
+        public override void Serialize(ref MyKey key)
         {
-            new BinaryWriter(toStream).Write(key);
+            writer.Write(key.key);
         }
 
-        public void Deserialize(Stream fromStream)
+        public override void Deserialize(ref MyKey key)
         {
-            key = new BinaryReader(fromStream).ReadInt32();
-        }
-
-        public int GetLength()
-        {
-            return 8;
-        }
-
-        public void ShallowCopy(ref MyKey dst)
-        {
-            dst = this;
-        }
-
-        public bool HasObjectsToSerialize()
-        {
-            return true;
+            key.key = reader.ReadInt32();
         }
     }
 
-    public class MyValue : IValue<MyValue>
+
+    public class MyValue
     {
         public int value;
+    }
 
-        public void Serialize(Stream toStream)
+    public class MyValueSerializer : BinaryObjectSerializer<MyValue>
+    {
+        public override void Serialize(ref MyValue value)
         {
-            new BinaryWriter(toStream).Write(value);
+            writer.Write(value.value);
         }
 
-        public void Deserialize(Stream fromStream)
+        public override void Deserialize(ref MyValue value)
         {
-            value = new BinaryReader(fromStream).ReadInt32();
-        }
-
-        public int GetLength()
-        {
-            return 8;
-        }
-
-        public void ShallowCopy(ref MyValue dst)
-        {
-            dst = this;
-        }
-
-        public bool HasObjectsToSerialize()
-        {
-            return true;
+            value.value = reader.ReadInt32();
         }
     }
 

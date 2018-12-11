@@ -2,8 +2,29 @@
 // Licensed under the MIT license.
 
 
+using System;
+
 namespace FASTER.core
 {
+    /// <summary>
+    /// Configuration settings for serializing objects
+    /// </summary>
+    /// <typeparam name="Key"></typeparam>
+    /// <typeparam name="Value"></typeparam>
+    public class SerializerSettings<Key, Value>
+    {
+        /// <summary>
+        /// Key serializer
+        /// </summary>
+        public Func<IObjectSerializer<Key>> keySerializer;
+
+        /// <summary>
+        /// Value serializer
+        /// </summary>
+        public Func<IObjectSerializer<Value>> valueSerializer;
+    }
+
+
     /// <summary>
     /// Configuration settings for hybrid log
     /// </summary>

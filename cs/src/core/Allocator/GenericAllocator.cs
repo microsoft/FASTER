@@ -24,7 +24,7 @@ namespace FASTER.core
 
     public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
         where Key : IKey<Key>, new()
-        where Value : IValue<Value>, new()
+        where Value : new()
     {
         // Circular buffer definition
         private Record<Key, Value>[][] values;
@@ -46,10 +46,23 @@ namespace FASTER.core
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private static readonly int keySize = Utility.GetSize(default(Key));
+        private readonly SerializerSettings<Key, Value> SerializerSettings;
 
-        public GenericAllocator(LogSettings settings)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings)
             : base(settings)
         {
+            SerializerSettings = serializerSettings;
+
+            if (default(Key) == null && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
+            {
+                throw new Exception("Key is a class, but no serializer specified via SerializerSettings");
+            }
+
+            if (default(Value) == null && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
+            {
+                throw new Exception("Value is a class, but no serializer specified via SerializerSettings");
+            }
+
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;
             SegmentSize = 1 << LogSegmentSizeBits;
@@ -136,6 +149,11 @@ namespace FASTER.core
         public override int GetInitialRecordSize(ref Key key, int valueLength)
         {
             return recordSize; //  RecordInfo.GetLength() + key.GetLength() + valueLength;
+        }
+
+        public override int GetRecordSize(ref Key key, ref Value value)
+        {
+            return recordSize;
         }
 
         /// <summary>
@@ -278,6 +296,19 @@ namespace FASTER.core
 
             addr = new List<long>();
             MemoryStream ms = new MemoryStream();
+            IObjectSerializer<Key> keySerializer = null;
+            IObjectSerializer<Value> valueSerializer = null;
+
+            if (KeyHasObjects())
+            {
+                keySerializer = SerializerSettings.keySerializer();
+                keySerializer.BeginSerialize(ms);
+            }
+            if (ValueHasObjects())
+            {
+                valueSerializer = SerializerSettings.valueSerializer();
+                valueSerializer.BeginSerialize(ms);
+            }
             for (int i=0; i<numBytesToWrite/recordSize; i++)
             {
                 if (!src[i].info.Invalid)
@@ -285,7 +316,7 @@ namespace FASTER.core
                     if (KeyHasObjects())
                     {
                         long pos = ms.Position;
-                        src[i].key.Serialize(ms);
+                        keySerializer.Serialize(ref src[i].key);
                         var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
                         key_address->Address = pos;
                         key_address->Size = (int)(ms.Position - pos);
@@ -295,7 +326,7 @@ namespace FASTER.core
                     if (ValueHasObjects())
                     {
                         long pos = ms.Position;
-                        src[i].value.Serialize(ms);
+                        valueSerializer.Serialize(ref src[i].value);
                         var value_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize + keySize));
                         value_address->Address = pos;
                         value_address->Size = (int)(ms.Position - pos);
@@ -342,6 +373,14 @@ namespace FASTER.core
                             (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
                     }
                 }
+            }
+            if (KeyHasObjects())
+            {
+                keySerializer.EndSerialize();
+            }
+            if (ValueHasObjects())
+            {
+                valueSerializer.EndSerialize();
             }
 
             // Finally write the hlog page
@@ -522,6 +561,20 @@ namespace FASTER.core
         /// <param name="stream">Stream</param>
         public void Deserialize(long ptr, long untilptr, Stream stream)
         {
+            IObjectSerializer<Key> keySerializer = null;
+            IObjectSerializer<Value> valueSerializer = null;
+
+            if (KeyHasObjects())
+            {
+                keySerializer = SerializerSettings.keySerializer();
+                keySerializer.BeginDeserialize(stream);
+            }
+            if (ValueHasObjects())
+            {
+                valueSerializer = SerializerSettings.valueSerializer();
+                valueSerializer.BeginDeserialize(stream);
+            }
+
             while (ptr < untilptr)
             {
                 if (!GetInfo(ptr).Invalid)
@@ -529,16 +582,24 @@ namespace FASTER.core
                     if (KeyHasObjects())
                     {
                         GetKey(ptr) = new Key();
-                        GetKey(ptr).Deserialize(stream);
+                        keySerializer.Deserialize(ref GetKey(ptr));
                     } 
 
                     if (ValueHasObjects())
                     {
                         GetValue(ptr) = new Value();
-                        GetValue(ptr).Deserialize(stream);
+                        valueSerializer.Deserialize(ref GetValue(ptr));
                     }
                 }
                 ptr += GetRecordSize(ptr);
+            }
+            if (KeyHasObjects())
+            {
+                keySerializer.EndDeserialize();
+            }
+            if (ValueHasObjects())
+            {
+                valueSerializer.EndDeserialize();
             }
         }
 
@@ -552,6 +613,20 @@ namespace FASTER.core
         /// <param name="addr">List of addresses that need to be updated with offsets</param>
         public void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr)
         {
+            IObjectSerializer<Key> keySerializer = null;
+            IObjectSerializer<Value> valueSerializer = null;
+
+            if (KeyHasObjects())
+            {
+                keySerializer = SerializerSettings.keySerializer();
+                keySerializer.BeginSerialize(stream);
+            }
+            if (ValueHasObjects())
+            {
+                valueSerializer = SerializerSettings.valueSerializer();
+                valueSerializer.BeginSerialize(stream);
+            }
+
             addr = new List<long>();
             while (ptr < untilptr)
             {
@@ -561,7 +636,7 @@ namespace FASTER.core
 
                     if (KeyHasObjects())
                     {
-                        GetKey(ptr).Serialize(stream);
+                        keySerializer.Serialize(ref GetKey(ptr));
                         var key_address = GetKeyAddressInfo(ptr);
                         key_address->Address = pos;
                         key_address->Size = (int)(stream.Position - pos);
@@ -572,7 +647,7 @@ namespace FASTER.core
                     {
                         pos = stream.Position;
                         var value_address = GetValueAddressInfo(ptr);
-                        GetValue(ptr).Serialize(stream);
+                        valueSerializer.Serialize(ref GetValue(ptr));
                         value_address->Address = pos;
                         value_address->Size = (int)(stream.Position - pos);
                         addr.Add((long)value_address);
@@ -582,7 +657,16 @@ namespace FASTER.core
                 ptr += GetRecordSize(ptr);
 
                 if (stream.Position > objectBlockSize)
-                    return;
+                    break;
+            }
+
+            if (KeyHasObjects())
+            {
+                keySerializer.EndSerialize();
+            }
+            if (ValueHasObjects())
+            {
+                valueSerializer.EndSerialize();
             }
         }
 
@@ -660,10 +744,13 @@ namespace FASTER.core
         protected override bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
         {
             if (!KeyHasObjects())
-                Unsafe.AsRef<Key>(record + RecordInfo.GetLength()).ShallowCopy(ref ctx.key);
-
+            {
+                ShallowCopy(ref Unsafe.AsRef<Key>(record + RecordInfo.GetLength()), ref ctx.key);
+            }
             if (!ValueHasObjects())
-                Unsafe.AsRef<Value>(record + RecordInfo.GetLength() + Unsafe.AsRef<Key>(record + RecordInfo.GetLength()).GetLength()).ShallowCopy(ref ctx.value);
+            {
+                ShallowCopy(ref Unsafe.AsRef<Value>(record + RecordInfo.GetLength() + keySize), ref ctx.value);
+            }
 
             if (!(KeyHasObjects() || ValueHasObjects()))
                 return true;
@@ -703,13 +790,21 @@ namespace FASTER.core
             if (KeyHasObjects())
             {
                 ctx.key = new Key();
-                ctx.key.Deserialize(ms);
+
+                var keySerializer = SerializerSettings.keySerializer();
+                keySerializer.BeginDeserialize(ms);
+                keySerializer.Deserialize(ref ctx.key);
+                keySerializer.EndDeserialize();
             }
 
             if (ValueHasObjects())
             {
                 ctx.value = new Value();
-                ctx.value.Deserialize(ms);
+
+                var valueSerializer = SerializerSettings.valueSerializer();
+                valueSerializer.BeginDeserialize(ms);
+                valueSerializer.Deserialize(ref ctx.value);
+                valueSerializer.EndDeserialize();
             }
 
             ctx.objBuffer.Return();
@@ -722,7 +817,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override bool KeyHasObjects()
         {
-            return new Key().HasObjectsToSerialize();
+            return SerializerSettings.keySerializer != null;
         }
 
         /// <summary>
@@ -731,7 +826,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override bool ValueHasObjects()
         {
-            return new Value().HasObjectsToSerialize();
+            return SerializerSettings.valueSerializer != null;
         }
         #endregion
 
