@@ -11,18 +11,18 @@ using System.Threading.Tasks;
 
 namespace ClassSample
 {
-    public class MyKey : IKey<MyKey>
+    public class MyKey : IFasterEqualityComparer<MyKey>
     {
         public int key;
 
-        public long GetHashCode64()
+        public long GetHashCode64(ref MyKey key)
         {
-            return Utility.GetHashCode(key);
+            return Utility.GetHashCode(key.key);
         }
 
-        public bool Equals(ref MyKey otherKey)
+        public bool Equals(ref MyKey key1, ref MyKey key2)
         {
-            return key == otherKey.key;
+            return key1.key == key2.key;
         }
     }
 

@@ -15,7 +15,7 @@ using System.Threading;
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
-        where Key : IKey<Key>, new()
+        where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
@@ -73,7 +73,7 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var latestRecordVersion = -1;
 
-            var hash = key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -89,7 +89,7 @@ namespace FASTER.core
                 {
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                     latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                    if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                    if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                     {
                         logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                         TraceBackForKeyMatch(ref key,
@@ -253,7 +253,7 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
 
-            var hash = pendingContext.key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref pendingContext.key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             #region Trace back record in in-memory HybridLog
@@ -263,7 +263,7 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!pendingContext.key.Equals(ref hlog.GetKey(physicalAddress)))
+                if (!comparer.Equals(ref pendingContext.key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref pendingContext.key,
@@ -361,7 +361,7 @@ namespace FASTER.core
             var version = default(int);
             var latestRecordVersion = -1;
 
-            var hash = key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -375,7 +375,7 @@ namespace FASTER.core
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
@@ -619,7 +619,7 @@ namespace FASTER.core
             var status = default(OperationStatus);
             var latchOperation = LatchOperation.None;
 
-            var hash = key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -633,7 +633,7 @@ namespace FASTER.core
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key, logicalAddress,
@@ -920,7 +920,7 @@ namespace FASTER.core
             var latchOperation = LatchOperation.None;
             var key = pendingContext.key;
 
-            var hash = key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (threadCtx.phase != Phase.REST)
@@ -934,7 +934,7 @@ namespace FASTER.core
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                if (!key.Equals(ref hlog.GetKey(physicalAddress)))
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key, logicalAddress,
@@ -1180,7 +1180,7 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var status = default(OperationStatus);
 
-            var hash = pendingContext.key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref pendingContext.key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             #region Trace Back for Record on In-Memory HybridLog
@@ -1190,7 +1190,7 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!pendingContext.key.Equals(ref hlog.GetKey(physicalAddress)))
+                if (!comparer.Equals(ref pendingContext.key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref pendingContext.key,
@@ -1378,7 +1378,7 @@ namespace FASTER.core
         {
             var bucket = default(HashBucket*);
             var slot = default(int);
-            var hash = key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
@@ -1389,7 +1389,7 @@ namespace FASTER.core
         {
             var bucket = default(HashBucket*);
             var slot = default(int);
-            var hash = key.GetHashCode64();
+            var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
@@ -1451,7 +1451,7 @@ namespace FASTER.core
             while (foundLogicalAddress >= minOffset)
             {
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
-                if (key.Equals(ref hlog.GetKey(foundPhysicalAddress)))
+                if (comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress)))
                 {
                     return true;
                 }
@@ -1620,7 +1620,7 @@ namespace FASTER.core
                         if (logicalAddress >= hlog.HeadAddress)
                         {
                             var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                            var hash = hlog.GetKey(physicalAddress).GetHashCode64();
+                            var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
@@ -1723,7 +1723,7 @@ namespace FASTER.core
             while (logicalAddress >= hlog.HeadAddress)
             {
                 var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                var hash = hlog.GetKey(physicalAddress).GetHashCode64();
+                var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
                 if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
                 {
                     return logicalAddress;

@@ -59,7 +59,7 @@ namespace FASTER.core
     }
 
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
-        where Key : IKey<Key>, new()
+        where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {

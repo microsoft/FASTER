@@ -12,26 +12,28 @@ using FASTER.core;
 namespace FASTER.benchmark
 {
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct Key : IKey<Key>
+    public struct Key : IFasterEqualityComparer<Key>
     {
         [FieldOffset(0)]
         public long value;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetHashCode64()
-        {
-            return Utility.GetHashCode(value);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(ref Key k2)
-        {
-            return value == k2.value;
-        }
 
         public override string ToString()
         {
             return "{ " + value + " }";
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetHashCode64(ref Key k)
+        {
+            return Utility.GetHashCode(k.value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Equals(ref Key k1, ref Key k2)
+        {
+            return k1.value == k2.value;
+        }
+
     }
 }

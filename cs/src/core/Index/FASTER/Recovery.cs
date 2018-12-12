@@ -51,7 +51,7 @@ namespace FASTER.core
     /// Partial class for recovery code in FASTER
     /// </summary>
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
-        where Key : IKey<Key>, new()
+        where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
@@ -365,7 +365,7 @@ namespace FASTER.core
 
                 if (!info.Invalid)
                 {
-                    hash = hlog.GetKey(recordStart).GetHashCode64();
+                    hash = comparer.GetHashCode64(ref hlog.GetKey(recordStart));
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default(HashBucketEntry);

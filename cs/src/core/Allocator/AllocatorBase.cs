@@ -51,13 +51,18 @@ namespace FASTER.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     public unsafe abstract class AllocatorBase<Key, Value> : IDisposable
-        where Key : IKey<Key>, new()
+        where Key : new()
         where Value : new()
     {
         /// <summary>
         /// Epoch information
         /// </summary>
         protected LightEpoch epoch;
+
+        /// <summary>
+        /// Comparer
+        /// </summary>
+        protected readonly IFasterEqualityComparer<Key> comparer;
 
         #region Protected size definitions
         /// <summary>
@@ -358,8 +363,11 @@ namespace FASTER.core
         /// Instantiate base allocator
         /// </summary>
         /// <param name="settings"></param>
-        public AllocatorBase(LogSettings settings)
+        /// <param name="comparer"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer)
         {
+            this.comparer = comparer;
+
             // Page size
             LogPageSizeBits = settings.PageSizeBits;
             PageSize = 1 << LogPageSizeBits;
@@ -1183,7 +1191,7 @@ namespace FASTER.core
                 // We have the complete record.
                 if (RetrievedFullRecord(record, ref ctx))
                 {
-                    if (ctx.request_key.Equals(ref ctx.key))
+                    if (comparer.Equals(ref ctx.request_key, ref ctx.key))
                     {
                         // The keys are same, so I/O is complete
                         // ctx.record = result.record;

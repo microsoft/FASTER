@@ -14,17 +14,17 @@ using System.Diagnostics;
 
 namespace SumStore
 {
-    public struct AdId : IKey<AdId>
+    public struct AdId : IFasterEqualityComparer<AdId>
     {
         public long adId;
 
-        public long GetHashCode64()
+        public long GetHashCode64(ref AdId key)
         {
-            return Utility.GetHashCode(adId);
+            return Utility.GetHashCode(key.adId);
         }
-        public bool Equals(ref AdId k2)
+        public bool Equals(ref AdId k1, ref AdId k2)
         {
-            return adId == k2.adId;
+            return k1.adId == k2.adId;
         }
     }
 

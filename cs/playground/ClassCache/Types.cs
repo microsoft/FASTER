@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace ClassCache
 {
-    public class CacheKey : IKey<CacheKey>
+    public class CacheKey : IFasterEqualityComparer<CacheKey>
     {
         public long key;
 
@@ -22,14 +22,13 @@ namespace ClassCache
             key = first;
         }
 
-        public bool Equals(ref CacheKey other)
+        public long GetHashCode64(ref CacheKey key)
         {
-            return key == other.key;
+            return Utility.GetHashCode(key.key);
         }
-
-        public long GetHashCode64()
+        public bool Equals(ref CacheKey k1, ref CacheKey k2)
         {
-            return Utility.GetHashCode(key);
+            return k1.key == k2.key;
         }
     }
 

@@ -11,18 +11,18 @@ using System.Threading.Tasks;
 
 namespace MixedSample
 {
-    public class MyKey : IKey<MyKey>
+    public class MyKey : IFasterEqualityComparer<MyKey>
     {
         public int key;
 
-        public long GetHashCode64()
+        public long GetHashCode64(ref MyKey key)
         {
-            return Utility.GetHashCode(key);
+            return Utility.GetHashCode(key.key);
         }
 
-        public bool Equals(ref MyKey otherKey)
+        public bool Equals(ref MyKey k1, ref MyKey k2)
         {
-            return key == otherKey.key;
+            return k1.key == k2.key;
         }
     }
 

@@ -23,7 +23,7 @@ namespace FASTER.core
 
 
     public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
-        where Key : IKey<Key>, new()
+        where Key : new()
         where Value : new()
     {
         // Circular buffer definition
@@ -48,8 +48,8 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings)
-            : base(settings)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer)
+            : base(settings, comparer)
         {
             SerializerSettings = serializerSettings;
 

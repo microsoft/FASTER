@@ -23,7 +23,6 @@ namespace FASTER.core
     {
     }
 
-
     /// <summary>
     /// FASTER utility functions
     /// </summary>

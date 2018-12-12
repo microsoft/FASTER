@@ -26,12 +26,13 @@ namespace FASTER.core
     }
 
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
-        where Key : IKey<Key>, new()
+        where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
         private readonly AllocatorBase<Key, Value> hlog;
+        private readonly IFasterEqualityComparer<Key> comparer;
 
         private readonly bool CopyReadsToTail = false;
         private readonly bool FoldOverSnapshot = false;
@@ -78,12 +79,28 @@ namespace FASTER.core
         /// Create FASTER instance
         /// </summary>
         /// <param name="size">Size of core index (#cache lines)</param>
+        /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="functions">Callback functions</param>
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
-        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null)
+        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null)
         {
+            if (comparer != null)
+                this.comparer = comparer;
+            else
+            {
+                if (typeof(IFasterEqualityComparer<Key>).IsAssignableFrom(typeof(Key)))
+                {
+                    this.comparer = new Key() as IFasterEqualityComparer<Key>;
+                }
+                else
+                {
+                    Console.WriteLine("***WARNING*** Creating default FASTER key equality comparer based on potentially slow EqualityComparer<Key>.Default. To avoid this, provide a comparer (IFasterEqualityComparer<Key>) as an argument to FASTER's constructor, or make Key implement the interface IFasterEqualityComparer<Key>");
+                    this.comparer = FasterEqualityComparer<Key>.Default;
+                }
+            }
+
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
 
@@ -94,9 +111,9 @@ namespace FASTER.core
             this.functions = functions;
 
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>() && serializerSettings?.keySerializer == null && serializerSettings?.valueSerializer == null)
-                hlog = new BlittableAllocator<Key, Value>(logSettings);
+                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
             else
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings);
+                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
 
             hlog.Initialize();
 

@@ -8,18 +8,18 @@ using System.Runtime.CompilerServices;
 
 namespace StructSampleCore
 {
-    public struct KeyStruct : IKey<KeyStruct>
+    public struct KeyStruct : IFasterEqualityComparer<KeyStruct>
     {
         public long kfield1;
         public long kfield2;
 
-        public long GetHashCode64()
+        public long GetHashCode64(ref KeyStruct key)
         {
-            return Utility.GetHashCode(kfield1);
+            return Utility.GetHashCode(key.kfield1);
         }
-        public bool Equals(ref KeyStruct k2)
+        public bool Equals(ref KeyStruct k1, ref KeyStruct k2)
         {
-            return kfield1 == k2.kfield1 && kfield2 == k2.kfield2;
+            return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
         }
     }
 
