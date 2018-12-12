@@ -600,7 +600,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AcquireSharedLatchesForAllPendingRequests()
         {
             foreach (var ctx in threadCtx.retryRequests)
@@ -677,7 +676,6 @@ namespace FASTER.core
             return nextState;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteHybridLogMetaInfo()
         {
             string filename = DirectoryConfiguration.GetHybridLogCheckpointMetaFileName(_hybridLogCheckpointToken);
@@ -688,7 +686,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteHybridLogContextInfo()
         {
             string filename = DirectoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.guid);
@@ -700,7 +697,6 @@ namespace FASTER.core
 
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteIndexMetaFile()
         {
             string filename = DirectoryConfiguration.GetIndexCheckpointMetaFileName(_indexCheckpointToken);
@@ -712,21 +708,18 @@ namespace FASTER.core
 
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ObtainCurrentTailAddress(ref long location)
         {
             var tailAddress = hlog.GetTailAddress();
             return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void InitializeIndexCheckpoint(Guid indexToken)
         {
             DirectoryConfiguration.CreateIndexCheckpointFolder(indexToken);
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
         {
             DirectoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);

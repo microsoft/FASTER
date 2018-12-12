@@ -64,45 +64,38 @@ namespace SumStore
         }
 
         // Read functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
 
         // Upsert functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
             dst = src;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
             dst = src;
         }
 
         // RMW functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
             value = input.numClicks;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;

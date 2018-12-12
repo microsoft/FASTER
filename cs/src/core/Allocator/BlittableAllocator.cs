@@ -144,6 +144,7 @@ namespace FASTER.core
             Interlocked.MemoryBarrier();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override long GetPhysicalAddress(long logicalAddress)
         {
             // Offset within page
@@ -227,7 +228,6 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for BlittableAllocator");

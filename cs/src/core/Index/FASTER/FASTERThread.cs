@@ -16,8 +16,6 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Guid InternalAcquire()
         {
             Phase phase = _systemState.phase;
@@ -31,7 +29,6 @@ namespace FASTER.core
             return threadCtx.guid;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long InternalContinue(Guid guid)
         {
             if (_hybridLogCheckpoint.info.continueTokens != null)
@@ -68,7 +65,6 @@ namespace FASTER.core
             HandleCheckpointingPhases();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRelease()
         {
             Debug.Assert(threadCtx.retryRequests.Count == 0 &&
@@ -82,7 +78,6 @@ namespace FASTER.core
             epoch.Release();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InitLocalContext(ref FasterExecutionContext context, Guid token)
         {
             context = new FasterExecutionContext
@@ -104,7 +99,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool InternalCompletePending(bool wait = false)
         {
             do
@@ -146,7 +140,6 @@ namespace FASTER.core
             return false;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CompleteRetryRequests(FasterExecutionContext context)
         {
             int count = context.retryRequests.Count;
@@ -157,7 +150,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CompleteIOPendingRequests(FasterExecutionContext context)
         {
             while (context.readyResponses.TryTake(out AsyncIOContext<Key, Value> request))
@@ -166,7 +158,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRetryRequestAndCallback(
                                     FasterExecutionContext ctx,
                                     PendingContext pendingContext)
@@ -236,7 +227,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalContinuePendingRequestAndCallback(
                                     FasterExecutionContext ctx,
                                     AsyncIOContext<Key, Value> request)

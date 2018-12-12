@@ -1295,7 +1295,6 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus(
                     FasterExecutionContext ctx,
                     PendingContext pendingContext,
@@ -1375,7 +1374,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AcquireSharedLatch(Key key)
         {
             var bucket = default(HashBucket*);
@@ -1387,7 +1385,6 @@ namespace FASTER.core
             HashBucket.TryAcquireSharedLatch(bucket);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ReleaseSharedLatch(Key key)
         {
             var bucket = default(HashBucket*);

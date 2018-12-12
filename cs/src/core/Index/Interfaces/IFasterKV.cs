@@ -138,6 +138,12 @@ namespace FASTER.core
         /// <returns>Whether checkpoint has completed</returns>
         bool CompleteCheckpoint(bool wait);
 
+        /// <summary>
+        /// Grow the hash index
+        /// </summary>
+        /// <returns></returns>
+        bool GrowIndex();
+
         /* Statistics */
         /// <summary>
         /// Get tail address of FASTER log

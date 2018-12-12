@@ -93,7 +93,7 @@ namespace FASTER.core
             CopyReadsToTail = logSettings.CopyReadsToTail;
             this.functions = functions;
 
-            if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
+            if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>() && serializerSettings?.keySerializer == null && serializerSettings?.valueSerializer == null)
                 hlog = new BlittableAllocator<Key, Value>(logSettings);
             else
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings);
@@ -190,7 +190,6 @@ namespace FASTER.core
         /// Start session with FASTER
         /// </summary>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Guid StartSession()
         {
             return InternalAcquire();
@@ -202,7 +201,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long ContinueSession(Guid guid)
         {
             return InternalContinue(guid);
@@ -211,7 +209,6 @@ namespace FASTER.core
         /// <summary>
         /// Stop session with FASTER
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void StopSession()
         {
             InternalRelease();
@@ -220,7 +217,6 @@ namespace FASTER.core
         /// <summary>
         /// Refresh epoch (release memory pins)
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Refresh()
         {
             InternalRefresh();
@@ -232,7 +228,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="wait"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CompletePending(bool wait = false)
         {
             return InternalCompletePending(wait);

@@ -453,7 +453,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logicalAddress"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPage(long logicalAddress)
         {
             return (logicalAddress >> LogPageSizeBits);
@@ -684,7 +683,6 @@ namespace FASTER.core
         /// Used by applications to make the current state of the database immutable quickly
         /// </summary>
         /// <param name="tailAddress"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ShiftReadOnlyToTail(out long tailAddress)
         {
             tailAddress = GetTailAddress();
@@ -701,7 +699,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="oldBeginAddress"></param>
         /// <param name="newBeginAddress"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ShiftBeginAddress(long oldBeginAddress, long newBeginAddress)
         {
             epoch.BumpCurrentEpoch(() 
@@ -797,7 +794,6 @@ namespace FASTER.core
         /// can happen to any fine-grained address.
         /// </summary>
         /// <param name="currentTailAddress"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftReadOnlyAddress(long currentTailAddress)
         {
             long currentReadOnlyAddress = ReadOnlyAddress;
@@ -815,7 +811,6 @@ namespace FASTER.core
         /// Tries to shift head address based on the head offset lag size.
         /// </summary>
         /// <param name="currentTailAddress"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
         {
             //obtain local values of variables that can change
@@ -842,7 +837,6 @@ namespace FASTER.core
         /// Every async flush callback tries to update the flushed until address to the latest value possible
         /// Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         protected void ShiftFlushedUntilAddress()
         {
             long currentFlushedUntilAddress = FlushedUntilAddress;
@@ -874,7 +868,6 @@ namespace FASTER.core
         /// <param name="newValue"></param>
         /// <param name="oldValue"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool MonotonicUpdate(ref long variable, long newValue, out long oldValue)
         {
             oldValue = variable;
@@ -926,7 +919,6 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));

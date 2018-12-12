@@ -70,47 +70,40 @@ namespace FASTER.test
         }
 
         // Read functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
             dst.value = value;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
             dst.value = value;
         }
 
         // Upsert functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
             dst = src;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
             dst = src;
         }
 
         // RMW functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;

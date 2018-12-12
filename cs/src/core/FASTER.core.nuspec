@@ -15,15 +15,10 @@
     <tags>key-value store dictionary hashtable concurrent log persistent</tags>
     <dependencies>
       <group targetFramework="net46">
-        <dependency id="Microsoft.CodeAnalysis.CSharp.Scripting" version="2.8.2" />
-        <dependency id="System.Reflection.Emit.ILGeneration" version="4.3.0" />
-        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.1" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.2" />
       </group>
       <group targetFramework="netstandard2.0">
-        <dependency id="Microsoft.CodeAnalysis.CSharp.Scripting" version="2.8.2" />
-        <dependency id="System.Reflection.Emit.ILGeneration" version="4.3.0" />
-        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.1" />
-        <dependency id="System.Runtime.Loader" version="4.3.0" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.2" />
       </group>
     </dependencies>
   </metadata>
