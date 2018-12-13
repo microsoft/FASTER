@@ -219,7 +219,7 @@ namespace FASTER.core
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
-                Debug.Assert(((RecordInfo*)request.record.GetValidPointer())->Version <= ctx.version);
+                Debug.Assert(hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Version <= ctx.version);
                 functions.SingleReader(ref pendingContext.key, ref pendingContext.input,
                                        ref request.value, ref pendingContext.output);
 
