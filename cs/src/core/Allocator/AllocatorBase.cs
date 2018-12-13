@@ -217,6 +217,14 @@ namespace FASTER.core
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
         public abstract ref RecordInfo GetInfo(long physicalAddress);
+
+        /// <summary>
+        /// Get info from byte pointer
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <returns></returns>
+        public abstract ref RecordInfo GetInfoFromBytePointer(byte* ptr);
+
         /// <summary>
         /// Get key
         /// </summary>
@@ -1202,7 +1210,7 @@ namespace FASTER.core
                         var oldAddress = ctx.logicalAddress;
 
                         //keys are not same. I/O is not complete
-                        ctx.logicalAddress = ((RecordInfo*)record)->PreviousAddress;
+                        ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
                         if (ctx.logicalAddress != Constants.kInvalidAddress)
                         {
                             ctx.record.Return();

@@ -25,7 +25,7 @@ namespace FASTER.test.recovery.sumstore.simple
         [Test]
         public void SimpleRecoveryTest1()
         {
-            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
@@ -54,14 +54,12 @@ namespace FASTER.test.recovery.sumstore.simple
             NumClicks value;
             Input inputArg = default(Input);
             Output output = default(Output);
-            Empty context = default(Empty);
-
 
             fht1.StartSession();
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                fht1.Upsert(ref inputArray[key], ref value, ref context, 0);
+                fht1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
@@ -71,7 +69,7 @@ namespace FASTER.test.recovery.sumstore.simple
             fht2.StartSession();
             for (int key = 0; key < numOps; key++)
             {
-                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, ref context, 0);
+                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                     fht2.CompletePending(true);
@@ -91,7 +89,7 @@ namespace FASTER.test.recovery.sumstore.simple
         [Test]
         public void SimpleRecoveryTest2()
         {
-            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
@@ -120,14 +118,12 @@ namespace FASTER.test.recovery.sumstore.simple
             NumClicks value;
             Input inputArg = default(Input);
             Output output = default(Output);
-            Empty context = default(Empty);
-
 
             fht1.StartSession();
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                fht1.Upsert(ref inputArray[key], ref value, ref context, 0);
+                fht1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
@@ -137,7 +133,7 @@ namespace FASTER.test.recovery.sumstore.simple
             fht2.StartSession();
             for (int key = 0; key < numOps; key++)
             {
-                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, ref context, 0);
+                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                     fht2.CompletePending(true);
@@ -157,23 +153,23 @@ namespace FASTER.test.recovery.sumstore.simple
 
     public class SimpleFunctions : IFunctions<AdId, NumClicks, Input, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref Input input, ref Empty ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref Input input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, ref Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.numClicks == key.adId);
         }
 
-        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, ref Empty ctx)
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
         {
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
-            Console.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
         }
 
         // Read functions

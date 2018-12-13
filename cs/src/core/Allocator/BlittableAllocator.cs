@@ -67,6 +67,11 @@ namespace FASTER.core
             return ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
         }
 
+        public override ref RecordInfo GetInfoFromBytePointer(byte* ptr)
+        {
+            return ref Unsafe.AsRef<RecordInfo>(ptr);
+        }
+
         public override ref Key GetKey(long physicalAddress)
         {
             return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());

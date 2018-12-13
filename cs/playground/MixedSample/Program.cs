@@ -99,17 +99,17 @@ namespace MixedSample
             throw new NotImplementedException();
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
             throw new NotImplementedException();
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyContext ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status)
         {
             throw new NotImplementedException();
         }
 
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyContext ctx, Status status)
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, MyContext ctx, Status status)
         {
             throw new NotImplementedException();
         }
@@ -124,7 +124,7 @@ namespace MixedSample
             throw new NotImplementedException();
         }
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, ref MyContext ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, MyContext ctx)
         {
             throw new NotImplementedException();
         }
@@ -134,8 +134,8 @@ namespace MixedSample
     {
         static void Main(string[] args)
         {
-            var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "hybridlog");
-            var objlog = FasterFactory.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
+            var log = Devices.CreateLogDevice(Path.GetTempPath() + "hybridlog");
+            var objlog = Devices.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
 
             var h = new FasterKV
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
@@ -151,19 +151,19 @@ namespace MixedSample
             {
                 var _key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                h.Upsert(ref _key, ref value, ref context, 0);
+                h.Upsert(ref _key, ref value, context, 0);
                 if (i % 32 == 0) h.Refresh();
             }
             var key = new MyKey { key = 23 };
             var input = default(MyInput);
             MyOutput g1 = new MyOutput();
-            h.Read(ref key, ref input, ref g1, ref context, 0);
+            h.Read(ref key, ref input, ref g1, context, 0);
 
             h.CompletePending(true);
 
             MyOutput g2 = new MyOutput();
             key = new MyKey { key = 46 };
-            h.Read(ref key, ref input, ref g2, ref context, 0);
+            h.Read(ref key, ref input, ref g2, context, 0);
             h.CompletePending(true);
 
             Console.WriteLine("Success!");

@@ -35,7 +35,7 @@ namespace FASTER.test.recovery.sumstore
                     Directory.CreateDirectory(test_path);
             }
 
-            log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
+            log = Devices.CreateLogDevice(test_path + "\\hlog");
 
             fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (keySpace, new Functions(), 
@@ -86,8 +86,6 @@ namespace FASTER.test.recovery.sumstore
 
         public void Populate()
         {
-            Empty context;
-
             // Prepare the dataset
             var inputArray = new Input[numOps];
             for (int i = 0; i < numOps; i++)
@@ -103,7 +101,7 @@ namespace FASTER.test.recovery.sumstore
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if ((i+1) % checkpointInterval == 0)
                 {
@@ -142,7 +140,6 @@ namespace FASTER.test.recovery.sumstore
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            Empty context;
             var inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
@@ -159,7 +156,7 @@ namespace FASTER.test.recovery.sumstore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 Assert.IsTrue(status == Status.OK);
                 inputArray[i].numClicks = output.value;
             }

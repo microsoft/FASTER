@@ -13,7 +13,7 @@ namespace FASTER.core
     /// <summary>
     /// Factory to create FASTER objects
     /// </summary>
-    public static class FasterFactory
+    public static class Devices
     {
         /// <summary>
         /// Create a storage device for the log
@@ -32,11 +32,11 @@ namespace FASTER.core
             {
                 logDevice = new ManagedLocalStorageDevice(logPath + ".log", segmentSize, true, false, deleteOnClose);
             }
-#else
+            else
+#endif
             {
                 logDevice = new LocalStorageDevice(logPath + ".log", segmentSize, true, false, deleteOnClose);
             }
-#endif
             return logDevice;
         }
 
@@ -56,11 +56,11 @@ namespace FASTER.core
             {
                 logDevice = new ManagedLocalStorageDevice(logPath + ".obj.log", singleSegment: false, deleteOnClose: deleteOnClose);
             }
-#else
+            else
+#endif
             {
                 logDevice = new LocalStorageDevice(logPath + ".obj.log", singleSegment: false, deleteOnClose: deleteOnClose);
             }
-#endif
             return logDevice;
         }
     }

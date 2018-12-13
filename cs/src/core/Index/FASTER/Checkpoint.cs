@@ -37,7 +37,7 @@ namespace FASTER.core
 
             public const int WaitFlush = 4;
 
-            public const int PersistenceCallback = 5;
+            public const int CheckpointCompletionCallback = 5;
         }
 
         #region Starting points
@@ -271,9 +271,9 @@ namespace FASTER.core
                             {
                                 ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
 
-                                _hybridLogCheckpoint.snapshotFileDevice = FasterFactory.CreateLogDevice
+                                _hybridLogCheckpoint.snapshotFileDevice = Devices.CreateLogDevice
                                     (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = FasterFactory.CreateObjectLogDevice
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = Devices.CreateObjectLogDevice
                                     (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
 
                                 long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
@@ -545,17 +545,17 @@ namespace FASTER.core
 
                     case Phase.PERSISTENCE_CALLBACK:
                         {
-                            if (!prevThreadCtx.markers[EpochPhaseIdx.PersistenceCallback])
+                            if (!prevThreadCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                             {
                                 // Thread local action
-                                functions.PersistenceCallback(LightEpoch.threadEntryIndex, prevThreadCtx.serialNum);
+                                functions.CheckpointCompletionCallback(epoch.GetSessionId(LightEpoch.threadEntryIndex), prevThreadCtx.serialNum);
 
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PersistenceCallback, prevThreadCtx.version))
+                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.version))
                                 {
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
 
-                                prevThreadCtx.markers[EpochPhaseIdx.PersistenceCallback] = true;
+                                prevThreadCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                             }
                             break;
                         }

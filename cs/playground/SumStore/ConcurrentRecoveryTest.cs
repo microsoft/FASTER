@@ -32,7 +32,7 @@ namespace SumStore
             this.threadCount = threadCount;
             tokens = new List<Guid>();
 
-            var log = FasterFactory.CreateLogDevice("logs\\hlog");
+            var log = Devices.CreateLogDevice("logs\\hlog");
 
             // Create FASTER index
             fht = new FasterKV
@@ -120,8 +120,6 @@ namespace SumStore
         {
             Native32.AffinitizeThreadRoundRobin((uint)threadId);
 
-            Empty context;
-
             var success = inputArrays.TryTake(out Input[] inputArray);
             if(!success)
             {
@@ -137,7 +135,7 @@ namespace SumStore
             // Process the batch of input data
             for (long i = 0; i < numOps; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if ((i+1) % checkpointInterval == 0 && numActiveThreads == threadCount)
                 {
@@ -211,8 +209,6 @@ namespace SumStore
         {
             Native32.AffinitizeThreadRoundRobin((uint)threadId);
 
-            Empty context;
-
             var success = inputArrays.TryTake(out Input[] inputArray);
             if (!success)
             {
@@ -230,7 +226,7 @@ namespace SumStore
             // Prpcess the batch of input data
             for (long i = startNum + 1; i < numOps; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if ((i+1) % checkpointInterval == 0 && numActiveThreads == threadCount)
                 {
@@ -267,7 +263,6 @@ namespace SumStore
             fht.Recover(indexToken, hybridLogToken);
 
             // Create array for reading
-            Empty context;
             var inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
@@ -283,7 +278,7 @@ namespace SumStore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 inputArray[i].numClicks = output.value;
             }
 

@@ -18,8 +18,8 @@ namespace ClassCache
         {
             var context = default(CacheContext);
 
-            var log = FasterFactory.CreateLogDevice(Path.GetTempPath() + "hybridlog");
-            var objlog = FasterFactory.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
+            var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hybridlog");
+            var objlog = Devices.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
             var h = new FasterKV
                 <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>(
                 1L << 20, new CacheFunctions(),
@@ -45,7 +45,7 @@ namespace ClassCache
                 }
                 var key = new CacheKey(i);
                 var value = new CacheValue(i);
-                h.Upsert(ref key, ref value, ref context, 0);
+                h.Upsert(ref key, ref value, context, 0);
             }
             sw.Stop();
             Console.WriteLine("Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds/1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
@@ -56,7 +56,7 @@ namespace ClassCache
             var rnd = new Random();
 
             int statusPending = 0;
-            var o = new CacheOutput();
+            var output = new CacheOutput();
             var input = default(CacheInput);
             sw.Restart();
             for (int i = 0; i < max; i++)
@@ -64,7 +64,7 @@ namespace ClassCache
                 long k = rnd.Next(max);
 
                 var key = new CacheKey(k);
-                var status = h.Read(ref key, ref input, ref o, ref context, 0);
+                var status = h.Read(ref key, ref input, ref output, context, 0);
 
                 switch (status)
                 {
@@ -74,7 +74,7 @@ namespace ClassCache
                     case Status.ERROR:
                         throw new Exception("Error!");
                 }
-                if (o.value.value != key.key)
+                if (output.value.value != key.key)
                     throw new Exception("Read error!");
             }
             sw.Stop();

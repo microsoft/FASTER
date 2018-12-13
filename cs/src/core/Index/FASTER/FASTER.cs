@@ -204,7 +204,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Start session with FASTER
+        /// Start session with FASTER - call once per thread before using FASTER
         /// </summary>
         /// <returns></returns>
         public Guid StartSession()
@@ -279,7 +279,7 @@ namespace FASTER.core
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref Context userContext, long monotonicSerialNum)
+        public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
             var internalStatus = InternalRead(ref key, ref input, ref output, ref userContext, ref context);
@@ -306,7 +306,7 @@ namespace FASTER.core
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Value desiredValue, ref Context userContext, long monotonicSerialNum)
+        public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
             var internalStatus = InternalUpsert(ref key, ref desiredValue, ref userContext, ref context);
@@ -333,7 +333,7 @@ namespace FASTER.core
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Context userContext, long monotonicSerialNum)
+        public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
             var internalStatus = InternalRMW(ref key, ref input, ref userContext, ref context);

@@ -45,13 +45,12 @@ namespace FASTER.test
         {
             InputStruct input = default(InputStruct);
             OutputStruct output = default(OutputStruct);
-            Empty context = default(Empty);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            fht.Upsert(ref key1, ref value, ref context, 0);
-            var status = fht.Read(ref key1, ref input, ref output, ref context, 0);
+            fht.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
@@ -70,16 +69,14 @@ namespace FASTER.test
         public unsafe void NativeInMemWriteRead2()
         {
             InputStruct input = default(InputStruct);
-            Empty context = default(Empty);
 
             Random r = new Random(10);
-
             for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                fht.Upsert(ref key1, ref value, ref context, 0);
+                fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             r = new Random(10);
@@ -91,7 +88,7 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (fht.Read(ref key1, ref input, ref output, ref context, 0) == Status.PENDING)
+                if (fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
                 {
                     fht.CompletePending(true);
                 }
@@ -105,7 +102,6 @@ namespace FASTER.test
         public unsafe void NativeInMemRMW1()
         {
             InputStruct input = default(InputStruct);
-            Empty context = default(Empty);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -122,14 +118,14 @@ namespace FASTER.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                fht.RMW(ref key1, ref input, ref context, 0);
+                fht.RMW(ref key1, ref input, Empty.Default, 0);
             }
             for (int j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                fht.RMW(ref key1, ref input, ref context, 0);
+                fht.RMW(ref key1, ref input, Empty.Default, 0);
             }
 
 
@@ -145,7 +141,7 @@ namespace FASTER.test
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                status = fht.Read(ref key, ref input, ref output, ref context, 0);
+                status = fht.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                 {
@@ -160,7 +156,7 @@ namespace FASTER.test
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = fht.Read(ref key, ref input, ref output, ref context, 0);
+            status = fht.Read(ref key, ref input, ref output, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {

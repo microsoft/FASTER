@@ -10,23 +10,23 @@ using FASTER.core;
 
 namespace FASTER.benchmark
 {
-    public struct Functions : IFunctions<Key, Value, Input, Output, Context>
+    public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {
-        public void RMWCompletionCallback(ref Key key, ref Input input, ref Context ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Context ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(ref Key key, ref Value value, ref Context ctx)
+        public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx)
         {
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
-            Debug.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
         }
 
         // Read functions

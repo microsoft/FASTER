@@ -13,7 +13,7 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack=1)]
     public struct Record<Key, Value>
     {
         public RecordInfo info;
@@ -45,7 +45,6 @@ namespace FASTER.core
         SectorAlignedBufferPool ioBufferPool;
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
-        private static readonly int keySize = Utility.GetSize(default(Key));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
 
         public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer)
@@ -114,6 +113,12 @@ namespace FASTER.core
             return ref values[pageIndex][offset/recordSize].info;
         }
 
+        public override ref RecordInfo GetInfoFromBytePointer(byte* ptr)
+        {
+            return ref Unsafe.AsRef<Record<Key, Value>>(ptr).info;
+        }
+
+
         public override ref Key GetKey(long physicalAddress)
         {
             // Offset within page
@@ -138,12 +143,12 @@ namespace FASTER.core
 
         public override int GetRecordSize(long physicalAddress)
         {
-            return recordSize; // RecordInfo.GetLength() +  default(Key).GetLength() + default(Value).GetLength();
+            return recordSize;
         }
 
         public override int GetAverageRecordSize()
         {
-            return recordSize;// RecordInfo.GetLength() + default(Key).GetLength() + default(Value).GetLength();
+            return recordSize;
         }
 
         public override int GetInitialRecordSize<Input>(ref Key key, ref Input input)
@@ -171,12 +176,12 @@ namespace FASTER.core
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
+            return (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<Record<Key, Value>>((byte*)physicalAddress).key);
         }
 
         public override AddressInfo* GetValueAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
+            return (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<Record<Key, Value>>((byte*)physicalAddress).value);
         }
 
         /// <summary>
@@ -276,7 +281,7 @@ namespace FASTER.core
 
             fixed (RecordInfo* pin = &src[0].info)
             {
-                Buffer.MemoryCopy((void*)pin, buffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
+                Buffer.MemoryCopy(Unsafe.AsPointer(ref src[0]), buffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
             }
 
             long ptr = (long)buffer.aligned_pointer;
@@ -327,7 +332,7 @@ namespace FASTER.core
                     {
                         long pos = ms.Position;
                         valueSerializer.Serialize(ref src[i].value);
-                        var value_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize + keySize));
+                        var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
                         value_address->Address = pos;
                         value_address->Size = (int)(ms.Position - pos);
                         addr.Add((long)value_address);
@@ -744,11 +749,11 @@ namespace FASTER.core
         {
             if (!KeyHasObjects())
             {
-                ShallowCopy(ref Unsafe.AsRef<Key>(record + RecordInfo.GetLength()), ref ctx.key);
+                ShallowCopy(ref Unsafe.AsRef<Record<Key, Value>>(record).key, ref ctx.key);
             }
             if (!ValueHasObjects())
             {
-                ShallowCopy(ref Unsafe.AsRef<Value>(record + RecordInfo.GetLength() + keySize), ref ctx.value);
+                ShallowCopy(ref Unsafe.AsRef<Record<Key, Value>>(record).value, ref ctx.value);
             }
 
             if (!(KeyHasObjects() || ValueHasObjects()))
@@ -838,7 +843,7 @@ namespace FASTER.core
         {
             fixed (RecordInfo* pin = &values[destinationPage % BufferSize][0].info)
             {
-                Buffer.MemoryCopy(src, (void*)pin, required_bytes, required_bytes);
+                Buffer.MemoryCopy(src, Unsafe.AsPointer(ref values[destinationPage % BufferSize][0]), required_bytes, required_bytes);
             }
         }
     }

@@ -17,8 +17,8 @@ namespace FASTER.test.largeobjects
     [TestFixture]
     internal class LargeObjectTests
     {
-        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions> fht1;
-        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions> fht2;
+        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions> fht1;
+        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions> fht2;
         private IDevice log, objlog;
         
         [Test]
@@ -26,21 +26,20 @@ namespace FASTER.test.largeobjects
         {
             MyInput input = default(MyInput);
             MyLargeOutput output = new MyLargeOutput();
-            MyContext context = default(MyContext);
 
-            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            objlog = FasterFactory.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
-            fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
+            fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
-            fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
+            fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot },
@@ -56,7 +55,7 @@ namespace FASTER.test.largeobjects
             {
                 var mykey = new MyKey { key = key };
                 var value = new MyLargeValue(1+r.Next(maxSize));
-                fht1.Upsert(ref mykey, ref value, ref context, 0);
+                fht1.Upsert(ref mykey, ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
@@ -68,7 +67,7 @@ namespace FASTER.test.largeobjects
             for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
                 var key = new MyKey { key = keycnt };
-                var status = fht2.Read(ref key, ref input, ref output, ref context, 0);
+                var status = fht2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                     fht2.CompletePending(true);
@@ -93,21 +92,20 @@ namespace FASTER.test.largeobjects
         {
             MyInput input = default(MyInput);
             MyLargeOutput output = new MyLargeOutput();
-            MyContext context = default(MyContext);
 
-            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            objlog = FasterFactory.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
-            fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
+            fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
-            fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
+            fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
                 new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver },
@@ -123,7 +121,7 @@ namespace FASTER.test.largeobjects
             {
                 var mykey = new MyKey { key = key };
                 var value = new MyLargeValue(1 + r.Next(maxSize));
-                fht1.Upsert(ref mykey, ref value, ref context, 0);
+                fht1.Upsert(ref mykey, ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
@@ -135,7 +133,7 @@ namespace FASTER.test.largeobjects
             for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
                 var key = new MyKey { key = keycnt };
-                var status = fht2.Read(ref key, ref input, ref output, ref context, 0);
+                var status = fht2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                     fht2.CompletePending(true);

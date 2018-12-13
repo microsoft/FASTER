@@ -215,12 +215,12 @@ namespace FASTER.core
                     case OperationType.RMW:
                         functions.RMWCompletionCallback(ref pendingContext.key,
                                                 ref pendingContext.input,
-                                                ref pendingContext.userContext, status);
+                                                pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
                         functions.UpsertCompletionCallback(ref pendingContext.key,
                                                  ref pendingContext.value,
-                                                 ref pendingContext.userContext);
+                                                 pendingContext.userContext);
                         break;
                     default:
                         throw new Exception("Operation type not allowed for retry");
@@ -282,14 +282,14 @@ namespace FASTER.core
                         functions.ReadCompletionCallback(ref pendingContext.key, 
                                                          ref pendingContext.input, 
                                                          ref pendingContext.output, 
-                                                         ref pendingContext.userContext,
+                                                         pendingContext.userContext,
                                                          status);
                     }
                     else
                     {
                         functions.RMWCompletionCallback(ref pendingContext.key,
                                                         ref pendingContext.input,
-                                                        ref pendingContext.userContext,
+                                                        pendingContext.userContext,
                                                         status);
                     }
                 }

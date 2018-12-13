@@ -12,7 +12,7 @@ using System.Threading;
 namespace FASTER.core
 {
     /// <summary>
-    /// 
+    /// Managed device using .NET streams
     /// </summary>
     public class ManagedLocalStorageDevice : StorageDeviceBase
     {

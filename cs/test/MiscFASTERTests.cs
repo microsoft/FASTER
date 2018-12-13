@@ -15,22 +15,22 @@ namespace FASTER.test
 {
 
     [TestFixture]
-    internal class ObjectFASTERTests
+    internal class MiscFASTERTests
     {
-        private FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> fht;
+        private FasterKV<int, MyValue, MyInput, MyOutput, Empty, MixedFunctions> fht;
         private IDevice log, objlog;
-        
+
         [SetUp]
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog2", deleteOnClose: true);
             objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog2", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
-                (128, new MyFunctions(),
+            fht = new FasterKV<int, MyValue, MyInput, MyOutput, Empty, MixedFunctions>
+                (128, new MixedFunctions(),
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                serializerSettings: new SerializerSettings<int, MyValue> { valueSerializer = () => new MyValueSerializer() }
                 );
             fht.StartSession();
         }
@@ -42,56 +42,40 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Close();
+            objlog.Close();
         }
 
-        [Test]
-        public void ObjectInMemWriteRead()
-        {
-            var key1 = new MyKey { key = 9999999 };
-            var value = new MyValue { value = 23 };
-
-            MyInput input = null;
-            MyOutput output = new MyOutput();
-
-            fht.Upsert(ref key1, ref value, Empty.Default, 0);
-            fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
-            Assert.IsTrue(output.value.value == value.value);
-        }
 
         [Test]
-        public void ObjectInMemWriteRead2()
+        public void MixedTest1()
         {
-            var key1 = new MyKey { key = 8999998 };
+            int key = 8999998;
             var input1 = new MyInput { value = 23 };
             MyOutput output = new MyOutput();
 
-            fht.RMW(ref key1, ref input1, Empty.Default, 0);
+            fht.RMW(ref key, ref input1, Empty.Default, 0);
 
-            var key2 = new MyKey { key = 8999999 };
+            int key2 = 8999999;
             var input2 = new MyInput { value = 24 };
             fht.RMW(ref key2, ref input2, Empty.Default, 0);
 
-            fht.Read(ref key1, ref input1, ref output, Empty.Default, 0);
-
+            fht.Read(ref key, ref input1, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == input1.value);
 
             fht.Read(ref key2, ref input2, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == input2.value);
-
         }
 
-
         [Test]
-        public void ObjectDiskWriteRead()
+        public void MixedTest2()
         {
             for (int i = 0; i < 2000; i++)
             {
-                var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key, ref value, Empty.Default, 0);
+                fht.Upsert(ref i, ref value, Empty.Default, 0);
             }
 
-            var key2 = new MyKey { key = 23 };
+            var key2 = 23;
             var input = new MyInput();
             MyOutput g1 = new MyOutput();
             var status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
@@ -107,7 +91,7 @@ namespace FASTER.test
 
             Assert.IsTrue(g1.value.value == 23);
 
-            key2 = new MyKey { key = 99999 };
+            key2 = 99999;
             status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
             if (status == Status.PENDING)

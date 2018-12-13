@@ -218,6 +218,25 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Get session ID for given thread ID
+        /// </summary>
+        /// <param name="threadId"></param>
+        /// <returns></returns>
+        public Guid GetSessionId(int threadId)
+        {
+            for (int index = 1; index <= numEntries; ++index)
+            {
+                Entry entry = *(tableAligned + index);
+                if ((0 != entry.localCurrentEpoch) && (threadId == entry.threadId))
+                {
+                    return entry.sessionId;
+                }
+            }
+            return Guid.Empty; // session for thread ID not found
+        }
+
+
+        /// <summary>
         /// Increment current epoch and associate trigger action
         /// with the prior epoch
         /// </summary>
@@ -354,24 +373,35 @@ namespace FASTER.core
         [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
         private struct Entry
         {
-
             /// <summary>
-            /// Thread-local value of epoch
+            /// Thread-local value of epoch (4 bytes)
             /// </summary>
             [FieldOffset(0)]
             public int localCurrentEpoch;
 
             /// <summary>
-            /// ID of thread associated with this entry.
+            /// ID of thread associated with this entry (4 bytes)
             /// </summary>
             [FieldOffset(4)]
             public int threadId;
 
+            /// <summary>
+            /// Is the thread reentrant (4 bytes)
+            /// </summary>
             [FieldOffset(8)]
             public int reentrant;
 
+            /// <summary>
+            /// Session ID (16 bytes)
+            /// </summary>
             [FieldOffset(12)]
-            public fixed int markers[13];
+            public Guid sessionId;
+
+            /// <summary>
+            /// Markers (9*4 = 36 bytes)
+            /// </summary>
+            [FieldOffset(28)]
+            public fixed int markers[9];
         };
 
         private struct EpochActionPair

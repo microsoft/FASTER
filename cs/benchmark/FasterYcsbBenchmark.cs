@@ -42,7 +42,7 @@ namespace FASTER.benchmark
         Input[] input_;
         readonly IDevice device;
 
-        FasterKV<Key, Value, Input, Output, Context, Functions> store;
+        FasterKV<Key, Value, Input, Output, Empty, Functions> store;
 
         long total_ops_done = 0;
 
@@ -78,9 +78,9 @@ namespace FASTER.benchmark
             freq = Stopwatch.Frequency;
 #endif
 
-            device = FasterFactory.CreateLogDevice("C:\\data\\hlog");
+            device = Devices.CreateLogDevice("C:\\data\\hlog");
 
-            store = new FasterKV<Key, Value, Input, Output, Context, Functions>
+            store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
                 (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device });
         }
 
@@ -100,7 +100,6 @@ namespace FASTER.benchmark
             Value value = default(Value);
             Input input = default(Input);
             Output output = default(Output);
-            Context context = default(Context);
 
             long reads_done = 0;
             long writes_done = 0;
@@ -149,13 +148,13 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(ref txn_keys_[idx], ref value, ref context, 1);
+                                store.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                Status result = store.Read(ref txn_keys_[idx], ref input, ref output, ref context, 1);
+                                Status result = store.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++reads_done;
@@ -164,7 +163,7 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = store.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], ref context, 1);
+                                Status result = store.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++writes_done;
@@ -323,7 +322,6 @@ namespace FASTER.benchmark
 #endif
 
             Value value = default(Value);
-            Context context = default(Context);
 
             for (long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 chunk_idx < kInitCount;
@@ -341,7 +339,7 @@ namespace FASTER.benchmark
                         }
                     }
 
-                    store.Upsert(ref init_keys_[idx], ref value, ref context, 1);
+                    store.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;

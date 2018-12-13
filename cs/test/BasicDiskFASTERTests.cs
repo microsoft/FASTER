@@ -42,7 +42,6 @@ namespace FASTER.test
         public void NativeDiskWriteRead()
         {
             InputStruct input = default(InputStruct);
-            Empty context = default(Empty);
 
             Random r = new Random(10);
 
@@ -50,7 +49,7 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                fht.Upsert(ref key1, ref value, ref context, 0);
+                fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             r = new Random(10);
@@ -61,7 +60,7 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (fht.Read(ref key1, ref input, ref output, ref context, 0) == Status.PENDING)
+                if (fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
                 {
                     fht.CompletePending(true);
                 }

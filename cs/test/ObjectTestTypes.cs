@@ -73,12 +73,7 @@ namespace FASTER.test
         public MyValue value;
     }
 
-
-    public class MyContext
-    {
-    }
-
-    public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
+    public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, Empty>
     {
         public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
@@ -105,19 +100,19 @@ namespace FASTER.test
             dst.value = src.value;
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyContext ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
         {
         }
 
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyContext ctx, Status status)
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, ref MyContext ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, Empty ctx)
         {
         }
 
@@ -127,6 +122,60 @@ namespace FASTER.test
         }
 
         public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        {
+            dst = src;
+        }
+    }
+
+    public class MixedFunctions : IFunctions<int, MyValue, MyInput, MyOutput, Empty>
+    {
+        public void InitialUpdater(ref int key, ref MyInput input, ref MyValue value)
+        {
+            value = new MyValue { value = input.value };
+        }
+
+        public void InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value)
+        {
+            value.value += input.value;
+        }
+
+        public void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        {
+            newValue = new MyValue { value = oldValue.value + input.value };
+        }
+
+        public void ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
+        {
+            dst.value = src.value;
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+        }
+
+        public void ReadCompletionCallback(ref int key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        {
+        }
+
+        public void RMWCompletionCallback(ref int key, ref MyInput input, Empty ctx, Status status)
+        {
+        }
+
+        public void UpsertCompletionCallback(ref int key, ref MyValue value, Empty ctx)
+        {
+        }
+
+        public void SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void SingleWriter(ref int key, ref MyValue src, ref MyValue dst)
         {
             dst = src;
         }
@@ -171,13 +220,13 @@ namespace FASTER.test
         public MyLargeValue value;
     }
 
-    public class MyLargeFunctions : IFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext>
+    public class MyLargeFunctions : IFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
     {
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyContext ctx, Status status)
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, ref MyContext ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.value.value.Length; i++)
@@ -187,7 +236,7 @@ namespace FASTER.test
         }
 
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, ref MyContext ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, Empty ctx)
         {
         }
 
@@ -218,7 +267,7 @@ namespace FASTER.test
             dst = src;
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
         }
 

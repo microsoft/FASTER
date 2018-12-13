@@ -25,7 +25,7 @@ namespace SumStore
         public SingleThreadedRecoveryTest()
         {
             // Create FASTER index
-            var log = FasterFactory.CreateLogDevice("logs\\hlog");
+            var log = Devices.CreateLogDevice("logs\\hlog");
             fht = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, Functions>
                 (keySpace, new Functions(),
@@ -42,8 +42,6 @@ namespace SumStore
         {
             List<Guid> tokens = new List<Guid>();
 
-            Empty context;
-
             // Prepare the dataset
             var inputArray = new Input[numOps];
             for (int i = 0; i < numOps; i++)
@@ -58,7 +56,7 @@ namespace SumStore
             // Prpcess the batch of input data
             for (int i = 0; i < numOps; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if (i % checkpointInterval == 0)
                 {
@@ -98,7 +96,6 @@ namespace SumStore
             fht.Recover(indexToken, hybridLogToken);
 
             // Create array for reading
-            Empty context;
             var inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
@@ -114,7 +111,7 @@ namespace SumStore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 inputArray[i].numClicks = output.value;
             }
 

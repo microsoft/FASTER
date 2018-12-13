@@ -8,35 +8,35 @@ using System.Runtime.CompilerServices;
 
 namespace StructSampleCore
 {
-    public struct KeyStruct : IFasterEqualityComparer<KeyStruct>
+    public struct Key : IFasterEqualityComparer<Key>
     {
         public long kfield1;
         public long kfield2;
 
-        public long GetHashCode64(ref KeyStruct key)
+        public long GetHashCode64(ref Key key)
         {
             return Utility.GetHashCode(key.kfield1);
         }
-        public bool Equals(ref KeyStruct k1, ref KeyStruct k2)
+        public bool Equals(ref Key k1, ref Key k2)
         {
             return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
         }
     }
 
-    public struct ValueStruct
+    public struct Value
     {
         public long vfield1;
         public long vfield2;
     }
 
-    public struct InputStruct
+    public struct Input
     {
         public long ifield1;
         public long ifield2;
     }
 
-    public struct OutputStruct
+    public struct Output
     {
-        public ValueStruct value;
+        public Value value;
     }
 }

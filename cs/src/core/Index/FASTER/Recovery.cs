@@ -248,8 +248,8 @@ namespace FASTER.core
             var capacity = hlog.GetCapacityNumPages();
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage)
             {
-                recoveryDevice = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
-                objectLogRecoveryDevice = FasterFactory.CreateObjectLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
+                recoveryDevice = Devices.CreateLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
+                objectLogRecoveryDevice = Devices.CreateObjectLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
                 recoveryDevicePageOffset = startPage
             };
 

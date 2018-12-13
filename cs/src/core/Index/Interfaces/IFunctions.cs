@@ -1,4 +1,6 @@
-﻿namespace FASTER.core
+﻿using System;
+
+namespace FASTER.core
 {
     /// <summary>
     /// Callback functions to FASTER
@@ -18,7 +20,7 @@
         /// <param name="output"></param>
         /// <param name="ctx"></param>
         /// <param name="status"></param>
-        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Context ctx, Status status);
+        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status);
 
         /// <summary>
         /// Upsert completion
@@ -26,7 +28,7 @@
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <param name="ctx"></param>
-        void UpsertCompletionCallback(ref Key key, ref Value value, ref Context ctx);
+        void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx);
 
         /// <summary>
         /// RMW completion
@@ -35,14 +37,14 @@
         /// <param name="input"></param>
         /// <param name="ctx"></param>
         /// <param name="status"></param>
-        void RMWCompletionCallback(ref Key key, ref Input input, ref Context ctx, Status status);
+        void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status);
 
         /// <summary>
-        /// Persistence callback
+        /// Checkpoint completion callback (called per client session)
         /// </summary>
-        /// <param name="thread_id"></param>
-        /// <param name="serial_num"></param>
-        void PersistenceCallback(long thread_id, long serial_num);
+        /// <param name="sessionId">Session ID reporting persistence</param>
+        /// <param name="serialNum">Checkpoint offset (CPR point) for session</param>
+        void CheckpointCompletionCallback(Guid sessionId, long serialNum);
 
         /// <summary>
         /// Initial update for RMW

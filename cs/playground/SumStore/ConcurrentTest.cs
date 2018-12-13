@@ -33,7 +33,7 @@ namespace SumStore
             this.threadCount = threadCount;
 
             // Create FASTER index
-            var log = FasterFactory.CreateLogDevice("logs\\hlog");
+            var log = Devices.CreateLogDevice("logs\\hlog");
             fht = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, Functions>
                 (keySpace, new Functions(), 
@@ -115,8 +115,6 @@ namespace SumStore
         {
             Native32.AffinitizeThreadRoundRobin((uint)threadId);
 
-            Empty context;
-
             var success = inputArrays.TryTake(out Input[] inputArray);
             if(!success)
             {
@@ -135,7 +133,7 @@ namespace SumStore
             
             for (long i = 0; i < threadNumOps[threadId]; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], ref context, i);
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if (i % completePendingInterval == 0)
                 {
@@ -160,9 +158,7 @@ namespace SumStore
 
         public void Test()
         {
-
             // Create array for reading
-            Empty context;
             var inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
@@ -178,7 +174,7 @@ namespace SumStore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, ref context, i);
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 inputArray[i].numClicks = output.value;
             }
 

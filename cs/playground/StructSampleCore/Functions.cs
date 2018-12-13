@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -12,21 +13,21 @@ namespace StructSampleCore
     /// </summary>
     public class Functions : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
     {
-        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct output, ref Empty ctx, Status status)
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct output, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, ref Empty ctx, Status status)
+        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, ref Empty ctx)
+        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, Empty ctx)
         {
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
-            Debug.WriteLine("Thread {0} repors persistence until {1}", thread_id, serial_num);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
         }
 
         // Read functions

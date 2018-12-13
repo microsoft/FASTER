@@ -110,17 +110,17 @@ namespace ClassCache
             throw new NotImplementedException();
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
             throw new NotImplementedException();
         }
 
-        public void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, ref CacheContext ctx, Status status)
+        public void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status)
         {
             throw new NotImplementedException();
         }
 
-        public void RMWCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheContext ctx, Status status)
+        public void RMWCompletionCallback(ref CacheKey key, ref CacheInput input, CacheContext ctx, Status status)
         {
             throw new NotImplementedException();
         }
@@ -135,7 +135,7 @@ namespace ClassCache
             dst = src;
         }
 
-        public void UpsertCompletionCallback(ref CacheKey key, ref CacheValue value, ref CacheContext ctx)
+        public void UpsertCompletionCallback(ref CacheKey key, ref CacheValue value, CacheContext ctx)
         {
             throw new NotImplementedException();
         }

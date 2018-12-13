@@ -46,21 +46,21 @@ namespace FASTER.test.recovery.sumstore
 
     public class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref Input input, ref Empty ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref Input input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, ref Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, ref Empty ctx)
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
         {
         }
 
-        public void PersistenceCallback(long thread_id, long serial_num)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
-            Console.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
         }
 
         // Read functions

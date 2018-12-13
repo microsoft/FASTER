@@ -40,8 +40,8 @@ namespace FASTER.test.recovery.objectstore
                     Directory.CreateDirectory(test_path);
             }
 
-            log = FasterFactory.CreateLogDevice(test_path + "\\ort1hlog");
-            objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\ort1hlog");
+            log = Devices.CreateLogDevice(test_path + "\\ort1hlog");
+            objlog = Devices.CreateObjectLogDevice(test_path + "\\ort1hlog");
 
             fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (
@@ -96,8 +96,6 @@ namespace FASTER.test.recovery.objectstore
 
         public unsafe void Populate()
         {
-            Empty context = default(Empty);
-
             // Prepare the dataset
             var inputArray = new StructTuple<AdId, Input>[numOps];
             for (int i = 0; i < numOps; i++)
@@ -116,7 +114,7 @@ namespace FASTER.test.recovery.objectstore
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                fht.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, ref context, i);
+                fht.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default, i);
 
                 if ((i + 1) % checkpointInterval == 0)
                 {
@@ -152,8 +150,6 @@ namespace FASTER.test.recovery.objectstore
 
         public unsafe void RecoverAndTest(Guid cprVersion, Guid indexVersion)
         {
-            Empty context = default(Empty);
-
             // Recover
             fht.Recover(cprVersion, indexVersion);
 
@@ -181,7 +177,7 @@ namespace FASTER.test.recovery.objectstore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                fht.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], ref context, i);
+                fht.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], Empty.Default, i);
             }
 
             // Complete all pending requests
