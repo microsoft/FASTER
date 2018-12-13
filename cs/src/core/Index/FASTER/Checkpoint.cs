@@ -548,7 +548,7 @@ namespace FASTER.core
                             if (!prevThreadCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                             {
                                 // Thread local action
-                                functions.CheckpointCompletionCallback(epoch.GetSessionId(LightEpoch.threadEntryIndex), prevThreadCtx.serialNum);
+                                functions.CheckpointCompletionCallback(threadCtx.guid, prevThreadCtx.serialNum);
 
                                 if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.version))
                                 {

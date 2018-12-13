@@ -99,7 +99,7 @@ namespace FASTER.core
             tableRaw = new Entry[size + 2];
             tableHandle = GCHandle.Alloc(tableRaw, GCHandleType.Pinned);
             long p = (long)tableHandle.AddrOfPinnedObject();
-            
+
             // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
@@ -149,7 +149,7 @@ namespace FASTER.core
                 entry = ReserveEntryForThread();
                 threadEntryIndex = entry;
             }
-    
+
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
             if (drainCount > 0)
@@ -210,31 +210,12 @@ namespace FASTER.core
         public int BumpCurrentEpoch()
         {
             int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
-            
+
             if (drainCount > 0)
                 Drain(nextEpoch);
 
             return nextEpoch;
         }
-
-        /// <summary>
-        /// Get session ID for given thread ID
-        /// </summary>
-        /// <param name="threadId"></param>
-        /// <returns></returns>
-        public Guid GetSessionId(int threadId)
-        {
-            for (int index = 1; index <= numEntries; ++index)
-            {
-                Entry entry = *(tableAligned + index);
-                if ((0 != entry.localCurrentEpoch) && (threadId == entry.threadId))
-                {
-                    return entry.sessionId;
-                }
-            }
-            return Guid.Empty; // session for thread ID not found
-        }
-
 
         /// <summary>
         /// Increment current epoch and associate trigger action
@@ -251,7 +232,7 @@ namespace FASTER.core
             {
                 if (drainList[i].epoch == int.MaxValue)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue-1, int.MaxValue) == int.MaxValue)
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, int.MaxValue) == int.MaxValue)
                     {
                         drainList[i].action = onDrain;
                         drainList[i].epoch = PriorEpoch;
@@ -373,35 +354,24 @@ namespace FASTER.core
         [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
         private struct Entry
         {
+
             /// <summary>
-            /// Thread-local value of epoch (4 bytes)
+            /// Thread-local value of epoch
             /// </summary>
             [FieldOffset(0)]
             public int localCurrentEpoch;
 
             /// <summary>
-            /// ID of thread associated with this entry (4 bytes)
+            /// ID of thread associated with this entry.
             /// </summary>
             [FieldOffset(4)]
             public int threadId;
 
-            /// <summary>
-            /// Is the thread reentrant (4 bytes)
-            /// </summary>
             [FieldOffset(8)]
             public int reentrant;
 
-            /// <summary>
-            /// Session ID (16 bytes)
-            /// </summary>
             [FieldOffset(12)]
-            public Guid sessionId;
-
-            /// <summary>
-            /// Markers (9*4 = 36 bytes)
-            /// </summary>
-            [FieldOffset(28)]
-            public fixed int markers[9];
+            public fixed int markers[13];
         };
 
         private struct EpochActionPair
