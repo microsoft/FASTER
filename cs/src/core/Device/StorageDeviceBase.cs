@@ -28,26 +28,37 @@ namespace FASTER.core
         /// </summary>
         public string FileName { get; }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        public long SegmentSize { get; }
 
-        private readonly int segmentSizeBits;
-        private readonly ulong segmentSizeMask;
+        /// <summary>
+        /// Segment size
+        /// </summary>
+        protected long segmentSize;
+
+        private int segmentSizeBits;
+        private ulong segmentSizeMask;
 
         /// <summary>
         /// 
         /// </summary>
         /// <param name="filename"></param>
-        /// <param name="segmentSize"></param>
         /// <param name="sectorSize"></param>
-        public StorageDeviceBase(
-            string filename,  long segmentSize, uint sectorSize)
+        public StorageDeviceBase(string filename, uint sectorSize)
         {
-            FileName = filename;
-            SegmentSize = segmentSize;
+            FileName = filename;        
+            SectorSize = sectorSize;
 
+            segmentSize = -1;
+            segmentSizeBits = 64;
+            segmentSizeMask = ~0UL;
+        }
+
+        /// <summary>
+        /// Initialize device
+        /// </summary>
+        /// <param name="segmentSize"></param>
+        public void Initialize(long segmentSize)
+        {
+            this.segmentSize = segmentSize;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
@@ -60,8 +71,6 @@ namespace FASTER.core
                 segmentSizeBits = Utility.GetLogBase2((ulong)segmentSize);
                 segmentSizeMask = (ulong)segmentSize - 1;
             }
-
-            SectorSize = sectorSize;
         }
 
         /// <summary>

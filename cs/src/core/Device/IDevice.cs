@@ -17,14 +17,16 @@ namespace FASTER.core
         uint SectorSize { get; }
 
         /// <summary>
-        /// Size of each segment of log
-        /// </summary>
-        long SegmentSize { get; }
-
-        /// <summary>
         /// Name of device
         /// </summary>
         string FileName { get; }
+
+        /// <summary>
+        /// Initialize device
+        /// </summary>
+        /// <param name="segmentSize"></param>
+        void Initialize(long segmentSize);
+
 
         /* Segmented addressing API */
 

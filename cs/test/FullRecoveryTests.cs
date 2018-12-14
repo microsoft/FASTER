@@ -167,12 +167,9 @@ namespace FASTER.test.recovery.sumstore
             // Release
             fht.StopSession();
 
-            // Set checkpoint directory
-            Config.CheckpointDirectory = test_path;
-
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion);
+            checkpointInfo.Recover(cprVersion, new DirectoryConfiguration(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

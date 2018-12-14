@@ -100,6 +100,18 @@ namespace FASTER.core
         /// </summary>
         protected readonly long LogTotalSizeBytes;
 
+        /// <summary>
+        /// Segment size in bits
+        /// </summary>
+        protected readonly int LogSegmentSizeBits;
+        /// <summary>
+        /// Segment size
+        /// </summary>
+        protected readonly long SegmentSize;
+        /// <summary>
+        /// Segment buffer size
+        /// </summary>
+        protected readonly int SegmentBufferSize;
 
         /// <summary>
         /// HeadOffset lag (from tail)
@@ -375,6 +387,8 @@ namespace FASTER.core
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer)
         {
             this.comparer = comparer;
+            settings.LogDevice.Initialize(1L << settings.SegmentSizeBits);
+            settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits);
 
             // Page size
             LogPageSizeBits = settings.PageSizeBits;
@@ -394,6 +408,11 @@ namespace FASTER.core
             // ReadOnlyOffset lag (from tail)
             LogMutableFraction = settings.MutableFraction;
             ReadOnlyLagAddress = (long)(LogMutableFraction * BufferSize) << LogPageSizeBits;
+
+            // Segment size
+            LogSegmentSizeBits = settings.SegmentSizeBits;
+            SegmentSize = 1 << LogSegmentSizeBits;
+            SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (BufferSize < 16)
             {
@@ -452,6 +471,15 @@ namespace FASTER.core
             SafeHeadAddress = 0;
             HeadAddress = 0;
             BeginAddress = 1;
+        }
+
+        /// <summary>
+        /// Segment size
+        /// </summary>
+        /// <returns></returns>
+        public long GetSegmentSize()
+        {
+            return SegmentSize;
         }
 
         /// <summary>

@@ -29,12 +29,6 @@ namespace FASTER.core
         // Circular buffer definition
         private Record<Key, Value>[][] values;
 
-        // Segment size
-        private readonly int LogSegmentSizeBits;
-        private readonly long SegmentSize;
-        private readonly long SegmentSizeMask;
-        private readonly int SegmentBufferSize;
-
         // Object log related variables
         private readonly IDevice objectLogDevice;
         // Size of object chunks beign written to storage
@@ -61,13 +55,6 @@ namespace FASTER.core
             {
                 throw new Exception("Value is a class, but no serializer specified via SerializerSettings");
             }
-
-            // Segment size
-            LogSegmentSizeBits = settings.SegmentSizeBits;
-            SegmentSize = 1 << LogSegmentSizeBits;
-            SegmentSizeMask = SegmentSize - 1;
-            SegmentBufferSize = 1 +
-                (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             values = new Record<Key, Value>[BufferSize][];
             segmentOffsets = new long[SegmentBufferSize];

@@ -19,23 +19,23 @@ namespace FASTER.core
         /// Create a storage device for the log
         /// </summary>
         /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
-        /// <param name="segmentSize">Size of each chunk of the log</param>
+        /// <param name="preallocateFile">Whether we try to preallocate the file on creation</param>
         /// <param name="deleteOnClose">Delete files on close</param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath, long segmentSize = 1L << 30, bool deleteOnClose = false)
+        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = true, bool deleteOnClose = false)
         {
             IDevice logDevice = new NullDevice();
-            if (String.IsNullOrWhiteSpace(logPath))
+            if (string.IsNullOrWhiteSpace(logPath))
                 return logDevice;
 #if DOTNETCORE
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                logDevice = new ManagedLocalStorageDevice(logPath + ".log", segmentSize, true, false, deleteOnClose);
+                logDevice = new ManagedLocalStorageDevice(logPath + ".log", preallocateFile, deleteOnClose);
             }
             else
 #endif
             {
-                logDevice = new LocalStorageDevice(logPath + ".log", segmentSize, true, false, deleteOnClose);
+                logDevice = new LocalStorageDevice(logPath + ".log", preallocateFile, deleteOnClose);
             }
             return logDevice;
         }
@@ -44,9 +44,10 @@ namespace FASTER.core
         /// Create a storage device for the object log (for non-blittable objects)
         /// </summary>
         /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
+        /// <param name="preallocateFile">Whether we try to preallocate the file on creation</param>
         /// <param name="deleteOnClose">Delete files on close</param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateObjectLogDevice(string logPath, bool deleteOnClose = false)
+        public static IDevice CreateObjectLogDevice(string logPath, bool preallocateFile = true, bool deleteOnClose = false)
         {
             IDevice logDevice = new NullDevice();
             if (String.IsNullOrWhiteSpace(logPath))
@@ -54,12 +55,12 @@ namespace FASTER.core
 #if DOTNETCORE
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                logDevice = new ManagedLocalStorageDevice(logPath + ".obj.log", singleSegment: false, deleteOnClose: deleteOnClose);
+                logDevice = new ManagedLocalStorageDevice(logPath + ".obj.log", preallocateFile, deleteOnClose);
             }
             else
 #endif
             {
-                logDevice = new LocalStorageDevice(logPath + ".obj.log", singleSegment: false, deleteOnClose: deleteOnClose);
+                logDevice = new LocalStorageDevice(logPath + ".obj.log", preallocateFile, deleteOnClose);
             }
             return logDevice;
         }

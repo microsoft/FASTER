@@ -57,8 +57,8 @@ namespace FASTER.core
     {
         private void InternalRecover(Guid indexToken, Guid hybridLogToken)
         {
-            _indexCheckpoint.Recover(indexToken);
-            _hybridLogCheckpoint.Recover(hybridLogToken);
+            _indexCheckpoint.Recover(indexToken, directoryConfiguration);
+            _hybridLogCheckpoint.Recover(hybridLogToken, directoryConfiguration);
 
             // Recover segment offsets for object log
             if (_hybridLogCheckpoint.info.objectLogSegmentOffsets != null)
@@ -66,8 +66,8 @@ namespace FASTER.core
                     hlog.GetSegmentOffsets(), 
                     _hybridLogCheckpoint.info.objectLogSegmentOffsets.Length);
 
-            _indexCheckpoint.main_ht_device = new LocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token));
-            _indexCheckpoint.ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token));
+            _indexCheckpoint.main_ht_device = Devices.CreateLogDevice(directoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token), false);
+            _indexCheckpoint.ofb_device = Devices.CreateLogDevice(directoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token), false);
 
             var l1 = _indexCheckpoint.info.finalLogicalAddress;
             var l2 = _hybridLogCheckpoint.info.finalLogicalAddress;
@@ -246,10 +246,14 @@ namespace FASTER.core
 
             // By default first page has one extra record
             var capacity = hlog.GetCapacityNumPages();
+            var recoveryDevice = Devices.CreateLogDevice(directoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid), false);
+            var objectLogRecoveryDevice = Devices.CreateObjectLogDevice(directoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid), false);
+            recoveryDevice.Initialize(hlog.GetSegmentSize());
+            objectLogRecoveryDevice.Initialize(hlog.GetSegmentSize());
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage)
             {
-                recoveryDevice = Devices.CreateLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
-                objectLogRecoveryDevice = Devices.CreateObjectLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
+                recoveryDevice = recoveryDevice,
+                objectLogRecoveryDevice = objectLogRecoveryDevice,
                 recoveryDevicePageOffset = startPage
             };
 

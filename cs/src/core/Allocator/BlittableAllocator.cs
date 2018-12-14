@@ -26,12 +26,6 @@ namespace FASTER.core
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
 
-        // Segment size
-        private readonly int LogSegmentSizeBits;
-        private readonly long SegmentSize;
-        private readonly long SegmentSizeMask;
-        private readonly int SegmentBufferSize;
-
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private static readonly int keySize = Utility.GetSize(default(Key));
@@ -40,13 +34,6 @@ namespace FASTER.core
         public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer)
             : base(settings, comparer)
         {
-            // Segment size
-            LogSegmentSizeBits = settings.SegmentSizeBits;
-            SegmentSize = 1 << LogSegmentSizeBits;
-            SegmentSizeMask = SegmentSize - 1;
-            SegmentBufferSize = 1 +
-                (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
-
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
             pointers = new long[BufferSize];

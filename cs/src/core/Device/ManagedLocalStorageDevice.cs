@@ -16,34 +16,25 @@ namespace FASTER.core
     /// </summary>
     public class ManagedLocalStorageDevice : StorageDeviceBase
     {
-        private readonly bool preallocateSegment;
+        private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
         private readonly ConcurrentDictionary<int, Stream> logHandles;
-        private readonly Stream singleLogHandle;
         private SectorAlignedBufferPool pool;
 
         /// <summary>
         /// 
         /// </summary>
         /// <param name="filename"></param>
-        /// <param name="segmentSize"></param>
-        /// <param name="preallocateSegment"></param>
-        /// <param name="singleSegment"></param>
+        /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        public ManagedLocalStorageDevice(
-            string filename, long segmentSize = -1,
-            bool preallocateSegment = false, bool singleSegment = true, bool deleteOnClose = false)
-            : base(filename, segmentSize, GetSectorSize(filename))
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false)
+            : base(filename, GetSectorSize(filename))
         {
             pool = SectorAlignedBufferPool.GetPool(1, 1);
 
-            this.preallocateSegment = preallocateSegment;
+            this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
-
-            if (singleSegment)
-                singleLogHandle = CreateHandle(0);
-            else
-                logHandles = new ConcurrentDictionary<int, Stream>();
+            logHandles = new ConcurrentDictionary<int, Stream>();
         }
 
 
@@ -112,7 +103,7 @@ namespace FASTER.core
                                      IOCompletionCallback callback, 
                                      IAsyncResult asyncResult)
         {
-            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
+            var logHandle = GetOrAddHandle(segmentId);
             var memory = pool.Get((int)readLength);
             logHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
             logHandle.BeginRead(memory.buffer, 0, (int)readLength,
@@ -135,7 +126,7 @@ namespace FASTER.core
                                       IOCompletionCallback callback, 
                                       IAsyncResult asyncResult)
         {
-            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
+            var logHandle = GetOrAddHandle(segmentId);
             var memory = pool.Get((int)numBytesToWrite);
 
             fixed (void* destination = memory.buffer)
@@ -154,9 +145,6 @@ namespace FASTER.core
         /// <param name="toSegment"></param>
         public override void DeleteSegmentRange(int fromSegment, int toSegment)
         {
-            if (singleLogHandle != null)
-                throw new InvalidOperationException("Cannot delete segment range");
-
             for (int i=fromSegment; i<toSegment; i++)
             {
                 if (logHandles.TryRemove(i, out Stream logHandle))
@@ -172,11 +160,8 @@ namespace FASTER.core
         /// </summary>
         public override void Close()
         {
-            if (singleLogHandle != null)
-                singleLogHandle.Dispose();
-            else
-                foreach (var logHandle in logHandles.Values)
-                    logHandle.Dispose();
+            foreach (var logHandle in logHandles.Values)
+                logHandle.Dispose();
         }
 
 
@@ -217,8 +202,8 @@ namespace FASTER.core
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
                 FileAccess.ReadWrite, FileShare.ReadWrite, 4096, fo);
                 
-            if (preallocateSegment && SegmentSize != -1)
-                SetFileSize(FileName, logHandle, SegmentSize);
+            if (preallocateFile && segmentSize != -1)
+                SetFileSize(FileName, logHandle, segmentSize);
 
             return logHandle;
         }

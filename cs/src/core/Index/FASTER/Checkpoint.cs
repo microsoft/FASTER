@@ -272,9 +272,11 @@ namespace FASTER.core
                                 ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
 
                                 _hybridLogCheckpoint.snapshotFileDevice = Devices.CreateLogDevice
-                                    (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
+                                    (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice = Devices.CreateObjectLogDevice
-                                    (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
+                                    (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
+                                _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(hlog.GetSegmentSize());
 
                                 long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
                                 long endPage = hlog.GetPage(_hybridLogCheckpoint.info.finalLogicalAddress);
@@ -678,7 +680,7 @@ namespace FASTER.core
 
         private void WriteHybridLogMetaInfo()
         {
-            string filename = DirectoryConfiguration.GetHybridLogCheckpointMetaFileName(_hybridLogCheckpointToken);
+            string filename = directoryConfiguration.GetHybridLogCheckpointMetaFileName(_hybridLogCheckpointToken);
             using (var file = new StreamWriter(filename, false))
             {
                 _hybridLogCheckpoint.info.Write(file);
@@ -688,7 +690,7 @@ namespace FASTER.core
 
         private void WriteHybridLogContextInfo()
         {
-            string filename = DirectoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.guid);
+            string filename = directoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.guid);
             using (var file = new StreamWriter(filename, false))
             {
                 prevThreadCtx.Write(file);
@@ -699,7 +701,7 @@ namespace FASTER.core
 
         private void WriteIndexMetaFile()
         {
-            string filename = DirectoryConfiguration.GetIndexCheckpointMetaFileName(_indexCheckpointToken);
+            string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(_indexCheckpointToken);
             using (var file = new StreamWriter(filename, false))
             {
                 _indexCheckpoint.info.Write(file);
@@ -716,13 +718,13 @@ namespace FASTER.core
 
         private void InitializeIndexCheckpoint(Guid indexToken)
         {
-            DirectoryConfiguration.CreateIndexCheckpointFolder(indexToken);
-            _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size);
+            directoryConfiguration.CreateIndexCheckpointFolder(indexToken);
+            _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, directoryConfiguration);
         }
 
         private void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
         {
-            DirectoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
+            directoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
             _hybridLogCheckpoint.Initialize(hybridLogToken, version);
         }
 

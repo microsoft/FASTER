@@ -14,17 +14,6 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    /// <summary>
-    /// FASTER configuration
-    /// </summary>
-    public static class Config
-    {
-        /// <summary>
-        /// Checkpoint directory
-        /// </summary>
-        public static string CheckpointDirectory = "C:\\data";
-    }
-
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : new()
         where Value : new()
@@ -67,6 +56,7 @@ namespace FASTER.core
         private SystemState _systemState;
 
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
+        private DirectoryConfiguration directoryConfiguration;
 
         [ThreadStatic]
         private static FasterExecutionContext prevThreadCtx = default(FasterExecutionContext);
@@ -104,7 +94,7 @@ namespace FASTER.core
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
 
-            Config.CheckpointDirectory = checkpointSettings.CheckpointDir;
+            directoryConfiguration = new DirectoryConfiguration(checkpointSettings.CheckpointDir);
 
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;

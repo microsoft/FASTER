@@ -40,8 +40,8 @@ namespace FASTER.test.recovery.objectstore
                     Directory.CreateDirectory(test_path);
             }
 
-            log = Devices.CreateLogDevice(test_path + "\\ort1hlog");
-            objlog = Devices.CreateObjectLogDevice(test_path + "\\ort1hlog");
+            log = Devices.CreateLogDevice(test_path + "\\ort1hlog", false);
+            objlog = Devices.CreateObjectLogDevice(test_path + "\\ort1hlog", false);
 
             fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (
@@ -186,12 +186,9 @@ namespace FASTER.test.recovery.objectstore
             // Release
             fht.StopSession();
 
-            // Set checkpoint directory
-            Config.CheckpointDirectory = test_path;
-
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion);
+            checkpointInfo.Recover(cprVersion, new DirectoryConfiguration(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
