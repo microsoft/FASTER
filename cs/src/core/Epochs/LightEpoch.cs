@@ -99,7 +99,7 @@ namespace FASTER.core
             tableRaw = new Entry[size + 2];
             tableHandle = GCHandle.Alloc(tableRaw, GCHandleType.Pinned);
             long p = (long)tableHandle.AddrOfPinnedObject();
-            
+
             // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
@@ -149,7 +149,7 @@ namespace FASTER.core
                 entry = ReserveEntryForThread();
                 threadEntryIndex = entry;
             }
-    
+
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
             if (drainCount > 0)
@@ -210,7 +210,7 @@ namespace FASTER.core
         public int BumpCurrentEpoch()
         {
             int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
-            
+
             if (drainCount > 0)
                 Drain(nextEpoch);
 
@@ -232,7 +232,7 @@ namespace FASTER.core
             {
                 if (drainList[i].epoch == int.MaxValue)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue-1, int.MaxValue) == int.MaxValue)
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, int.MaxValue) == int.MaxValue)
                     {
                         drainList[i].action = onDrain;
                         drainList[i].epoch = PriorEpoch;

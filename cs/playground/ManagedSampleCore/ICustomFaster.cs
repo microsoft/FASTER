@@ -4,7 +4,7 @@
 using FASTER.core;
 using System;
 
-namespace ManagedSampleCore
+namespace StructSample
 {
     /// <summary>
     /// Custom interface of FASTER for user-specified types

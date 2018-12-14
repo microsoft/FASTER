@@ -16,33 +16,23 @@ namespace FASTER.core
     /// </summary>
     public class LocalStorageDevice : StorageDeviceBase
     {
-        private readonly bool preallocateSegment;
+        private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
         private readonly ConcurrentDictionary<int, SafeFileHandle> logHandles;
-        private readonly SafeFileHandle singleLogHandle;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="filename"></param>
-        /// <param name="segmentSize"></param>
-        /// <param name="preallocateSegment"></param>
-        /// <param name="singleSegment"></param>
+        /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        public LocalStorageDevice(
-            string filename, long segmentSize = -1,
-            bool preallocateSegment = false, bool singleSegment = true, bool deleteOnClose = false)
-            : base(filename, segmentSize, GetSectorSize(filename))
+        public LocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false)
+            : base(filename, GetSectorSize(filename))
         {
             Native32.EnableProcessPrivileges();
-
-            this.preallocateSegment = preallocateSegment;
+            this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
-
-            if (singleSegment)
-                singleLogHandle = CreateHandle(0);
-            else
-                logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
+            logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
         }
 
         /// <summary>
@@ -60,7 +50,7 @@ namespace FASTER.core
                                      IOCompletionCallback callback, 
                                      IAsyncResult asyncResult)
         {
-            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
+            var logHandle = GetOrAddHandle(segmentId);
 
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
@@ -106,7 +96,7 @@ namespace FASTER.core
                                       IOCompletionCallback callback, 
                                       IAsyncResult asyncResult)
         {
-            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
+            var logHandle = GetOrAddHandle(segmentId);
             
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
@@ -144,9 +134,6 @@ namespace FASTER.core
         /// <param name="toSegment"></param>
         public override void DeleteSegmentRange(int fromSegment, int toSegment)
         {
-            if (singleLogHandle != null)
-                throw new InvalidOperationException("Cannot delete segment range");
-
             for (int i=fromSegment; i<toSegment; i++)
             {
                 if (logHandles.TryRemove(i, out SafeFileHandle logHandle))
@@ -162,11 +149,8 @@ namespace FASTER.core
         /// </summary>
         public override void Close()
         {
-            if (singleLogHandle != null)
-                singleLogHandle.Dispose();
-            else
-                foreach (var logHandle in logHandles.Values)
-                    logHandle.Dispose();
+            foreach (var logHandle in logHandles.Values)
+                logHandle.Dispose();
         }
 
 
@@ -206,8 +190,8 @@ namespace FASTER.core
                 IntPtr.Zero, fileCreation,
                 fileFlags, IntPtr.Zero);
 
-            if (preallocateSegment)
-                SetFileSize(FileName, logHandle, SegmentSize);
+            if (preallocateFile)
+                SetFileSize(FileName, logHandle, segmentSize);
 
             try
             {
@@ -229,7 +213,7 @@ namespace FASTER.core
         /// Does not reset file seek pointer to original location.
         private bool SetFileSize(string filename, SafeFileHandle logHandle, long size)
         {
-            if (SegmentSize <= 0)
+            if (segmentSize <= 0)
                 return false;
 
             if (Native32.EnableVolumePrivileges(filename, logHandle))

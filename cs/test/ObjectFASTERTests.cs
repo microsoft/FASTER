@@ -17,20 +17,20 @@ namespace FASTER.test
     [TestFixture]
     internal class ObjectFASTERTests
     {
-        private IManagedFasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext> fht;
+        private FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> fht;
         private IDevice log, objlog;
         
         [SetUp]
         public void Setup()
         {
-            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            objlog = FasterFactory.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog2", deleteOnClose: true);
+            objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog2", deleteOnClose: true);
 
-            fht = FasterFactory.Create
-                <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (indexSizeBuckets: 128, functions: new MyFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver }
+            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
+                (128, new MyFunctions(),
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
+                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
             fht.StartSession();
         }
@@ -44,18 +44,17 @@ namespace FASTER.test
             log.Close();
         }
 
-
-
         [Test]
         public void ObjectInMemWriteRead()
         {
             var key1 = new MyKey { key = 9999999 };
             var value = new MyValue { value = 23 };
 
+            MyInput input = null;
             MyOutput output = new MyOutput();
-            fht.Upsert(key1, value, null, 0);
-            fht.Read(key1, null, ref output, null, 0);
 
+            fht.Upsert(ref key1, ref value, Empty.Default, 0);
+            fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == value.value);
         }
 
@@ -64,19 +63,19 @@ namespace FASTER.test
         {
             var key1 = new MyKey { key = 8999998 };
             var input1 = new MyInput { value = 23 };
+            MyOutput output = new MyOutput();
 
-            fht.RMW(key1, input1, null, 0);
+            fht.RMW(ref key1, ref input1, Empty.Default, 0);
 
             var key2 = new MyKey { key = 8999999 };
             var input2 = new MyInput { value = 24 };
-            fht.RMW(key2, input2, null, 0);
+            fht.RMW(ref key2, ref input2, Empty.Default, 0);
 
-            MyOutput output = new MyOutput();
-            fht.Read(key1, null, ref output, null, 0);
+            fht.Read(ref key1, ref input1, ref output, Empty.Default, 0);
 
             Assert.IsTrue(output.value.value == input1.value);
 
-            fht.Read(key2, null, ref output, null, 0);
+            fht.Read(ref key2, ref input2, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == input2.value);
 
         }
@@ -86,10 +85,16 @@ namespace FASTER.test
         public void ObjectDiskWriteRead()
         {
             for (int i = 0; i < 2000; i++)
-                fht.Upsert(new MyKey { key = i }, new MyValue { value = i }, default(MyContext), 0);
+            {
+                var key = new MyKey { key = i };
+                var value = new MyValue { value = i };
+                fht.Upsert(ref key, ref value, Empty.Default, 0);
+            }
 
+            var key2 = new MyKey { key = 23 };
+            var input = new MyInput();
             MyOutput g1 = new MyOutput();
-            var status = fht.Read(new MyKey { key = 23 }, new MyInput(), ref g1, new MyContext(), 0);
+            var status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
@@ -102,7 +107,8 @@ namespace FASTER.test
 
             Assert.IsTrue(g1.value.value == 23);
 
-            status = fht.Read(new MyKey { key = 99999 }, new MyInput(), ref g1, new MyContext(), 0);
+            key2 = new MyKey { key = 99999 };
+            status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
@@ -112,8 +118,6 @@ namespace FASTER.test
             {
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
-
-
         }
     }
 }

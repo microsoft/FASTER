@@ -19,25 +19,54 @@ namespace FASTER.core
     /// <summary>
     /// Empty type
     /// </summary>
-    public unsafe struct Empty
+    public struct Empty
     {
         /// <summary>
-        /// Move to context
+        /// Default
         /// </summary>
-        /// <param name="empty"></param>
-        /// <returns></returns>
-        public static Empty* MoveToContext(Empty* empty)
-        {
-            return empty;
-        }
+        public static readonly Empty Default = default(Empty);
     }
-
 
     /// <summary>
     /// FASTER utility functions
     /// </summary>
     public static class Utility
     {
+        /// <summary>
+        /// Get size of type
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        internal static unsafe int GetSize<T>(this T value)
+        {
+            T[] arr = new T[2];
+            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
+        }
+
+        /// <summary>
+        /// Is type blittable
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        internal static bool IsBlittable<T>()
+        {
+            if (default(T) == null)
+                return false;
+
+            try
+            {
+                var tmp = new T[1];
+                var h = GCHandle.Alloc(tmp, GCHandleType.Pinned);
+                h.Free();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>
         /// Helper function used to check if two byte arrays are equal
         /// </summary>

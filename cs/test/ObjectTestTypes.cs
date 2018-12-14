@@ -17,53 +17,52 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-    public class MyKey
+    public class MyKey : IFasterEqualityComparer<MyKey>
     {
         public int key;
-        public MyKey Clone()
+
+        public long GetHashCode64(ref MyKey key)
         {
-            return this;
+            return Utility.GetHashCode(key.key);
         }
 
-        public long GetHashCode64()
+        public bool Equals(ref MyKey k1, ref MyKey k2)
         {
-            return Utility.GetHashCode(key);
+            return k1.key == k2.key;
+        }
+    }
+
+    public class MyKeySerializer : BinaryObjectSerializer<MyKey>
+    {
+        public override void Deserialize(ref MyKey obj)
+        {
+            obj.key = reader.ReadInt32();
         }
 
-        public bool Equals(MyKey otherKey)
+        public override void Serialize(ref MyKey obj)
         {
-            return key == otherKey.key;
-        }
-        public void Serialize(Stream toStream)
-        {
-            new BinaryWriter(toStream).Write(key);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            key = new BinaryReader(fromStream).ReadInt32();
+            writer.Write(obj.key);
         }
     }
 
     public class MyValue
     {
         public int value;
-        public MyValue Clone()
+    }
+
+    public class MyValueSerializer : BinaryObjectSerializer<MyValue>
+    {
+        public override void Deserialize(ref MyValue obj)
         {
-            return this;
+            obj.value = reader.ReadInt32();
         }
 
-        public void Serialize(Stream toStream)
+        public override void Serialize(ref MyValue obj)
         {
-            new BinaryWriter(toStream).Write(value);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            value = new BinaryReader(fromStream).ReadInt32();
+            writer.Write(obj.value);
         }
     }
-    
+
     public class MyInput
     {
         public int value;
@@ -74,48 +73,111 @@ namespace FASTER.test
         public MyValue value;
     }
 
-
-    public class MyContext
+    public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, Empty>
     {
-    }
-
-    public class MyFunctions : IUserFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
-    {
-        public void RMWCompletionCallback(MyContext ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(MyContext ctx, MyOutput output, Status status)
-        {
-        }
-
-        public void UpsertCompletionCallback(MyContext ctx)
-        {
-        }
-
-        public void CopyUpdater(MyKey key, MyInput input, MyValue oldValue, ref MyValue newValue)
-        {
-            newValue = new MyValue { value = oldValue.value + input.value };
-        }
-
-        public int InitialValueLength(MyKey key, MyInput input)
-        {
-            return sizeof(int);
-        }
-
-        public void InitialUpdater(MyKey key, MyInput input, ref MyValue value)
+        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value = new MyValue { value = input.value };
         }
 
-        public void InPlaceUpdater(MyKey key, MyInput input, ref MyValue value)
+        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
         }
 
-        public void Reader(MyKey key, MyInput input, MyValue value, ref MyOutput dst)
+        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        {
+            newValue = new MyValue { value = oldValue.value + input.value };
+        }
+
+        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
+        }
+
+        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        {
+            dst.value = src.value;
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+        }
+
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        {
+        }
+
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
+        {
+        }
+
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, Empty ctx)
+        {
+        }
+
+        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        {
+            dst = src;
+        }
+    }
+
+    public class MixedFunctions : IFunctions<int, MyValue, MyInput, MyOutput, Empty>
+    {
+        public void InitialUpdater(ref int key, ref MyInput input, ref MyValue value)
+        {
+            value = new MyValue { value = input.value };
+        }
+
+        public void InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value)
+        {
+            value.value += input.value;
+        }
+
+        public void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        {
+            newValue = new MyValue { value = oldValue.value + input.value };
+        }
+
+        public void ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
+        {
+            dst.value = src.value;
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+        }
+
+        public void ReadCompletionCallback(ref int key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        {
+        }
+
+        public void RMWCompletionCallback(ref int key, ref MyInput input, Empty ctx, Status status)
+        {
+        }
+
+        public void UpsertCompletionCallback(ref int key, ref MyValue value, Empty ctx)
+        {
+        }
+
+        public void SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void SingleWriter(ref int key, ref MyValue src, ref MyValue dst)
+        {
+            dst = src;
         }
     }
 
@@ -136,24 +198,20 @@ namespace FASTER.test
                 value[i] = (byte)(size+i);
             }
         }
+    }
 
-        public MyLargeValue Clone()
+    public class MyLargeValueSerializer : BinaryObjectSerializer<MyLargeValue>
+    {
+        public override void Deserialize(ref MyLargeValue obj)
         {
-            return this;
-        }
-
-        public void Serialize(Stream toStream)
-        {
-            var writer = new BinaryWriter(toStream);
-            writer.Write(value.Length);
-            writer.Write(value);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            var reader = new BinaryReader(fromStream);
             int size = reader.ReadInt32();
-            value = reader.ReadBytes(size);
+            obj.value = reader.ReadBytes(size);
+        }
+
+        public override void Serialize(ref MyLargeValue obj)
+        {
+            writer.Write(obj.value.Length);
+            writer.Write(obj.value);
         }
     }
 
@@ -162,13 +220,13 @@ namespace FASTER.test
         public MyLargeValue value;
     }
 
-    public class MyLargeFunctions : IUserFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext>
+    public class MyLargeFunctions : IFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
     {
-        public void RMWCompletionCallback(MyContext ctx, Status status)
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(MyContext ctx, MyLargeOutput output, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.value.value.Length; i++)
@@ -178,30 +236,44 @@ namespace FASTER.test
         }
 
 
-        public void UpsertCompletionCallback(MyContext ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, Empty ctx)
         {
         }
 
-        public void CopyUpdater(MyKey key, MyInput input, MyLargeValue oldValue, ref MyLargeValue newValue)
+        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue oldValue, ref MyLargeValue newValue)
         {
         }
 
-        public int InitialValueLength(MyKey key, MyInput input)
-        {
-            return sizeof(int);
-        }
-
-        public void InitialUpdater(MyKey key, MyInput input, ref MyLargeValue value)
+        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
         {
         }
 
-        public void InPlaceUpdater(MyKey key, MyInput input, ref MyLargeValue value)
+        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
         {
         }
 
-        public void Reader(MyKey key, MyInput input, MyLargeValue value, ref MyLargeOutput dst)
+        public void SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
+        }
+
+        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        {
+            dst = src;
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+        }
+
+        public void SingleWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        {
+            dst = src;
         }
     }
 }

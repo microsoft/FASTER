@@ -3,7 +3,7 @@
 
 using System.Runtime.CompilerServices;
 
-namespace ManagedSampleCore
+namespace StructSample
 {
     public unsafe struct InputStruct
     {

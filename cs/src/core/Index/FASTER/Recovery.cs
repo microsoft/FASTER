@@ -50,19 +50,24 @@ namespace FASTER.core
     /// <summary>
     /// Partial class for recovery code in FASTER
     /// </summary>
-    public unsafe partial class FasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : new()
+        where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private void InternalRecover(Guid indexToken, Guid hybridLogToken)
         {
-            _indexCheckpoint.Recover(indexToken);
-            _hybridLogCheckpoint.Recover(hybridLogToken);
+            _indexCheckpoint.Recover(indexToken, directoryConfiguration);
+            _hybridLogCheckpoint.Recover(hybridLogToken, directoryConfiguration);
 
             // Recover segment offsets for object log
             if (_hybridLogCheckpoint.info.objectLogSegmentOffsets != null)
-                Array.Copy(_hybridLogCheckpoint.info.objectLogSegmentOffsets, hlog.segmentOffsets, _hybridLogCheckpoint.info.objectLogSegmentOffsets.Length);
+                Array.Copy(_hybridLogCheckpoint.info.objectLogSegmentOffsets, 
+                    hlog.GetSegmentOffsets(), 
+                    _hybridLogCheckpoint.info.objectLogSegmentOffsets.Length);
 
-            _indexCheckpoint.main_ht_device = new LocalStorageDevice(DirectoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token));
-            _indexCheckpoint.ofb_device = new LocalStorageDevice(DirectoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token));
+            _indexCheckpoint.main_ht_device = Devices.CreateLogDevice(directoryConfiguration.GetPrimaryHashTableFileName(_indexCheckpoint.info.token), false);
+            _indexCheckpoint.ofb_device = Devices.CreateLogDevice(directoryConfiguration.GetOverflowBucketsFileName(_indexCheckpoint.info.token), false);
 
             var l1 = _indexCheckpoint.info.finalLogicalAddress;
             var l2 = _hybridLogCheckpoint.info.finalLogicalAddress;
@@ -142,10 +147,6 @@ namespace FASTER.core
             }
 
             var headAddress = hlog.GetStartLogicalAddress(headPage);
-            if (headAddress == 0)
-            {
-                headAddress = Constants.kFirstValidAddress;
-            }
             hlog.RecoveryReset(untilAddress, headAddress);
         }
 
@@ -245,10 +246,14 @@ namespace FASTER.core
 
             // By default first page has one extra record
             var capacity = hlog.GetCapacityNumPages();
+            var recoveryDevice = Devices.CreateLogDevice(directoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid), false);
+            var objectLogRecoveryDevice = Devices.CreateObjectLogDevice(directoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid), false);
+            recoveryDevice.Initialize(hlog.GetSegmentSize());
+            objectLogRecoveryDevice.Initialize(hlog.GetSegmentSize());
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage)
             {
-                recoveryDevice = FasterFactory.CreateLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
-                objectLogRecoveryDevice = FasterFactory.CreateObjectLogDevice(DirectoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid)),
+                recoveryDevice = recoveryDevice,
+                objectLogRecoveryDevice = objectLogRecoveryDevice,
                 recoveryDevicePageOffset = startPage
             };
 
@@ -342,10 +347,8 @@ namespace FASTER.core
                                      long pagePhysicalAddress,
                                      int version)
         {
-            var key = default(Key*);
             var hash = default(long);
             var tag = default(ushort);
-            var info = default(RecordInfo*);
             var pointer = default(long);
             var recordStart = default(long);
             var bucket = default(HashBucket*);
@@ -356,24 +359,23 @@ namespace FASTER.core
             while (pointer < untilLogicalAddressInPage)
             {
                 recordStart = pagePhysicalAddress + pointer;
-                info = Layout.GetInfo(recordStart);
+                ref RecordInfo info = ref hlog.GetInfo(recordStart);
 
-                if (info->IsNull())
+                if (info.IsNull())
                 {
                     pointer += RecordInfo.GetLength();
                     continue;
                 }
 
-                if (!info->Invalid)
+                if (!info.Invalid)
                 {
-                    key = Layout.GetKey(recordStart);
-                    hash = Key.GetHashCode(key);
+                    hash = comparer.GetHashCode64(ref hlog.GetKey(recordStart));
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default(HashBucketEntry);
                     FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
 
-                    if (info->Version <= version)
+                    if (info.Version <= version)
                     {
                         entry.Address = pageLogicalAddress + pointer;
                         entry.Tag = tag;
@@ -383,10 +385,10 @@ namespace FASTER.core
                     }
                     else
                     {
-                        info->Invalid = true;
-                        if (info->PreviousAddress < startRecoveryAddress)
+                        info.Invalid = true;
+                        if (info.PreviousAddress < startRecoveryAddress)
                         {
-                            entry.Address = info->PreviousAddress;
+                            entry.Address = info.PreviousAddress;
                             entry.Tag = tag;
                             entry.Pending = false;
                             entry.Tentative = false;
@@ -394,7 +396,7 @@ namespace FASTER.core
                         }
                     }
                 }
-                pointer += Layout.GetPhysicalSize(recordStart);
+                pointer += hlog.GetRecordSize(recordStart);
             }
         }
 
@@ -408,6 +410,11 @@ namespace FASTER.core
             // Set the page status to flushed
             var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
 
+            if (result.freeBuffer1.buffer != null)
+            {
+                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                result.freeBuffer1.Return();
+            }
             int index = hlog.GetPageIndexForPage(result.page);
             result.context.readStatus[index] = ReadStatus.Done;
             Interlocked.MemoryBarrier();

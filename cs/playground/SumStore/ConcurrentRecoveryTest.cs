@@ -24,7 +24,7 @@ namespace SumStore
         const long checkpointInterval = (1 << 22);
         int threadCount;
         int numActiveThreads;
-        ICustomFasterKv fht;
+        FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
         BlockingCollection<Input[]> inputArrays;
         List<Guid> tokens;
         public ConcurrentRecoveryTest(int threadCount)
@@ -32,12 +32,14 @@ namespace SumStore
             this.threadCount = threadCount;
             tokens = new List<Guid>();
 
-            var log = FasterFactory.CreateLogDevice("logs\\hlog");
+            var log = Devices.CreateLogDevice("logs\\hlog");
 
             // Create FASTER index
-            fht = FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFasterKv>
-                (keySpace, new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = "logs" });
+            fht = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, Functions>
+                (keySpace, new Functions(), 
+                new LogSettings { LogDevice = log }, 
+                new CheckpointSettings { CheckpointDir = "logs" });
             numActiveThreads = 0;
 
             inputArrays = new BlockingCollection<Input[]>();
@@ -45,7 +47,7 @@ namespace SumStore
             Prepare();
         }
 
-        public unsafe void Prepare()
+        public void Prepare()
         {
             Console.WriteLine("Creating Input Arrays");
 
@@ -70,7 +72,7 @@ namespace SumStore
             }
         }
 
-        private unsafe void CreateInputArrays(int threadId)
+        private void CreateInputArrays(int threadId)
         {
             var inputArray = new Input[numOps];
             for (int i = 0; i < numOps; i++)
@@ -83,7 +85,7 @@ namespace SumStore
         }
 
 
-        public unsafe void Populate()
+        public void Populate()
         {
             Thread[] workers = new Thread[threadCount];
             for (int idx = 0; idx < threadCount; ++idx)
@@ -114,11 +116,9 @@ namespace SumStore
             }
         }
 
-        private unsafe void PopulateWorker(int threadId)
+        private void PopulateWorker(int threadId)
         {
             Native32.AffinitizeThreadRoundRobin((uint)threadId);
-
-            Empty context;
 
             var success = inputArrays.TryTake(out Input[] inputArray);
             if(!success)
@@ -133,29 +133,25 @@ namespace SumStore
             Interlocked.Increment(ref numActiveThreads);
 
             // Process the batch of input data
-            fixed (Input* input = inputArray)
+            for (long i = 0; i < numOps; i++)
             {
-                for (long i = 0; i < numOps; i++)
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+
+                if ((i+1) % checkpointInterval == 0 && numActiveThreads == threadCount)
                 {
-                    fht.RMW(&((input + i)->adId), input + i, &context, i);
-
-
-                    if ((i+1) % checkpointInterval == 0 && numActiveThreads == threadCount)
+                    if(fht.TakeFullCheckpoint(out Guid token))
                     {
-                        if(fht.TakeFullCheckpoint(out Guid token))
-                        {
-                            tokens.Add(token);
-                        }
+                        tokens.Add(token);
                     }
+                }
 
-                    if (i % completePendingInterval == 0)
-                    {
-                        fht.CompletePending(false);
-                    }
-                    else if (i % refreshInterval == 0)
-                    {
-                        fht.Refresh();
-                    }
+                if (i % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (i % refreshInterval == 0)
+                {
+                    fht.Refresh();
                 }
             }
 
@@ -171,7 +167,7 @@ namespace SumStore
         }
 
 
-        public unsafe void Continue()
+        public void Continue()
         {
             Console.WriteLine("Ready to Run. version to recover? [Enter]");
             var line = Console.ReadLine();
@@ -209,11 +205,9 @@ namespace SumStore
             }
         }
 
-        private unsafe void ContinueWorker(int threadId, Guid guid)
+        private void ContinueWorker(int threadId, Guid guid)
         {
             Native32.AffinitizeThreadRoundRobin((uint)threadId);
-
-            Empty context;
 
             var success = inputArrays.TryTake(out Input[] inputArray);
             if (!success)
@@ -230,28 +224,25 @@ namespace SumStore
             Console.WriteLine("Thread {0} starting from {1}", threadId, startNum + 1);
 
             // Prpcess the batch of input data
-            fixed (Input* input = inputArray)
+            for (long i = startNum + 1; i < numOps; i++)
             {
-                for (long i = startNum + 1; i < numOps; i++)
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+
+                if ((i+1) % checkpointInterval == 0 && numActiveThreads == threadCount)
                 {
-                    fht.RMW(&((input + i)->adId), input + i, &context, i);
+                    if (fht.TakeFullCheckpoint(out Guid token))
+                    {
+                        Console.WriteLine("Calling TakeCheckpoint");
+                    }
+                }
 
-                    if ((i+1) % checkpointInterval == 0 && numActiveThreads == threadCount)
-                    {
-                        if (fht.TakeFullCheckpoint(out Guid token))
-                        {
-                            Console.WriteLine("Calling TakeCheckpoint");
-                        }
-                    }
-
-                    if (i % completePendingInterval == 0)
-                    {
-                        fht.CompletePending(false);
-                    }
-                    else if (i % refreshInterval == 0)
-                    {
-                        fht.Refresh();
-                    }
+                if (i % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (i % refreshInterval == 0)
+                {
+                    fht.Refresh();
                 }
             }
 
@@ -266,13 +257,12 @@ namespace SumStore
             Console.WriteLine("Populate successful on thread {0}", threadId);
         }
 
-        public unsafe void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
+        public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
         {
             // Recover
             fht.Recover(indexToken, hybridLogToken);
 
             // Create array for reading
-            Empty context;
             var inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
@@ -282,14 +272,14 @@ namespace SumStore
 
             // Register with thread
             fht.StartSession();
+            Input input = default(Input);
+            Output output = default(Output);
 
             // Issue read requests
-            fixed (Input* input = inputArray)
+            for (var i = 0; i < numUniqueKeys; i++)
             {
-                for (var i = 0; i < numUniqueKeys; i++)
-                {
-                    fht.Read(&((input + i)->adId), null, (Output*)&((input + i)->numClicks), &context, i);
-                }
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests

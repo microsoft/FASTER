@@ -192,3 +192,4 @@ packages/
 .vs/
 *.lib
 nativebin/
+/cs/benchmark/Properties/launchSettings.json

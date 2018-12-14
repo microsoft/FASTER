@@ -10,6 +10,11 @@ using NUnit.Framework;
 
 namespace FASTER.test.recovery.objectstore
 {
+    internal struct StructTuple<T1, T2>
+    {
+        public T1 Item1;
+        public T2 Item2;
+    }
 
     [TestFixture]
     internal class ObjectRecoveryTests
@@ -20,7 +25,7 @@ namespace FASTER.test.recovery.objectstore
         const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private IManagedFasterKV<AdId, NumClicks, Input, Output, Empty> fht;
+        private FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
         private string test_path;
         private Guid token;
         private IDevice log, objlog;
@@ -35,16 +40,16 @@ namespace FASTER.test.recovery.objectstore
                     Directory.CreateDirectory(test_path);
             }
 
-            log = FasterFactory.CreateLogDevice(test_path + "\\ort1hlog");
-            objlog = FasterFactory.CreateObjectLogDevice(test_path + "\\ort1hlog");
+            log = Devices.CreateLogDevice(test_path + "\\ort1hlog", false);
+            objlog = Devices.CreateObjectLogDevice(test_path + "\\ort1hlog", false);
 
-            fht = 
-                FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions>
+            fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (
                     keySpace, new Functions(),
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.FoldOver });
+                    new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot },
+                    new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
+                    );
         }
 
         [TearDown]
@@ -92,11 +97,14 @@ namespace FASTER.test.recovery.objectstore
         public unsafe void Populate()
         {
             // Prepare the dataset
-            var inputArray = new Tuple<AdId, Input>[numOps];
+            var inputArray = new StructTuple<AdId, Input>[numOps];
             for (int i = 0; i < numOps; i++)
             {
-                inputArray[i] = new Tuple<AdId, Input>
-                    (new AdId { adId = i % numUniqueKeys }, new Input { numClicks = 1 });
+                inputArray[i] = new StructTuple<AdId, Input>
+                {
+                    Item1 = new AdId { adId = i % numUniqueKeys },
+                    Item2 = new Input { numClicks = new NumClicks { numClicks = 1 } }
+                };
             }
 
             // Register thread with FASTER
@@ -106,7 +114,7 @@ namespace FASTER.test.recovery.objectstore
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                fht.RMW(inputArray[i].Item1, inputArray[i].Item2, default(Empty), i);
+                fht.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default, i);
 
                 if ((i + 1) % checkpointInterval == 0)
                 {
@@ -146,10 +154,14 @@ namespace FASTER.test.recovery.objectstore
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            var inputArray = new Tuple<AdId, Input>[numUniqueKeys];
+            var inputArray = new StructTuple<AdId, Input>[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
-                inputArray[i] = new Tuple<AdId, Input>(new AdId { adId = i }, new Input { numClicks = 0 });
+                inputArray[i] = new StructTuple<AdId, Input>
+                {
+                    Item1 = new AdId { adId = i },
+                    Item2 = new Input { numClicks = new NumClicks { numClicks = 0 } }
+                };
             }
 
             var outputArray = new Output[numUniqueKeys];
@@ -161,10 +173,11 @@ namespace FASTER.test.recovery.objectstore
             // Register with thread
             fht.StartSession();
 
+            Input input = default(Input);
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                fht.Read(inputArray[i].Item1, null, ref outputArray[i], default(Empty), i);
+                fht.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], Empty.Default, i);
             }
 
             // Complete all pending requests
@@ -173,12 +186,9 @@ namespace FASTER.test.recovery.objectstore
             // Release
             fht.StopSession();
 
-            // Set checkpoint directory
-            Config.CheckpointDirectory = test_path;
-
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion);
+            checkpointInfo.Recover(cprVersion, new DirectoryConfiguration(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
@@ -208,11 +218,11 @@ namespace FASTER.test.recovery.objectstore
             for (long i = 0; i < numUniqueKeys; i++)
             {
                 Assert.IsTrue(
-                    expected[i] == outputArray[i].numClicks.numClicks,
+                    expected[i] == outputArray[i].value.numClicks,
                     "Debug error for AdId {0}: Expected ({1}), Found({2})", 
                     inputArray[i].Item1.adId,
                     expected[i], 
-                    outputArray[i].numClicks.numClicks);
+                    outputArray[i].value.numClicks);
             }
         }
     }

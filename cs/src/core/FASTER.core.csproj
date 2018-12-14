@@ -35,40 +35,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="1.1.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="2.8.2" />
-    <PackageReference Include="System.Reflection.Emit.ILGeneration" Version="4.3.0" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.1" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(TargetFramework)'!='net46'">
-    <PackageReference Include="System.Runtime.Loader" Version="4.3.0" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.2" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Index/FASTER/Checkpoint.cs" />
     <EmbeddedResource Include="Index/Common/Contexts.cs" />
-    <EmbeddedResource Include="Index/FASTER/AsyncIO.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTER.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTERBase.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTERImpl.cs" />
     <EmbeddedResource Include="Index/FASTER/FASTERThread.cs" />
-    <EmbeddedResource Include="ManagedLayer/IFASTER_Mixed.cs" />
     <EmbeddedResource Include="Index/FASTER/IndexCheckpoint.cs" />
     <EmbeddedResource Include="Index/FASTER/IndexRecovery.cs" />
     <EmbeddedResource Include="Index/FASTER/Recovery.cs" />
-    <EmbeddedResource Include="Index/Common/Layout.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedContextWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedFunctionsWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedInputWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedKeyWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedManagedFAST.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedOutputWrapper.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedUnwrappedTypes.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedUserFunctions.cs" />
-    <EmbeddedResource Include="ManagedLayer/MixedValueWrapper.cs" />
     <EmbeddedResource Include="Utilities/AsyncResultTypes.cs" />
     <EmbeddedResource Include="Utilities/StateTransitions.cs" />
-    <EmbeddedResource Include="Allocator/PersistentMemoryMalloc.cs" />
-    <EmbeddedResource Include="Allocator/PMMAsyncIO.cs" />
   </ItemGroup>
 
 </Project>

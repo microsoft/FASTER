@@ -11,10 +11,11 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : new()
+        where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Guid InternalAcquire()
         {
             Phase phase = _systemState.phase;
@@ -28,7 +29,6 @@ namespace FASTER.core
             return threadCtx.guid;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long InternalContinue(Guid guid)
         {
             if (_hybridLogCheckpoint.info.continueTokens != null)
@@ -65,12 +65,11 @@ namespace FASTER.core
             HandleCheckpointingPhases();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRelease()
         {
             Debug.Assert(threadCtx.retryRequests.Count == 0 &&
                     threadCtx.ioPendingRequests.Count == 0);
-            if (prevThreadCtx != default(ExecutionContext))
+            if (prevThreadCtx != default(FasterExecutionContext))
             {
                 Debug.Assert(prevThreadCtx.retryRequests.Count == 0 &&
                     prevThreadCtx.ioPendingRequests.Count == 0);
@@ -79,10 +78,9 @@ namespace FASTER.core
             epoch.Release();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitLocalContext(ref ExecutionContext context, Guid token)
+        internal void InitLocalContext(ref FasterExecutionContext context, Guid token)
         {
-            context = new ExecutionContext
+            context = new FasterExecutionContext
             {
                 phase = _systemState.phase,
                 version = _systemState.version,
@@ -91,7 +89,7 @@ namespace FASTER.core
                 totalPending = 0,
                 guid = token,
                 retryRequests = new Queue<PendingContext>(),
-                readyResponses = new BlockingCollection<AsyncIOContext>(),
+                readyResponses = new BlockingCollection<AsyncIOContext<Key, Value>>(),
                 ioPendingRequests = new Dictionary<long, PendingContext>()
             };
 
@@ -101,7 +99,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool InternalCompletePending(bool wait = false)
         {
             do
@@ -143,8 +140,7 @@ namespace FASTER.core
             return false;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompleteRetryRequests(ExecutionContext context)
+        internal void CompleteRetryRequests(FasterExecutionContext context)
         {
             int count = context.retryRequests.Count;
             for (int i = 0; i < count; i++)
@@ -154,18 +150,18 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompleteIOPendingRequests(ExecutionContext context)
+        internal void CompleteIOPendingRequests(FasterExecutionContext context)
         {
-            while (context.readyResponses.TryTake(out AsyncIOContext request))
+            if (context.readyResponses.Count == 0) return;
+
+            while (context.readyResponses.TryTake(out AsyncIOContext<Key, Value> request))
             {
                 InternalContinuePendingRequestAndCallback(context, request);
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRetryRequestAndCallback(
-                                    ExecutionContext ctx,
+                                    FasterExecutionContext ctx,
                                     PendingContext pendingContext)
         {
             var status = default(Status);
@@ -188,9 +184,9 @@ namespace FASTER.core
                     internalStatus = InternalRetryPendingRMW(ctx, ref pendingContext);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(pendingContext.key, 
-                                                    pendingContext.value, 
-                                                    pendingContext.userContext, 
+                    internalStatus = InternalUpsert(ref pendingContext.key, 
+                                                    ref pendingContext.value, 
+                                                    ref pendingContext.userContext, 
                                                     ref pendingContext);
                     break;
                 case OperationType.READ:
@@ -217,13 +213,13 @@ namespace FASTER.core
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
-                        Functions.RMWCompletionCallback(pendingContext.key,
-                                                pendingContext.input,
+                        functions.RMWCompletionCallback(ref pendingContext.key,
+                                                ref pendingContext.input,
                                                 pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
-                        Functions.UpsertCompletionCallback(pendingContext.key,
-                                                 pendingContext.value,
+                        functions.UpsertCompletionCallback(ref pendingContext.key,
+                                                 ref pendingContext.value,
                                                  pendingContext.userContext);
                         break;
                     default:
@@ -233,10 +229,9 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalContinuePendingRequestAndCallback(
-                                    ExecutionContext ctx,
-                                    AsyncIOContext request)
+                                    FasterExecutionContext ctx,
+                                    AsyncIOContext<Key, Value> request)
         {
             var handleLatches = false;
             if ((ctx.version < threadCtx.version) // Thread has already shifted to (v+1)
@@ -264,17 +259,6 @@ namespace FASTER.core
                     internalStatus = InternalContinuePendingRMW(ctx, request, ref pendingContext); ;
                 }
                 
-                // Delete key, value, record
-                if (Key.HasObjectsToSerialize())
-                {
-                    var physicalAddress = (long)request.record.GetValidPointer();
-                    Key.Free(Layout.GetKey(physicalAddress));
-                }
-                if (Value.HasObjectsToSerialize())
-                {
-                    var physicalAddress = (long)request.record.GetValidPointer();
-                    Value.Free(Layout.GetValue(physicalAddress));
-                }
                 request.record.Return();
 
                 // Handle operation status
@@ -295,16 +279,16 @@ namespace FASTER.core
 
                     if (pendingContext.type == OperationType.READ)
                     {
-                        Functions.ReadCompletionCallback(pendingContext.key, 
-                                                         pendingContext.input, 
-                                                         pendingContext.output, 
+                        functions.ReadCompletionCallback(ref pendingContext.key, 
+                                                         ref pendingContext.input, 
+                                                         ref pendingContext.output, 
                                                          pendingContext.userContext,
                                                          status);
                     }
                     else
                     {
-                        Functions.RMWCompletionCallback(pendingContext.key,
-                                                        pendingContext.input,
+                        functions.RMWCompletionCallback(ref pendingContext.key,
+                                                        ref pendingContext.input,
                                                         pendingContext.userContext,
                                                         status);
                     }

@@ -16,99 +16,119 @@ using System.Diagnostics;
 
 namespace FASTER.test.recovery.objectstore
 {
-    public class AdId : IFasterKey<AdId>
+    public class AdId : IFasterEqualityComparer<AdId>
     {
         public long adId;
 
-        public AdId Clone()
+        public long GetHashCode64(ref AdId key)
         {
-            return this;
+            return Utility.GetHashCode(key.adId);
         }
-
-        public long GetHashCode64()
+        public bool Equals(ref AdId k1, ref AdId k2)
         {
-            return Utility.GetHashCode(adId);
-        }
-
-        public bool Equals(AdId otherAdId)
-        {
-            return adId == otherAdId.adId;
-        }
-        public void Serialize(Stream toStream)
-        {
-            new BinaryWriter(toStream).Write(adId);
-        }
-
-        public void Deserialize(Stream fromStream)
-        {
-            adId = new BinaryReader(fromStream).ReadInt64();
+            return k1.adId == k2.adId;
         }
     }
 
-
-    public class NumClicks : IFasterValue<NumClicks>
+    public class AdIdSerializer : BinaryObjectSerializer<AdId>
     {
-        public long numClicks;
-
-        public NumClicks Clone()
+        public override void Deserialize(ref AdId obj)
         {
-            return this;
-        }
-        public void Serialize(Stream toStream)
-        {
-            new BinaryWriter(toStream).Write(numClicks);
+            obj.adId = reader.ReadInt64();
         }
 
-        public void Deserialize(Stream fromStream)
+        public override void Serialize(ref AdId obj)
         {
-            numClicks = new BinaryReader(fromStream).ReadInt64();
+            writer.Write(obj.adId);
         }
     }
 
 
     public class Input
     {
-        public long numClicks;
-    }
-
-    public class Output
-    {
+        public AdId adId;
         public NumClicks numClicks;
     }
 
-
-    public class Functions : IUserFunctions<AdId, NumClicks, Input, Output, Empty>
+    public class NumClicks
     {
-        public void CopyUpdater(AdId key, Input input, NumClicks oldValue, ref NumClicks newValue)
+        public long numClicks;
+    }
+
+    public class NumClicksSerializer : BinaryObjectSerializer<NumClicks>
+    {
+        public override void Deserialize(ref NumClicks obj)
         {
-            newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks };
+            obj.numClicks = reader.ReadInt64();
         }
 
-        public void InitialUpdater(AdId key, Input input, ref NumClicks value)
+        public override void Serialize(ref NumClicks obj)
         {
-            value = new NumClicks { numClicks = input.numClicks };
+            writer.Write(obj.numClicks);
         }
+    }
 
-        public void InPlaceUpdater(AdId key, Input input, ref NumClicks value)
-        {
-            value.numClicks += input.numClicks;
-        }
 
-        public void ReadCompletionCallback(Empty ctx, Output output, Status status)
-        {
-        }
+    public class Output
+    {
+        public NumClicks value;
+    }
 
-        public void Reader(AdId key, Input input, NumClicks value, ref Output dst)
-        {
-            dst.numClicks = value;
-        }
-
-        public void RMWCompletionCallback(Empty ctx, Status status)
+    public class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>
+    {
+        public void RMWCompletionCallback(ref AdId key, ref Input input, Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(Empty ctx)
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
         {
+        }
+
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
+        {
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+        }
+
+        // Read functions
+        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        {
+            dst.value = value;
+        }
+
+        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        {
+            dst.value = value;
+        }
+
+        // Upsert functions
+        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        {
+            dst = src;
+        }
+
+        public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        {
+            dst = src;
+        }
+
+        // RMW functions
+        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        {
+            value = input.numClicks;
+        }
+
+        public void InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        {
+            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+        }
+
+        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        {
+            newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks.numClicks };
         }
     }
 }

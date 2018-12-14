@@ -11,245 +11,103 @@ using FASTER.core;
 using System.Runtime.CompilerServices;
 using System.IO;
 using System.Diagnostics;
+using NUnit.Framework;
 
 namespace FASTER.test
 {
-
-    public unsafe struct KeyStruct
+    public struct KeyStruct : IFasterEqualityComparer<KeyStruct>
     {
-        public const int physicalSize = sizeof(long) + sizeof(long);
         public long kfield1;
         public long kfield2;
 
-        public static long GetHashCode(KeyStruct* key)
+        public long GetHashCode64(ref KeyStruct key)
         {
-            return Utility.GetHashCode(*((long*)key));
+            return Utility.GetHashCode(key.kfield1);
         }
-        public static bool Equals(KeyStruct* k1, KeyStruct* k2)
+        public bool Equals(ref KeyStruct k1, ref KeyStruct k2)
         {
-            return k1->kfield1 == k2->kfield1 && k1->kfield2 == k2->kfield2;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(KeyStruct* key)
-        {
-            return physicalSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Copy(KeyStruct* src, KeyStruct* dst)
-        {
-            dst->kfield1 = src->kfield1;
-            dst->kfield2 = src->kfield2;
-        }
-
-        #region Serialization
-        public static bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public static void Serialize(KeyStruct* key, Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public static void Deserialize(KeyStruct* key, Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        public static void Free(KeyStruct* key)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
-
-        public static KeyStruct* MoveToContext(KeyStruct* key)
-        {
-            return key;
+            return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
         }
     }
-    public unsafe struct ValueStruct
+
+    public struct ValueStruct
     {
-        public const int physicalSize = sizeof(long) + sizeof(long);
         public long vfield1;
         public long vfield2;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(ValueStruct* input)
-        {
-            return physicalSize;
-        }
-
-        public static void Copy(ValueStruct* src, ValueStruct* dst)
-        {
-            dst->vfield1 = src->vfield1;
-            dst->vfield2 = src->vfield2;
-        }
-
-        // Shared read/write capabilities on value
-        public static void AcquireReadLock(ValueStruct* value)
-        {
-        }
-
-        public static void ReleaseReadLock(ValueStruct* value)
-        {
-        }
-
-        public static void AcquireWriteLock(ValueStruct* value)
-        {
-        }
-
-        public static void ReleaseWriteLock(ValueStruct* value)
-        {
-        }
-
-        #region Serialization
-        public static bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public static void Serialize(ValueStruct* key, Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public static void Deserialize(ValueStruct* key, Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        public static void Free(ValueStruct* key)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
-
-        public static ValueStruct* MoveToContext(ValueStruct* value)
-        {
-            return value;
-        }
     }
-    public unsafe struct InputStruct
+
+    public struct InputStruct
     {
         public long ifield1;
         public long ifield2;
-
-        public static InputStruct* MoveToContext(InputStruct* input)
-        {
-            return input;
-        }
     }
-    public unsafe struct OutputStruct
+
+    public struct OutputStruct
     {
         public ValueStruct value;
-
-        public static OutputStruct* MoveToContext(OutputStruct* output)
-        {
-            return output;
-        }
-
     }
-    public unsafe interface ICustomFaster
+
+    public class Functions : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
     {
-        /* Thread-related operations */
-        Guid StartSession();
-        long ContinueSession(Guid guid);
-        void StopSession();
-        void Refresh();
-
-        /* Store Interface */
-        Status Read(KeyStruct* key, InputStruct* input, OutputStruct* output, Empty* context, long lsn);
-        Status Upsert(KeyStruct* key, ValueStruct* value, Empty* context, long lsn);
-        Status RMW(KeyStruct* key, InputStruct* input, Empty* context, long lsn);
-        bool CompletePending(bool wait);
-        bool ShiftBeginAddress(long untilAddress);
-
-        /* Statistics */
-        long LogTailAddress { get; }
-        long LogReadOnlyAddress { get; }
-
-        void DumpDistribution();
-        void Dispose();
-    }
-    public unsafe class Functions
-    {
-        public static void RMWCompletionCallback(KeyStruct* key, InputStruct* output, Empty* ctx, Status status)
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct output, Empty ctx, Status status)
         {
         }
 
-        public static void ReadCompletionCallback(KeyStruct* key, InputStruct* input, OutputStruct* output, Empty* ctx, Status status)
+        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status)
+        {
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output.value.vfield1 == key.kfield1);
+            Assert.IsTrue(output.value.vfield2 == key.kfield2);
+        }
+
+        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, Empty ctx)
         {
         }
 
-        public static void UpsertCompletionCallback(KeyStruct* key, ValueStruct* output, Empty* ctx)
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
-        }
-
-        public static void PersistenceCallback(long thread_id, long serial_num)
-        {
-            Debug.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
         }
 
         // Read functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleReader(KeyStruct* key, InputStruct* input, ValueStruct* value, OutputStruct* dst)
+        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
-            ValueStruct.Copy(value, (ValueStruct*)dst);
+            dst.value = value;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentReader(KeyStruct* key, InputStruct* input, ValueStruct* value, OutputStruct* dst)
+        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
         {
-            ValueStruct.AcquireReadLock(value);
-            ValueStruct.Copy(value, (ValueStruct*)dst);
-            ValueStruct.ReleaseReadLock(value);
+            dst.value = value;
         }
 
         // Upsert functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleWriter(KeyStruct* key, ValueStruct* src, ValueStruct* dst)
+        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
-            ValueStruct.Copy(src, dst);
+            dst = src;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentWriter(KeyStruct* key, ValueStruct* src, ValueStruct* dst)
+        public void ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
-            ValueStruct.AcquireWriteLock(dst);
-            ValueStruct.Copy(src, dst);
-            ValueStruct.ReleaseWriteLock(dst);
+            dst = src;
         }
 
         // RMW functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int InitialValueLength(KeyStruct* key, InputStruct* input)
+        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
-            return ValueStruct.GetLength(default(ValueStruct*));
+            value.vfield1 = input.ifield1;
+            value.vfield2 = input.ifield2;
         }
 
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitialUpdater(KeyStruct* key, InputStruct* input, ValueStruct* value)
+        public void InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
-            ValueStruct.Copy((ValueStruct*)input, value);
+            value.vfield1 += input.ifield1;
+            value.vfield2 += input.ifield2;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InPlaceUpdater(KeyStruct* key, InputStruct* input, ValueStruct* value)
+        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
         {
-            ValueStruct.AcquireWriteLock(value);
-            value->vfield1 += input->ifield1;
-            value->vfield2 += input->ifield2;
-            ValueStruct.ReleaseWriteLock(value);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void CopyUpdater(KeyStruct* key, InputStruct* input, ValueStruct* oldValue, ValueStruct* newValue)
-        {
-            newValue->vfield1 = oldValue->vfield1 + input->ifield1;
-            newValue->vfield2 = oldValue->vfield2 + input->ifield2;
+            newValue.vfield1 = oldValue.vfield1 + input.ifield1;
+            newValue.vfield2 = oldValue.vfield2 + input.ifield2;
         }
     }
-
 }

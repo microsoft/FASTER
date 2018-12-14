@@ -4,7 +4,6 @@
 #pragma warning disable 0162
 
 //#define DASHBOARD
-//#define USE_CODEGEN
 
 using FASTER.core;
 using System;
@@ -55,7 +54,6 @@ namespace FASTER.benchmark
         Key[] init_keys_;
 
         Key[] txn_keys_;
-        Key* txn_keys_ptr;
 
         long idx_ = 0;
 
@@ -135,9 +133,7 @@ namespace FASTER.benchmark
                     chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 }
 
-                var local_txn_keys_ptr = txn_keys_ptr + chunk_idx;
-
-                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !done; ++idx, ++local_txn_keys_ptr)
+                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !done; ++idx)
                 {
                     Op op;
                     int r = (int)rng.Generate(100);
@@ -152,13 +148,13 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store[*local_txn_keys_ptr] = value;
+                                store[txn_keys_[idx]] = value;
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                if (store.TryGetValue(*local_txn_keys_ptr, out value))
+                                if (store.TryGetValue(txn_keys_[idx], out value))
                                 {
                                     ++reads_done;
                                 }
@@ -166,7 +162,7 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                store.AddOrUpdate(*local_txn_keys_ptr, *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
+                                store.AddOrUpdate(txn_keys_[idx], *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
                                 ++writes_done;
                                 break;
                             }
@@ -434,9 +430,9 @@ namespace FASTER.benchmark
                 {
                     stream.Position = offset;
                     int size = stream.Read(chunk, 0, kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
+                    for (int idx = 0; idx < size; idx += 8)
                     {
-                        init_keys_[count] = *((Key*)(chunk_ptr + idx));
+                        init_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
                     }
                     if (size == kFileChunkSize)
@@ -466,8 +462,6 @@ namespace FASTER.benchmark
                 Console.WriteLine("loading txns from " + txn_filename + " into memory...");
 
                 txn_keys_ = new Key[kTxnCount];
-                GCHandle handle2 = GCHandle.Alloc(txn_keys_, GCHandleType.Pinned);
-                txn_keys_ptr = (Key*)handle2.AddrOfPinnedObject();
 
                 count = 0;
                 long offset = 0;
@@ -476,7 +470,7 @@ namespace FASTER.benchmark
                 {
                     stream.Position = offset;
                     int size = stream.Read(chunk, 0, kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
+                    for (int idx = 0; idx < size; idx += 8)
                     {
                         txn_keys_[count] = *((Key*)(chunk_ptr + idx));
                         ++count;
@@ -545,8 +539,6 @@ namespace FASTER.benchmark
             RandomGenerator generator = new RandomGenerator();
 
             txn_keys_ = new Key[kTxnCount];
-            GCHandle handle2 = GCHandle.Alloc(txn_keys_, GCHandleType.Pinned);
-            txn_keys_ptr = (Key*)handle2.AddrOfPinnedObject();
 
             for (int idx = 0; idx < kTxnCount; idx++)
             {

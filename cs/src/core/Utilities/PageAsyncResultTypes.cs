@@ -12,7 +12,7 @@ namespace FASTER.core
     /// Result of async page read
     /// </summary>
     /// <typeparam name="TContext"></typeparam>
-    public struct PageAsyncReadResult<TContext> : IAsyncResult
+    public class PageAsyncReadResult<TContext> : IAsyncResult
     {
         /// <summary>
         /// Page
@@ -29,6 +29,7 @@ namespace FASTER.core
 
         internal CountdownEvent handle;
         internal SectorAlignedMemory freeBuffer1;
+        internal SectorAlignedMemory freeBuffer2;
         internal IOCompletionCallback callback;
         internal IDevice objlogDevice;
         internal long resumeptr;
@@ -60,7 +61,16 @@ namespace FASTER.core
         public void Free()
         {
             if (freeBuffer1.buffer != null)
+            {
                 freeBuffer1.Return();
+                freeBuffer1.buffer = null;
+            }
+
+            if (freeBuffer2.buffer != null)
+            {
+                freeBuffer2.Return();
+                freeBuffer2.buffer = null;
+            }
 
             if (handle != null)
             {

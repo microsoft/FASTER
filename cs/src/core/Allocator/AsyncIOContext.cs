@@ -9,7 +9,7 @@ namespace FASTER.core
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext
+    public unsafe struct AsyncIOContext<Key, Value>
     {
         /// <summary>
         /// Id
@@ -17,9 +17,19 @@ namespace FASTER.core
         public long id;
 
         /// <summary>
-        /// Key pointer
+        /// Key
         /// </summary>
-        public IntPtr key;
+        public Key request_key;
+
+        /// <summary>
+        /// Retrieved key
+        /// </summary>
+        public Key key;
+
+        /// <summary>
+        /// Retrieved value
+        /// </summary>
+        public Value value;
 
         /// <summary>
         /// Logical address
@@ -39,6 +49,6 @@ namespace FASTER.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public BlockingCollection<AsyncIOContext> callbackQueue;
+        public BlockingCollection<AsyncIOContext<Key, Value>> callbackQueue;
     }
 }

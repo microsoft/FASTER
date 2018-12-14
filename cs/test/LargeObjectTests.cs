@@ -17,55 +17,57 @@ namespace FASTER.test.largeobjects
     [TestFixture]
     internal class LargeObjectTests
     {
-        private IManagedFasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext> fht1;
-        private IManagedFasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext> fht2;
+        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions> fht1;
+        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions> fht2;
         private IDevice log, objlog;
         
         [Test]
         public void LargeObjectTest1()
         {
-            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            objlog = FasterFactory.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            MyInput input = default(MyInput);
+            MyLargeOutput output = new MyLargeOutput();
+
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
-            fht1 = FasterFactory.Create
-                <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
-                (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
+            fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
+                (128, new MyLargeFunctions(),
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot },
+                new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
-            fht2 = FasterFactory.Create
-                <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
-                (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
+            fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
+                (128, new MyLargeFunctions(),
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot },
+                new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
-
 
             int maxSize = 1000;
             int numOps = 5000;
-            //var value = new MyLargeValue(size);
 
             fht1.StartSession();
             Random r = new Random(33);
             for (int key = 0; key < numOps; key++)
             {
+                var mykey = new MyKey { key = key };
                 var value = new MyLargeValue(1+r.Next(maxSize));
-                fht1.Upsert(new MyKey { key = key }, value, null, 0);
+                fht1.Upsert(ref mykey, ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
             fht1.StopSession();
             fht1.Dispose();
 
-            MyLargeOutput output = new MyLargeOutput();
             fht2.Recover(token);
             fht2.StartSession();
-            for (int key = 0; key < numOps; key++)
+            for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
-                var status = fht2.Read(new MyKey { key = key }, new MyInput(), ref output, null, 0);
+                var key = new MyKey { key = keycnt };
+                var status = fht2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                     fht2.CompletePending(true);
@@ -88,48 +90,50 @@ namespace FASTER.test.largeobjects
         [Test]
         public void LargeObjectTest2()
         {
-            log = FasterFactory.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            objlog = FasterFactory.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            MyInput input = default(MyInput);
+            MyLargeOutput output = new MyLargeOutput();
+
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
-            fht1 = FasterFactory.Create
-                <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
-                (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
+            fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
+                (128, new MyLargeFunctions(),
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver },
+                new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
-            fht2 = FasterFactory.Create
-                <MyKey, MyLargeValue, MyInput, MyLargeOutput, MyContext, MyLargeFunctions>
-                (indexSizeBuckets: 128, functions: new MyLargeFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
+            fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
+                (128, new MyLargeFunctions(),
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 29 },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver },
+                new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
-
 
             int maxSize = 1000;
             int numOps = 5000;
-            //var value = new MyLargeValue(size);
 
             fht1.StartSession();
             Random r = new Random(33);
             for (int key = 0; key < numOps; key++)
             {
+                var mykey = new MyKey { key = key };
                 var value = new MyLargeValue(1 + r.Next(maxSize));
-                fht1.Upsert(new MyKey { key = key }, value, null, 0);
+                fht1.Upsert(ref mykey, ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
             fht1.StopSession();
             fht1.Dispose();
 
-            MyLargeOutput output = new MyLargeOutput();
             fht2.Recover(token);
             fht2.StartSession();
-            for (int key = 0; key < numOps; key++)
+            for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
-                var status = fht2.Read(new MyKey { key = key }, new MyInput(), ref output, null, 0);
+                var key = new MyKey { key = keycnt };
+                var status = fht2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                     fht2.CompletePending(true);

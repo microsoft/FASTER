@@ -5,7 +5,7 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace ManagedSampleCore
+namespace StructSample
 {
     public unsafe struct ValueStruct
     {

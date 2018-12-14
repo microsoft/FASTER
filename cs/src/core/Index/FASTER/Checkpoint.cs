@@ -20,7 +20,10 @@ namespace FASTER.core
     /// <summary>
     /// Checkpoint related function of FASTER
     /// </summary>
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : new()
+        where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private class EpochPhaseIdx
         {
@@ -34,7 +37,7 @@ namespace FASTER.core
 
             public const int WaitFlush = 4;
 
-            public const int PersistenceCallback = 5;
+            public const int CheckpointCompletionCallback = 5;
         }
 
         #region Starting points
@@ -240,8 +243,12 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[hlog.segmentOffsets.Length];
-                            Array.Copy(hlog.segmentOffsets, _hybridLogCheckpoint.info.objectLogSegmentOffsets, hlog.segmentOffsets.Length);
+                            var seg = hlog.GetSegmentOffsets();
+                            if (seg != null)
+                            {
+                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+                            }
                             MakeTransition(intermediateState, nextState);
                             break;
                         }
@@ -264,10 +271,12 @@ namespace FASTER.core
                             {
                                 ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
 
-                                _hybridLogCheckpoint.snapshotFileDevice = FasterFactory.CreateLogDevice
-                                    (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = FasterFactory.CreateObjectLogDevice
-                                    (DirectoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken));
+                                _hybridLogCheckpoint.snapshotFileDevice = Devices.CreateLogDevice
+                                    (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = Devices.CreateObjectLogDevice
+                                    (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
+                                _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(hlog.GetSegmentSize());
 
                                 long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
                                 long endPage = hlog.GetPage(_hybridLogCheckpoint.info.finalLogicalAddress);
@@ -329,7 +338,7 @@ namespace FASTER.core
                             numPendingChunksToBeSplit = numChunks;
                             splitStatus = new long[numChunks];
 
-                            Initialize(1 - resizeInfo.version, state[resizeInfo.version].size * 2, hlog.GetSectorSize());
+                            Initialize(1 - resizeInfo.version, state[resizeInfo.version].size * 2, sectorSize);
 
                             resizeInfo.version = 1 - resizeInfo.version;
 
@@ -459,7 +468,7 @@ namespace FASTER.core
                     case Phase.IN_PROGRESS:
                         {
                             // Need to be very careful here as threadCtx is changing
-                            ExecutionContext ctx;
+                            FasterExecutionContext ctx;
                             if (previousState.phase == Phase.PREPARE)
                             {
                                 ctx = threadCtx;
@@ -538,17 +547,17 @@ namespace FASTER.core
 
                     case Phase.PERSISTENCE_CALLBACK:
                         {
-                            if (!prevThreadCtx.markers[EpochPhaseIdx.PersistenceCallback])
+                            if (!prevThreadCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                             {
                                 // Thread local action
-                                Functions.PersistenceCallback(LightEpoch.threadEntryIndex, prevThreadCtx.serialNum);
+                                functions.CheckpointCompletionCallback(threadCtx.guid, prevThreadCtx.serialNum);
 
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PersistenceCallback, prevThreadCtx.version))
+                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.version))
                                 {
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
 
-                                prevThreadCtx.markers[EpochPhaseIdx.PersistenceCallback] = true;
+                                prevThreadCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                             }
                             break;
                         }
@@ -593,7 +602,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AcquireSharedLatchesForAllPendingRequests()
         {
             foreach (var ctx in threadCtx.retryRequests)
@@ -670,10 +678,9 @@ namespace FASTER.core
             return nextState;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteHybridLogMetaInfo()
         {
-            string filename = DirectoryConfiguration.GetHybridLogCheckpointMetaFileName(_hybridLogCheckpointToken);
+            string filename = directoryConfiguration.GetHybridLogCheckpointMetaFileName(_hybridLogCheckpointToken);
             using (var file = new StreamWriter(filename, false))
             {
                 _hybridLogCheckpoint.info.Write(file);
@@ -681,10 +688,9 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteHybridLogContextInfo()
         {
-            string filename = DirectoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.guid);
+            string filename = directoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.guid);
             using (var file = new StreamWriter(filename, false))
             {
                 prevThreadCtx.Write(file);
@@ -693,10 +699,9 @@ namespace FASTER.core
 
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteIndexMetaFile()
         {
-            string filename = DirectoryConfiguration.GetIndexCheckpointMetaFileName(_indexCheckpointToken);
+            string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(_indexCheckpointToken);
             using (var file = new StreamWriter(filename, false))
             {
                 _indexCheckpoint.info.Write(file);
@@ -705,24 +710,21 @@ namespace FASTER.core
 
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ObtainCurrentTailAddress(ref long location)
         {
             var tailAddress = hlog.GetTailAddress();
             return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void InitializeIndexCheckpoint(Guid indexToken)
         {
-            DirectoryConfiguration.CreateIndexCheckpointFolder(indexToken);
-            _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size);
+            directoryConfiguration.CreateIndexCheckpointFolder(indexToken);
+            _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, directoryConfiguration);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
         {
-            DirectoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
+            directoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
             _hybridLogCheckpoint.Initialize(hybridLogToken, version);
         }
 
