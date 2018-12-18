@@ -83,9 +83,10 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
+            var segment = segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0;
             WriteAsync(
                 alignedSourceAddress,
-                (int)(alignedDestinationAddress >> segmentSizeBits),
+                (int)segment,
                 alignedDestinationAddress & segmentSizeMask,
                 numBytesToWrite, callback, asyncResult);
         }
@@ -100,8 +101,10 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
+            var segment = segmentSizeBits < 64 ? alignedSourceAddress >> segmentSizeBits : 0;
+
             ReadAsync(
-                (int)(alignedSourceAddress >> segmentSizeBits),
+                (int)segment,
                 alignedSourceAddress & segmentSizeMask,
                 alignedDestinationAddress,
                 aligned_read_length, callback, asyncResult);
@@ -114,9 +117,9 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         public void DeleteAddressRange(long fromAddress, long toAddress)
         {
-            DeleteSegmentRange(
-                (int)(fromAddress >> segmentSizeBits),
-                (int)(toAddress >> segmentSizeBits));
+            var fromSegment = segmentSizeBits < 64 ? fromAddress >> segmentSizeBits : 0;
+            var toSegment = segmentSizeBits < 64 ? toAddress >> segmentSizeBits : 0;
+            DeleteSegmentRange((int)fromSegment, (int)toSegment);
         }
 
         /// <summary>
