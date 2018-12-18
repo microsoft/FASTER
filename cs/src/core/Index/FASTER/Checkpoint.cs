@@ -285,12 +285,14 @@ namespace FASTER.core
                                     endPage++;
                                 }
 
-                                new Thread(() =>
-                                    hlog.AsyncFlushPagesToDevice(startPage,
-                                                                 endPage,
-                                                                 _hybridLogCheckpoint.snapshotFileDevice,
-                                                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice,
-                                                                 out _hybridLogCheckpoint.flushed)).Start();
+                                // This can be run on a new thread if we want to immediately parallelize 
+                                // the rest of the log flush
+                                hlog.AsyncFlushPagesToDevice(startPage,
+                                                                endPage,
+                                                                _hybridLogCheckpoint.info.finalLogicalAddress,
+                                                                _hybridLogCheckpoint.snapshotFileDevice,
+                                                                _hybridLogCheckpoint.snapshotFileObjectLogDevice,
+                                                                out _hybridLogCheckpoint.flushed);
                             }
 
                             WriteHybridLogMetaInfo();

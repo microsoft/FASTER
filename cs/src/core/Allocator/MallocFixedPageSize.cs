@@ -477,12 +477,16 @@ namespace FASTER.core
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
+
+            int sectorSize = (int)device.SectorSize;
             numBytesWritten = 0;
             for (int i = 0; i < numLevels; i++)
             {
                 OverflowPagesFlushAsyncResult result = default(OverflowPagesFlushAsyncResult);
-                device.WriteAsync(pointers[i], offset + numBytesWritten, alignedPageSize, AsyncFlushCallback, result);
-                numBytesWritten += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
+                uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
+
+                device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                numBytesWritten += writeSize;
             }
         }
 

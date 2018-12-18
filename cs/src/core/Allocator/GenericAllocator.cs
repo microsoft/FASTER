@@ -216,13 +216,13 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, IOCompletionCallback callback, 
+            (long startPage, long flushPage, int pageSize, IOCompletionCallback callback, 
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
         {
             // We are writing to separate device, so use fresh segment offsets
             WriteAsync(flushPage,
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)PageSize, callback, asyncResult, 
+                        (uint)pageSize, callback, asyncResult, 
                         device, objectLogDevice, flushPage, new long[SegmentBufferSize]);
         }
 
@@ -264,7 +264,7 @@ namespace FASTER.core
             asyncResult.count++;
 
             var src = values[flushPage % BufferSize];
-            var buffer = ioBufferPool.Get(PageSize);
+            var buffer = ioBufferPool.Get((int)numBytesToWrite);
 
             fixed (RecordInfo* pin = &src[0].info)
             {
@@ -375,9 +375,10 @@ namespace FASTER.core
                 valueSerializer.EndSerialize();
             }
 
+            var alignedNumBytesToWrite = (uint)((numBytesToWrite + (sectorSize - 1)) & ~(sectorSize - 1));
             // Finally write the hlog page
             device.WriteAsync((IntPtr)buffer.aligned_pointer, alignedDestinationAddress,
-                numBytesToWrite, callback, asyncResult);
+                alignedNumBytesToWrite, callback, asyncResult);
         }
 
         protected override void ReadAsync<TContext>(

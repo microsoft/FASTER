@@ -167,12 +167,14 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, IOCompletionCallback callback,
+            (long startPage, long flushPage, int pageSize, IOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
         {
+            var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
+
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)PageSize, callback, asyncResult,
+                        (uint)alignedPageSize, callback, asyncResult,
                         device);
         }
 
