@@ -313,11 +313,12 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="startPage"></param>
         /// <param name="flushPage"></param>
+        /// <param name="pageSize"></param>
         /// <param name="callback"></param>
         /// <param name="result"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
         /// <summary>
         /// Read objects to memory (async)
         /// </summary>
@@ -1155,10 +1156,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
+        /// <param name="endLogicalAddress"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completed"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
         {
             int totalNumPages = (int)(endPage - startPage);
             completed = new CountdownEvent(totalNumPages);
@@ -1171,11 +1173,13 @@ namespace FASTER.core
                     count = 1
                 };
 
-                long pageStartAddress = flushPage << LogPageSizeBits;
-                long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
+                var pageSize = PageSize;
+
+                if (flushPage == endPage - 1)
+                    pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
 
                 // Intended destination is flushPage
-                WriteAsyncToDevice(startPage, flushPage, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice);
+                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice);
             }
         }
 
