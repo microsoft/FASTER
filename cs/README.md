@@ -8,7 +8,7 @@ Table of Contents
 * [Getting FASTER](#getting-faster)
 * [Basic Concepts](#basic-concepts)
 * [Features](#features)
-* [Quick Sample](#quick-sample)
+* [Quick End-to-End Sample](#quick-end-to-end-sample)
 * [More Examples](#more-examples)
 * [Checkpointing and Recovery](#checkpointing-and-recovery)
 
