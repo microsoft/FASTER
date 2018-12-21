@@ -79,15 +79,53 @@ At the end, the thread calls:
 
 ```fht.StopSession();```
 
-You finally dispose the FASTER instance when done:
+When all threads are done operating on FASTER, you finally dispose the FASTER instance:
 
 ```fht.Dispose();```
 
-## Features
 
-
-## Quick Sample
+## Quick End-To-End Sample
  
+```
+public static void Test()
+{
+  var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
+  var fht = new FasterKV<long, long, long, long, Empty, Funcs>
+    (1L << 20, new Funcs(), new LogSettings { LogDevice = log });
+  fht.StartSession();
+  long key = 1, value = 1, input = 10, output = 0;
+  fht.Upsert(ref key, ref value, Empty.Default, 0);
+  fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+  Debug.Assert(output == value);
+  fht.RMW(ref key, ref input, Empty.Default, 0);
+  fht.RMW(ref key, ref input, Empty.Default, 0);
+  fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+  Debug.Assert(output == value + 20);
+  fht.StopSession();
+  fht.Dispose();
+  log.Close();
+}
+```
+
+Functions for this example:
+
+```
+public class Funcs : IFunctions<long, long, long, long, Empty>
+{
+  public void SingleReader(ref long key, ref long input, ref long value, ref long dst) => dst = value;
+  public void SingleWriter(ref long key, ref long src, ref long dst) => dst = src;
+  public void ConcurrentReader(ref long key, ref long input, ref long value, ref long dst) => dst = value;
+  public void ConcurrentWriter(ref long key, ref long src, ref long dst) => dst = src;
+  public void InitialUpdater(ref long key, ref long input, ref long value) => value = input;
+  public void CopyUpdater(ref long key, ref long input, ref long oldv, ref long newv) => newv = oldv + input;
+  public void InPlaceUpdater(ref long key, ref long input, ref long value) => value += input;
+  public void UpsertCompletionCallback(ref long key, ref long value, Empty ctx) { }
+  public void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status s) { }
+  public void RMWCompletionCallback(ref long key, ref long input, Empty ctx, Status s) { }
+  public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+}
+```
+
 ## More Examples
 
 Several example projects are located in cs/playground (available through the solution). You can also check out more samples in the unit tests in /cs/test, which can be run through the solution or using NUnit-Console. A basic YCSB benchmark is located in cs/benchmark, also available through the main solution.
