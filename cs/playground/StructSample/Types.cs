@@ -6,8 +6,14 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace StructSampleCore
+namespace StructSample
 {
+    public struct LongComparer : IFasterEqualityComparer<long>
+    {
+        public bool Equals(ref long k1, ref long k2) => k1 == k2;
+        public long GetHashCode64(ref long k) => Utility.GetHashCode(k);
+    }
+
     public struct Key : IFasterEqualityComparer<Key>
     {
         public long kfield1;
@@ -15,7 +21,7 @@ namespace StructSampleCore
 
         public long GetHashCode64(ref Key key)
         {
-            return Utility.GetHashCode(key.kfield1);
+            return Utility.GetHashCode(key.kfield1) ^ Utility.GetHashCode(key.kfield2);
         }
         public bool Equals(ref Key k1, ref Key k2)
         {
