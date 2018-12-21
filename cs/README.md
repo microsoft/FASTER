@@ -69,6 +69,10 @@ The user provides an instance of a type that implements `IFunctions<>`. This typ
 4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for non-blittable types such as C# class objects.*
 5. Key Equality comparer: Used for providing a better comparer for keys, implements `IFasterEqualityComparer<Key>`.
 
+The total in-memory footprint of FASTER is controlled by the following parameters:
+1. Hash table size: This parameter (the first contructor argument) times 64 is the size of the in-memory hash table in bytes.
+2. Log size: The logSettings.MemorySizeBits denotes the size of the in-memory part of the hybrid log, in bits. In other words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class objects, this size does not include the size of objects, as this information is not accessible to FASTER. The older part of the log is spilled to storage.
+
 ### Sessions (Threads)
 
 Once FASTER is instantiated, threads may use FASTER by registering themselves via the concept of a Session, using the call 
@@ -131,7 +135,10 @@ public class Funcs : IFunctions<long, long, long, long, Empty>
 
 ## More Examples
 
-Several example projects are located in cs/playground (available through the solution). You can also check out more samples in the unit tests in /cs/test, which can be run through the solution or using NUnit-Console. A basic YCSB benchmark is located in cs/benchmark, also available through the main solution.
+Several example projects are located in [cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground) (available through the solution). You can also check out more samples in the unit tests in [/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test), which can be run through the solution or using NUnit-Console. A basic YCSB benchmark is located in [cs/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/benchmark), also available through the main solution.
 
 ## Checkpointing and Recovery
 
+FASTER supports checkpoint-based recovery. Recall that each FASTER threads start a session, associated with a unique Guid. All FASTER thread operations (Read, Upsert, RMW) carry a monotonic sequence number. At any point in time, one may call `Checkpoint` to initiate an asynchronous checkpoint of FASTER. After calling `Checkpoint`, each FASTER thread is (eventually) notified of a sequence number, such that all operations until, and no operations after, that sequence number, are guaranteed to be persisted as part of that checkpoint. During recovery, threads continue their session with the same Guid using `ContinueSession`, and are provided the thread-local sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted operations since that point.
+
+FASTER supports two notions of checkpointing: Snapshot and Fold-Over. The former is a full snapshot of in-memory into a separate snapshot file, whereas the latter is an incremental checkpoint of the changes since the last checkpoint. Fold-Over effectively moves the read-only marker of the hybrid log to the tail, and thus all the data is persisted as part of the same hybrid log (there is no separate snapshot file). All subsequent updates are written to new hybrid log tail locations, which gives it its incremental nature. You can find checkpointing examples [here](https://github.com/Microsoft/FASTER/blob/master/cs/test/SimpleRecoveryTest.cs) and [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground/SumStore).
