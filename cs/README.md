@@ -22,44 +22,66 @@ You can install FASTER binaries using Nuget, from Nuget.org. Right-click on your
 
 ## Basic Concepts
 
+### FASTER Operations
+
+FASTER supports three basic operations:
+1. Read: Read data from the key-value store
+2. Upsert: Blind upsert of values into the store (does not check for prior values)
+3. Read-Modify-Write: Update values in store, used to implement operations such as Sum and Count.
+
 ### Constructor
 
-An instance of FASTER is created as follows:
+Before instantiating FASTER, you need to create storage devices that FASTER will use. If you are using blittable types, you only need the hybrid log device. If you are also using objects, you need to create a separate object log device.
 
-```var fht = new FasterKV<Key, Value, Input, Output, Context, Functions>(...);```
+```IDevice log = Devices.CreateLogDevice("C:\\Temp\\hybridlog_native.log");```
 
-#### Type Arguments
+Then, an instance of FASTER is created as follows:
+
+```
+fht = new FasterKV<Key, Value, Input, Output, Empty, Functions>
+  (1L << 20, new Functions(), new LogSettings { LogDevice = log });
+```
+
+### Type Arguments to Constructor
 
 There are six basic concepts, provided as generic type arguments when instantiating FASTER:
-1. `Key`:
-2. `Value`:
-3. `Input`:
-4. `Output`:
-5. `Context`:
-6. `Functions`:
+1. `Key`: This is the type of the key, e.g., `long`.
+2. `Value`: This is the type of the value stored in FASTER.
+3. `Input`: This is the type of input provided to FASTER when calling Read or RMW. It may be regarded as a parameter for the Read or RMW operation. For example, with RMW, it may be the delta being accumulated into the value.
+4. `Output`: This is the type of the output of a Read operation. The reader copies the relevant parts of the Value to Output.
+5. `Context`: User-defined context for the operation. Use `Empty` if there is no context necesssary.
+6. `Functions`: These is a type that implemented `IFunctions<>` and provides all callbacks necessary to use FASTER.
 
-#### Constructor Parameters
+### Callback Functions
 
-1. Hash Table Size:
-2. Log Settings:
-3. Checkpoint Settings:
-4. Serialization Settings:
-5. Key Equality comparer:
+The user provides an instance of a type that implements `IFunctions<>`. This type encapsulates all the callbacks, which are described next:
 
-#### Log Settings
+1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume there are no concurrent operations.
+2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value.
+3. Completion callbacks: Called when various operations complete.
+4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
 
-#### Checkpoint Settings
+### Constructor Parameters
 
-Covered in the section on checkpointing [below](#checkpointing-and-recovery).
-
-#### Serialization Settings
+1. Hash Table Size: This the number of buckets allocated to FASTER, where each bucket is 64 bytes (size of a cache line).
+2. Log Settings: These are setings related to the size of the log and devices used by the log.
+3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the section on checkpointing [below](#checkpointing-and-recovery).
+4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for non-blittable types such as C# class objects.*
+5. Key Equality comparer: Used for providing a better comparer for keys, implements `IFasterEqualityComparer<Key>`.
 
 ### Sessions (Threads)
 
-Once FASTER is instantiated, threads may use FASTER by registering themselves via the concept of a Session.
+Once FASTER is instantiated, threads may use FASTER by registering themselves via the concept of a Session, using the call 
 
+```fht.StartSession();```
 
+At the end, the thread calls:
 
+```fht.StopSession();```
+
+You finally dispose the FASTER instance when done:
+
+```fht.Dispose();```
 
 ## Features
 
