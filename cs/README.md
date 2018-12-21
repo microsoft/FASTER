@@ -85,7 +85,10 @@ When all threads are done operating on FASTER, you finally dispose the FASTER in
 
 
 ## Quick End-To-End Sample
- 
+
+Following is a simple end-to-end sample where all data is in memory, so we do not worry about pending 
+I/O operations. There is no checkpointing in this example as well.
+
 ```
 public static void Test()
 {
