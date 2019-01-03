@@ -2,14 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -260,12 +256,15 @@ namespace FASTER.core
         {
             Free(0);
             Free(1);
+            overflowBucketsAllocator.Dispose();
             return Status.OK;
         }
 
         private Status Free(int version)
         {
-            state[version].tableHandle.Free();
+            if (state[version].tableHandle.IsAllocated)
+                state[version].tableHandle.Free();
+
             state[version].tableRaw = null;
             state[version].tableAligned = null;
             return Status.OK;

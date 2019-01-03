@@ -4,13 +4,7 @@
 #pragma warning disable 0162
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -363,9 +357,11 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            base.Free();
+            MallocFixedPageSize<HashBucket>.Instance?.Dispose();
             MallocFixedPageSize<HashBucket>.Instance = null;
+            MallocFixedPageSize<HashBucket>.PhysicalInstance?.Dispose();
             MallocFixedPageSize<HashBucket>.PhysicalInstance = null;
-            overflowBucketsAllocator = null;
             hlog.Dispose();
         }
     }
