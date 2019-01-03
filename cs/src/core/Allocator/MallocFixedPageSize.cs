@@ -8,11 +8,8 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Linq.Expressions;
-using System.IO;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -20,7 +17,7 @@ namespace FASTER.core
     /// Memory allocator for objects
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public unsafe class MallocFixedPageSize<T>
+    public unsafe class MallocFixedPageSize<T> : IDisposable
     {
         private const bool ForceUnpinnedAllocation = false;
 
