@@ -1473,7 +1473,11 @@ namespace FASTER.core
 
         private void GarbageCollectBuckets(long hash, bool force = false)
         {
-            if (numPendingChunksToBeGCed == 0) return;
+            if (numPendingChunksToBeGCed == 0)
+            {
+                InternalRefresh();
+                return;
+            }
 
             long masked_bucket_index = hash & state[resizeInfo.version].size_mask;
             int offset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);

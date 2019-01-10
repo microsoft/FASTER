@@ -74,7 +74,7 @@ namespace FASTER.core
                 long oldBeginAddress = untilAddress;
                 if (GlobalMoveToNextState(SystemState.Make(Phase.REST, version), nextState, ref oldBeginAddress))
                 {
-                    hlog.ShiftBeginAddress(oldBeginAddress, untilAddress);
+                    InternalRefresh();
                     return true;
                 }
             }
@@ -307,9 +307,7 @@ namespace FASTER.core
                         }
                     case Phase.GC:
                         {
-                            var tmp = hlog.BeginAddress;
-                            hlog.BeginAddress = context;
-                            context = tmp;
+                            hlog.ShiftBeginAddress(context);
 
                             int numChunks = (int)(state[resizeInfo.version].size / Constants.kSizeofChunk);
                             if (numChunks == 0) numChunks = 1; // at least one chunk

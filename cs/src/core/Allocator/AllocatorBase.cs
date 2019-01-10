@@ -742,12 +742,28 @@ namespace FASTER.core
         /// <summary>
         /// Shift begin address
         /// </summary>
-        /// <param name="oldBeginAddress"></param>
         /// <param name="newBeginAddress"></param>
-        public void ShiftBeginAddress(long oldBeginAddress, long newBeginAddress)
+        public void ShiftBeginAddress(long newBeginAddress)
         {
-            epoch.BumpCurrentEpoch(() 
-                => DeleteAddressRange(oldBeginAddress, newBeginAddress));
+            // First update the begin address
+            MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
+            // Then the head address
+            var h = MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
+            // Finally the read-only address
+            var r = MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
+
+            // Clean up until begin address
+            epoch.BumpCurrentEpoch(() =>
+            {
+                if (r)
+                {
+                    MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
+                    MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
+                }
+                if (h) OnPagesClosed(newBeginAddress);
+
+                DeleteAddressRange(oldBeginAddress, newBeginAddress);
+            });
         }
 
         /// <summary>
@@ -798,8 +814,14 @@ namespace FASTER.core
             {
                 Debug.WriteLine("SafeHeadOffset shifted from {0:X} to {1:X}", oldSafeHeadAddress, newSafeHeadAddress);
 
-                for (long closePageAddress = oldSafeHeadAddress; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
+                for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
                 {
+                    if (newSafeHeadAddress < closePageAddress + PageSize)
+                    {
+                        // Partial page - do not close
+                        return;
+                    }
+
                     int closePage = (int)((closePageAddress >> LogPageSizeBits) % BufferSize);
 
                     if (!IsAllocated(closePage))
@@ -863,6 +885,33 @@ namespace FASTER.core
             long currentFlushedUntilAddress = FlushedUntilAddress;
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
             long desiredHeadAddress = (pageAlignedTailAddress - HeadOffsetLagAddress);
+
+            long newHeadAddress = desiredHeadAddress;
+            if (currentFlushedUntilAddress < newHeadAddress)
+            {
+                newHeadAddress = currentFlushedUntilAddress;
+            }
+            newHeadAddress = newHeadAddress & ~PageSizeMask;
+
+            if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
+            {
+                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
+            }
+        }
+
+        /// <summary>
+        /// Called whenever a new tail page is allocated or when the user is checking for a failed memory allocation
+        /// Tries to shift head address based on the head offset lag size.
+        /// </summary>
+        /// <param name="desiredHeadAddress"></param>
+        private void PageAlignedShiftHeadAddressToValue(long desiredHeadAddress)
+        {
+            //obtain local values of variables that can change
+            long currentHeadAddress = HeadAddress;
+            long currentFlushedUntilAddress = FlushedUntilAddress;
+
+            desiredHeadAddress = desiredHeadAddress & ~PageSizeMask;
 
             long newHeadAddress = desiredHeadAddress;
             if (currentFlushedUntilAddress < newHeadAddress)

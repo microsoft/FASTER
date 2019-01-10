@@ -96,6 +96,20 @@ namespace FASTER.test
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
                 Assert.IsTrue(output.value.vfield2 == value.vfield2);
             }
+
+            // Clean up and retry - should not find now
+            fht.ShiftBeginAddress(fht.LogTailAddress);
+
+            r = new Random(10);
+            for (int c = 0; c < 1000; c++)
+            {
+                var i = r.Next(10000);
+                OutputStruct output = default(OutputStruct);
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
+                Assert.IsTrue(fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.NOTFOUND);
+            }
         }
 
         [Test]
