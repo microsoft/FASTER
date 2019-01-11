@@ -94,7 +94,7 @@ namespace FASTER.core
             CopyReadsToTail = logSettings.CopyReadsToTail;
             this.functions = functions;
 
-            if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>() && serializerSettings?.keySerializer == null && serializerSettings?.valueSerializer == null)
+            if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
                 hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
             else
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
@@ -341,6 +341,25 @@ namespace FASTER.core
         public bool ShiftBeginAddress(long untilAddress)
         {
             return InternalShiftBeginAddress(untilAddress);
+        }
+
+        /// <summary>
+        /// Shift log head address to prune memory foorprint of hybrid log
+        /// </summary>
+        /// <param name="newHeadAddress">Address to shift head until</param>
+        /// <param name="wait">Wait to ensure shift is registered (may involve page flushing)</param>
+        public bool ShiftHeadAddress(long newHeadAddress, bool wait = false)
+        {
+            return InternalShiftHeadAddress(newHeadAddress, wait);
+        }
+
+        /// <summary>
+        /// Shift log read-only address
+        /// </summary>
+        /// <param name="newReadOnlyAddress">Address to shift read-only until</param>
+        public bool ShiftReadOnlyAddress(long newReadOnlyAddress)
+        {
+            return hlog.ShiftReadOnlyAddress(newReadOnlyAddress);
         }
 
         /// <summary>

@@ -95,6 +95,20 @@ namespace FASTER.core
         /// <param name="untilAddress">Address to shift until</param>
         bool ShiftBeginAddress(long untilAddress);
 
+        /// <summary>
+        /// Shift head address to specified address
+        /// </summary>
+        /// <param name="newHeadAddress">Address to shift head to</param>
+        /// <param name="wait">Wait until shift is registered (may involve page flushing)</param>
+        bool ShiftHeadAddress(long newHeadAddress, bool wait = false);
+
+        /// <summary>
+        /// Shift read-only address to specified address
+        /// </summary>
+        /// <param name="newReadOnlyAddress">Address to shift read-only to</param>
+        bool ShiftReadOnlyAddress(long newReadOnlyAddress);
+
+
         /* Recovery */
 
         /// <summary>

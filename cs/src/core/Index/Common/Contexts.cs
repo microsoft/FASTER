@@ -102,7 +102,7 @@ namespace FASTER.core
 
     internal class DirectoryConfiguration
     {
-        private string checkpointDir;
+        private readonly string checkpointDir;
         public DirectoryConfiguration(string checkpointDir)
         {
             this.checkpointDir = checkpointDir;

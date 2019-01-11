@@ -83,6 +83,23 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool InternalShiftHeadAddress(long untilAddress, bool wait = false)
+        {
+            // First shift read-only
+            hlog.ShiftReadOnlyAddress(untilAddress);
+
+            // Then shift head address
+            long newHeadAddress;
+            do
+            {
+                newHeadAddress = hlog.ShiftHeadAddress(untilAddress);
+            }
+            while (wait && newHeadAddress < untilAddress);
+
+            return newHeadAddress >= untilAddress;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool InternalGrowIndex()
         {
             if (_systemState.phase == Phase.GC)

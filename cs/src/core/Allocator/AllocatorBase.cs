@@ -740,6 +740,20 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Used by applications to move read-only forward
+        /// </summary>
+        /// <param name="newReadOnlyAddress"></param>
+        public bool ShiftReadOnlyAddress(long newReadOnlyAddress)
+        {
+            if (MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
+            {
+                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress, false));
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Shift begin address
         /// </summary>
         /// <param name="newBeginAddress"></param>
@@ -898,6 +912,30 @@ namespace FASTER.core
                 Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
             }
+        }
+
+        /// <summary>
+        /// Tries to shift head address to specified value
+        /// </summary>
+        /// <param name="desiredHeadAddress"></param>
+        public long ShiftHeadAddress(long desiredHeadAddress)
+        {
+            //obtain local values of variables that can change
+            long currentFlushedUntilAddress = FlushedUntilAddress;
+
+            long newHeadAddress = desiredHeadAddress;
+            if (currentFlushedUntilAddress < newHeadAddress)
+            {
+                newHeadAddress = currentFlushedUntilAddress;
+            }
+
+            if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
+            {
+                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
+                return newHeadAddress;
+            }
+            return oldHeadAddress;
         }
 
         /// <summary>
