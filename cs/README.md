@@ -33,11 +33,13 @@ FASTER supports three basic operations:
 
 Before instantiating FASTER, you need to create storage devices that FASTER will use. If you are using blittable types, you only need the hybrid log device. If you are also using objects, you need to create a separate object log device.
 
-```IDevice log = Devices.CreateLogDevice("C:\\Temp\\hybridlog_native.log");```
+```Csharp
+IDevice log = Devices.CreateLogDevice("C:\\Temp\\hybridlog_native.log");
+```
 
 Then, an instance of FASTER is created as follows:
 
-```
+```Csharp
 fht = new FasterKV<Key, Value, Input, Output, Empty, Functions>
   (1L << 20, new Functions(), new LogSettings { LogDevice = log });
 ```
@@ -93,7 +95,7 @@ When all threads are done operating on FASTER, you finally dispose the FASTER in
 Following is a simple end-to-end sample where all data is in memory, so we do not worry about pending 
 I/O operations. There is no checkpointing in this example as well.
 
-```
+```CSharp
 public static void Test()
 {
   var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
@@ -116,7 +118,7 @@ public static void Test()
 
 Functions for this example:
 
-```
+```CSharp
 public class Funcs : IFunctions<long, long, long, long, Empty>
 {
   public void SingleReader(ref long key, ref long input, ref long value, ref long dst) => dst = value;
