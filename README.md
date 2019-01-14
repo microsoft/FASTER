@@ -46,7 +46,7 @@ write-ahead log (WAL) which can kill FASTER's high performance, CPR: (1) provide
 operations, of the form “all operations until offset Ti in session i”; and (2) uses asynchronous 
 incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
 
-CPR in available in the C# and C++ versions of FASTER. More documentation on recovery in the C# version is
+CPR is available in the C# and C++ versions of FASTER. More documentation on recovery in the C# version is
 [here](https://github.com/Microsoft/FASTER/tree/master/cs#checkpointing-and-recovery). For C++, we only
 have examples in code right now. The sum-store, located [here](https://github.com/Microsoft/FASTER/tree/master/cc/playground/sum_store-dir), is a good example of checkpointing and recovery.
 
