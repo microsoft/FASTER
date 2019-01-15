@@ -247,7 +247,7 @@ namespace FASTER.core
             // By default first page has one extra record
             var capacity = hlog.GetCapacityNumPages();
             var recoveryDevice = Devices.CreateLogDevice(directoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid), false);
-            var objectLogRecoveryDevice = Devices.CreateObjectLogDevice(directoryConfiguration.GetHybridLogCheckpointFileName(recoveryInfo.guid), false);
+            var objectLogRecoveryDevice = Devices.CreateLogDevice(directoryConfiguration.GetHybridLogObjectCheckpointFileName(recoveryInfo.guid), false);
             recoveryDevice.Initialize(hlog.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(hlog.GetSegmentSize());
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage)
