@@ -290,8 +290,8 @@ namespace FASTER.core
 
                                 _hybridLogCheckpoint.snapshotFileDevice = Devices.CreateLogDevice
                                     (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = Devices.CreateObjectLogDevice
-                                    (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = Devices.CreateLogDevice
+                                    (directoryConfiguration.GetHybridLogObjectCheckpointFileName(_hybridLogCheckpointToken), false);
                                 _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(hlog.GetSegmentSize());
 

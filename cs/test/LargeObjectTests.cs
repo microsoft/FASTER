@@ -27,8 +27,8 @@ namespace FASTER.test.largeobjects
             MyInput input = default(MyInput);
             MyLargeOutput output = new MyLargeOutput();
 
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.obj.log", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 
@@ -93,8 +93,8 @@ namespace FASTER.test.largeobjects
             MyInput input = default(MyInput);
             MyLargeOutput output = new MyLargeOutput();
 
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            objlog = Devices.CreateObjectLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.obj.log", deleteOnClose: true);
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
 

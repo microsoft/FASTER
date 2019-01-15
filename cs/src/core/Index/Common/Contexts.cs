@@ -117,8 +117,6 @@ namespace FASTER.core
         public const string cpr_base_folder = "cpr-checkpoints";
         public const string cpr_meta_file = "info";
 
-        public const string hlog_file = "lss.log";
-
         public void CreateIndexCheckpointFolder(Guid token)
         {
             var directory = GetIndexCheckpointFolder(token);
@@ -186,7 +184,16 @@ namespace FASTER.core
         }
         public string GetHybridLogCheckpointFileName(Guid token)
         {
-            return String.Format("{0}\\{1}\\{2}\\{3}.dat",
+            return String.Format("{0}\\{1}\\{2}\\{3}.log",
+                                    checkpointDir,
+                                    cpr_base_folder,
+                                    token,
+                                    snapshot_file);
+        }
+
+        public string GetHybridLogObjectCheckpointFileName(Guid token)
+        {
+            return String.Format("{0}\\{1}\\{2}\\{3}.obj.log",
                                     checkpointDir,
                                     cpr_base_folder,
                                     token,
