@@ -40,8 +40,8 @@ namespace FASTER.test.recovery.objectstore
                     Directory.CreateDirectory(test_path);
             }
 
-            log = Devices.CreateLogDevice(test_path + "\\ort1hlog", false);
-            objlog = Devices.CreateObjectLogDevice(test_path + "\\ort1hlog", false);
+            log = Devices.CreateLogDevice(test_path + "\\ort1hlog.log", false);
+            objlog = Devices.CreateLogDevice(test_path + "\\ort1hlog.obj.log", false);
 
             fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (

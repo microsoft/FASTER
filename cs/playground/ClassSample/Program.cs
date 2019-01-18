@@ -134,8 +134,8 @@ namespace ClassSample
     {
         static void Main(string[] args)
         {
-            var log = Devices.CreateLogDevice(Path.GetTempPath() + "hybridlog");
-            var objlog = Devices.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
+            var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
+            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log");
 
             var h = new FasterKV
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>

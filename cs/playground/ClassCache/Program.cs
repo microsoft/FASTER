@@ -18,8 +18,8 @@ namespace ClassCache
         {
             var context = default(CacheContext);
 
-            var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hybridlog");
-            var objlog = Devices.CreateObjectLogDevice(Path.GetTempPath() + "hybridlog");
+            var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
+            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log");
             var h = new FasterKV
                 <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>(
                 1L << 20, new CacheFunctions(),
