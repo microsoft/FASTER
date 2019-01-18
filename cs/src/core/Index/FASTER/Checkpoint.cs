@@ -631,6 +631,25 @@ namespace FASTER.core
             }
         }
 
+        /*
+         * We have several state machines supported by this function.
+         * Full Checkpoint:
+         * REST -> PREP_INDEX_CHECKPOINT -> PREPARE -> IN_PROGRESS 
+         *      -> WAIT_PENDING -> WAIT_FLUSH -> PERSISTENCE_CALLBACK -> REST
+         * 
+         * Index Checkpoint:
+         * REST -> PREP_INDEX_CHECKPOINT -> INDEX_CHECKPOINT -> REST
+         * 
+         * Hybrid Log Checkpoint:
+         * REST -> PREPARE -> IN_PROGRESS -> WAIT_PENDING -> WAIT_FLUSH ->
+         *      -> PERSISTENCE_CALLBACK -> REST
+         *      
+         * Grow :
+         * REST -> PREPARE_GROW -> IN_PROGRESS_GROW -> REST
+         * 
+         * GC: 
+         * REST -> GC -> REST
+         */ 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState GetNextState(SystemState start, CheckpointType type = CheckpointType.FULL)
         {
@@ -663,7 +682,15 @@ namespace FASTER.core
                     }
                     break;
                 case Phase.INDEX_CHECKPOINT:
-                    nextState.phase = Phase.PREPARE;
+                    switch(type)
+                    {
+                        case CheckpointType.INDEX_ONLY:
+                            nextState.phase = Phase.REST;
+                            break;
+                        case CheckpointType.FULL:
+                            nextState.phase = Phase.PREPARE;
+                            break;
+                    }
                     break;
                 case Phase.PREPARE:
                     nextState.phase = Phase.IN_PROGRESS;
