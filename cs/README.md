@@ -7,7 +7,6 @@ Table of Contents
 -----------
 * [Getting FASTER](#getting-faster)
 * [Basic Concepts](#basic-concepts)
-* [Features](#features)
 * [Quick End-to-End Sample](#quick-end-to-end-sample)
 * [More Examples](#more-examples)
 * [Checkpointing and Recovery](#checkpointing-and-recovery)
@@ -214,4 +213,4 @@ public class RecoveryExample
 }
 ```
 
-FASTER supports two notions of checkpointing: Snapshot and Fold-Over. The former is a full snapshot of in-memory into a separate snapshot file, whereas the latter is an incremental checkpoint of the changes since the last checkpoint. Fold-Over effectively moves the read-only marker of the hybrid log to the tail, and thus all the data is persisted as part of the same hybrid log (there is no separate snapshot file). All subsequent updates are written to new hybrid log tail locations, which gives it its incremental nature. You can find checkpointing examples [here](https://github.com/Microsoft/FASTER/blob/master/cs/test/SimpleRecoveryTest.cs) and [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground/SumStore).
+FASTER supports two notions of checkpointing: Snapshot and Fold-Over. The former is a full snapshot of in-memory into a separate snapshot file, whereas the latter is an _incremental_ checkpoint of the changes since the last checkpoint. Fold-Over effectively moves the read-only marker of the hybrid log to the tail, and thus all the data is persisted as part of the same hybrid log (there is no separate snapshot file). All subsequent updates are written to new hybrid log tail locations, which gives Fold-Over its incremental nature. You can find a few basic checkpointing examples [here](https://github.com/Microsoft/FASTER/blob/master/cs/test/SimpleRecoveryTest.cs) and [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground/SumStore). We plan to add more examples and details going forward.
