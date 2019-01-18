@@ -169,6 +169,14 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Recover from the latest checkpoints
+        /// </summary>
+        public void Recover()
+        {
+            InternalRecoverFromLatestCheckpoints();
+        }
+
+        /// <summary>
         /// Recover
         /// </summary>
         /// <param name="fullCheckpointToken"></param>

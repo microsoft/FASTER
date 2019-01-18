@@ -9,6 +9,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Linq;
 
 namespace FASTER.core
 {
@@ -55,6 +56,34 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
+
+        private void InternalRecoverFromLatestCheckpoints()
+        {
+            var indexCheckpointDir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder());
+            var latestICFolder = indexCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
+            foreach(var dir in indexCheckpointDir.GetDirectories())
+            {
+                Console.WriteLine(dir.LastWriteTime);
+            }
+            if(latestICFolder == null || !Guid.TryParse(latestICFolder.Name, out Guid indexCheckpointGuid))
+            {
+                throw new Exception("No valid index checkpoint to recover from");
+            }
+
+            var hlogCheckpointDir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder());
+            var latestHLCFolder = hlogCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
+            foreach (var dir in hlogCheckpointDir.GetDirectories())
+            {
+                Console.WriteLine(dir.LastWriteTime);
+            }
+            if (latestHLCFolder == null || !Guid.TryParse(latestHLCFolder.Name, out Guid hybridLogCheckpointGuid))
+            {
+                throw new Exception("No valid hybrid log checkpoint to recover from");
+            }
+
+            InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid);
+        }
+
         private void InternalRecover(Guid indexToken, Guid hybridLogToken)
         {
             _indexCheckpoint.Recover(indexToken, directoryConfiguration);
