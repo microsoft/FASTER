@@ -150,7 +150,7 @@ This sequence number can be used by the FASTER thread to clear any in-memory buf
 
 During recovery, threads can continue their session with the same Guid using `ContinueSession`. The function returns the thread-local sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted operations since that point.
 
-Below, we show a simple recovery example for for a single thread. 
+Below, we show a simple recovery example for a single thread. 
 ```Csharp
 public class PersistenceExample 
 {
@@ -185,7 +185,7 @@ public class PersistenceExample
     
     long seq = 0; // sequence identifier
     
-    long key = 1, value = 1, input = 10, output = 0;
+    long key = 1, input = 10;
     while(true) {
       key = (seq % 1L << 20);
       fht.RMW(ref key, ref input, Empty.Default, seq);
@@ -202,7 +202,7 @@ public class PersistenceExample
     long seq = fht.ContinueSession(sessionGuid); // recovered seq identifier
     seq++;
     
-    long key = 1, value = 1, input = 10, output = 0;
+    long key = 1, input = 10;
     while(true) {
       key = (seq % 1L << 20);
       fht.RMW(ref key, ref input, Empty.Default, seq);
