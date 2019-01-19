@@ -217,7 +217,7 @@ public class PersistenceExample
       while(true) {
       Thread.Sleep(10000);
       fht.TakeCheckpoint(out Guid token);
-      fht.CompleteCheckpoint(true);
+      fht.CompleteCheckpoint(token, true);
     });
     t.Start();
   }
