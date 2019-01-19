@@ -186,7 +186,8 @@ public class PersistenceExample
     long seq = 0; // sequence identifier
     
     long key = 1, input = 10;
-    while(true) {
+    while(true) 
+    {
       key = (seq % 1L << 20);
       fht.RMW(ref key, ref input, Empty.Default, seq);
       seq++;
@@ -203,7 +204,8 @@ public class PersistenceExample
     seq++;
     
     long key = 1, input = 10;
-    while(true) {
+    while(true) 
+    {
       key = (seq % 1L << 20);
       fht.RMW(ref key, ref input, Empty.Default, seq);
       seq++;
@@ -214,10 +216,12 @@ public class PersistenceExample
   {
     var t = new Thread(() => 
     {
-      while(true) {
-      Thread.Sleep(10000);
-      fht.TakeCheckpoint(out Guid token);
-      fht.CompleteCheckpoint(token, true);
+      while(true) 
+      {
+        Thread.Sleep(10000);
+        fht.TakeCheckpoint(out Guid token);
+        fht.CompleteCheckpoint(token, true);
+      }
     });
     t.Start();
   }
