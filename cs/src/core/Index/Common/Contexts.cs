@@ -134,13 +134,19 @@ namespace FASTER.core
                 file.Delete();
         }
 
-        public string GetIndexCheckpointFolder(Guid token)
+        public string GetIndexCheckpointFolder(Guid token = default(Guid))
         {
-            return String.Format("{0}\\{1}\\{2}", checkpointDir, index_base_folder, token);
+            if (token != default(Guid))
+                return String.Format("{0}\\{1}\\{2}", checkpointDir, index_base_folder, token);
+            else 
+                return String.Format("{0}\\{1}", checkpointDir, index_base_folder);
         }
-        public string GetHybridLogCheckpointFolder(Guid token)
+        public string GetHybridLogCheckpointFolder(Guid token = default(Guid))
         {
-            return String.Format("{0}\\{1}\\{2}", checkpointDir, cpr_base_folder, token);
+            if (token != default(Guid))
+                return String.Format("{0}\\{1}\\{2}", checkpointDir, cpr_base_folder, token);
+            else
+                return String.Format("{0}\\{1}", checkpointDir, cpr_base_folder);
         }
         public string GetIndexCheckpointMetaFileName(Guid token)
         {

@@ -150,65 +150,82 @@ This sequence number can be used by the FASTER thread to clear any in-memory buf
 
 During recovery, threads can continue their session with the same Guid using `ContinueSession`. The function returns the thread-local sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted operations since that point.
 
-Below, we show a simple recovery example for for a single thread. 
+Below, we show a simple recovery example for a single thread. 
 ```Csharp
-public class RecoveryExample 
+public class PersistenceExample 
 {
-  static FasterKV<long, long, long, long, Empty, Funcs> fht;
-  static IDevice log;
+  private FasterKV<long, long, long, long, Empty, Funcs> fht;
+  private IDevice log;
   
-  static void Initialize() 
+  public PersistenceExample() 
   {
-    var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-    var fht = new FasterKV<long, long, long, long, Empty, Funcs>
+    log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
+    fht = new FasterKV<long, long, long, long, Empty, Funcs>
     (1L << 20, new Funcs(), new LogSettings { LogDevice = log });
   }
   
-  static void Run()
+  public void Run()
   {
-    Initialize();
+    IssuePeriodicCheckpoints();
     RunSession();
   }
   
-  static void RecoverAndContinue()
+  public void Continue()
   {
-    Initialize();
-    string[] lines = System.IO.FileRead(@"C:\\Temp\latestCheckpoint.txt");
-    Guid checkpointGuid = Guid.Parse(lines[0]);
-    fht.Recover(checkpointGuid);
+    fht.Recover();
+    IssuePeriodicCheckpoints();
     ContinueSession();
   }
   
   /* Helper Functions */
-  static void RunSession() 
+  private void RunSession() 
   {
     Guid guid = fht.StartSession();
     System.IO.File.WriteAllText(@"C:\\Temp\\session1.txt", guid.ToString());
-    long key = 1, value = 1, input = 10, output = 0, seq = 0;
-    while(true) {
-      for(long key = 1; key < 1L << 20; key++; seq++) {
-        fht.RMW(ref key, ref input, Empty.Default, seq);
-      }
-      fht.TakeFullCheckpoint(out Guid checkpointguid);
-      System.IO.File.WriteAllText(@"C:\\Temp\\latestCheckpoint.txt", checkpointGuid.ToString());
+    
+    long seq = 0; // sequence identifier
+    
+    long key = 1, input = 10;
+    while(true) 
+    {
+      key = (seq % 1L << 20);
+      fht.RMW(ref key, ref input, Empty.Default, seq);
+      seq++;
+    }
+    // fht.StopSession() - outside infinite loop
+  }
+  
+  private void ContinueSession() 
+  {
+    string guidText = System.IO.File.ReadAllText(@"C:\\Temp\session1.txt");
+    Guid sessionGuid = Guid.Parse(guidText);
+    
+    long seq = fht.ContinueSession(sessionGuid); // recovered seq identifier
+    seq++;
+    
+    long key = 1, input = 10;
+    while(true) 
+    {
+      key = (seq % 1L << 20);
+      fht.RMW(ref key, ref input, Empty.Default, seq);
+      seq++;
     }
   }
   
-  static void ContinueSession() 
+  private void IssuePeriodicCheckpoints()
   {
-    string[] lines = System.IO.FileRead(@"C:\\Temp\session1.txt");
-    Guid sessionGuid = Guid.Parse(lines[0]);
-    long seq = fht.ContinueSession(sessionGuid);
-    long key = 1, value = 1, input = 10, output = 0;
-    
-    while(true) {
-      key = seq % (1L << 20);
-      for(key = 1; key < 1L << 20; key++; seq++) {
-        fht.RMW(ref key, ref input, Empty.Default, seq);
+    var t = new Thread(() => 
+    {
+      while(true) 
+      {
+        Thread.Sleep(10000);
+		fht.StartSession();
+        fht.TakeCheckpoint(out Guid token);
+        fht.CompleteCheckpoint(token, true);
+		fht.StopSession();
       }
-      fht.TakeFullCheckpoint(out Guid checkpointguid);
-      System.IO.File.WriteAllText(@"C:\\Temp\\latestCheckpoint.txt", checkpointGuid.ToString());
-    }
+    });
+    t.Start();
   }
 }
 ```

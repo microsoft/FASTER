@@ -133,6 +133,11 @@ namespace FASTER.core
         bool TakeHybridLogCheckpoint(out Guid token);
 
         /// <summary>
+        /// Recover from last successfuly checkpoints
+        /// </summary>
+        void Recover();
+
+        /// <summary>
         /// Recover using full checkpoint token
         /// </summary>
         /// <param name="fullcheckpointToken"></param>
