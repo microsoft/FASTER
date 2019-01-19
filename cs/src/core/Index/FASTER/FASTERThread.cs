@@ -35,6 +35,14 @@ namespace FASTER.core
             {
                 if (_hybridLogCheckpoint.info.continueTokens.TryGetValue(guid, out long serialNum))
                 {
+                    Phase phase = _systemState.phase;
+                    if(phase != Phase.REST)
+                    {
+                        throw new Exception("Can continue only in REST phase");
+                    }
+                    InitLocalContext(ref threadCtx, guid);
+                    threadCtx.serialNum = serialNum;
+                    InternalRefresh();
                     return serialNum;
                 }
             }

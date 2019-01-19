@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "SumStore": {
+      "commandName": "Project",
+      "commandLineArgs": "test"
+    }
+  }
+}

@@ -24,28 +24,35 @@ namespace SumStore
         {
             if (args.Length == 0)
             {
-                Console.WriteLine("Usage: SumStore.exe [single|concurrent|test] [populate|recover|continue] [guid]");
+                Console.WriteLine("Usage: SumStore.exe [single|concurrent|test|latest] [populate|recover|continue] [guid]");
                 return;
             }
-            if (!Directory.Exists("logs"))
-                Directory.CreateDirectory("logs");
+            if (!Directory.Exists("D:\\logs"))
+                Directory.CreateDirectory("D:\\logs");
+            if (!Directory.Exists("D:\\clients"))
+                Directory.CreateDirectory("D:\\clients");
 
+            
             int nextArg = 0;
             var test = default(IFasterRecoveryTest);
             var type = args[nextArg++];
-            if(type == "single")
+            if (type == "single")
             {
                 test = new SingleThreadedRecoveryTest();
             }
-            else if(type == "concurrent")
+            else if (type == "concurrent")
             {
                 int threadCount = int.Parse(args[nextArg++]);
                 test = new ConcurrentRecoveryTest(threadCount);
             }
-            else if(type == "test")
+            else if (type == "test")
             {
                 int threadCount = int.Parse(args[nextArg++]);
                 test = new ConcurrentTest(threadCount);
+            }
+            else if (type == "latest")
+            {
+                test = new LatestRecoveryTest();
             }
             else
             {
@@ -57,12 +64,19 @@ namespace SumStore
             {
                 test.Populate();
             }
-            else if(task == "recover")
+            else if (task == "recover")
             {
-                Guid version = Guid.Parse(args[nextArg++]);
-                test.RecoverAndTest(version, version);
+                if(type == "latest")
+                {
+                    ((LatestRecoveryTest)test).RecoverAndTest();
+                }
+                else
+                {
+                    Guid version = Guid.Parse(args[nextArg++]);
+                    test.RecoverAndTest(version, version);
+                }
             }
-            else if(task == "continue")
+            else if (task == "continue")
             {
                 test.Continue();
             }
