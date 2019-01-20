@@ -123,7 +123,6 @@ namespace SumStore
 
         private void PeriodicCheckpoints()
         {
-            Thread.Sleep(10 * 1000);
 
             Console.WriteLine("Started checkpoint thread");
 
@@ -131,13 +130,9 @@ namespace SumStore
             {
                 Thread.Sleep(checkpointInterval);
 
-                fht.StartSession();
-
                 fht.TakeFullCheckpoint(out Guid token);
 
                 fht.CompleteCheckpoint(true);
-
-                fht.StopSession();
 
                 Console.WriteLine("Completed checkpoint {0}", token);
             }

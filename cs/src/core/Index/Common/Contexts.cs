@@ -405,6 +405,22 @@ namespace FASTER.core
                 }
             }
         }
+
+        public void DebugPrint()
+        {
+            Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
+            Debug.WriteLine("Version: {0}", version);
+            Debug.WriteLine("Is Snapshot?: {0}", useSnapshotFile == 1);
+            Debug.WriteLine("Flushed LogicalAddress: {0}", flushedLogicalAddress);
+            Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
+            Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
+            Debug.WriteLine("Num sessions recovered: {0}", numThreads);
+            Debug.WriteLine("Recovered sessions: ");
+            foreach(var sessionInfo in continueTokens)
+            {
+                Debug.WriteLine("{0}: {1}", sessionInfo.Key, sessionInfo.Value);
+            }
+        }
     }
 
     internal struct HybridLogCheckpointInfo
@@ -495,6 +511,16 @@ namespace FASTER.core
             writer.WriteLine(num_buckets);
             writer.WriteLine(startLogicalAddress);
             writer.WriteLine(finalLogicalAddress);
+        }
+        public void DebugPrint()
+        {
+            Debug.WriteLine("******** Index Checkpoint Info for {0} ********", token);
+            Debug.WriteLine("Table Size: {0}", table_size);
+            Debug.WriteLine("Main Table Size (in GB): {0}", ((double)num_ht_bytes)/1000.0 / 1000.0 / 1000.0);
+            Debug.WriteLine("Overflow Table Size (in GB): {0}", ((double)num_ofb_bytes) / 1000.0 / 1000.0 / 1000.0);
+            Debug.WriteLine("Num Buckets: {0}", num_buckets);
+            Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
+            Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
         }
         public void Reset()
         {

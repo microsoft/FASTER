@@ -730,6 +730,14 @@ namespace FASTER.core
                 _hybridLogCheckpoint.info.Write(file);
                 file.Flush();
             }
+
+            string completed_filename = directoryConfiguration.GetHybridLogCheckpointFolder(_hybridLogCheckpointToken);
+            completed_filename += "\\completed.dat";
+            using (var file = new StreamWriter(completed_filename, false))
+            {
+                file.WriteLine();
+                file.Flush();
+            }
         }
 
         private void WriteHybridLogContextInfo()
@@ -752,6 +760,13 @@ namespace FASTER.core
                 file.Flush();
             }
 
+            string completed_filename = directoryConfiguration.GetIndexCheckpointFolder(_indexCheckpointToken);
+            completed_filename += "\\completed.dat";
+            using (var file = new StreamWriter(completed_filename, false))
+            {
+                file.WriteLine();
+                file.Flush();
+            }
         }
 
         private bool ObtainCurrentTailAddress(ref long location)

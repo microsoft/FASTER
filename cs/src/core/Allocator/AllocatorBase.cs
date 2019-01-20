@@ -1040,6 +1040,14 @@ namespace FASTER.core
                 var pageIndex = GetPageIndexForAddress(addr);
                 PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
             }
+
+            // Printing debug info
+            Debug.WriteLine("******* Recovered HybridLog Stats *******");
+            Debug.WriteLine("Head Address: {0}", HeadAddress);
+            Debug.WriteLine("Safe Head Address: {0}", SafeHeadAddress);
+            Debug.WriteLine("ReadOnly Address: {0}", ReadOnlyAddress);
+            Debug.WriteLine("Safe ReadOnly Address: {0}", SafeReadOnlyAddress);
+            Debug.WriteLine("Tail Address: {0}", tailAddress);
         }
 
         /// <summary>
