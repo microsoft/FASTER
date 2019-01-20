@@ -31,23 +31,46 @@ namespace FASTER.core
 
         internal long InternalContinue(Guid guid)
         {
-            if (_hybridLogCheckpoint.info.continueTokens != null)
+            if (_recoveredSessions != null)
             {
-                if (_hybridLogCheckpoint.info.continueTokens.TryGetValue(guid, out long serialNum))
+                if (_recoveredSessions.TryGetValue(guid, out long serialNum))
                 {
-                    Phase phase = _systemState.phase;
-                    if(phase != Phase.REST)
+                    // We have recovered the corresponding session. 
+                    // Now obtain the session by first locking the rest phase
+                    var currentState = SystemState.Copy(ref _systemState);
+                    if(currentState.phase == Phase.REST)
                     {
-                        throw new Exception("Can continue only in REST phase");
+                        var intermediateState = SystemState.Make(Phase.INTERMEDIATE, currentState.version);
+                        if(MakeTransition(currentState,intermediateState))
+                        {
+                            // No one can change from REST phase
+                            if(_recoveredSessions.TryRemove(guid, out serialNum))
+                            {
+                                // We have atomically removed session details. 
+                                // No one else can continue this session
+                                InitLocalContext(ref threadCtx, guid);
+                                threadCtx.serialNum = serialNum;
+                                InternalRefresh();
+                            }
+                            else
+                            {
+                                // Someone else continued this session
+                                serialNum = -1;
+                                Debug.WriteLine("Session already continued by another thread!");
+                            }
+
+                            MakeTransition(intermediateState, currentState);
+                            return serialNum;
+                        }
                     }
-                    InitLocalContext(ref threadCtx, guid);
-                    threadCtx.serialNum = serialNum;
-                    InternalRefresh();
-                    return serialNum;
+
+                    // Need to try again when in REST
+                    Debug.WriteLine("Can continue only in REST phase");
+                    return -1;
                 }
             }
 
-            Debug.WriteLine("Unable to continue session " + guid.ToString());
+            Debug.WriteLine("No recovered sessions!");
             return -1;
         }
 
@@ -83,6 +106,8 @@ namespace FASTER.core
                     prevThreadCtx.ioPendingRequests.Count == 0);
             }
             Debug.Assert(threadCtx.phase == Phase.REST);
+            prevThreadCtx = null;
+            threadCtx = null;
             epoch.Release();
         }
 
@@ -90,7 +115,7 @@ namespace FASTER.core
         {
             context = new FasterExecutionContext
             {
-                phase = _systemState.phase,
+                phase = Phase.REST,
                 version = _systemState.version,
                 markers = new bool[8],
                 serialNum = 0,
