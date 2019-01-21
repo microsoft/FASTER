@@ -96,45 +96,81 @@ namespace FASTER.core
             InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid);
         }
 
+        private bool IsCheckpointSafe(Guid token, CheckpointType checkpointType)
+        {
+            switch (checkpointType)
+            {
+                case CheckpointType.INDEX_ONLY:
+                    {
+                        var dir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(token));
+                        return File.Exists(dir.FullName + "\\completed.dat");
+                    }
+                case CheckpointType.HYBRID_LOG_ONLY:
+                    {
+                        var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(token));
+                        return File.Exists(dir.FullName + "\\completed.dat");
+                    }
+                case CheckpointType.FULL:
+                    {
+                        return IsCheckpointSafe(token, CheckpointType.INDEX_ONLY)
+                            && IsCheckpointSafe(token, CheckpointType.HYBRID_LOG_ONLY);
+                    }
+                default:
+                    return false;
+            }
+        }
+
+        private bool IsCompatible(IndexRecoveryInfo indexInfo, HybridLogRecoveryInfo recoveryInfo)
+        {
+            var l1 = indexInfo.finalLogicalAddress;
+            var l2 = recoveryInfo.finalLogicalAddress;
+            return l1 <= l2;
+        }
+
         private void InternalRecover(Guid indexToken, Guid hybridLogToken)
         {
             Debug.WriteLine("********* Primary Recovery Information ********");
             Debug.WriteLine("Index Checkpoint: {0}", indexToken);
             Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
 
+            // Assert corresponding checkpoints are safe to recover from
+            Debug.Assert(IsCheckpointSafe(indexToken, CheckpointType.INDEX_ONLY), 
+                "Cannot recover from incomplete index checkpoint " + indexToken.ToString());
+
+            Debug.Assert(IsCheckpointSafe(hybridLogToken, CheckpointType.HYBRID_LOG_ONLY), 
+                "Cannot recover from incomplete hybrid log checkpoint " + hybridLogToken.ToString());
+
+            // Recovery appropriate context information
             var recoveredICInfo = new IndexCheckpointInfo();
-            var recoveredHLCInfo = new HybridLogCheckpointInfo();
             recoveredICInfo.Recover(indexToken, directoryConfiguration);
-            recoveredHLCInfo.Recover(hybridLogToken, directoryConfiguration);
             recoveredICInfo.info.DebugPrint();
+
+            var recoveredHLCInfo = new HybridLogCheckpointInfo();
+            recoveredHLCInfo.Recover(hybridLogToken, directoryConfiguration);
             recoveredHLCInfo.info.DebugPrint();
 
-            // Recover segment offsets for object log
-            if (recoveredHLCInfo.info.objectLogSegmentOffsets != null)
-                Array.Copy(recoveredHLCInfo.info.objectLogSegmentOffsets, 
-                    hlog.GetSegmentOffsets(),
-                    recoveredHLCInfo.info.objectLogSegmentOffsets.Length);
-
-            recoveredICInfo.main_ht_device = Devices.CreateLogDevice(directoryConfiguration.GetPrimaryHashTableFileName(recoveredICInfo.info.token), false);
-            recoveredICInfo.ofb_device = Devices.CreateLogDevice(directoryConfiguration.GetOverflowBucketsFileName(recoveredICInfo.info.token), false);
-
-            var l1 = recoveredICInfo.info.finalLogicalAddress;
-            var l2 = recoveredHLCInfo.info.finalLogicalAddress;
-            var v = recoveredHLCInfo.info.version;
-            if (l1 > l2)
+            // Check if the two checkpoints are compatible for recovery
+            if(!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
             {
                 throw new Exception("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
             }
 
+            // Set new system state after recovery
+            var v = recoveredHLCInfo.info.version;
             _systemState.phase = Phase.REST;
             _systemState.version = (v + 1);
 
+            // Recover fuzzy index from checkpoint
             RecoverFuzzyIndex(recoveredICInfo);
 
-            IsFuzzyIndexRecoveryComplete(true);
+            // Recover segment offsets for object log
+            if (recoveredHLCInfo.info.objectLogSegmentOffsets != null)
+                Array.Copy(recoveredHLCInfo.info.objectLogSegmentOffsets,
+                    hlog.GetSegmentOffsets(),
+                    recoveredHLCInfo.info.objectLogSegmentOffsets.Length);
 
-            DeleteTentativeEntries();
 
+            // Make index consistent for version v
             if (FoldOverSnapshot)
             {
                 RecoverHybridLog(recoveredICInfo.info, recoveredHLCInfo.info);
@@ -145,8 +181,10 @@ namespace FASTER.core
             }
 
             
+            // Read appropriate hybrid log pages into memory
             RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress);
 
+            // Recover session information
             _recoveredSessions = new SafeConcurrentDictionary<Guid, long>();
             foreach(var sessionInfo in recoveredHLCInfo.info.continueTokens)
             {

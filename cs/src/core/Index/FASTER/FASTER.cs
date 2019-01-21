@@ -50,7 +50,7 @@ namespace FASTER.core
         private SystemState _systemState;
 
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        private DirectoryConfiguration directoryConfiguration;
+        
 
         private SafeConcurrentDictionary<Guid, long> _recoveredSessions;
 

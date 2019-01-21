@@ -55,7 +55,6 @@ namespace FASTER.test.recovery.objectstore
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();

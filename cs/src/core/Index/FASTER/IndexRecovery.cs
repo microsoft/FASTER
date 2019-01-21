@@ -19,12 +19,18 @@ namespace FASTER.core
     /// </summary>
     public unsafe partial class FasterBase
     {
+        internal DirectoryConfiguration directoryConfiguration;
+
         // Derived class exposed API
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
-            var ht_version = resizeInfo.version;
             var token = info.info.token;
+            var ht_version = resizeInfo.version;
             Debug.Assert(state[ht_version].size == info.info.table_size);
+
+            // Create devices to read from using Async API
+            info.main_ht_device = Devices.CreateLogDevice(directoryConfiguration.GetPrimaryHashTableFileName(token), false);
+            info.ofb_device = Devices.CreateLogDevice(directoryConfiguration.GetOverflowBucketsFileName(token), false);
 
             BeginMainIndexRecovery(ht_version,
                              info.main_ht_device,
@@ -35,6 +41,15 @@ namespace FASTER.core
                              info.info.num_buckets,
                              info.info.num_ofb_bytes);
 
+            // Wait until reading is complete
+            IsFuzzyIndexRecoveryComplete(true);
+
+            // close index checkpoint files appropriately
+            info.main_ht_device.Close();
+            info.ofb_device.Close();
+
+            // Delete all tentative entries!
+            DeleteTentativeEntries();
         }
 
         internal void RecoverFuzzyIndex(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes)
