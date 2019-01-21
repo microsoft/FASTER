@@ -51,41 +51,41 @@ namespace FASTER.core
         }
 
         //Main Index Recovery Functions
-        private int numChunksToBeRecovered;
-
+        private CountdownEvent mainIndexRecoveryEvent;
 
         private void BeginMainIndexRecovery(
                                 int version,
                                 IDevice device,
                                 ulong num_bytes)
         {
-            numChunksToBeRecovered = 1;
-            long chunkSize = state[version].size / 1;
-            HashBucket* start = state[version].tableAligned;
-            uint sizeOfPage = (uint)chunkSize * (uint)sizeof(HashBucket);
+            int numChunksToBeRecovered = 1;
+            long totalSize = state[version].size * sizeof(HashBucket);
+            Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
 
-            uint num_bytes_read = 0;
-            for (int index = 0; index < 1; index++)
+            uint chunkSize = (uint)(totalSize / numChunksToBeRecovered);
+            mainIndexRecoveryEvent = new CountdownEvent(numChunksToBeRecovered);
+            HashBucket* start = state[version].tableAligned;
+ 
+            ulong numBytesRead = 0;
+            for (int index = 0; index < numChunksToBeRecovered; index++)
             {
-                HashBucket* chunkStartBucket = start + (index * chunkSize);
+                long chunkStartBucket = (long)start + (index * chunkSize);
                 HashIndexPageAsyncReadResult result = default(HashIndexPageAsyncReadResult);
                 result.chunkIndex = index;
-                device.ReadAsync(num_bytes_read, (IntPtr)chunkStartBucket, sizeOfPage, AsyncPageReadCallback, result);
-                num_bytes_read += sizeOfPage;
+                device.ReadAsync(numBytesRead, (IntPtr)chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
+                numBytesRead += chunkSize;
             }
-            Debug.Assert(num_bytes_read == num_bytes);
+            Debug.Assert(numBytesRead == num_bytes);
         }
 
         private bool IsMainIndexRecoveryCompleted(
                                         bool waitUntilComplete = false)
         {
-            bool completed = (numChunksToBeRecovered == 0);
+            bool completed = mainIndexRecoveryEvent.IsSet;
             if (!completed && waitUntilComplete)
             {
-                while (numChunksToBeRecovered != 0)
-                {
-                    Thread.Sleep(10);
-                }
+                mainIndexRecoveryEvent.Wait();
+                return true;
             }
             return completed;
         }
@@ -96,7 +96,7 @@ namespace FASTER.core
             {
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
-            Interlocked.Decrement(ref numChunksToBeRecovered);
+            mainIndexRecoveryEvent.Signal();
             Overlapped.Free(overlap);
         }
 
