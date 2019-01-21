@@ -19,12 +19,18 @@ namespace FASTER.core
     /// </summary>
     public unsafe partial class FasterBase
     {
+        internal DirectoryConfiguration directoryConfiguration;
+
         // Derived class exposed API
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
-            var ht_version = resizeInfo.version;
             var token = info.info.token;
+            var ht_version = resizeInfo.version;
             Debug.Assert(state[ht_version].size == info.info.table_size);
+
+            // Create devices to read from using Async API
+            info.main_ht_device = Devices.CreateLogDevice(directoryConfiguration.GetPrimaryHashTableFileName(token), false);
+            info.ofb_device = Devices.CreateLogDevice(directoryConfiguration.GetOverflowBucketsFileName(token), false);
 
             BeginMainIndexRecovery(ht_version,
                              info.main_ht_device,
@@ -35,6 +41,15 @@ namespace FASTER.core
                              info.info.num_buckets,
                              info.info.num_ofb_bytes);
 
+            // Wait until reading is complete
+            IsFuzzyIndexRecoveryComplete(true);
+
+            // close index checkpoint files appropriately
+            info.main_ht_device.Close();
+            info.ofb_device.Close();
+
+            // Delete all tentative entries!
+            DeleteTentativeEntries();
         }
 
         internal void RecoverFuzzyIndex(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes)
@@ -51,41 +66,41 @@ namespace FASTER.core
         }
 
         //Main Index Recovery Functions
-        private int numChunksToBeRecovered;
-
+        private CountdownEvent mainIndexRecoveryEvent;
 
         private void BeginMainIndexRecovery(
                                 int version,
                                 IDevice device,
                                 ulong num_bytes)
         {
-            numChunksToBeRecovered = 1;
-            long chunkSize = state[version].size / 1;
-            HashBucket* start = state[version].tableAligned;
-            uint sizeOfPage = (uint)chunkSize * (uint)sizeof(HashBucket);
+            int numChunksToBeRecovered = 1;
+            long totalSize = state[version].size * sizeof(HashBucket);
+            Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
 
-            uint num_bytes_read = 0;
-            for (int index = 0; index < 1; index++)
+            uint chunkSize = (uint)(totalSize / numChunksToBeRecovered);
+            mainIndexRecoveryEvent = new CountdownEvent(numChunksToBeRecovered);
+            HashBucket* start = state[version].tableAligned;
+ 
+            ulong numBytesRead = 0;
+            for (int index = 0; index < numChunksToBeRecovered; index++)
             {
-                HashBucket* chunkStartBucket = start + (index * chunkSize);
+                long chunkStartBucket = (long)start + (index * chunkSize);
                 HashIndexPageAsyncReadResult result = default(HashIndexPageAsyncReadResult);
                 result.chunkIndex = index;
-                device.ReadAsync(num_bytes_read, (IntPtr)chunkStartBucket, sizeOfPage, AsyncPageReadCallback, result);
-                num_bytes_read += sizeOfPage;
+                device.ReadAsync(numBytesRead, (IntPtr)chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
+                numBytesRead += chunkSize;
             }
-            Debug.Assert(num_bytes_read == num_bytes);
+            Debug.Assert(numBytesRead == num_bytes);
         }
 
         private bool IsMainIndexRecoveryCompleted(
                                         bool waitUntilComplete = false)
         {
-            bool completed = (numChunksToBeRecovered == 0);
+            bool completed = mainIndexRecoveryEvent.IsSet;
             if (!completed && waitUntilComplete)
             {
-                while (numChunksToBeRecovered != 0)
-                {
-                    Thread.Sleep(10);
-                }
+                mainIndexRecoveryEvent.Wait();
+                return true;
             }
             return completed;
         }
@@ -96,7 +111,7 @@ namespace FASTER.core
             {
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
-            Interlocked.Decrement(ref numChunksToBeRecovered);
+            mainIndexRecoveryEvent.Signal();
             Overlapped.Free(overlap);
         }
 

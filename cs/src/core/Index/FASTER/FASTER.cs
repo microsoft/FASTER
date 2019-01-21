@@ -50,7 +50,9 @@ namespace FASTER.core
         private SystemState _systemState;
 
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        private DirectoryConfiguration directoryConfiguration;
+        
+
+        private SafeConcurrentDictionary<Guid, long> _recoveredSessions;
 
         [ThreadStatic]
         private static FasterExecutionContext prevThreadCtx = default(FasterExecutionContext);
@@ -249,15 +251,34 @@ namespace FASTER.core
         /// <returns></returns>
         public bool CompleteCheckpoint(bool wait = false)
         {
-            do
+            if(threadCtx == null)
             {
-                CompletePending();
-                if (_systemState.phase == Phase.REST)
+                // the thread does not have an active session
+                // we can wait until system state becomes REST
+                do
+                {
+                    if(_systemState.phase == Phase.REST)
+                    {
+                        return true;
+                    }
+                } while (wait);
+            }
+            else
+            {
+                // the thread does has an active session and 
+                // so we need to constantly complete pending 
+                // and refresh (done inside CompletePending)
+                // for the checkpoint to be proceed
+                do
                 {
                     CompletePending();
-                    return true;
-                }
-            } while (wait);
+                    if (_systemState.phase == Phase.REST)
+                    {
+                        CompletePending();
+                        return true;
+                    }
+                } while (wait);
+            }
             return false;
         }
 

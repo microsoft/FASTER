@@ -25,14 +25,9 @@ namespace FASTER.core
         public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    internal unsafe class HashIndexPageAsyncFlushResult : IAsyncResult
+    internal unsafe struct HashIndexPageAsyncFlushResult : IAsyncResult
     {
-        public HashBucket* start;
-        public int numChunks;
-        public int numIssued;
-        public int numFinished;
-        public uint chunkSize;
-        public IDevice device;
+        public int chunkIndex;
 
         public bool IsCompleted => throw new NotImplementedException();
 
@@ -43,7 +38,7 @@ namespace FASTER.core
 		public bool CompletedSynchronously => throw new NotImplementedException();
 	}
 
-    internal struct HashIndexPageAsyncReadResult : IAsyncResult
+    internal unsafe struct HashIndexPageAsyncReadResult : IAsyncResult
     {
         public int chunkIndex;
 

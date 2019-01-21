@@ -68,33 +68,23 @@ namespace FASTER.core
                                            IDevice device,
                                            out ulong numBytesWritten)
         {
+            int numChunks = 1;
             long totalSize = state[version].size * sizeof(HashBucket);
-            int numChunks = (int)(totalSize >> 23);
-            if (numChunks == 0) numChunks = 1;
+            Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
 
             uint chunkSize = (uint)(totalSize / numChunks);
-            mainIndexCheckpointEvent = new CountdownEvent(1);
+            mainIndexCheckpointEvent = new CountdownEvent(numChunks);
             HashBucket* start = state[version].tableAligned;
-            int startNumChunks = 1;
-
-            HashIndexPageAsyncFlushResult result = new HashIndexPageAsyncFlushResult
-            {
-                start = start,
-                numChunks = numChunks,
-                numIssued = startNumChunks,
-                numFinished = 0,
-                chunkSize = chunkSize,
-                device = device
-            };
-
+            
             numBytesWritten = 0;
-
-            for (int index = 0; index < startNumChunks; index++)
+            for (int index = 0; index < numChunks; index++)
             {
                 long chunkStartBucket = (long)start + (index * chunkSize);
-                device.WriteAsync((IntPtr)chunkStartBucket, ((ulong)index) * chunkSize, chunkSize, AsyncPageFlushCallback, result);
+                HashIndexPageAsyncFlushResult result = default(HashIndexPageAsyncFlushResult);
+                result.chunkIndex = index;
+                device.WriteAsync((IntPtr)chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                numBytesWritten += chunkSize;
             }
-            numBytesWritten = ((ulong)numChunks) * chunkSize;
         }
 
 
@@ -130,25 +120,7 @@ namespace FASTER.core
             }
             finally
             {
-                if (Interlocked.Increment(ref result.numFinished) == result.numChunks)
-                {
-                    mainIndexCheckpointEvent.Signal();
-                }
-                else
-                {
-                    int nextChunk = Interlocked.Increment(ref result.numIssued) - 1;
-
-                    if (nextChunk < result.numChunks)
-                    {
-                        long chunkStartBucket = (long)result.start + (nextChunk * result.chunkSize);
-                        result.device.WriteAsync(
-                            (IntPtr)chunkStartBucket,
-                            ((ulong)nextChunk) * result.chunkSize,
-                            result.chunkSize,
-                            AsyncPageFlushCallback,
-                            result);
-                    }
-                }
+                mainIndexCheckpointEvent.Signal();
                 Overlapped.Free(overlap);
             }
         }
