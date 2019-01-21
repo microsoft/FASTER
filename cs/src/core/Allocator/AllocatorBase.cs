@@ -1028,18 +1028,32 @@ namespace FASTER.core
             TailPageOffset.Offset = (int)offsetInPage;
             TailPageIndex = GetPageIndexForPage(TailPageOffset.Page);
 
-            // issue read request to all pages until head lag
+            // allocate next page as well - this is an invariant in the allocator!
+            var pageIndex = (TailPageOffset.Page % BufferSize);
+            var nextPageIndex = (pageIndex + 1) % BufferSize;
+            if (tailAddress > 0)
+                AllocatePage(nextPageIndex);
+            
             HeadAddress = headAddress;
             SafeHeadAddress = headAddress;
             FlushedUntilAddress = headAddress;
             ReadOnlyAddress = tailAddress;
             SafeReadOnlyAddress = tailAddress;
 
-            for (var addr = headAddress; addr < tailAddress; addr += PageSize)
+            // ensure appropriate page status for all pages in memory
+            // note: they must have been read in previously during recovery
+            var addr = GetStartLogicalAddress(GetPage(headAddress));
+            for (; addr < tailAddress; addr += PageSize)
             {
-                var pageIndex = GetPageIndexForAddress(addr);
-                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
+                pageIndex = GetPageIndexForAddress(addr);
+                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
+                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
             }
+
+            // for the last page which contains tailoffset, it must be open
+            pageIndex = GetPageIndexForAddress(tailAddress);
+            PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
+            PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
 
             // Printing debug info
             Debug.WriteLine("******* Recovered HybridLog Stats *******");
