@@ -67,7 +67,7 @@ namespace FASTER.core
                 // Remove incomplete checkpoints
                 if(!File.Exists(dir.FullName + "\\completed.dat"))
                 {
-                    Directory.Delete(dir.FullName);
+                    Directory.Delete(dir.FullName, true);
                 }
             }
             var latestICFolder = indexCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
@@ -84,7 +84,7 @@ namespace FASTER.core
                 // Remove incomplete checkpoints
                 if (!File.Exists(dir.FullName + "\\completed.dat"))
                 {
-                    Directory.Delete(dir.FullName);
+                    Directory.Delete(dir.FullName, true);
                 }
             }
             var latestHLCFolder = hlogCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
