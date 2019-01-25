@@ -5,10 +5,7 @@
 #define CPR
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -629,6 +626,7 @@ namespace FASTER.core
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
             logicalAddress = entry.Address;
+            pendingContext.logicalAddress = logicalAddress;
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
@@ -794,6 +792,7 @@ namespace FASTER.core
                                         true, false, false,
                                         entry.Address);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+                pendingContext.logicalAddress = newLogicalAddress & Constants.kAddressMask;
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));

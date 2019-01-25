@@ -348,6 +348,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
         {
+            // TODO: return logical address for entry
             var context = default(PendingContext);
             var internalStatus = InternalRMW(ref key, ref input, ref userContext, ref context);
             var status = default(Status);
@@ -359,6 +360,38 @@ namespace FASTER.core
             {
                 status = HandleOperationStatus(threadCtx, context, internalStatus);
             }
+            threadCtx.serialNum = monotonicSerialNum;
+            return status;
+        }
+
+        /// <summary>
+        /// Synchronous read-modify-write that returns the new logical address for key's entry
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="address"></param>
+        /// <param name="userContext"></param>
+        /// <param name="monotonicSerialNum"></param>
+        /// <returns></returns>
+        public Status RMWSync(ref Key key, ref Input input, Context userContext, long monotonicSerialNum, out long address)
+        {
+            address = 0;
+            var context = default(PendingContext);
+            var internalStatus = InternalRMW(ref key, ref input, ref userContext, ref context);
+            var status = default(Status);
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                status = (Status)internalStatus;
+            }
+            else
+            {
+                status = HandleOperationStatus(threadCtx, context, internalStatus);
+            }
+            if (status == Status.PENDING)
+            {
+                InternalCompletePending(true);
+            }
+            address = context.logicalAddress;
             threadCtx.serialNum = monotonicSerialNum;
             return status;
         }

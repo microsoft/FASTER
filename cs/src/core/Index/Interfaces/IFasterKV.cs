@@ -2,12 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -81,6 +75,17 @@ namespace FASTER.core
         /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
         Status RMW(ref Key key, ref Input input, Context context, long lsn);
+
+        /// <summary>
+        /// Atomic read-modify-write operation
+        /// </summary>
+        /// <param name="key">Key of read</param>
+        /// <param name="input">Input argument used by RMW callback to perform operation</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="address">Logical address for the modified entry</param>
+        /// <returns>Status of operation</returns>
+        Status RMWSync(ref Key key, ref Input input, Context context, long lsn, out long address);
 
         /// <summary>
         /// Complete all pending operations issued by this session
