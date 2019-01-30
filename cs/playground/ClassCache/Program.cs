@@ -18,12 +18,14 @@ namespace ClassCache
         {
             var context = default(CacheContext);
 
-            var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
-            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log");
+            var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log", deleteOnClose: true);
+            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log", deleteOnClose: true);
             var h = new FasterKV
                 <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>(
                 1L << 20, new CacheFunctions(),
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog }
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
+                null,
+                new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() }
                 );
 
             h.StartSession();
