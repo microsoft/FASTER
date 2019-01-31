@@ -57,6 +57,18 @@ namespace FASTER.core
         Status Read(ref Key key, ref Input input, ref Output output, Context context, long lsn);
 
         /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key">Key of read</param>
+        /// <param name="input">Input argument used by Reader to select what part of value to read</param>
+        /// <param name="output">Reader stores the read result in output</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="address">Logical address for the read entry</param>
+        /// <returns>Status of operation</returns>
+        Status ReadSync(ref Key key, ref Input input, ref Output output, Context context, long lsn, out long address);
+
+        /// <summary>
         /// (Blind) upsert operation
         /// </summary>
         /// <param name="key">Key of read</param>
@@ -65,6 +77,17 @@ namespace FASTER.core
         /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
         Status Upsert(ref Key key, ref Value value, Context context, long lsn);
+
+        /// <summary>
+        /// (Blind) upsert operation
+        /// </summary>
+        /// <param name="key">Key of read</param>
+        /// <param name="value">Value being upserted</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="address">Logical address for the read entry</param>
+        /// <returns>Status of operation</returns>
+        Status UpsertSync(ref Key key, ref Value value, Context context, long lsn, out long address);
 
         /// <summary>
         /// Atomic read-modify-write operation

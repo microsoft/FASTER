@@ -102,6 +102,7 @@ namespace FASTER.core
                 // no tag found
                 return OperationStatus.NOTFOUND;
             }
+            pendingContext.logicalAddress = logicalAddress;
             #endregion
 
             if (threadCtx.phase != Phase.REST)
@@ -382,6 +383,7 @@ namespace FASTER.core
                                         out physicalAddress);
                 }
             }
+            pendingContext.logicalAddress = logicalAddress;
             #endregion
 
             // Optimization for most common case
@@ -489,6 +491,7 @@ namespace FASTER.core
                 var recordSize = hlog.GetRecordSize(ref key, ref value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                pendingContext.logicalAddress = newLogicalAddress & Constants.kAddressMask;
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                         threadCtx.version,
                                         true, false, false,

@@ -311,6 +311,41 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// ReadSync
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="monotonicSerialNum"></param>
+        /// <param name="address"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status ReadSync(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum, out long address)
+        {
+            var context = default(PendingContext);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref userContext, ref context);
+            var status = default(Status);
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                status = (Status)internalStatus;
+            }
+            else
+            {
+                status = HandleOperationStatus(threadCtx, context, internalStatus);
+            }
+
+            if (status == Status.PENDING)
+            {
+                InternalCompletePending(true);
+            }
+
+            address = context.logicalAddress;
+            threadCtx.serialNum = monotonicSerialNum;
+            return status;
+        }
+
+        /// <summary>
         /// Upsert
         /// </summary>
         /// <param name="key"></param>
@@ -338,6 +373,41 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// UpsertSync
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="monotonicSerialNum"></param>
+        /// <param name="address"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UpsertSync(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum, out long address)
+        {
+            var context = default(PendingContext);
+            var internalStatus = InternalUpsert(ref key, ref desiredValue, ref userContext, ref context);
+            var status = default(Status);
+
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                status = (Status)internalStatus;
+            }
+            else
+            {
+                status = HandleOperationStatus(threadCtx, context, internalStatus);
+            }
+
+            if (status == Status.PENDING)
+            {
+                InternalCompletePending(true);
+            }
+
+            address = context.logicalAddress;
+            threadCtx.serialNum = monotonicSerialNum;
+            return status;
+        }
+
+        /// <summary>
         /// Read-modify-write
         /// </summary>
         /// <param name="key"></param>
@@ -348,7 +418,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
         {
-            // TODO: return logical address for entry
             var context = default(PendingContext);
             var internalStatus = InternalRMW(ref key, ref input, ref userContext, ref context);
             var status = default(Status);
