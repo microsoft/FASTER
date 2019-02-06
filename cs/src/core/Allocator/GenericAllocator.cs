@@ -177,17 +177,21 @@ namespace FASTER.core
         /// <param name="index"></param>
         protected override void AllocatePage(int index)
         {
+            values[index] = AllocatePage();
+            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
+            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
+            Interlocked.MemoryBarrier();
+        }
+
+        internal Record<Key, Value>[] AllocatePage()
+        {
             Record<Key, Value>[] tmp;
             if (PageSize % recordSize == 0)
                 tmp = new Record<Key, Value>[PageSize / recordSize];
             else
                 tmp = new Record<Key, Value>[1 + (PageSize / recordSize)];
             Array.Clear(tmp, 0, tmp.Length);
-
-            values[index] = tmp;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
-            Interlocked.MemoryBarrier();
+            return tmp;
         }
 
         public override long GetPhysicalAddress(long logicalAddress)
@@ -829,9 +833,83 @@ namespace FASTER.core
 
         internal override void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
-            fixed (RecordInfo* pin = &values[destinationPage % BufferSize][0].info)
+            PopulatePage(src, required_bytes, ref values[destinationPage % BufferSize]);
+        }
+
+        internal void PopulatePage(byte* src, int required_bytes, ref Record<Key, Value>[] destinationPage)
+        {
+            fixed (RecordInfo* pin = &destinationPage[0].info)
             {
-                Buffer.MemoryCopy(src, Unsafe.AsPointer(ref values[destinationPage % BufferSize][0]), required_bytes, required_bytes);
+                Buffer.MemoryCopy(src, Unsafe.AsPointer(ref destinationPage[0]), required_bytes, required_bytes);
+            }
+        }
+
+        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress)
+        {
+            return new GenericScanIterator(this, beginAddress, endAddress);
+        }
+
+        /// <summary>
+        /// Scan iterator for hybrid log
+        /// </summary>
+        public class GenericScanIterator : IFasterScanIterator<Key, Value>
+        {
+            readonly private GenericAllocator<Key, Value> hlog;
+            readonly private long beginAddress, endAddress;
+            private long currentAddress;
+            Record<Key, Value>[] currentPage;
+            Record<Key, Value>[] nextPage;
+
+            /// <summary>
+            /// Constructor
+            /// </summary>
+            /// <param name="hlog"></param>
+            /// <param name="beginAddress"></param>
+            /// <param name="endAddress"></param>
+            public GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress)
+            {
+                this.hlog = hlog;
+                this.beginAddress = beginAddress;
+                this.endAddress = endAddress;
+                long currentAddress = beginAddress;
+                
+                currentPage = hlog.AllocatePage();
+                hlog.AsyncReadPagesFromDevice(currentAddress << hlog.LogPageSizeBits, 1, AsyncReadPagesCallback, Empty.Default);
+    
+                while (currentAddress < beginAddress)
+                {
+                }
+            }
+
+            public bool GetNext(ref Key key, ref Value value)
+            {
+                throw new NotImplementedException();
+            }
+
+            public void Dispose()
+            {
+                throw new NotImplementedException();
+            }
+
+            private void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+            {
+                if (errorCode != 0)
+                {
+                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                }
+
+                // Set the page status to flushed
+                var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+
+                if (result.freeBuffer1.buffer != null)
+                {
+                    hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, ref currentPage);
+                    result.freeBuffer1.Return();
+                }
+                int index = hlog.GetPageIndexForPage(result.page);
+                result.context.readStatus[index] = ReadStatus.Done;
+                Interlocked.MemoryBarrier();
+                Overlapped.Free(overlap);
             }
         }
     }

@@ -1459,5 +1459,18 @@ namespace FASTER.core
         {
             dst = src;
         }
+
+        /// <summary>
+        /// Pull-based scan interface for HLOG
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <returns></returns>
+        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress);
+    }
+
+    public interface IFasterScanIterator<Key, Value> : IDisposable
+    {
+        bool GetNext(ref Key key, ref Value value);
     }
 }
