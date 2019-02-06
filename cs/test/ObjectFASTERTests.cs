@@ -89,6 +89,7 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
                 fht.Upsert(ref key, ref value, Empty.Default, 0);
+                // fht.ShiftReadOnlyAddress(fht.LogTailAddress);
             }
 
             var key2 = new MyKey { key = 23 };

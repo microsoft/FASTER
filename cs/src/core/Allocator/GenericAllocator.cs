@@ -257,6 +257,15 @@ namespace FASTER.core
             }
             */
 
+            int start = 0, end = (int)numBytesToWrite;
+            if (asyncResult.partial)
+            {
+                start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
+                start = (start / sectorSize) * sectorSize;
+                end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
+            }
+
+
             // Check if user did not override with special segment offsets
             if (localSegmentOffsets == null) localSegmentOffsets = segmentOffsets;
 
@@ -275,17 +284,6 @@ namespace FASTER.core
             List<long> addr = new List<long>();
             asyncResult.freeBuffer1 = buffer;
 
-            // Correct for page 0 of HLOG
-            //if (intendedDestinationPage < 0)
-            //{
-            // By default, when we are not writing to a separate device, the intended 
-            // destination page (logical) is the same as actual
-            //  intendedDestinationPage = (long)(alignedDestinationAddress >> LogPageSizeBits);
-            //}
-
-            //if (intendedDestinationPage == 0)
-            //    ptr += Constants.kFirstValidAddress;
-
             addr = new List<long>();
             MemoryStream ms = new MemoryStream();
             IObjectSerializer<Key> keySerializer = null;
@@ -301,7 +299,9 @@ namespace FASTER.core
                 valueSerializer = SerializerSettings.valueSerializer();
                 valueSerializer.BeginSerialize(ms);
             }
-            for (int i=0; i<numBytesToWrite/recordSize; i++)
+
+
+            for (int i=start/recordSize; i<end/recordSize; i++)
             {
                 if (!src[i].info.Invalid)
                 {
@@ -326,7 +326,7 @@ namespace FASTER.core
                     }
                 }
 
-                if (ms.Position > ObjectBlockSize || i == numBytesToWrite/recordSize - 1)
+                if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
                     var _s = ms.ToArray();
                     ms.Close();
@@ -345,7 +345,7 @@ namespace FASTER.core
                     foreach (var address in addr)
                         *((long*)address) += _objAddr;
 
-                    if (i < numBytesToWrite / recordSize - 1)
+                    if (i < (end / recordSize) - 1)
                     {
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
@@ -375,9 +375,16 @@ namespace FASTER.core
                 valueSerializer.EndSerialize();
             }
 
+            if (asyncResult.partial)
+            {
+                var aligned_end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_end = ((aligned_end + (sectorSize - 1)) & ~(sectorSize - 1));
+                numBytesToWrite = (uint)(aligned_end - start);
+            }
+
             var alignedNumBytesToWrite = (uint)((numBytesToWrite + (sectorSize - 1)) & ~(sectorSize - 1));
             // Finally write the hlog page
-            device.WriteAsync((IntPtr)buffer.aligned_pointer, alignedDestinationAddress,
+            device.WriteAsync((IntPtr)buffer.aligned_pointer + start, alignedDestinationAddress + (ulong)start,
                 alignedNumBytesToWrite, callback, asyncResult);
         }
 
