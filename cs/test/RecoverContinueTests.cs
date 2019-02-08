@@ -21,8 +21,6 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht3;
         private IDevice log;
         private int numOps;
-        private AdId[] inputArray;
-        private Output[] outputArray;
 
         [SetUp]
         public void Setup()
