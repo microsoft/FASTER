@@ -808,11 +808,11 @@ namespace FASTER.core
                 if (numPages > 10)
                 {
                     new Thread(
-                        () => AsyncFlushPages(startPage, newSafeReadOnlyAddress)).Start();
+                        () => AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress)).Start();
                 }
                 else
                 {
-                    AsyncFlushPages(startPage, newSafeReadOnlyAddress);
+                    AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 }
             }
         }
@@ -1182,11 +1182,12 @@ namespace FASTER.core
         /// Flush page range to disk
         /// Called when all threads have agreed that a page range is sealed.
         /// </summary>
-        /// <param name="startPage"></param>
+        /// <param name="fromAddress"></param>
         /// <param name="untilAddress"></param>
-        public void AsyncFlushPages(long startPage, long untilAddress)
+        public void AsyncFlushPages(long fromAddress, long untilAddress)
         {
-            long endPage = (untilAddress >> LogPageSizeBits);
+            long startPage = fromAddress >> LogPageSizeBits;
+            long endPage = untilAddress >> LogPageSizeBits;
             int numPages = (int)(endPage - startPage);
             long offsetInEndPage = GetOffsetInPage(untilAddress);
             if (offsetInEndPage > 0)
@@ -1208,14 +1209,24 @@ namespace FASTER.core
                     page = flushPage,
                     count = 1
                 };
-                if (pageEndAddress > untilAddress)
+                if (pageEndAddress > untilAddress || pageStartAddress < fromAddress)
                 {
                     asyncResult.partial = true;
+                    asyncResult.fromAddress = fromAddress;
                     asyncResult.untilAddress = untilAddress;
+
+                    // Are we flushing until the end of page?
+                    if (untilAddress >= pageEndAddress)
+                    {
+                        // Set status to in-progress
+                        PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus
+                            = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open };
+                    }
                 }
                 else
                 {
                     asyncResult.partial = false;
+                    asyncResult.fromAddress = pageStartAddress;
                     asyncResult.untilAddress = pageEndAddress;
 
                     // Set status to in-progress
@@ -1394,7 +1405,7 @@ namespace FASTER.core
             {
                 PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress = result.untilAddress;
 
-                if (!result.partial)
+                if (!result.partial || (result.untilAddress >= ((result.page + 1) << LogPageSizeBits)))
                 {
                     while (true)
                     {

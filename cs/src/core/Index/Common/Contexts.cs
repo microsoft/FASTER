@@ -406,6 +406,9 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Print checkpoint info for debugging purposes
+        /// </summary>
         public void DebugPrint()
         {
             Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);

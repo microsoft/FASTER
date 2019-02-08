@@ -201,8 +201,23 @@ namespace FASTER.core
                         IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device)
         {
-            device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
-                numBytesToWrite, callback, asyncResult);
+            if (asyncResult.partial)
+            {
+                // Write only required bytes within the page
+                int aligned_start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_start = (aligned_start / sectorSize) * sectorSize;
+
+                int aligned_end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_end = ((aligned_end + (sectorSize - 1)) & ~(sectorSize - 1));
+
+                numBytesToWrite = (uint)(aligned_end - aligned_start);
+                device.WriteAsync(alignedSourceAddress + aligned_start, alignedDestinationAddress + (ulong)aligned_start, numBytesToWrite, callback, asyncResult);
+            }
+            else
+            {
+                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
+                    numBytesToWrite, callback, asyncResult);
+            }
         }
 
         protected override void ReadAsync<TContext>(
