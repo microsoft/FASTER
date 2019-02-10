@@ -99,6 +99,7 @@ namespace FASTER.core
         public int count;
 
         internal bool partial;
+        internal long fromAddress;
         internal long untilAddress;
         internal CountdownEvent handle;
         internal IDevice objlogDevice;

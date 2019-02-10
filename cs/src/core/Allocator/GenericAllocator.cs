@@ -261,6 +261,14 @@ namespace FASTER.core
             }
             */
 
+            int start = 0, aligned_start = 0, end = (int)numBytesToWrite;
+            if (asyncResult.partial)
+            {
+                start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_start = (start / sectorSize) * sectorSize;
+                end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
+            }
+
             // Check if user did not override with special segment offsets
             if (localSegmentOffsets == null) localSegmentOffsets = segmentOffsets;
 
@@ -270,25 +278,37 @@ namespace FASTER.core
             var src = values[flushPage % BufferSize];
             var buffer = ioBufferPool.Get((int)numBytesToWrite);
 
-            fixed (RecordInfo* pin = &src[0].info)
+            if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
             {
-                Buffer.MemoryCopy(Unsafe.AsPointer(ref src[0]), buffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
+                // Get the overlapping HLOG from disk as we wrote it with
+                // object pointers previously. This avoids object reserialization
+                PageAsyncReadResult<Empty> result =
+                    new PageAsyncReadResult<Empty>
+                    {
+                        handle = new CountdownEvent(1)
+                    };
+                device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
+                    (uint)sectorSize, AsyncReadPageCallback, result);
+                result.handle.Wait();
+
+                fixed (RecordInfo* pin = &src[0].info)
+                {
+                    Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start, 
+                        numBytesToWrite - start, numBytesToWrite - start);
+                }
+            }
+            else
+            {
+                fixed (RecordInfo* pin = &src[0].info)
+                {
+                    Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.aligned_pointer + aligned_start, 
+                        numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
+                }
             }
 
             long ptr = (long)buffer.aligned_pointer;
             List<long> addr = new List<long>();
             asyncResult.freeBuffer1 = buffer;
-
-            // Correct for page 0 of HLOG
-            //if (intendedDestinationPage < 0)
-            //{
-            // By default, when we are not writing to a separate device, the intended 
-            // destination page (logical) is the same as actual
-            //  intendedDestinationPage = (long)(alignedDestinationAddress >> LogPageSizeBits);
-            //}
-
-            //if (intendedDestinationPage == 0)
-            //    ptr += Constants.kFirstValidAddress;
 
             addr = new List<long>();
             MemoryStream ms = new MemoryStream();
@@ -305,7 +325,9 @@ namespace FASTER.core
                 valueSerializer = SerializerSettings.valueSerializer();
                 valueSerializer.BeginSerialize(ms);
             }
-            for (int i=0; i<numBytesToWrite/recordSize; i++)
+
+
+            for (int i=start/recordSize; i<end/recordSize; i++)
             {
                 if (!src[i].info.Invalid)
                 {
@@ -330,7 +352,7 @@ namespace FASTER.core
                     }
                 }
 
-                if (ms.Position > ObjectBlockSize || i == numBytesToWrite/recordSize - 1)
+                if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
                     var _s = ms.ToArray();
                     ms.Close();
@@ -349,7 +371,7 @@ namespace FASTER.core
                     foreach (var address in addr)
                         *((long*)address) += _objAddr;
 
-                    if (i < numBytesToWrite / recordSize - 1)
+                    if (i < (end / recordSize) - 1)
                     {
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
@@ -379,10 +401,33 @@ namespace FASTER.core
                 valueSerializer.EndSerialize();
             }
 
+            if (asyncResult.partial)
+            {
+                var aligned_end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_end = ((aligned_end + (sectorSize - 1)) & ~(sectorSize - 1));
+                numBytesToWrite = (uint)(aligned_end - aligned_start);
+            }
+
             var alignedNumBytesToWrite = (uint)((numBytesToWrite + (sectorSize - 1)) & ~(sectorSize - 1));
+
             // Finally write the hlog page
-            device.WriteAsync((IntPtr)buffer.aligned_pointer, alignedDestinationAddress,
+            device.WriteAsync((IntPtr)buffer.aligned_pointer + aligned_start, alignedDestinationAddress + (ulong)aligned_start,
                 alignedNumBytesToWrite, callback, asyncResult);
+        }
+
+        private void AsyncReadPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        {
+            if (errorCode != 0)
+            {
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+            }
+
+            // Set the page status to flushed
+            var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+
+            result.handle.Signal();
+
+            Overlapped.Free(overlap);
         }
 
         protected override void ReadAsync<TContext>(
