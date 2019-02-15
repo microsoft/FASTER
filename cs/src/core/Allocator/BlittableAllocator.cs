@@ -283,5 +283,16 @@ namespace FASTER.core
             throw new Exception("BlittableAllocator memory pages are sector aligned - use direct copy");
             // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);
         }
+
+        /// <summary>
+        /// Iterator interface for scanning FASTER log
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <returns></returns>
+        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

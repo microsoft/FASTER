@@ -183,5 +183,13 @@ namespace FASTER.core
         /// Dump distribution of #entries in hash table, to console
         /// </summary>
         void DumpDistribution();
+
+        /// <summary>
+        /// Scan the log underlying the hash table
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <returns></returns>
+        IFasterScanIterator<Key, Value> LogScan(long beginAddress, long endAddress);
     }
 }

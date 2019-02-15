@@ -412,5 +412,16 @@ namespace FASTER.core
             MallocFixedPageSize<HashBucket>.PhysicalInstance = null;
             hlog.Dispose();
         }
+
+        /// <summary>
+        /// Scan the log underlying FASTER, for address range
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <returns></returns>
+        public IFasterScanIterator<Key, Value> LogScan(long beginAddress, long endAddress)
+        {
+            return hlog.Scan(beginAddress, endAddress);
+        }
     }
 }

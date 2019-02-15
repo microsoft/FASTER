@@ -1479,9 +1479,4 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress);
     }
-
-    public interface IFasterScanIterator<Key, Value> : IDisposable
-    {
-        bool GetNext(ref Key key, ref Value value);
-    }
 }
