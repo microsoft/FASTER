@@ -15,6 +15,55 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
+    internal class Frame : IDisposable
+    {
+        public readonly int frameSize, pageSize, sectorSize;
+        public readonly byte[][] frame;
+        public GCHandle[] handles;
+        public long[] pointers;
+
+        public Frame(int frameSize, int pageSize, int sectorSize)
+        {
+            this.frameSize = frameSize;
+            this.pageSize = pageSize;
+            this.sectorSize = sectorSize;
+
+            frame = new byte[frameSize][];
+            handles = new GCHandle[frameSize];
+            pointers = new long[frameSize];
+        }
+        public void Allocate(int index)
+        {
+            var adjustedSize = pageSize + 2 * sectorSize;
+            byte[] tmp = new byte[adjustedSize];
+            Array.Clear(tmp, 0, adjustedSize);
+
+            handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
+            long p = (long)handles[index].AddrOfPinnedObject();
+            pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
+            frame[index] = tmp;
+        }
+
+        public void Clear(int pageIndex)
+        {
+            Array.Clear(frame[pageIndex], 0, frame[pageIndex].Length);
+        }
+
+        public long GetPhysicalAddress(long frameNumber, long offset)
+        {
+            return pointers[frameNumber % frameSize] + offset;
+        }
+
+        public void Dispose()
+        {
+            for (int i = 0; i < frameSize; i++)
+            {
+                handles[i].Free();
+                frame[i] = null;
+                pointers[i] = 0;
+            }
+        }
+    }
     public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
         where Key : new()
         where Value : new()
@@ -292,7 +341,193 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress)
         {
-            throw new NotImplementedException();
+            return new BlittableScanIterator(this, beginAddress, endAddress);
+        }
+
+
+        /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="readPageStart"></param>
+        /// <param name="numPages"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        /// <param name="frame"></param>
+        /// <param name="completed"></param>
+        /// <param name="devicePageOffset"></param>
+        /// <param name="device"></param>
+        /// <param name="objectLogDevice"></param>
+        private void AsyncReadPagesFromDeviceToFrame<TContext>(
+                                        long readPageStart,
+                                        int numPages,
+                                        IOCompletionCallback callback,
+                                        TContext context,
+                                        Frame frame,
+                                        out CountdownEvent completed,
+                                        long devicePageOffset = 0,
+                                        IDevice device = null, IDevice objectLogDevice = null)
+        {
+            var usedDevice = device;
+            IDevice usedObjlogDevice = objectLogDevice;
+
+            if (device == null)
+            {
+                usedDevice = this.device;
+            }
+
+            completed = new CountdownEvent(numPages);
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            {
+                int pageIndex = (int)(readPage % frame.frameSize);
+                if (frame.frame[pageIndex] == null)
+                {
+                    frame.Allocate(pageIndex);
+                }
+                else
+                {
+                    frame.Clear(pageIndex);
+                }
+                var asyncResult = new PageAsyncReadResult<TContext>()
+                {
+                    page = readPage,
+                    context = context,
+                    handle = completed,
+                    count = 1,
+                    frame = frame
+                };
+
+                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+
+                if (device != null)
+                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+                device.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], (uint)PageSize, callback, asyncResult);
+            }
+        }
+
+        /// <summary>
+        /// Scan iterator for hybrid log
+        /// </summary>
+        public class BlittableScanIterator : IFasterScanIterator<Key, Value>
+        {
+            private const int frameSize = 2;
+
+            private readonly BlittableAllocator<Key, Value> hlog;
+            private readonly long beginAddress, endAddress;
+
+            private readonly Frame frame;
+            private readonly CountdownEvent[] loaded;
+
+            private bool first = true;
+            private long currentAddress;
+
+            /// <summary>
+            /// Constructor
+            /// </summary>
+            /// <param name="hlog"></param>
+            /// <param name="beginAddress"></param>
+            /// <param name="endAddress"></param>
+            public BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress)
+            {
+                this.hlog = hlog;
+                this.beginAddress = beginAddress;
+                this.endAddress = endAddress;
+                currentAddress = beginAddress;
+
+
+                frame = new Frame(frameSize, hlog.PageSize, hlog.sectorSize);
+                loaded = new CountdownEvent[frameSize];
+
+                var frameNumber = (currentAddress >> hlog.LogPageSizeBits) % frameSize;
+                hlog.AsyncReadPagesFromDeviceToFrame
+                    (currentAddress >> hlog.LogPageSizeBits,
+                    1, AsyncReadPagesCallback, Empty.Default,
+                    frame, out loaded[frameNumber]);
+            }
+
+
+            public bool GetNext(out Key key, out Value value)
+            {
+                key = default(Key);
+                value = default(Value);
+
+                if (currentAddress >= endAddress)
+                {
+                    return false;
+                }
+
+                if (currentAddress < hlog.BeginAddress)
+                {
+                    throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
+                }
+
+                var currentPage = currentAddress >> hlog.LogPageSizeBits;
+                var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
+
+                if (currentAddress >= hlog.HeadAddress)
+                {
+                    // Read record from memory
+                    var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
+                    
+                    key = hlog.GetKey(_physicalAddress);
+                    value = hlog.GetValue(_physicalAddress);
+                    currentAddress += hlog.GetRecordSize(_physicalAddress);
+                    return true;
+                }
+
+
+                var frameNumber = currentPage % frameSize;
+                loaded[frameNumber].Wait();
+
+                if (first || (currentAddress & hlog.PageSizeMask) == 0)
+                {
+                    first = false;
+
+                    // Prefetch next page if needed
+                    var endPage = endAddress >> hlog.LogPageSizeBits;
+                    if ((endPage > currentPage) &&
+                        ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))
+                    {
+                        hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, AsyncReadPagesCallback, Empty.Default, frame, out loaded[(currentPage + 1) % frameSize]);
+                    }
+                }
+
+                var physicalAddress = frame.GetPhysicalAddress(frameNumber, offset);
+                key = hlog.GetKey(physicalAddress);
+                value = hlog.GetValue(physicalAddress);
+                currentAddress += hlog.GetRecordSize(physicalAddress);
+                return true;
+            }
+
+            public void Dispose()
+            {
+                throw new NotImplementedException();
+            }
+
+            private void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+            {
+                if (errorCode != 0)
+                {
+                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                }
+
+                var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+
+                if (result.freeBuffer1.buffer != null)
+                {
+                    hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                    result.freeBuffer1.Return();
+                }
+
+                if (result.handle != null)
+                {
+                    result.handle.Signal();
+                }
+
+                Interlocked.MemoryBarrier();
+                Overlapped.Free(overlap);
+            }
         }
     }
 }
