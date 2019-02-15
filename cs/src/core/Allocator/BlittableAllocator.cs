@@ -210,7 +210,7 @@ namespace FASTER.core
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
-                    (uint)PageSize,
+                    (uint)AlignedPageSizeBytes,
                     callback,
                     asyncResult, device);
         }
@@ -403,7 +403,7 @@ namespace FASTER.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                device.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], (uint)PageSize, callback, asyncResult);
+                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], (uint)AlignedPageSizeBytes, callback, asyncResult);
             }
         }
 
@@ -458,52 +458,78 @@ namespace FASTER.core
                 key = default(Key);
                 value = default(Value);
 
-                if (currentAddress >= endAddress)
+                while (true)
                 {
-                    return false;
-                }
+                    // Check for boundary conditions
+                    if (currentAddress >= endAddress)
+                    {
+                        return false;
+                    }
 
-                if (currentAddress < hlog.BeginAddress)
-                {
-                    throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
-                }
+                    if (currentAddress < hlog.BeginAddress)
+                    {
+                        throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
+                    }
 
-                var currentPage = currentAddress >> hlog.LogPageSizeBits;
-                var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
+                    var currentPage = currentAddress >> hlog.LogPageSizeBits;
+                    var currentFrame = currentPage % frameSize;
+                    var offset = currentAddress & hlog.PageSizeMask;
 
-                if (currentAddress >= hlog.HeadAddress)
-                {
-                    // Read record from memory
-                    var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
-                    
-                    key = hlog.GetKey(_physicalAddress);
-                    value = hlog.GetValue(_physicalAddress);
-                    currentAddress += hlog.GetRecordSize(_physicalAddress);
+                    if (currentAddress < hlog.HeadAddress)
+                        BufferAndLoad(currentAddress, currentPage, currentFrame);
+
+                    // Check if record fits on page, if not skip to next page
+                    if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
+                    {
+                        currentAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+                        continue;
+                    }
+
+
+                    if (currentAddress >= hlog.HeadAddress)
+                    {
+                        // Read record from cached page memory
+                        var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
+
+                        key = hlog.GetKey(_physicalAddress);
+                        value = hlog.GetValue(_physicalAddress);
+                        currentAddress += hlog.GetRecordSize(_physicalAddress);
+                        return true;
+                    }
+
+                    var physicalAddress = frame.GetPhysicalAddress(currentFrame, offset);
+                    key = hlog.GetKey(physicalAddress);
+                    value = hlog.GetValue(physicalAddress);
+                    currentAddress += hlog.GetRecordSize(physicalAddress);
                     return true;
                 }
+            }
 
-
-                var frameNumber = currentPage % frameSize;
-                loaded[frameNumber].Wait();
-
+            
+            private void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)
+            {
                 if (first || (currentAddress & hlog.PageSizeMask) == 0)
                 {
-                    first = false;
-
-                    // Prefetch next page if needed
-                    var endPage = endAddress >> hlog.LogPageSizeBits;
-                    if ((endPage > currentPage) &&
-                        ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))
+                    // Prefetch pages based on buffering mode
+                    if (frameSize == 1)
                     {
-                        hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, AsyncReadPagesCallback, Empty.Default, frame, out loaded[(currentPage + 1) % frameSize]);
+                        if (!first)
+                        {
+                            hlog.AsyncReadPagesFromDeviceToFrame(currentAddress >> hlog.LogPageSizeBits, 1, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
+                        }
                     }
+                    else
+                    {
+                        var endPage = endAddress >> hlog.LogPageSizeBits;
+                        if ((endPage > currentPage) &&
+                            ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))
+                        {
+                            hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, AsyncReadPagesCallback, Empty.Default, frame, out loaded[(currentPage + 1) % frameSize]);
+                        }
+                    }
+                    first = false;
                 }
-
-                var physicalAddress = frame.GetPhysicalAddress(frameNumber, offset);
-                key = hlog.GetKey(physicalAddress);
-                value = hlog.GetValue(physicalAddress);
-                currentAddress += hlog.GetRecordSize(physicalAddress);
-                return true;
+                loaded[currentFrame].Wait();
             }
 
             public void Dispose()

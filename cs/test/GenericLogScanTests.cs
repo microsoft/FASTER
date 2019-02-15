@@ -15,7 +15,7 @@ namespace FASTER.test
 {
 
     [TestFixture]
-    internal class ObjectFASTERScanTests
+    internal class GenericFASTERScanTests
     {
         private FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> fht;
         private IDevice log, objlog;
@@ -28,7 +28,7 @@ namespace FASTER.test
 
             fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
                 (128, new MyFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 5 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
@@ -46,7 +46,7 @@ namespace FASTER.test
 
 
         [Test]
-        public void ObjectDiskWriteScan()
+        public void GenericDiskWriteScan()
         {
             const int totalRecords = 2000;
             var start = fht.LogTailAddress;

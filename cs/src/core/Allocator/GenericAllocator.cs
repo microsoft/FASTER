@@ -1035,45 +1035,54 @@ namespace FASTER.core
                 key = default(Key);
                 value = default(Value);
 
-                // Check if record fits on page, if not skip to next page
-                if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
+                while (true)
                 {
-                    // Make sure current page has completed loading
-                    loaded[(currentAddress >> hlog.LogPageSizeBits) % frameSize].Wait();
+                    // Check for boundary conditions
+                    if (currentAddress >= endAddress)
+                    {
+                        return false;
+                    }
 
-                    // Forward current address
-                    currentAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+                    if (currentAddress < hlog.BeginAddress)
+                    {
+                        throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
+                    }
 
-                    // We are no longer the first call
-                    first = false;
-                }
+                    var currentPage = currentAddress >> hlog.LogPageSizeBits;
+                    var currentFrame = currentPage % frameSize;
+                    var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
-                // Check for boundary conditions
-                if (currentAddress >= endAddress)
-                {
-                    return false;
-                }
+                    if (currentAddress < hlog.HeadAddress)
+                        BufferAndLoad(currentAddress, currentPage, currentFrame);
 
-                if (currentAddress < hlog.BeginAddress)
-                {
-                    throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
-                }
+                    // Check if record fits on page, if not skip to next page
+                    if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
+                    {
+                        currentAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+                        continue;
+                    }
 
-                var currentPage = currentAddress >> hlog.LogPageSizeBits;
-                var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
-                if (currentAddress >= hlog.HeadAddress)
-                {
-                    // Read record from cached page memory
-                    var page = currentPage % hlog.BufferSize;
-                    key = hlog.values[page][offset].key;
-                    value = hlog.values[page][offset].value;
+                    if (currentAddress >= hlog.HeadAddress)
+                    {
+                        // Read record from cached page memory
+                        currentAddress += recordSize;
+
+                        var page = currentPage % hlog.BufferSize;
+                        key = hlog.values[page][offset].key;
+                        value = hlog.values[page][offset].value;
+                        return true;
+                    }
+
                     currentAddress += recordSize;
+                    key = frame[currentFrame][offset].key;
+                    value = frame[currentFrame][offset].value;
                     return true;
                 }
+            }
 
-                var frameNumber = currentPage % frameSize;
-
+            private void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)
+            {
                 if (first || (currentAddress & hlog.PageSizeMask) == 0)
                 {
                     // Prefetch pages based on buffering mode
@@ -1081,10 +1090,7 @@ namespace FASTER.core
                     {
                         if (!first)
                         {
-                            hlog.AsyncReadPagesFromDeviceToFrame
-                                (currentAddress >> hlog.LogPageSizeBits,
-                                1, AsyncReadPagesCallback, Empty.Default,
-                                frame, frameSize, out loaded[frameNumber]);
+                            hlog.AsyncReadPagesFromDeviceToFrame(currentAddress >> hlog.LogPageSizeBits, 1, AsyncReadPagesCallback, Empty.Default, frame, frameSize, out loaded[currentFrame]);
                         }
                     }
                     else
@@ -1098,13 +1104,7 @@ namespace FASTER.core
                     }
                     first = false;
                 }
-
-                loaded[frameNumber].Wait();
-
-                key = frame[frameNumber][offset].key;
-                value = frame[frameNumber][offset].value;
-                currentAddress += recordSize;
-                return true;
+                loaded[currentFrame].Wait();
             }
 
             public void Dispose()

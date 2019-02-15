@@ -433,11 +433,13 @@ namespace FASTER.core
         /// <param name="firstValidAddress"></param>
         protected void Initialize(long firstValidAddress)
         {
+            Debug.Assert(firstValidAddress <= PageSize);
+            Debug.Assert(PageSize >= GetRecordSize(0));
+
             readBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
 
             long tailPage = firstValidAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
-            Debug.Assert(tailPageIndex == 0);
             AllocatePage(tailPageIndex);
 
             // Allocate next page as well
