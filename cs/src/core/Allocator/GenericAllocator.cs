@@ -272,9 +272,6 @@ namespace FASTER.core
             // Check if user did not override with special segment offsets
             if (localSegmentOffsets == null) localSegmentOffsets = segmentOffsets;
 
-            // need to write both page and object cache
-            asyncResult.count++;
-
             var src = values[flushPage % BufferSize];
             var buffer = ioBufferPool.Get((int)numBytesToWrite);
 
@@ -371,6 +368,7 @@ namespace FASTER.core
                     foreach (var address in addr)
                         *((long*)address) += _objAddr;
 
+
                     if (i < (end / recordSize) - 1)
                     {
                         objlogDevice.WriteAsync(
@@ -384,6 +382,9 @@ namespace FASTER.core
                     }
                     else
                     {
+                        // need to write both page and object cache
+                        asyncResult.count++;
+
                         asyncResult.freeBuffer2 = _objBuffer;
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
@@ -497,7 +498,7 @@ namespace FASTER.core
 
                 if (result.freeBuffer1.buffer != null && result.freeBuffer1.required_bytes > 0)
                 {
-                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, src);
+                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), PageSize, src);
                     result.freeBuffer1.required_bytes = 0;
                 }
             }
@@ -505,7 +506,7 @@ namespace FASTER.core
             {
                 if (result.freeBuffer1.buffer != null && result.freeBuffer1.required_bytes > 0)
                 {
-                    PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                    PopulatePage(result.freeBuffer1.GetValidPointer(), PageSize, result.page);
                     result.freeBuffer1.required_bytes = 0;
                 }
             }
@@ -664,7 +665,7 @@ namespace FASTER.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pageIndex, (uint)PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, pageIndex, (uint)AlignedPageSizeBytes, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
@@ -977,10 +978,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
+        /// <param name="scanBufferingMode"></param>
         /// <returns></returns>
-        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress)
+        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new GenericScanIterator(this, beginAddress, endAddress);
+            return new GenericScanIterator(this, beginAddress, endAddress, scanBufferingMode);
         }
 
         /// <summary>
@@ -988,7 +990,7 @@ namespace FASTER.core
         /// </summary>
         public class GenericScanIterator : IFasterScanIterator<Key, Value>
         {
-            private const int frameSize = 2;
+            private readonly int frameSize;
 
             private readonly GenericAllocator<Key, Value> hlog;
             private readonly long beginAddress, endAddress;
@@ -1004,12 +1006,18 @@ namespace FASTER.core
             /// <param name="hlog"></param>
             /// <param name="beginAddress"></param>
             /// <param name="endAddress"></param>
-            public GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress)
+            /// <param name="scanBufferingMode"></param>
+            public GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
             {
                 this.hlog = hlog;
                 this.beginAddress = beginAddress;
                 this.endAddress = endAddress;
                 currentAddress = beginAddress;
+
+                if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
+                    frameSize = 1;
+                else
+                    frameSize = 2;
 
                 frame = new Record<Key, Value>[frameSize][];
                 loaded = new CountdownEvent[frameSize];
@@ -1027,6 +1035,20 @@ namespace FASTER.core
                 key = default(Key);
                 value = default(Value);
 
+                // Check if record fits on page, if not skip to next page
+                if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
+                {
+                    // Make sure current page has completed loading
+                    loaded[(currentAddress >> hlog.LogPageSizeBits) % frameSize].Wait();
+
+                    // Forward current address
+                    currentAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+
+                    // We are no longer the first call
+                    first = false;
+                }
+
+                // Check for boundary conditions
                 if (currentAddress >= endAddress)
                 {
                     return false;
@@ -1042,7 +1064,7 @@ namespace FASTER.core
 
                 if (currentAddress >= hlog.HeadAddress)
                 {
-                    // Read record from memory
+                    // Read record from cached page memory
                     var page = currentPage % hlog.BufferSize;
                     key = hlog.values[page][offset].key;
                     value = hlog.values[page][offset].value;
@@ -1050,23 +1072,35 @@ namespace FASTER.core
                     return true;
                 }
 
-
-                var frameNumber =  currentPage % frameSize;
-                loaded[frameNumber].Wait();
+                var frameNumber = currentPage % frameSize;
 
                 if (first || (currentAddress & hlog.PageSizeMask) == 0)
                 {
-                    first = false;
-
-                    // Prefetch next page if needed
-                    var endPage = endAddress >> hlog.LogPageSizeBits;
-                    if ((endPage > currentPage) && 
-                        ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))
+                    // Prefetch pages based on buffering mode
+                    if (frameSize == 1)
                     {
-                        hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, AsyncReadPagesCallback, Empty.Default, frame, frameSize, out loaded[(currentPage+1) % frameSize]);
+                        if (!first)
+                        {
+                            hlog.AsyncReadPagesFromDeviceToFrame
+                                (currentAddress >> hlog.LogPageSizeBits,
+                                1, AsyncReadPagesCallback, Empty.Default,
+                                frame, frameSize, out loaded[frameNumber]);
+                        }
                     }
+                    else
+                    {
+                        var endPage = endAddress >> hlog.LogPageSizeBits;
+                        if ((endPage > currentPage) &&
+                            ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))
+                        {
+                            hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, AsyncReadPagesCallback, Empty.Default, frame, frameSize, out loaded[(currentPage + 1) % frameSize]);
+                        }
+                    }
+                    first = false;
                 }
-                
+
+                loaded[frameNumber].Wait();
+
                 key = frame[frameNumber][offset].key;
                 value = frame[frameNumber][offset].value;
                 currentAddress += recordSize;

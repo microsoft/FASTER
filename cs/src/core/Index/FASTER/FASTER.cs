@@ -418,10 +418,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
+        /// <param name="scanBufferingMode"></param>
         /// <returns></returns>
-        public IFasterScanIterator<Key, Value> LogScan(long beginAddress, long endAddress)
+        public IFasterScanIterator<Key, Value> LogScan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
         {
-            return hlog.Scan(beginAddress, endAddress);
+            return hlog.Scan(beginAddress, endAddress, scanBufferingMode);
         }
     }
 }

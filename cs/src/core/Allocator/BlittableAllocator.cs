@@ -338,10 +338,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
+        /// <param name="scanBufferingMode"></param>
         /// <returns></returns>
-        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress)
+        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new BlittableScanIterator(this, beginAddress, endAddress);
+            return new BlittableScanIterator(this, beginAddress, endAddress, scanBufferingMode);
         }
 
 
@@ -411,7 +412,7 @@ namespace FASTER.core
         /// </summary>
         public class BlittableScanIterator : IFasterScanIterator<Key, Value>
         {
-            private const int frameSize = 2;
+            private readonly int frameSize;
 
             private readonly BlittableAllocator<Key, Value> hlog;
             private readonly long beginAddress, endAddress;
@@ -428,13 +429,18 @@ namespace FASTER.core
             /// <param name="hlog"></param>
             /// <param name="beginAddress"></param>
             /// <param name="endAddress"></param>
-            public BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress)
+            /// <param name="scanBufferingMode"></param>
+            public BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
             {
                 this.hlog = hlog;
                 this.beginAddress = beginAddress;
                 this.endAddress = endAddress;
                 currentAddress = beginAddress;
 
+                if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
+                    frameSize = 1;
+                else
+                    frameSize = 2;
 
                 frame = new Frame(frameSize, hlog.PageSize, hlog.sectorSize);
                 loaded = new CountdownEvent[frameSize];

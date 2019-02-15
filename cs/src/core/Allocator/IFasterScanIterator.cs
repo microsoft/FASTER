@@ -6,6 +6,22 @@ using System;
 namespace FASTER.core
 {
     /// <summary>
+    /// Scan buffering mode
+    /// </summary>
+    public enum ScanBufferingMode
+    {
+        /// <summary>
+        /// Buffer only current page being scanned
+        /// </summary>
+        SinglePageBuffering,
+
+        /// <summary>
+        /// Buffer current and next page in scan sequence
+        /// </summary>
+        DoublePageBuffering
+    }
+
+    /// <summary>
     /// Scan iterator interface for FASTER log
     /// </summary>
     /// <typeparam name="Key"></typeparam>

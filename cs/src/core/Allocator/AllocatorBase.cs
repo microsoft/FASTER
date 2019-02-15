@@ -1476,7 +1476,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
+        /// <param name="scanBufferingMode"></param>
         /// <returns></returns>
-        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress);
+        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
     }
 }

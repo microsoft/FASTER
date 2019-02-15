@@ -48,7 +48,7 @@ namespace FASTER.test
         [Test]
         public void ObjectDiskWriteScan()
         {
-            const int totalRecords = 20000;
+            const int totalRecords = 2000;
             var start = fht.LogTailAddress;
             for (int i = 0; i < totalRecords; i++)
             {
@@ -57,7 +57,7 @@ namespace FASTER.test
                 fht.Upsert(ref _key, ref _value, Empty.Default, 0);
             }
 
-            var iter = fht.LogScan(start, fht.LogTailAddress);
+            var iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.SinglePageBuffering);
 
             int val = 0;
             while (iter.GetNext(out MyKey key, out MyValue value))
@@ -67,6 +67,18 @@ namespace FASTER.test
                 val++;
             }
             Assert.IsTrue(totalRecords == val);
+
+            iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.DoublePageBuffering);
+
+            val = 0;
+            while (iter.GetNext(out MyKey key, out MyValue value))
+            {
+                Assert.IsTrue(key.key == val);
+                Assert.IsTrue(value.value == val);
+                val++;
+            }
+            Assert.IsTrue(totalRecords == val);
+
         }
     }
 }
