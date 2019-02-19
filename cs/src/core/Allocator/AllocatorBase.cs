@@ -1363,9 +1363,9 @@ namespace FASTER.core
                     {
                         var oldAddress = ctx.logicalAddress;
 
-                        //keys are not same. I/O is not complete
+                        // Keys are not same. I/O is not complete
                         ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                        if (ctx.logicalAddress != Constants.kInvalidAddress)
+                        if (ctx.logicalAddress >= BeginAddress)
                         {
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
