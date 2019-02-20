@@ -21,20 +21,10 @@ namespace FASTER.core
     {
         private const bool ForceUnpinnedAllocation = false;
 
-        /// <summary>
-        /// Static instance that returns logical addresses
-        /// </summary>
-        public static MallocFixedPageSize<T> Instance = new MallocFixedPageSize<T>();
-
-        /// <summary>
-        /// Static instance that returns physical addresses
-        /// </summary>
-        public static MallocFixedPageSize<T> PhysicalInstance = new MallocFixedPageSize<T>(true);
-
         private const int PageSizeBits = 16;
         private const int PageSize = 1 << PageSizeBits;
         private const int PageSizeMask = PageSize - 1;
-        private const int LevelSizeBits = 18;
+        private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
         private const int LevelSizeMask = LevelSize - 1;
 

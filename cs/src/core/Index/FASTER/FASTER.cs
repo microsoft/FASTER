@@ -406,10 +406,6 @@ namespace FASTER.core
         public void Dispose()
         {
             base.Free();
-            MallocFixedPageSize<HashBucket>.Instance?.Dispose();
-            MallocFixedPageSize<HashBucket>.Instance = null;
-            MallocFixedPageSize<HashBucket>.PhysicalInstance?.Dispose();
-            MallocFixedPageSize<HashBucket>.PhysicalInstance = null;
             hlog.Dispose();
         }
 
