@@ -66,6 +66,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return()
         {
+            valid_offset = 0;
             pool.Return(this);
         }
 

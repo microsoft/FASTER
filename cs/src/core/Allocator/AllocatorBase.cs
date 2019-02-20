@@ -433,11 +433,13 @@ namespace FASTER.core
         /// <param name="firstValidAddress"></param>
         protected void Initialize(long firstValidAddress)
         {
+            Debug.Assert(firstValidAddress <= PageSize);
+            Debug.Assert(PageSize >= GetRecordSize(0));
+
             readBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
 
             long tailPage = firstValidAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
-            Debug.Assert(tailPageIndex == 0);
             AllocatePage(tailPageIndex);
 
             // Allocate next page as well
@@ -1361,9 +1363,9 @@ namespace FASTER.core
                     {
                         var oldAddress = ctx.logicalAddress;
 
-                        //keys are not same. I/O is not complete
+                        // Keys are not same. I/O is not complete
                         ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                        if (ctx.logicalAddress != Constants.kInvalidAddress)
+                        if (ctx.logicalAddress >= BeginAddress)
                         {
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
@@ -1470,5 +1472,14 @@ namespace FASTER.core
         {
             dst = src;
         }
+
+        /// <summary>
+        /// Pull-based scan interface for HLOG
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <param name="scanBufferingMode"></param>
+        /// <returns></returns>
+        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
     }
 }

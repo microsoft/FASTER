@@ -34,6 +34,8 @@ namespace FASTER.core
         internal IDevice objlogDevice;
         internal long resumeptr;
         internal long untilptr;
+        internal object frame;
+        internal int frameSize;
 
         /// <summary>
         /// 
@@ -70,11 +72,6 @@ namespace FASTER.core
             {
                 freeBuffer2.Return();
                 freeBuffer2.buffer = null;
-            }
-
-            if (handle != null)
-            {
-                handle.Signal();
             }
         }
     }
