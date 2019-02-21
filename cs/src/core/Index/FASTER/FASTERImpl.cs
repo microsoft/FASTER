@@ -258,7 +258,7 @@ namespace FASTER.core
 
             #region Trace back record in in-memory HybridLog
             var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.word & Constants.kAddressMask;
             if (logicalAddress >= hlog.HeadAddress)
             {
@@ -369,7 +369,7 @@ namespace FASTER.core
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
@@ -627,7 +627,7 @@ namespace FASTER.core
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.HeadAddress)
             {
@@ -928,7 +928,7 @@ namespace FASTER.core
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.HeadAddress)
             {
@@ -1185,7 +1185,7 @@ namespace FASTER.core
 
             #region Trace Back for Record on In-Memory HybridLog
             var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.Address;
             if (logicalAddress >= hlog.HeadAddress)
             {
@@ -1270,6 +1270,74 @@ namespace FASTER.core
         }
 
         #endregion
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalDeleteFromMemory(ref Key key)
+        {
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+            var logicalAddress = Constants.kInvalidAddress;
+            var physicalAddress = default(long);
+            var latestRecordVersion = -1;
+
+            var hash = comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+            if (threadCtx.phase != Phase.REST)
+                HeavyEnter(hash);
+
+            // Check if hash table points directly to given key
+            HashBucketEntry entry = default(HashBucketEntry);
+            var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+            if (tagExists)
+            {
+                logicalAddress = entry.Address;
+                if (logicalAddress >= hlog.HeadAddress)
+                {
+                    physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                    latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+                    if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                    {
+                        return OperationStatus.NOTFOUND;
+                    }
+                }
+            }
+            else
+            {
+                // no tag found
+                return OperationStatus.NOTFOUND;
+            }
+
+            if (logicalAddress >= hlog.ReadOnlyAddress)
+            {
+                Value v = default(Value);
+                functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+            }
+
+            // Record is in memory, can update hash index if relevant
+            if (logicalAddress >= hlog.HeadAddress)
+            {
+                if (entry.Address == logicalAddress)
+                {
+                    var updatedEntry = default(HashBucketEntry);
+                    updatedEntry.Tag = tag;
+                    if (hlog.GetInfo(physicalAddress).PreviousAddress == Constants.kTempInvalidAddress)
+                        updatedEntry.Address = Constants.kInvalidAddress;
+                    else
+                        updatedEntry.Address = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    updatedEntry.Pending = entry.Pending;
+                    updatedEntry.Tentative = false;
+
+                    if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
+                    {
+                        return OperationStatus.SUCCESS;
+                    }
+                }
+            }
+
+            return OperationStatus.NOTFOUND;
+        }
 
         #region Helper Functions
 
@@ -1381,7 +1449,7 @@ namespace FASTER.core
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
             var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             HashBucket.TryAcquireSharedLatch(bucket);
         }
 
@@ -1392,7 +1460,7 @@ namespace FASTER.core
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
             var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             HashBucket.ReleaseSharedLatch(bucket);
         }
 
@@ -1499,7 +1567,7 @@ namespace FASTER.core
                     long ptr = chunkSize * (i & (numChunks - 1));
 
                     HashBucket* src_start = state[version].tableAligned + ptr;
-                    CleanBucket(src_start, chunkSize);
+                    // CleanBucket(src_start, chunkSize);
 
                     // GC for chunk is done
                     gcStatus[i & (numChunks - 1)] = 2;
