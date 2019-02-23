@@ -64,5 +64,11 @@ namespace FASTER.core
         /// Copy reads to tail of log
         /// </summary>
         public bool CopyReadsToTail = false;
+
+        /// <summary>
+        /// Size of read cache, in bits
+        /// 0 = no read cache
+        /// </summary>
+        public int ReadCacheSizeBits = 0;
     }
 }

@@ -33,6 +33,9 @@ namespace FASTER.core
 
         public const long kPendingBitMask = (1L << kPendingBitShift);
 
+        public const int kReadCacheBitShift = 47;
+        public const long kReadCacheBitMask = (1L << kReadCacheBitShift);
+
         public const int kTagSize = 14;
 
         public const int kTagShift = 62 - kTagSize;
@@ -153,6 +156,7 @@ namespace FASTER.core
             }
         }
 
+
         public ushort Tag
         {
             get
@@ -206,6 +210,27 @@ namespace FASTER.core
                 }
             }
         }
+
+        public bool ReadCache
+        {
+            get
+            {
+                return (word & Constants.kReadCacheBitMask) != 0;
+            }
+
+            set
+            {
+                if (value)
+                {
+                    word |= Constants.kReadCacheBitMask;
+                }
+                else
+                {
+                    word &= ~Constants.kReadCacheBitMask;
+                }
+            }
+        }
+
     }
 
     internal unsafe struct InternalHashTable

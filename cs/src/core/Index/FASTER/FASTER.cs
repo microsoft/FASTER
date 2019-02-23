@@ -15,8 +15,10 @@ namespace FASTER.core
     {
         private readonly Functions functions;
         private readonly AllocatorBase<Key, Value> hlog;
+        private readonly AllocatorBase<Key, Value> readcache;
         private readonly IFasterEqualityComparer<Key> comparer;
 
+        private readonly bool UseReadCache = false;
         private readonly bool CopyReadsToTail = false;
         private readonly bool FoldOverSnapshot = false;
         private readonly int sectorSize;
@@ -96,10 +98,30 @@ namespace FASTER.core
             CopyReadsToTail = logSettings.CopyReadsToTail;
             this.functions = functions;
 
+            if (logSettings.ReadCacheSizeBits > 0)
+            {
+                CopyReadsToTail = false;
+                UseReadCache = true;
+            }
+
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
+            {
                 hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
+                if (UseReadCache)
+                {
+                    readcache = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
+                    readcache.Initialize();
+                }
+            }
             else
+            {
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
+                if (UseReadCache)
+                {
+                    readcache = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
+                    readcache.Initialize();
+                }
+            }
 
             hlog.Initialize();
 
@@ -299,7 +321,6 @@ namespace FASTER.core
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-
                 status = (Status)internalStatus;
             }
             else
