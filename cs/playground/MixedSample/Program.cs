@@ -139,7 +139,7 @@ namespace MixedSample
 
             var h = new FasterKV
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (128, new MyFunctions(),
+                (1L << 20, new MyFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 29 }
                 );
 

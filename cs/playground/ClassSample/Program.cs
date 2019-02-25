@@ -60,6 +60,7 @@ namespace ClassSample
 
     public class MyInput
     {
+        public int value;
     }
 
     public class MyOutput
@@ -68,78 +69,44 @@ namespace ClassSample
     }
 
 
-    public class MyContext
-    {
-    }
+    public class MyContext { }
 
     public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
-        {
-            throw new NotImplementedException();
-        }
+        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
+        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
+        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value += input.value;
 
-        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
-        {
-            throw new NotImplementedException();
-        }
 
-        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
-        {
-            throw new NotImplementedException();
-        }
+        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
+        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
+        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
+        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
 
-        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, MyContext ctx, Status status)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, MyContext ctx)
-        {
-            throw new NotImplementedException();
-        }
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status) { }
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, MyContext ctx) { }
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, MyContext ctx, Status status) { }
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
     }
 
     class Program
     {
         static void Main(string[] args)
         {
+            // This sample uses class key and value types, which are not blittable (i.e., they
+            // require a pointer to heap objects). Such datatypes include variable length types
+            // such as strings. You can override the default key equality comparer in two ways;
+            // (1) Make Key implement IFasterEqualityComparer<Key> interface
+            // (2) Provide IFasterEqualityComparer<Key> instance as param to constructor
+            // FASTER stores the actual objects in a separate object log.
+            // Note that serializers are required for class types, see below.
+
             var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
             var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log");
 
             var h = new FasterKV
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (128, new MyFunctions(),
+                (1L << 20, new MyFunctions(),
                 new LogSettings {  LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 29 },
                 null,
                 new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
@@ -159,16 +126,23 @@ namespace ClassSample
             var key = new MyKey { key = 23 };
             var input = default(MyInput);
             MyOutput g1 = new MyOutput();
-            h.Read(ref key, ref input, ref g1, context, 0);
+            var status = h.Read(ref key, ref input, ref g1, context, 0);
 
-            h.CompletePending(true);
+            if (status == Status.OK && g1.value.value == key.key)
+                Console.WriteLine("Success!");
+            else
+                Console.WriteLine("Error!");
 
             MyOutput g2 = new MyOutput();
             key = new MyKey { key = 46 };
-            h.Read(ref key, ref input, ref g2, context, 0);
-            h.CompletePending(true);
+            status = h.Read(ref key, ref input, ref g2, context, 0);
 
-            Console.WriteLine("Success!");
+            if (status == Status.OK && g2.value.value == key.key)
+                Console.WriteLine("Success!");
+            else
+                Console.WriteLine("Error!");
+
+            Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();
         }
     }
