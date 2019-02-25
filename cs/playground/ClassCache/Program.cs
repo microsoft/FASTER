@@ -30,7 +30,9 @@ namespace ClassCache
 
             h.StartSession();
 
-            const int max = 10000000;
+            const int max = 1000000;
+
+            Console.WriteLine("Writing keys from 0 to {0} to FASTER", max);
 
             Stopwatch sw = new Stopwatch();
             sw.Start();
@@ -52,15 +54,38 @@ namespace ClassCache
             sw.Stop();
             Console.WriteLine("Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds/1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
 
-            
-            Console.WriteLine("Issuing uniform random read workload");
+            // Uncomment below to copy entire log to disk
+            // h.ShiftReadOnlyAddress(h.LogTailAddress);
 
-            var rnd = new Random();
+            // Uncomment below to move entire log to disk
+            // and eliminate data from memory as well
+            // h.ShiftHeadAddress(h.LogTailAddress, true);
+
+            Console.Write("Enter read workload type (0 = random reads; 1 = interactive): ");
+            var workload = int.Parse(Console.ReadLine());
+
+            if (workload == 0)
+                RandomReadWorkload(h, max);
+            else
+                InteractiveReadWorkload(h, max);
+
+            Console.WriteLine("Press <ENTER> to end");
+            Console.ReadLine();
+        }
+
+        private static void RandomReadWorkload(FasterKV<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> h, int max)
+        {
+            Console.WriteLine("Issuing uniform random read workload of {0} reads", max);
+
+            var rnd = new Random(0);
 
             int statusPending = 0;
             var output = new CacheOutput();
+            var context = new CacheContext();
             var input = default(CacheInput);
-            sw.Restart();
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
             for (int i = 0; i < max; i++)
             {
                 long k = rnd.Next(max);
@@ -71,20 +96,57 @@ namespace ClassCache
                 switch (status)
                 {
                     case Status.PENDING:
-                        h.CompletePending(true);
                         statusPending++; break;
-                    case Status.ERROR:
+                    case Status.OK:
+                        if (output.value.value != key.key)
+                            throw new Exception("Read error!");
+                        break;
+                    default:
                         throw new Exception("Error!");
                 }
-                if (output.value.value != key.key)
-                    throw new Exception("Read error!");
             }
+            h.CompletePending(true);
             sw.Stop();
             Console.WriteLine("Total time to read {0} elements: {1:0.000} secs ({2:0.00} reads/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
             Console.WriteLine($"Reads completed with PENDING: {statusPending}");
+        }
 
-            Console.WriteLine("Done");
-            Console.ReadLine();
+        private static void InteractiveReadWorkload(FasterKV<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> h, int max)
+        {
+            Console.WriteLine("Issuing interactive read workload");
+
+            var context = new CacheContext { type = 1 };
+
+            while (true)
+            {
+                Console.Write("Enter key (int), -1 to exit: ");
+                int k = int.Parse(Console.ReadLine());
+                if (k == -1) break;
+
+                var output = new CacheOutput();
+                var input = default(CacheInput);
+                var key = new CacheKey(k);
+
+                context.ticks = DateTime.Now.Ticks;
+                var status = h.Read(ref key, ref input, ref output, context, 0);
+                switch (status)
+                {
+                    case Status.PENDING:
+                        h.CompletePending(true);
+                        break;
+                    case Status.OK:
+                        long ticks = DateTime.Now.Ticks - context.ticks;
+                        if (output.value.value != key.key)
+                            Console.WriteLine("Sync: Incorrect value {0} found, latency = {1}ms", output.value.value, new TimeSpan(ticks).TotalMilliseconds);
+                        else
+                            Console.WriteLine("Sync: Correct value {0} found, latency = {1}ms", output.value.value, new TimeSpan(ticks).TotalMilliseconds);
+                        break;
+                    default:
+                        ticks = DateTime.Now.Ticks - context.ticks;
+                        Console.WriteLine("Sync: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
+                        break;
+                }
+            }
         }
     }
 }

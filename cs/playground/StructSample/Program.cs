@@ -53,12 +53,13 @@ namespace StructSample
 
         static void Sample2()
         {
-            // This sample uses "blittable" key and value types, which enables the 
-            // "high speed" mode for FASTER. You can override the default key equality 
-            // comparer in two ways;
+            // This sample uses struct key and value types, which are blittable (i.e., do not
+            // require a pointer to heap objects). Such datatypes enables the 
+            // "high speed" mode for FASTER by using a specialized BlittableAllocator for the
+            // hybrid log. You can override the default key equality comparer in two ways;
             // (1) Make Key implement IFasterEqualityComparer<Key> interface
-            // (2) Provide IFasterEqualityComparer<KeyStruct> instance as param to constructor
-            // Serializers are not required for blittable key and value types.
+            // (2) Provide IFasterEqualityComparer<Key> instance as param to constructor
+            // Note that serializers are not required/used for blittable key and value types.
 
             var fht =
                 new FasterKV<Key, Value, Input, Output, Empty, Sample2Funcs>
