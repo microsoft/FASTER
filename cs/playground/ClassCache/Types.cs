@@ -81,6 +81,8 @@ namespace ClassCache
 
     public struct CacheContext
     {
+        public int type;
+        public long ticks;
     }
 
     public class CacheFunctions : IFunctions<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
@@ -117,7 +119,23 @@ namespace ClassCache
 
         public void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status)
         {
-            throw new NotImplementedException();
+            if (ctx.type == 0)
+            {
+                if (output.value.value != key.key)
+                    throw new Exception("Read error!");
+            }
+            else
+            {
+                long ticks = DateTime.Now.Ticks - ctx.ticks;
+
+                if (status == Status.NOTFOUND)
+                    Console.WriteLine("Async: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
+
+                if (output.value.value != key.key)
+                    Console.WriteLine("Async: Incorrect value {0} found, latency = {1}ms", output.value.value, new TimeSpan(ticks).TotalMilliseconds);
+                else
+                    Console.WriteLine("Async: Correct value {0} found, latency = {1}ms", output.value.value, new TimeSpan(ticks).TotalMilliseconds);
+            }
         }
 
         public void RMWCompletionCallback(ref CacheKey key, ref CacheInput input, CacheContext ctx, Status status)
