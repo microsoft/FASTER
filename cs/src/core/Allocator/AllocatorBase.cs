@@ -1214,8 +1214,15 @@ namespace FASTER.core
                 if (pageEndAddress > untilAddress || pageStartAddress < fromAddress)
                 {
                     asyncResult.partial = true;
-                    asyncResult.fromAddress = fromAddress;
-                    asyncResult.untilAddress = untilAddress;
+                    asyncResult.fromAddress = pageStartAddress;
+                    asyncResult.untilAddress = pageEndAddress;
+
+                    if (pageEndAddress > untilAddress)
+                        asyncResult.untilAddress = untilAddress;
+
+                    if (pageStartAddress < fromAddress)
+                        asyncResult.fromAddress = fromAddress;
+                    
 
                     // Are we flushing until the end of page?
                     if (untilAddress >= pageEndAddress)
