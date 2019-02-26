@@ -35,7 +35,6 @@ namespace FASTER.core
         internal long resumeptr;
         internal long untilptr;
         internal object frame;
-        internal int frameSize;
 
         /// <summary>
         /// 
