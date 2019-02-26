@@ -241,7 +241,7 @@ namespace FASTER.core
         }
 
 
-        protected override void ClearPage(int page, bool pageZero)
+        protected override void ClearPage(long page)
         {
             Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
         }
