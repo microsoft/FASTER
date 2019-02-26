@@ -3,6 +3,8 @@
 [![Build Status](https://travis-ci.org/Microsoft/FASTER.svg?branch=master)](https://travis-ci.org/Microsoft/FASTER)
 [![Gitter](https://badges.gitter.im/Microsoft/FASTER.svg)](https://gitter.im/Microsoft/FASTER?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
+> This is a fork of https://github.com/Microsoft/FASTER. Main responsiblity of this repository is making sure that "FASTER" is available in .Net Core with full cross platform capabilities. Additionaly we migh include some code refactorings, but we will make sure this fork will not change anything fundamental.
+
 # Introduction
 
 Managing large application state easily and with high performance is one of the hardest problems
