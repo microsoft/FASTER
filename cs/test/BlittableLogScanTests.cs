@@ -49,6 +49,7 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
+            fht.ShiftHeadAddress(fht.LogTailAddress, true);
 
             var iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.SinglePageBuffering);
 

@@ -68,20 +68,20 @@ namespace FASTER.core
         /// <summary>
         /// Buffer size
         /// </summary>
-        protected readonly int BufferSize;
+        internal readonly int BufferSize;
         /// <summary>
         /// Log page size
         /// </summary>
-        protected readonly int LogPageSizeBits;
+        internal readonly int LogPageSizeBits;
 
         /// <summary>
         /// Page size
         /// </summary>
-        protected readonly int PageSize;
+        internal readonly int PageSize;
         /// <summary>
         /// Page size mask
         /// </summary>
-        protected readonly int PageSizeMask;
+        internal readonly int PageSizeMask;
         /// <summary>
         /// Buffer size mask
         /// </summary>
@@ -570,6 +570,15 @@ namespace FASTER.core
         public long GetHeadOffsetLagInPages()
         {
             return HeadOffsetLagSize;
+        }
+
+        /// <summary>
+        /// Get sector size for main hlog device
+        /// </summary>
+        /// <returns></returns>
+        public int GetDeviceSectorSize()
+        {
+            return sectorSize;
         }
 
         /// <summary>
