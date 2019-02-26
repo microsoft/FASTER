@@ -234,7 +234,7 @@ namespace FASTER.core
 
         protected override void ClearPage(int page, bool pageZero)
         {
-            Array.Clear(values[page], 0, values[page].Length);
+            Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
 
             // Close segments
             var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);

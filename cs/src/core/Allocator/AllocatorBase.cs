@@ -850,7 +850,7 @@ namespace FASTER.core
                         var oldStatus = PageStatusIndicator[closePage].PageFlushCloseStatus;
                         if (oldStatus.PageFlushStatus == PMMFlushStatus.Flushed)
                         {
-                            ClearPage(closePage, (closePageAddress >> LogPageSizeBits) == 0);
+                            ClearPage((int)(closePageAddress >> LogPageSizeBits), (closePageAddress >> LogPageSizeBits) == 0);
                         }
                         else
                         {
@@ -1161,7 +1161,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    ClearPage(pageIndex, readPage == 0);
+                    ClearPage((int)readPage, readPage == 0);
                 }
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
@@ -1421,7 +1421,7 @@ namespace FASTER.core
                         var oldStatus = PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus;
                         if (oldStatus.PageCloseStatus == PMMCloseStatus.Closed)
                         {
-                            ClearPage((int)(result.page % BufferSize), result.page == 0);
+                            ClearPage((int)result.page, result.page == 0);
                         }
                         var newStatus = oldStatus;
                         newStatus.PageFlushStatus = PMMFlushStatus.Flushed;
