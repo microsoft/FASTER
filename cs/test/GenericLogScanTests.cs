@@ -56,7 +56,7 @@ namespace FASTER.test
                 var _value = new MyValue { value = i };
                 fht.Upsert(ref _key, ref _value, Empty.Default, 0);
             }
-
+            fht.ShiftHeadAddress(fht.LogTailAddress, true);
             var iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.SinglePageBuffering);
 
             int val = 0;
