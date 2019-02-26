@@ -241,9 +241,9 @@ namespace FASTER.core
         }
 
 
-        protected override void ClearPage(int page, bool pageZero)
+        protected override void ClearPage(long page)
         {
-            Array.Clear(values[page], 0, values[page].Length);
+            Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
         }
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,

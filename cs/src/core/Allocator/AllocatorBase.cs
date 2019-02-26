@@ -343,9 +343,8 @@ namespace FASTER.core
         /// <summary>
         /// Clear page
         /// </summary>
-        /// <param name="page"></param>
-        /// <param name="pageZero"></param>
-        protected abstract void ClearPage(int page, bool pageZero);
+        /// <param name="page">Page number to be cleared</param>
+        protected abstract void ClearPage(long page);
         /// <summary>
         /// Write page (async)
         /// </summary>
@@ -378,6 +377,16 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         public abstract long[] GetSegmentOffsets();
+
+        /// <summary>
+        /// Pull-based scan interface for HLOG
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <param name="scanBufferingMode"></param>
+        /// <returns></returns>
+        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
+
         #endregion
 
         /// <summary>
@@ -850,11 +859,11 @@ namespace FASTER.core
                         var oldStatus = PageStatusIndicator[closePage].PageFlushCloseStatus;
                         if (oldStatus.PageFlushStatus == PMMFlushStatus.Flushed)
                         {
-                            ClearPage(closePage, (closePageAddress >> LogPageSizeBits) == 0);
+                            ClearPage(closePageAddress >> LogPageSizeBits);
                         }
                         else
                         {
-                            throw new Exception("Impossible");
+                            throw new Exception("Error: page should already be flushed at this point");
                         }
 
                         var newStatus = oldStatus;
@@ -1161,7 +1170,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    ClearPage(pageIndex, readPage == 0);
+                    ClearPage(readPage);
                 }
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
@@ -1421,7 +1430,7 @@ namespace FASTER.core
                         var oldStatus = PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus;
                         if (oldStatus.PageCloseStatus == PMMCloseStatus.Closed)
                         {
-                            ClearPage((int)(result.page % BufferSize), result.page == 0);
+                            throw new Exception("Error: page should not be closed at this point");
                         }
                         var newStatus = oldStatus;
                         newStatus.PageFlushStatus = PMMFlushStatus.Flushed;
@@ -1479,14 +1488,5 @@ namespace FASTER.core
         {
             dst = src;
         }
-
-        /// <summary>
-        /// Pull-based scan interface for HLOG
-        /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
     }
 }
