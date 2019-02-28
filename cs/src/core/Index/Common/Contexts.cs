@@ -137,10 +137,11 @@ namespace FASTER.core
         public string GetIndexCheckpointFolder(Guid token = default(Guid))
         {
             if (token != default(Guid))
-                return GetMergedFolderPath(checkpointDir, index_base_folder);
+                return GetMergedFolderPath(checkpointDir, index_base_folder, token.ToString());
             else
                 return GetMergedFolderPath(checkpointDir, index_base_folder);
         }
+
         public string GetHybridLogCheckpointFolder(Guid token = default(Guid))
         {
             if (token != default(Guid))
@@ -148,47 +149,59 @@ namespace FASTER.core
             else
                 return GetMergedFolderPath(checkpointDir, cpr_base_folder);
         }
+
         public string GetIndexCheckpointMetaFileName(Guid token)
         {
             return GetMergedFolderPath(checkpointDir,
                                     index_base_folder,
                                     token.ToString(),
-                                    index_meta_file);
+                                    index_meta_file,
+                                    ".dat");
         }
+
         public string GetPrimaryHashTableFileName(Guid token)
         {
             return GetMergedFolderPath(checkpointDir,
                                     index_base_folder,
                                     token.ToString(),
-                                    hash_table_file);
+                                    hash_table_file,
+                                    ".dat");
         }
+
         public string GetOverflowBucketsFileName(Guid token)
         {
             return GetMergedFolderPath(checkpointDir,
                                     index_base_folder,
                                     token.ToString(),
-                                    overflow_buckets_file);
+                                    overflow_buckets_file,
+                                    ".dat");
         }
+
         public string GetHybridLogCheckpointMetaFileName(Guid token)
         {
             return GetMergedFolderPath(checkpointDir,
                                     cpr_base_folder,
                                     token.ToString(),
-                                    cpr_meta_file);
+                                    cpr_meta_file,
+                                    ".dat");
         }
+
         public string GetHybridLogCheckpointContextFileName(Guid checkpointToken, Guid sessionToken)
         {
             return GetMergedFolderPath(checkpointDir,
                                     cpr_base_folder,
                                     checkpointToken.ToString(),
-                                    sessionToken.ToString());
+                                    sessionToken.ToString(),
+                                    ".dat");
         }
+
         public string GetHybridLogCheckpointFileName(Guid token)
         {
             return GetMergedFolderPath(checkpointDir,
                                     cpr_base_folder,
                                     token.ToString(),
-                                    snapshot_file);
+                                    snapshot_file,
+                                    ".dat");
         }
 
         public string GetHybridLogObjectCheckpointFileName(Guid token)
@@ -196,7 +209,8 @@ namespace FASTER.core
             return GetMergedFolderPath(checkpointDir,
                                     cpr_base_folder,
                                     token.ToString(),
-                                    snapshot_file);
+                                    snapshot_file,
+                                    ".obj.dat");
         }
 
         public static string GetMergedFolderPath(params String[] paths)
@@ -205,7 +219,14 @@ namespace FASTER.core
 
             for (int i = 1; i < paths.Length; i++)
             {
-                fullPath += Path.DirectorySeparatorChar + paths[i];
+                if (i == paths.Length - 1 && paths[i].Contains("."))
+                {
+                    fullPath += paths[i];
+                }
+                else
+                {
+                    fullPath += Path.DirectorySeparatorChar + paths[i];
+                }
             }
 
             return fullPath;
