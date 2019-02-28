@@ -112,6 +112,7 @@ namespace FASTER.test
 
         public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
         {
+            Assert.IsTrue(status == Status.OK);
         }
 
         public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, Empty ctx)

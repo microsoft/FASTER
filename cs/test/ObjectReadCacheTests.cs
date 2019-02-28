@@ -117,21 +117,31 @@ namespace FASTER.test
             for (int i = 0; i < 50; i++)
             {
                 var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                var value = new MyValue { value = i + 1 };
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
-            /*
             // RMW to overwrite the read cache
             for (int i = 50; i < 100; i++)
             {
                 var key1 = new MyKey { key = i };
-                input = new MyInput { value = 0 };
+                input = new MyInput { value = 1 };
                 var status = fht.RMW(ref key1, ref input, Empty.Default, 0);
                 if (status == Status.PENDING)
                     fht.CompletePending(true);
-            }*/
+            }
 
+            // Read the 100 keys
+            for (int i = 0; i < 100; i++)
+            {
+                MyOutput output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i + 1 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(output.value.value == value.value);
+            }
         }
     }
 }

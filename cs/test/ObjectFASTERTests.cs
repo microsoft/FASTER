@@ -119,6 +119,42 @@ namespace FASTER.test
             {
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
+
+            // Update first 100 using RMW from storage
+            for (int i = 0; i < 100; i++)
+            {
+                var key1 = new MyKey { key = i };
+                input = new MyInput { value = 1 };
+                status = fht.RMW(ref key1, ref input, Empty.Default, 0);
+                if (status == Status.PENDING)
+                    fht.CompletePending(true);
+            }
+
+            for (int i = 0; i < 2000; i++)
+            {
+                var output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                if (fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                {
+                    fht.CompletePending(true);
+                }
+                else
+                {
+                    if (i < 100)
+                    {
+                        Assert.IsTrue(output.value.value == value.value + 1);
+                        Assert.IsTrue(output.value.value == value.value + 1);
+                    }
+                    else
+                    {
+                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.IsTrue(output.value.value == value.value);
+                    }
+                }
+            }
+
         }
     }
 }

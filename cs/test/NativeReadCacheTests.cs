@@ -110,12 +110,36 @@ namespace FASTER.test
 
             
             // Upsert to overwrite the read cache
-            for (int i = 0; i < 100; i++)
+            for (int i = 0; i < 50; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
+
+            // RMW to overwrite the read cache
+            for (int i = 50; i < 100; i++)
+            {
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                input = new InputStruct { ifield1 = 1, ifield2 = 1 };
+                var status = fht.RMW(ref key1, ref input, Empty.Default, 0);
+                if (status == Status.PENDING)
+                    fht.CompletePending(true);
+            }
+
+            // Read 100 keys
+            for (int i = 0; i < 100; i++)
+            {
+                OutputStruct output = default(OutputStruct);
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(output.value.vfield1 == value.vfield1);
+                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            }
+
         }
     }
 }

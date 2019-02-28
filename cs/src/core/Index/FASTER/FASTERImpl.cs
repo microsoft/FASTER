@@ -1303,12 +1303,10 @@ namespace FASTER.core
             {
                 functions.CopyUpdater(ref pendingContext.key,
                                       ref pendingContext.input,
-                                      ref hlog.GetValue(physicalAddress),
+                                      ref request.value,
                                       ref hlog.GetValue(newPhysicalAddress));
                 status = OperationStatus.SUCCESS;
             }
-
-            request.record.Return();
 
             var updatedEntry = default(HashBucketEntry);
             updatedEntry.Tag = tag;
