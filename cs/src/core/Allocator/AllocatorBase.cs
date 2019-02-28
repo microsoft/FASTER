@@ -206,6 +206,16 @@ namespace FASTER.core
         /// </summary>
         protected SectorAlignedBufferPool readBufferPool;
 
+        /// <summary>
+        /// Read cache
+        /// </summary>
+        protected readonly bool ReadCache = false;
+
+        /// <summary>
+        /// Read cache eviction callback
+        /// </summary>
+        protected readonly Action<long, long> EvictCallback = null;
+
         #region Abstract methods
         /// <summary>
         /// Initialize
@@ -389,6 +399,24 @@ namespace FASTER.core
 
         #endregion
 
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="settings"></param>
+        /// <param name="comparer"></param>
+        /// <param name="evictCallback"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback) 
+            : this(settings, comparer)
+        {
+            if (evictCallback != null)
+            {
+                ReadCache = true;
+                EvictCallback = evictCallback;
+                FlushedUntilAddress = long.MaxValue;
+            }
+        }
+
         /// <summary>
         /// Instantiate base allocator
         /// </summary>
@@ -459,7 +487,7 @@ namespace FASTER.core
             ReadOnlyAddress = firstValidAddress;
             SafeHeadAddress = firstValidAddress;
             HeadAddress = firstValidAddress;
-            FlushedUntilAddress = firstValidAddress;
+            if (!ReadCache) FlushedUntilAddress = firstValidAddress;
             BeginAddress = firstValidAddress;
 
             TailPageOffset.Page = (int)(firstValidAddress >> LogPageSizeBits);
@@ -927,6 +955,9 @@ namespace FASTER.core
             }
             newHeadAddress = newHeadAddress & ~PageSizeMask;
 
+            if (ReadCache && (newHeadAddress > HeadAddress))
+                EvictCallback(HeadAddress, newHeadAddress);
+
             if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
                 Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
@@ -949,6 +980,9 @@ namespace FASTER.core
                 newHeadAddress = currentFlushedUntilAddress;
             }
 
+            if (ReadCache && (newHeadAddress > HeadAddress))
+                EvictCallback(HeadAddress, newHeadAddress);
+
             if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
                 Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
@@ -956,33 +990,6 @@ namespace FASTER.core
                 return newHeadAddress;
             }
             return oldHeadAddress;
-        }
-
-        /// <summary>
-        /// Called whenever a new tail page is allocated or when the user is checking for a failed memory allocation
-        /// Tries to shift head address based on the head offset lag size.
-        /// </summary>
-        /// <param name="desiredHeadAddress"></param>
-        private void PageAlignedShiftHeadAddressToValue(long desiredHeadAddress)
-        {
-            //obtain local values of variables that can change
-            long currentHeadAddress = HeadAddress;
-            long currentFlushedUntilAddress = FlushedUntilAddress;
-
-            desiredHeadAddress = desiredHeadAddress & ~PageSizeMask;
-
-            long newHeadAddress = desiredHeadAddress;
-            if (currentFlushedUntilAddress < newHeadAddress)
-            {
-                newHeadAddress = currentFlushedUntilAddress;
-            }
-            newHeadAddress = newHeadAddress & ~PageSizeMask;
-
-            if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
-            {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
-                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
-            }
         }
 
         /// <summary>

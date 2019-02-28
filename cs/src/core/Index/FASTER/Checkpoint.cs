@@ -216,6 +216,10 @@ namespace FASTER.core
                         }
                     case Phase.INDEX_CHECKPOINT:
                         {
+                            if (UseReadCache)
+                            {
+                                throw new Exception("Index checkpoint with read cache is not supported");
+                            }
                             TakeIndexFuzzyCheckpoint();
 
                             MakeTransition(intermediateState, nextState);
@@ -235,6 +239,10 @@ namespace FASTER.core
                                     }
                                 case Phase.PREP_INDEX_CHECKPOINT:
                                     {
+                                        if (UseReadCache)
+                                        {
+                                            throw new Exception("Index checkpoint with read cache is not supported");
+                                        }
                                         TakeIndexFuzzyCheckpoint();
                                         break;
                                     }

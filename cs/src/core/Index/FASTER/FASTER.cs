@@ -38,6 +38,11 @@ namespace FASTER.core
         /// </summary>
         public long EntryCount => GetEntryCount();
 
+        /// <summary>
+        /// Read cache used by this FASTER instance
+        /// </summary>
+        public AllocatorBase<Key, Value> ReadCache => readcache;
+
         private enum CheckpointType
         {
             INDEX_ONLY,
@@ -98,7 +103,7 @@ namespace FASTER.core
             CopyReadsToTail = logSettings.CopyReadsToTail;
             this.functions = functions;
 
-            if (logSettings.ReadCacheSizeBits > 0)
+            if (logSettings.ReadCacheSettings != null)
             {
                 CopyReadsToTail = false;
                 UseReadCache = true;
@@ -109,7 +114,13 @@ namespace FASTER.core
                 hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
                 if (UseReadCache)
                 {
-                    readcache = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
+                    readcache = new BlittableAllocator<Key, Value>(
+                        new LogSettings {
+                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
+                        }, this.comparer, ReadCacheEvict);
                     readcache.Initialize();
                 }
             }
@@ -118,7 +129,14 @@ namespace FASTER.core
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
                 if (UseReadCache)
                 {
-                    readcache = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
+                    readcache = new GenericAllocator<Key, Value>(
+                        new LogSettings
+                        {
+                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
+                        }, serializerSettings, this.comparer, ReadCacheEvict);
                     readcache.Initialize();
                 }
             }

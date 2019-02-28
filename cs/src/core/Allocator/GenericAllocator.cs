@@ -41,8 +41,8 @@ namespace FASTER.core
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer)
-            : base(settings, comparer)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
+            : base(settings, comparer, evictCallback)
         {
             SerializerSettings = serializerSettings;
 

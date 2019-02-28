@@ -31,8 +31,8 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer)
-            : base(settings, comparer)
+        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
+            : base(settings, comparer, evictCallback)
         {
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];

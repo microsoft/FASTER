@@ -86,25 +86,31 @@ namespace FASTER.core
             {
                 logicalAddress = entry.Address;
 
-                if (UseReadCache && entry.ReadCache && ReadFromCache(ref key, ref logicalAddress, ref physicalAddress))
+                if (UseReadCache && ReadFromCache(ref key, ref logicalAddress, ref physicalAddress, ref latestRecordVersion))
                 {
-                    latestRecordVersion = readcache.GetInfo(physicalAddress).Version;
-                }
-                else
-                {
-                    if (logicalAddress >= hlog.HeadAddress)
+                    if (threadCtx.phase == Phase.PREPARE && latestRecordVersion != -1 && latestRecordVersion > threadCtx.version)
                     {
-                        physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                        status = OperationStatus.CPR_SHIFT_DETECTED;
+                        goto CreatePendingContext; // Pivot thread
+                    }
+                    functions.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output);
+                    return OperationStatus.SUCCESS;
+                }
+
+                if (logicalAddress >= hlog.HeadAddress)
+                {
+                    physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                    if (latestRecordVersion == -1)
                         latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
-                        if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
-                        {
-                            logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
-                            TraceBackForKeyMatch(ref key,
-                                                 logicalAddress,
-                                                 hlog.HeadAddress,
-                                                 out logicalAddress,
-                                                 out physicalAddress);
-                        }
+
+                    if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                    {
+                        logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                        TraceBackForKeyMatch(ref key,
+                                                logicalAddress,
+                                                hlog.HeadAddress,
+                                                out logicalAddress,
+                                                out physicalAddress);
                     }
                 }
             }
@@ -199,18 +205,6 @@ namespace FASTER.core
             return status;
         }
 
-        private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress)
-        {
-            physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
-            if (!comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
-            {
-                logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
-                physicalAddress = 0;
-                return false;
-            }
-            return true;
-        }
-
         /// <summary>
         /// Continue a pending read operation. Computes 'output' from 'input' and value corresponding to 'key'
         /// obtained from disk. Optionally, it copies the value to tail to serve future read/write requests quickly.
@@ -272,6 +266,7 @@ namespace FASTER.core
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
+            var latestRecordVersion = default(int);
 
             var hash = comparer.GetHashCode64(ref pendingContext.key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -280,6 +275,11 @@ namespace FASTER.core
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
             logicalAddress = entry.word & Constants.kAddressMask;
+
+            if (UseReadCache)
+                SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+            var latestLogicalAddress = logicalAddress;
+
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
@@ -310,10 +310,6 @@ namespace FASTER.core
             {
                 BlockAllocateReadCache(recordSize, out newLogicalAddress);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                if (UseReadCache && entry.ReadCache)
-                {
-                    entry.Address = readcache.GetInfo(readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask)).PreviousAddress;
-                }
                 ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                      true, false, false,
@@ -327,14 +323,10 @@ namespace FASTER.core
             {
                 BlockAllocate(recordSize, out newLogicalAddress);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                if (UseReadCache && entry.ReadCache)
-                {
-                    entry.Address = readcache.GetInfo(readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask)).PreviousAddress;
-                }
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                      true, false, false,
-                                     entry.Address);
+                                     latestLogicalAddress);
                 hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref pendingContext.key,
                                        ref request.value,
@@ -419,10 +411,16 @@ namespace FASTER.core
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
             logicalAddress = entry.Address;
+
+            if (UseReadCache)
+                SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+            var latestLogicalAddress = logicalAddress;
+
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+                if (latestRecordVersion == -1)
+                    latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
                 if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
@@ -540,14 +538,10 @@ namespace FASTER.core
                 var recordSize = hlog.GetRecordSize(ref key, ref value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                if (UseReadCache && entry.ReadCache)
-                {
-                    entry.Address = readcache.GetInfo(readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask)).PreviousAddress;
-                }
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                         threadCtx.version,
                                         true, false, false,
-                                        entry.Address);
+                                        latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref key, ref value,
                                         ref hlog.GetValue(newPhysicalAddress));
@@ -681,10 +675,17 @@ namespace FASTER.core
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
             logicalAddress = entry.Address;
+
+            // For simplicity, we don't let RMW operations use read cache
+            if (UseReadCache)
+                SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+            var latestLogicalAddress = logicalAddress;
+
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+
                 if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
@@ -841,16 +842,10 @@ namespace FASTER.core
                                 hlog.GetRecordSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-
-                if (UseReadCache && entry.ReadCache)
-                {
-                    entry.Address = readcache.GetInfo(readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask)).PreviousAddress;
-                }
-
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo, threadCtx.version,
                                         true, false, false,
-                                        entry.Address);
+                                        latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
@@ -988,10 +983,17 @@ namespace FASTER.core
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
             logicalAddress = entry.Address;
+
+            // For simplicity, we don't let RMW operations use read cache
+            if (UseReadCache)
+                SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+            var latestLogicalAddress = logicalAddress;
+
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+                if (latestRecordVersion == -1)
+                    latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
                 if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
@@ -1113,16 +1115,10 @@ namespace FASTER.core
                                 hlog.GetRecordSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-
-                if (UseReadCache && entry.ReadCache)
-                {
-                    entry.Address = readcache.GetInfo(readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask)).PreviousAddress;
-                }
-
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo, pendingContext.version,
                                         true, false, false,
-                                        entry.Address);
+                                        latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
@@ -1243,6 +1239,7 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
             var status = default(OperationStatus);
+            var latestRecordVersion = default(int);
 
             var hash = comparer.GetHashCode64(ref pendingContext.key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -1251,6 +1248,12 @@ namespace FASTER.core
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
             logicalAddress = entry.Address;
+
+            // For simplicity, we don't let RMW operations use read cache
+            if (UseReadCache)
+                SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+            var latestLogicalAddress = logicalAddress;
+
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
@@ -1284,16 +1287,10 @@ namespace FASTER.core
             }
             BlockAllocate(recordSize, out long newLogicalAddress);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-
-            if (UseReadCache && entry.ReadCache)
-            {
-                entry.Address = readcache.GetInfo(readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask)).PreviousAddress;
-            }
-
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                 true, false, false,
-                                entry.Address);
+                                latestLogicalAddress);
             hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
             if (request.logicalAddress < hlog.BeginAddress)
             {
@@ -1835,10 +1832,106 @@ namespace FASTER.core
         }
         #endregion
 
-        #region Compute sizes
+        #region Read Cache
+        private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress, ref int latestRecordVersion)
+        {
+            HashBucketEntry entry = default(HashBucketEntry);
+            entry.word = logicalAddress;
+            if (!entry.ReadCache) return false;
+
+            physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+            latestRecordVersion = readcache.GetInfo(physicalAddress).Version;
+
+            while (true)
+            {
 
 
+                if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
+                {
+                    if ((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeReadOnlyAddress)
+                    {
+                        return true;
+                    }
+                    Debug.Assert((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeHeadAddress);
+                    // TODO: copy to tail of read cache
+                    // and return new cache entry
+                }
+
+                logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
+                entry.word = logicalAddress;
+                if (!entry.ReadCache) break;
+                physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+            }
+            physicalAddress = 0;
+            return false;
+        }
+
+        private void SkipReadCache(ref long logicalAddress, ref int latestRecordVersion)
+        {
+            HashBucketEntry entry = default(HashBucketEntry);
+            entry.word = logicalAddress;
+            if (!entry.ReadCache) return;
+
+            var physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+            latestRecordVersion = readcache.GetInfo(physicalAddress).Version;
+
+            while (true)
+            {
+                logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
+                entry.word = logicalAddress;
+                if (!entry.ReadCache) return;
+                physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+            }
+        }
+
+        private void ReadCacheEvict(long fromHeadAddress, long toHeadAddress)
+        {
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+            var logicalAddress = Constants.kInvalidAddress;
+            var physicalAddress = default(long);
+
+            var recordSize = readcache.GetRecordSize(0);
+
+            HashBucketEntry entry = default(HashBucketEntry);
+            logicalAddress = fromHeadAddress;
+
+            while (logicalAddress < toHeadAddress)
+            {
+                physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                ref Key key = ref readcache.GetKey(physicalAddress);
+                ref RecordInfo info = ref readcache.GetInfo(physicalAddress);
+                entry.word = info.PreviousAddress;
+                if (!entry.ReadCache)
+                {
+                    var hash = comparer.GetHashCode64(ref key);
+                    var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+                    entry = default(HashBucketEntry);
+                    var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                    while (tagExists && entry.ReadCache)
+                    {
+                        var updatedEntry = default(HashBucketEntry);
+                        updatedEntry.Tag = tag;
+                        updatedEntry.Address = info.PreviousAddress;
+                        updatedEntry.Pending = entry.Pending;
+                        updatedEntry.Tentative = false;
+
+                        if (entry.word == Interlocked.CompareExchange
+                            (ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
+                            break;
+
+                        tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                    }
+                }
+                logicalAddress += recordSize;
+                if ((logicalAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
+                {
+                    logicalAddress = (1 + (logicalAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+                    continue;
+                }
+            }
+        }
         #endregion
-
     }
 }
