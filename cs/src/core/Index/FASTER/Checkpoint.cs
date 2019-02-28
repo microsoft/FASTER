@@ -88,13 +88,12 @@ namespace FASTER.core
             // First shift read-only
             hlog.ShiftReadOnlyAddress(untilAddress);
 
+            // Wait for flush to complete
+            while (wait && hlog.FlushedUntilAddress < untilAddress)
+                InternalRefresh();
+
             // Then shift head address
-            long newHeadAddress;
-            do
-            {
-                newHeadAddress = hlog.ShiftHeadAddress(untilAddress);
-            }
-            while (wait && newHeadAddress < untilAddress);
+            var newHeadAddress = hlog.ShiftHeadAddress(untilAddress);
 
             return newHeadAddress >= untilAddress;
         }

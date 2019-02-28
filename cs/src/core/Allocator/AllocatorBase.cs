@@ -987,9 +987,8 @@ namespace FASTER.core
             {
                 Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
-                return newHeadAddress;
             }
-            return oldHeadAddress;
+            return newHeadAddress;
         }
 
         /// <summary>
@@ -1437,8 +1436,6 @@ namespace FASTER.core
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress = result.untilAddress;
-
                 if (!result.partial || (result.untilAddress >= ((result.page + 1) << LogPageSizeBits)))
                 {
                     while (true)
@@ -1456,6 +1453,7 @@ namespace FASTER.core
                         }
                     }
                 }
+                PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress = result.untilAddress;
                 ShiftFlushedUntilAddress();
                 result.Free();
             }
