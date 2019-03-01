@@ -526,7 +526,7 @@ namespace FASTER.core
             {
                 MemoryStream ms = new MemoryStream(result.freeBuffer2.buffer);
                 ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
-                Deserialize(ptr, result.untilptr, src, ms);
+                Deserialize(result.freeBuffer1.GetValidPointer(), ptr, result.untilptr, src, ms);
                 ms.Dispose();
 
                 ptr = result.untilptr;
@@ -675,11 +675,13 @@ namespace FASTER.core
         /// <param name="untilptr">Until pointer</param>
         /// <param name="src"></param>
         /// <param name="stream">Stream</param>
-        public void Deserialize(long ptr, long untilptr, Record<Key, Value>[] src, Stream stream)
+        public void Deserialize(byte *raw, long ptr, long untilptr, Record<Key, Value>[] src, Stream stream)
         {
             IObjectSerializer<Key> keySerializer = null;
             IObjectSerializer<Value> valueSerializer = null;
 
+            long streamStartPos = stream.Position;
+            long start_addr = -1;
             if (KeyHasObjects())
             {
                 keySerializer = SerializerSettings.keySerializer();
@@ -697,12 +699,26 @@ namespace FASTER.core
                 {
                     if (KeyHasObjects())
                     {
+                        var key_addr = GetKeyAddressInfo((long)raw + ptr);
+                        if (start_addr == -1) start_addr = key_addr->Address;
+                        if (stream.Position != streamStartPos + key_addr->Address - start_addr)
+                        {
+                            stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
+                        }
+
                         src[ptr/recordSize].key = new Key();
                         keySerializer.Deserialize(ref src[ptr/recordSize].key);
                     } 
 
                     if (ValueHasObjects())
                     {
+                        var value_addr = GetValueAddressInfo((long)raw + ptr);
+                        if (start_addr == -1) start_addr = value_addr->Address;
+                        if (stream.Position != streamStartPos + value_addr->Address - start_addr)
+                        {
+                            stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
+                        }
+
                         src[ptr / recordSize].value = new Value();
                         valueSerializer.Deserialize(ref src[ptr/recordSize].value);
                     }

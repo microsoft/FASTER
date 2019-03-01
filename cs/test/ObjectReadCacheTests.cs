@@ -61,8 +61,8 @@ namespace FASTER.test
             // Evict all records from main memory of hybrid log
             fht.ShiftHeadAddress(fht.LogTailAddress, true);
 
-            // Read 100 keys - all should be served from disk, populating the read cache
-            for (int i = 0; i < 100; i++)
+            // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
+            for (int i = 0; i < 2000; i++)
             {
                 MyOutput output = new MyOutput();
                 var key1 = new MyKey { key = i };
@@ -73,8 +73,8 @@ namespace FASTER.test
                 fht.CompletePending(true);
             }
 
-            // Read 100 keys - all should be served from cache
-            for (int i = 0; i < 100; i++)
+            // Read last 100 keys - all should be served from cache
+            for (int i = 1900; i < 2000; i++)
             {
                 MyOutput output = new MyOutput();
                 var key1 = new MyKey { key = i };
@@ -89,7 +89,7 @@ namespace FASTER.test
             fht.ReadCache.ShiftHeadAddress(fht.ReadCache.GetTailAddress());
 
             // Read 100 keys - all should be served from disk, populating cache
-            for (int i = 0; i < 100; i++)
+            for (int i = 1900; i < 2000; i++)
             {
                 MyOutput output = new MyOutput();
                 var key1 = new MyKey { key = i };
@@ -101,7 +101,7 @@ namespace FASTER.test
             }
 
             // Read 100 keys - all should be served from cache
-            for (int i = 0; i < 100; i++)
+            for (int i = 1900; i < 2000; i++)
             {
                 MyOutput output = new MyOutput();
                 var key1 = new MyKey { key = i };
@@ -114,7 +114,7 @@ namespace FASTER.test
 
 
             // Upsert to overwrite the read cache
-            for (int i = 0; i < 50; i++)
+            for (int i = 1900; i < 1950; i++)
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
@@ -122,7 +122,7 @@ namespace FASTER.test
             }
 
             // RMW to overwrite the read cache
-            for (int i = 50; i < 100; i++)
+            for (int i = 1950; i < 2000; i++)
             {
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
@@ -132,7 +132,7 @@ namespace FASTER.test
             }
 
             // Read the 100 keys
-            for (int i = 0; i < 100; i++)
+            for (int i = 1900; i < 2000; i++)
             {
                 MyOutput output = new MyOutput();
                 var key1 = new MyKey { key = i };

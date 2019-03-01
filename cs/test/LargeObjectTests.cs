@@ -46,7 +46,7 @@ namespace FASTER.test.largeobjects
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
-            int maxSize = 1000;
+            int maxSize = 100;
             int numOps = 5000;
 
             fht1.StartSession();
@@ -112,7 +112,7 @@ namespace FASTER.test.largeobjects
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
-            int maxSize = 1000;
+            int maxSize = 100;
             int numOps = 5000;
 
             fht1.StartSession();

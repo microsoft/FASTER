@@ -17,9 +17,12 @@ namespace FASTER.core
 
     internal enum PMMCloseStatus : int { Closed, Open };
 
+    [StructLayout(LayoutKind.Explicit)]
     internal struct FullPageStatus
     {
+        [FieldOffset(0)]
         public long LastFlushedUntilAddress;
+        [FieldOffset(8)]
         public FlushCloseStatus PageFlushCloseStatus;
     }
 
@@ -1001,13 +1004,13 @@ namespace FASTER.core
             long page = GetPage(currentFlushedUntilAddress);
 
             bool update = false;
-            long pageLastFlushedAddress = PageStatusIndicator[(int)(page % BufferSize)].LastFlushedUntilAddress;
+            long pageLastFlushedAddress = Interlocked.Read(ref PageStatusIndicator[(int)(page % BufferSize)].LastFlushedUntilAddress);
             while (pageLastFlushedAddress >= currentFlushedUntilAddress)
             {
                 currentFlushedUntilAddress = pageLastFlushedAddress;
                 update = true;
                 page++;
-                pageLastFlushedAddress = PageStatusIndicator[(int)(page % BufferSize)].LastFlushedUntilAddress;
+                pageLastFlushedAddress = Interlocked.Read(ref PageStatusIndicator[(int)(page % BufferSize)].LastFlushedUntilAddress);
             }
 
             if (update)
@@ -1267,7 +1270,7 @@ namespace FASTER.core
                         = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open };
                 }
 
-                PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress = -1;
+                Interlocked.Exchange(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, -1);
 
                 WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
             }
@@ -1453,7 +1456,7 @@ namespace FASTER.core
                         }
                     }
                 }
-                PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress = result.untilAddress;
+                Interlocked.Exchange(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress);
                 ShiftFlushedUntilAddress();
                 result.Free();
             }

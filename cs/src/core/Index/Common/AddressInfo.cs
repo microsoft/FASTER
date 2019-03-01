@@ -85,6 +85,10 @@ namespace FASTER.core
                 _word &= ~kAddressMask;
                 _word |= (value & kAddressMask);
                 word = (IntPtr)_word;
+                if (value != Address)
+                {
+                    throw new Exception("Overflow in AddressInfo");
+                }
             }
         }
     }
