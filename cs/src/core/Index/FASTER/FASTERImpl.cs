@@ -1512,10 +1512,10 @@ namespace FASTER.core
             if (logicalAddress >= 0)
                 return;
 
-            while (logicalAddress < 0 && -logicalAddress >= hlog.ReadOnlyAddress)
+            while (logicalAddress < 0 && -logicalAddress >= readcache.ReadOnlyAddress)
             {
                 InternalRefresh();
-                hlog.CheckForAllocateComplete(ref logicalAddress);
+                readcache.CheckForAllocateComplete(ref logicalAddress);
                 if (logicalAddress < 0)
                 {
                     Thread.Sleep(10);
@@ -1524,7 +1524,7 @@ namespace FASTER.core
 
             logicalAddress = logicalAddress < 0 ? -logicalAddress : logicalAddress;
 
-            if (logicalAddress < hlog.ReadOnlyAddress)
+            if (logicalAddress < readcache.ReadOnlyAddress)
             {
                 Debug.WriteLine("Allocated address is read-only, retrying");
                 BlockAllocateReadCache(recordSize, out logicalAddress);
@@ -1923,9 +1923,9 @@ namespace FASTER.core
                     }
                 }
                 logicalAddress += recordSize;
-                if ((logicalAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
+                if ((logicalAddress & readcache.PageSizeMask) + recordSize > readcache.PageSize)
                 {
-                    logicalAddress = (1 + (logicalAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+                    logicalAddress = (1 + (logicalAddress >> readcache.LogPageSizeBits)) << readcache.LogPageSizeBits;
                     continue;
                 }
             }
