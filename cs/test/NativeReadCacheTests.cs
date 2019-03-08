@@ -81,7 +81,9 @@ namespace FASTER.test
             }
 
             // Evict the read cache entirely
-            fht.ReadCache.ShiftHeadAddress(fht.ReadCache.GetTailAddress());
+            var tailAddress = fht.ReadCache.GetTailAddress();
+            fht.ReadCache.ShiftReadOnlyAddress(tailAddress);
+            fht.ReadCache.ShiftHeadAddress(tailAddress);
 
             // Read 100 keys - all should be served from disk, populating cache
             for (int i = 1900; i < 2000; i++)
