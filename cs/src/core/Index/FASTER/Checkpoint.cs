@@ -745,7 +745,7 @@ namespace FASTER.core
         private void WriteHybridLogCheckpointCompleteFile()
         {
             string completed_filename = directoryConfiguration.GetHybridLogCheckpointFolder(_hybridLogCheckpointToken);
-            completed_filename += "\\completed.dat";
+            completed_filename += Path.DirectorySeparatorChar + "completed.dat";
             using (var file = new StreamWriter(completed_filename, false))
             {
                 file.WriteLine();
@@ -777,7 +777,7 @@ namespace FASTER.core
         private void WriteIndexCheckpointCompleteFile()
         {
             string completed_filename = directoryConfiguration.GetIndexCheckpointFolder(_indexCheckpointToken);
-            completed_filename += "\\completed.dat";
+            completed_filename += Path.DirectorySeparatorChar + "completed.dat";
             using (var file = new StreamWriter(completed_filename, false))
             {
                 file.WriteLine();
