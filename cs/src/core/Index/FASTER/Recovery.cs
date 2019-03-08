@@ -65,7 +65,7 @@ namespace FASTER.core
             foreach(var dir in dirs)
             {
                 // Remove incomplete checkpoints
-                if(!File.Exists(dir.FullName + "\\completed.dat"))
+                if(!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat")) 
                 {
                     Directory.Delete(dir.FullName, true);
                 }
@@ -82,7 +82,7 @@ namespace FASTER.core
             foreach (var dir in dirs)
             {
                 // Remove incomplete checkpoints
-                if (!File.Exists(dir.FullName + "\\completed.dat"))
+                if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 {
                     Directory.Delete(dir.FullName, true);
                 }
@@ -103,12 +103,12 @@ namespace FASTER.core
                 case CheckpointType.INDEX_ONLY:
                     {
                         var dir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(token));
-                        return File.Exists(dir.FullName + "\\completed.dat");
+                        return File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat");
                     }
                 case CheckpointType.HYBRID_LOG_ONLY:
                     {
                         var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(token));
-                        return File.Exists(dir.FullName + "\\completed.dat");
+                        return File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat");
                     }
                 case CheckpointType.FULL:
                     {
