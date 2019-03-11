@@ -403,6 +403,27 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Delete hash entry if possible as a best effort
+        /// Entry is deleted if key is in memory and at the head of hash chain
+        /// Value is set to null (using ConcurrentWrite) if it is in mutable region
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="monotonicSerialNum"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status DeleteFromMemory(ref Key key, long monotonicSerialNum)
+        {
+            var internalStatus = InternalDeleteFromMemory(ref key);
+            var status = default(Status);
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                status = (Status)internalStatus;
+            }
+            threadCtx.serialNum = monotonicSerialNum;
+            return status;
+        }
+
+        /// <summary>
         /// Truncate the log until, but not including, untilAddress
         /// </summary>
         /// <param name="untilAddress"></param>

@@ -401,7 +401,7 @@ namespace FASTER.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
+        internal void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry, long BeginAddress)
         {
             var version = resizeInfo.version;
             var masked_entry_word = hash & state[version].size_mask;
@@ -411,7 +411,7 @@ namespace FASTER.core
                 bucket = state[version].tableAligned + masked_entry_word;
                 slot = Constants.kInvalidEntrySlot;
 
-                if (FindTagOrFreeInternal(hash, tag, ref bucket, ref slot, ref entry))
+                if (FindTagOrFreeInternal(hash, tag, ref bucket, ref slot, ref entry, BeginAddress))
                     return;
 
 
@@ -532,9 +532,10 @@ namespace FASTER.core
         /// <param name="bucket"></param>
         /// <param name="slot"></param>
         /// <param name="entry"></param>
+        /// <param name="BeginAddress"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagOrFreeInternal(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
+        private bool FindTagOrFreeInternal(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry, long BeginAddress = 0)
         {
             var target_entry_word = default(long);
             var recordExists = false;
@@ -558,6 +559,18 @@ namespace FASTER.core
                     }
 
                     entry.word = target_entry_word;
+                    if (entry.Address < BeginAddress)
+                    {
+                        if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[index], Constants.kInvalidAddress, target_entry_word))
+                        {
+                            if (slot == Constants.kInvalidEntrySlot)
+                            {
+                                slot = index;
+                                entry_slot_bucket = bucket;
+                            }
+                            continue;
+                        }
+                    }
                     if (tag == entry.Tag && !entry.Tentative)
                     {
                         slot = index;
