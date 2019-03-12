@@ -15,7 +15,7 @@ namespace ClassCache
     class Program
     {
         // Whether we use reade cache in this sample
-        static bool useReadCache = true;
+        static readonly bool useReadCache = true;
 
         static void Main(string[] args)
         {
