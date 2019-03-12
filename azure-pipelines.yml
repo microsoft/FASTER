@@ -42,6 +42,20 @@ jobs:
     inputs:
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
+
+  - task: VSTest@2
+    inputs:
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
+
+- job: 'cppWindows'  
+  pool:
+    vmImage: vs2017-win2016    
+  displayName: 'C++ (Windows)'
+  steps:
+  - task: CMake@1
 
 - job: 'cppLinux'
   pool:
