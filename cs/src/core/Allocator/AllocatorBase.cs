@@ -445,9 +445,9 @@ namespace FASTER.core
             HeadOffsetLagSize = BufferSize - HeadOffsetLagNumPages;
             HeadOffsetLagAddress = (long)HeadOffsetLagSize << LogPageSizeBits;
 
-            // ReadOnlyOffset lag (from tail)
+            // ReadOnlyOffset lag (from tail). This should not exceed HeadOffset lag.
             LogMutableFraction = settings.MutableFraction;
-            ReadOnlyLagAddress = (long)(LogMutableFraction * BufferSize) << LogPageSizeBits;
+            ReadOnlyLagAddress = Math.Min((long)(LogMutableFraction * BufferSize) << LogPageSizeBits, HeadOffsetLagAddress);
 
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;
