@@ -38,6 +38,21 @@ namespace FASTER.core
         public long TailAddress => allocator.GetTailAddress();
 
         /// <summary>
+        /// Read-only address of log, i.e. boundary between read-only region and mutable region
+        /// </summary>
+        public long ReadOnlyAddress => allocator.ReadOnlyAddress;
+
+        /// <summary>
+        /// Head address of log, i.e. beginning of in-memory regions
+        /// </summary>
+        public long HeadAddress => allocator.HeadAddress;
+
+        /// <summary>
+        /// Beginning address of log
+        /// </summary>
+        public long BeginAddress => allocator.BeginAddress;
+
+        /// <summary>
         /// Truncate the log until, but not including, untilAddress
         /// </summary>
         /// <param name="untilAddress"></param>
