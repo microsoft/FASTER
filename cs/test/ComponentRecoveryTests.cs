@@ -89,7 +89,7 @@ namespace FASTER.test.recovery
                 var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                 var entry = default(HashBucketEntry);
-                hash_table1.FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+                hash_table1.FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, 0);
 
                 hash_table1.UpdateSlot(bucket, slot, entry.word, valueGenerator.Next(), out long found_word);
             }

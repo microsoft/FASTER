@@ -64,42 +64,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InternalShiftBeginAddress(long untilAddress)
-        {
-            if (_systemState.phase == Phase.REST)
-            {
-                var version = _systemState.version;
-
-                SystemState nextState = SystemState.Make(Phase.GC, version);
-                long oldBeginAddress = untilAddress;
-                if (GlobalMoveToNextState(SystemState.Make(Phase.REST, version), nextState, ref oldBeginAddress))
-                {
-                    InternalRefresh();
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InternalShiftHeadAddress(long untilAddress, bool wait = false)
-        {
-            // First shift read-only
-            hlog.ShiftReadOnlyAddress(untilAddress);
-
-            // Then shift head address
-            long newHeadAddress;
-            do
-            {
-                newHeadAddress = hlog.ShiftHeadAddress(untilAddress);
-            }
-            while (wait && newHeadAddress < untilAddress);
-
-            return newHeadAddress >= untilAddress;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool InternalGrowIndex()
         {
             if (_systemState.phase == Phase.GC)
@@ -216,6 +180,10 @@ namespace FASTER.core
                         }
                     case Phase.INDEX_CHECKPOINT:
                         {
+                            if (UseReadCache)
+                            {
+                                throw new Exception("Index checkpoint with read cache is not supported");
+                            }
                             TakeIndexFuzzyCheckpoint();
 
                             MakeTransition(intermediateState, nextState);
@@ -235,6 +203,10 @@ namespace FASTER.core
                                     }
                                 case Phase.PREP_INDEX_CHECKPOINT:
                                     {
+                                        if (UseReadCache)
+                                        {
+                                            throw new Exception("Index checkpoint with read cache is not supported");
+                                        }
                                         TakeIndexFuzzyCheckpoint();
                                         break;
                                     }

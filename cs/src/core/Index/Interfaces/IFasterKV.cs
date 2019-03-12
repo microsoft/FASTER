@@ -19,7 +19,9 @@ namespace FASTER.core
     /// user defines the customized interface and provides it to FASTER
     /// so it can return a (generated) instance for that interface.
     /// </summary>
-    public unsafe interface IFasterKV<Key, Value, Input, Output, Context> : IDisposable
+    public interface IFasterKV<Key, Value, Input, Output, Context> : IDisposable
+        where Key : new()
+        where Value : new()
     {
         /* Thread-related operations */
 
@@ -89,25 +91,6 @@ namespace FASTER.core
         /// <returns>Whether all pending operations have completed</returns>
         bool CompletePending(bool wait);
 
-        /// <summary>
-        /// Truncate the log until, but not including, untilAddress
-        /// </summary>
-        /// <param name="untilAddress">Address to shift until</param>
-        bool ShiftBeginAddress(long untilAddress);
-
-        /// <summary>
-        /// Shift head address to specified address
-        /// </summary>
-        /// <param name="newHeadAddress">Address to shift head to</param>
-        /// <param name="wait">Wait until shift is registered (may involve page flushing)</param>
-        bool ShiftHeadAddress(long newHeadAddress, bool wait = false);
-
-        /// <summary>
-        /// Shift read-only address to specified address
-        /// </summary>
-        /// <param name="newReadOnlyAddress">Address to shift read-only to</param>
-        bool ShiftReadOnlyAddress(long newReadOnlyAddress);
-
 
         /* Recovery */
 
@@ -163,17 +146,6 @@ namespace FASTER.core
         /// <returns></returns>
         bool GrowIndex();
 
-        /* Statistics */
-        /// <summary>
-        /// Get tail address of FASTER log
-        /// </summary>
-        long LogTailAddress { get; }
-
-        /// <summary>
-        /// Get (safe) read-only address of FASTER
-        /// </summary>
-        long LogReadOnlyAddress { get; }
-
         /// <summary>
         /// Get number of (non-zero) hash entries in FASTER
         /// </summary>
@@ -185,12 +157,13 @@ namespace FASTER.core
         void DumpDistribution();
 
         /// <summary>
-        /// Scan the log underlying the hash table
+        /// Get accessor for FASTER hybrid log
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        IFasterScanIterator<Key, Value> LogScan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode);
+        LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+
+        /// <summary>
+        /// Get accessor for FASTER read cache
+        /// </summary>
+        LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
     }
 }

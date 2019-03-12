@@ -31,8 +31,8 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer)
-            : base(settings, comparer)
+        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
+            : base(settings, comparer, evictCallback)
         {
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
@@ -94,11 +94,14 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
-            for (int i = 0; i < values.Length; i++)
+            if (values != null)
             {
-                if (handles[i].IsAllocated)
-                    handles[i].Free();
-                values[i] = null;
+                for (int i = 0; i < values.Length; i++)
+                {
+                    if (handles[i].IsAllocated)
+                        handles[i].Free();
+                    values[i] = null;
+                }
             }
             handles = null;
             pointers = null;
@@ -196,6 +199,23 @@ namespace FASTER.core
         {
             Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
         }
+
+        /// <summary>
+        /// Delete in-memory portion of the log
+        /// </summary>
+        internal override void DeleteFromMemory()
+        {
+            for (int i = 0; i < values.Length; i++)
+            {
+                if (handles[i].IsAllocated)
+                    handles[i].Free();
+                values[i] = null;
+            }
+            handles = null;
+            pointers = null;
+            values = null;
+        }
+
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                         IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,

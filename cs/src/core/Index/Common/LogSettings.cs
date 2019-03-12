@@ -64,5 +64,32 @@ namespace FASTER.core
         /// Copy reads to tail of log
         /// </summary>
         public bool CopyReadsToTail = false;
+
+        /// <summary>
+        /// Settings for optional read cache
+        /// Overrides the "copy reads to tail" setting
+        /// </summary>
+        public ReadCacheSettings ReadCacheSettings = null;
+    }
+
+    /// <summary>
+    /// Configuration settings for hybrid log
+    /// </summary>
+    public class ReadCacheSettings
+    {
+        /// <summary>
+        /// Size of a segment (group of pages), in bits
+        /// </summary>
+        public int PageSizeBits = 25;
+
+        /// <summary>
+        /// Total size of in-memory part of log, in bits
+        /// </summary>
+        public int MemorySizeBits = 34;
+
+        /// <summary>
+        /// Fraction of log used for second chance copy to tail
+        /// </summary>
+        public double SecondChanceFraction = 0.9;
     }
 }

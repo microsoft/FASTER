@@ -41,8 +41,8 @@ namespace FASTER.core
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer)
-            : base(settings, comparer)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
+            : base(settings, comparer, evictCallback)
         {
             SerializerSettings = serializerSettings;
 
@@ -153,12 +153,27 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
+            if (values != null)
+            {
+                for (int i = 0; i < values.Length; i++)
+                {
+                    values[i] = null;
+                }
+                values = null;
+            }
+            base.Dispose();
+        }
+
+        /// <summary>
+        /// Delete in-memory portion of the log
+        /// </summary>
+        internal override void DeleteFromMemory()
+        {
             for (int i = 0; i < values.Length; i++)
             {
                 values[i] = null;
             }
             values = null;
-            base.Dispose();
         }
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
@@ -251,14 +266,12 @@ namespace FASTER.core
                         IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
-            /*
-            if (!(KeyHasObjects() || ValueHasObjects()))
+            // Short circuit if we are using a null device
+            if (device as NullDevice != null)
             {
-                device.WriteAsync((IntPtr)pointers[flushPage % BufferSize], alignedDestinationAddress,
-                    numBytesToWrite, callback, asyncResult);
+                device.WriteAsync(IntPtr.Zero, 0, 0, numBytesToWrite, callback, asyncResult);
                 return;
             }
-            */
 
             int start = 0, aligned_start = 0, end = (int)numBytesToWrite;
             if (asyncResult.partial)
@@ -526,7 +539,7 @@ namespace FASTER.core
             {
                 MemoryStream ms = new MemoryStream(result.freeBuffer2.buffer);
                 ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
-                Deserialize(ptr, result.untilptr, src, ms);
+                Deserialize(result.freeBuffer1.GetValidPointer(), ptr, result.untilptr, src, ms);
                 ms.Dispose();
 
                 ptr = result.untilptr;
@@ -671,15 +684,18 @@ namespace FASTER.core
         /// <summary>
         /// Deseialize part of page from stream
         /// </summary>
+        /// <param name="raw"></param>
         /// <param name="ptr">From pointer</param>
         /// <param name="untilptr">Until pointer</param>
         /// <param name="src"></param>
         /// <param name="stream">Stream</param>
-        public void Deserialize(long ptr, long untilptr, Record<Key, Value>[] src, Stream stream)
+        public void Deserialize(byte *raw, long ptr, long untilptr, Record<Key, Value>[] src, Stream stream)
         {
             IObjectSerializer<Key> keySerializer = null;
             IObjectSerializer<Value> valueSerializer = null;
 
+            long streamStartPos = stream.Position;
+            long start_addr = -1;
             if (KeyHasObjects())
             {
                 keySerializer = SerializerSettings.keySerializer();
@@ -697,12 +713,26 @@ namespace FASTER.core
                 {
                     if (KeyHasObjects())
                     {
+                        var key_addr = GetKeyAddressInfo((long)raw + ptr);
+                        if (start_addr == -1) start_addr = key_addr->Address;
+                        if (stream.Position != streamStartPos + key_addr->Address - start_addr)
+                        {
+                            stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
+                        }
+
                         src[ptr/recordSize].key = new Key();
                         keySerializer.Deserialize(ref src[ptr/recordSize].key);
                     } 
 
                     if (ValueHasObjects())
                     {
+                        var value_addr = GetValueAddressInfo((long)raw + ptr);
+                        if (start_addr == -1) start_addr = value_addr->Address;
+                        if (stream.Position != streamStartPos + value_addr->Address - start_addr)
+                        {
+                            stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
+                        }
+
                         src[ptr / recordSize].value = new Value();
                         valueSerializer.Deserialize(ref src[ptr/recordSize].value);
                     }

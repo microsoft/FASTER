@@ -43,8 +43,6 @@ namespace FASTER.test
         {
             InputStruct input = default(InputStruct);
 
-            Random r = new Random(10);
-
             for (int i = 0; i < 2000; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
@@ -53,7 +51,16 @@ namespace FASTER.test
             }
             fht.CompletePending(true);
 
-            r = new Random(10);
+            // Update first 100 using RMW from storage
+            for (int i = 0; i < 100; i++)
+            {
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                input = new InputStruct { ifield1 = 1, ifield2 = 1 };
+                var status = fht.RMW(ref key1, ref input, Empty.Default, 0);
+                if (status == Status.PENDING)
+                    fht.CompletePending(true);
+            }
+
 
             for (int i = 0; i < 2000; i++)
             {
@@ -67,8 +74,16 @@ namespace FASTER.test
                 }
                 else
                 {
-                    Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                    Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                    if (i < 100)
+                    {
+                        Assert.IsTrue(output.value.vfield1 == value.vfield1 + 1);
+                        Assert.IsTrue(output.value.vfield2 == value.vfield2 + 1);
+                    }
+                    else
+                    {
+                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
+                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                    }
                 }
             }
         }

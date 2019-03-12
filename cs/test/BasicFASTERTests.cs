@@ -66,6 +66,125 @@ namespace FASTER.test
         }
 
         [Test]
+        public void NativeInMemWriteReadDelete()
+        {
+            InputStruct input = default(InputStruct);
+            OutputStruct output = default(OutputStruct);
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            fht.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+
+            if (status == Status.PENDING)
+            {
+                fht.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            long tail = fht.Log.TailAddress;
+
+            fht.DeleteFromMemory(ref key1, 0);
+
+            status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+
+            if (status == Status.PENDING)
+            {
+                fht.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.NOTFOUND);
+            }
+
+            var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
+            var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
+
+            fht.Upsert(ref key2, ref value2, Empty.Default, 0);
+            status = fht.Read(ref key2, ref input, ref output, Empty.Default, 0);
+
+            if (status == Status.PENDING)
+            {
+                fht.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            Assert.IsTrue(output.value.vfield1 == value2.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value2.vfield2);
+        }
+
+
+        [Test]
+        public void NativeInMemWriteReadDelete2()
+        {
+            const int count = 10;
+
+            InputStruct input = default(InputStruct);
+            OutputStruct output = default(OutputStruct);
+
+            for (int i = 0; i < 10 * count; i++)
+            {
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
+
+                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+            }
+
+            var tail = fht.Log.TailAddress;
+
+            for (int i = 0; i < 10 * count; i++)
+            {
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
+
+                fht.DeleteFromMemory(ref key1, 0);
+            }
+
+            for (int i = 0; i < 10 * count; i++)
+            {
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+
+                if (status == Status.PENDING)
+                {
+                    fht.CompletePending(true);
+                }
+                else
+                {
+                    Assert.IsTrue(status == Status.NOTFOUND);
+                }
+
+                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+            }
+
+            for (int i = 0; i < 10 * count; i++)
+            {
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+
+                if (status == Status.PENDING)
+                {
+                    fht.CompletePending(true);
+                }
+                else
+                {
+                    Assert.IsTrue(status == Status.OK);
+                }
+            }
+        }
+
+        [Test]
         public unsafe void NativeInMemWriteRead2()
         {
             InputStruct input = default(InputStruct);
@@ -98,7 +217,7 @@ namespace FASTER.test
             }
 
             // Clean up and retry - should not find now
-            fht.ShiftBeginAddress(fht.LogTailAddress);
+            fht.Log.ShiftBeginAddress(fht.Log.TailAddress);
 
             r = new Random(10);
             for (int c = 0; c < 1000; c++)
@@ -145,7 +264,7 @@ namespace FASTER.test
             }
 
             // Shift head and retry - should not find in main memory now
-            fht.ShiftHeadAddress(fht.LogTailAddress, true);
+            fht.Log.FlushAndEvict(true);
 
             r = new Random(10);
             for (int c = 0; c < 1000; c++)

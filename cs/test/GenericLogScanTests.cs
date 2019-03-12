@@ -28,7 +28,7 @@ namespace FASTER.test
 
             fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
                 (128, new MyFunctions(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 5 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
@@ -49,15 +49,16 @@ namespace FASTER.test
         public void GenericDiskWriteScan()
         {
             const int totalRecords = 2000;
-            var start = fht.LogTailAddress;
+            var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
                 fht.Upsert(ref _key, ref _value, Empty.Default, 0);
+                if (i % 100 == 0) fht.Log.FlushAndEvict(true);
             }
-            fht.ShiftHeadAddress(fht.LogTailAddress, true);
-            var iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.SinglePageBuffering);
+            fht.Log.FlushAndEvict(true);
+            var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering);
 
             int val = 0;
             while (iter.GetNext(out MyKey key, out MyValue value))
@@ -68,7 +69,7 @@ namespace FASTER.test
             }
             Assert.IsTrue(totalRecords == val);
 
-            iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.DoublePageBuffering);
+            iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering);
 
             val = 0;
             while (iter.GetNext(out MyKey key, out MyValue value))

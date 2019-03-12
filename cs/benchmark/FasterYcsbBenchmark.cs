@@ -243,7 +243,7 @@ namespace FASTER.benchmark
             sw.Stop();
             Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
 
-            long startTailAddress = store.LogTailAddress;
+            long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
 
 
@@ -296,7 +296,7 @@ namespace FASTER.benchmark
 #endif
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
-            long endTailAddress = store.LogTailAddress;
+            long endTailAddress = store.Log.TailAddress;
             Console.WriteLine("End tail address = " + endTailAddress);
 
             Console.WriteLine("Total " + total_ops_done + " ops done " + " in " + seconds + " secs.");

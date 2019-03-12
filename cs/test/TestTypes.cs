@@ -49,8 +49,9 @@ namespace FASTER.test
 
     public class Functions : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
     {
-        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct output, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, Empty ctx, Status status)
         {
+            Assert.IsTrue(status == Status.OK);
         }
 
         public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status)

@@ -14,16 +14,26 @@ namespace ClassCache
 {
     class Program
     {
+        // Whether we use reade cache in this sample
+        static readonly bool useReadCache = true;
+
         static void Main(string[] args)
         {
             var context = default(CacheContext);
 
             var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log", deleteOnClose: true);
             var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log", deleteOnClose: true);
+
+            var logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = objlog };
+
+            if (useReadCache)
+            {
+                logSettings.ReadCacheSettings = new ReadCacheSettings();
+            }
+
             var h = new FasterKV
                 <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>(
-                1L << 20, new CacheFunctions(),
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
+                1L << 20, new CacheFunctions(), logSettings,
                 null,
                 new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() }
                 );
@@ -54,12 +64,18 @@ namespace ClassCache
             sw.Stop();
             Console.WriteLine("Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds/1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
 
-            // Uncomment below to copy entire log to disk
-            // h.ShiftReadOnlyAddress(h.LogTailAddress);
+            // Uncomment below to copy entire log to disk, but retain tail of log in memory
+            // h.Log.Flush(true);
 
-            // Uncomment below to move entire log to disk
-            // and eliminate data from memory as well
-            // h.ShiftHeadAddress(h.LogTailAddress, true);
+            // Uncomment below to move entire log to disk and eliminate data from memory as 
+            // well. This will serve workload entirely from disk using read cache if enabled.
+            // This will *allow* future updates to the store.
+            // h.Log.FlushAndEvict(true);
+
+            // Uncomment below to move entire log to disk and eliminate data from memory as 
+            // well. This will serve workload entirely from disk using read cache if enabled.
+            // This will *prevent* future updates to the store.
+            h.Log.DisposeFromMemory();
 
             Console.Write("Enter read workload type (0 = random reads; 1 = interactive): ");
             var workload = int.Parse(Console.ReadLine());
@@ -96,7 +112,10 @@ namespace ClassCache
                 switch (status)
                 {
                     case Status.PENDING:
-                        statusPending++; break;
+                        statusPending++;
+                        if (statusPending % 1000 == 0)
+                            h.CompletePending(false);
+                        break;
                     case Status.OK:
                         if (output.value.value != key.key)
                             throw new Exception("Read error!");

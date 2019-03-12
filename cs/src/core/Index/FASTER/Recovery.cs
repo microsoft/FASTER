@@ -466,7 +466,7 @@ namespace FASTER.core
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default(HashBucketEntry);
-                    FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry);
+                    FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
 
                     if (info.Version <= version)
                     {

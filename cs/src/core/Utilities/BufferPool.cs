@@ -66,7 +66,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return()
         {
-            valid_offset = 0;
             pool.Return(this);
         }
 
@@ -130,6 +129,9 @@ namespace FASTER.core
         public unsafe void Return(SectorAlignedMemory page)
         {
             Debug.Assert(queue[page.level] != null);
+            page.available_bytes = 0;
+            page.required_bytes = 0;
+            page.valid_offset = 0;
             queue[page.level].Enqueue(page);
         }
 
