@@ -153,12 +153,27 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
+            if (values != null)
+            {
+                for (int i = 0; i < values.Length; i++)
+                {
+                    values[i] = null;
+                }
+                values = null;
+            }
+            base.Dispose();
+        }
+
+        /// <summary>
+        /// Delete in-memory portion of the log
+        /// </summary>
+        internal override void DeleteFromMemory()
+        {
             for (int i = 0; i < values.Length; i++)
             {
                 values[i] = null;
             }
             values = null;
-            base.Dispose();
         }
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
@@ -251,14 +266,12 @@ namespace FASTER.core
                         IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
-            /*
-            if (!(KeyHasObjects() || ValueHasObjects()))
+            // Short circuit if we are using a null device
+            if (device as NullDevice != null)
             {
-                device.WriteAsync((IntPtr)pointers[flushPage % BufferSize], alignedDestinationAddress,
-                    numBytesToWrite, callback, asyncResult);
+                device.WriteAsync(IntPtr.Zero, 0, 0, numBytesToWrite, callback, asyncResult);
                 return;
             }
-            */
 
             int start = 0, aligned_start = 0, end = (int)numBytesToWrite;
             if (asyncResult.partial)
@@ -671,6 +684,7 @@ namespace FASTER.core
         /// <summary>
         /// Deseialize part of page from stream
         /// </summary>
+        /// <param name="raw"></param>
         /// <param name="ptr">From pointer</param>
         /// <param name="untilptr">Until pointer</param>
         /// <param name="src"></param>

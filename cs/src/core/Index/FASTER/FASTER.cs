@@ -24,24 +24,20 @@ namespace FASTER.core
         private readonly int sectorSize;
 
         /// <summary>
-        /// Tail address of log
-        /// </summary>
-        public long LogTailAddress => hlog.GetTailAddress();
-
-        /// <summary>
-        /// Read-only address of log
-        /// </summary>
-        public long LogReadOnlyAddress => hlog.SafeReadOnlyAddress;
-
-        /// <summary>
         /// Number of used entries in hash index
         /// </summary>
         public long EntryCount => GetEntryCount();
 
         /// <summary>
+        /// Hybrid log used by this FASTER instance
+        /// </summary>
+        public LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+
+        /// <summary>
         /// Read cache used by this FASTER instance
         /// </summary>
-        public AllocatorBase<Key, Value> ReadCache => readcache;
+        public LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+
 
         private enum CheckpointType
         {
@@ -112,6 +108,7 @@ namespace FASTER.core
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
             {
                 hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
+                Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
                 {
                     readcache = new BlittableAllocator<Key, Value>(
@@ -122,11 +119,13 @@ namespace FASTER.core
                             MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
                         }, this.comparer, ReadCacheEvict);
                     readcache.Initialize();
+                    ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }
             }
             else
             {
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
+                Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
                 {
                     readcache = new GenericAllocator<Key, Value>(
@@ -138,6 +137,7 @@ namespace FASTER.core
                             MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
                         }, serializerSettings, this.comparer, ReadCacheEvict);
                     readcache.Initialize();
+                    ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }
             }
 
@@ -424,34 +424,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Truncate the log until, but not including, untilAddress
-        /// </summary>
-        /// <param name="untilAddress"></param>
-        public bool ShiftBeginAddress(long untilAddress)
-        {
-            return InternalShiftBeginAddress(untilAddress);
-        }
-
-        /// <summary>
-        /// Shift log head address to prune memory foorprint of hybrid log
-        /// </summary>
-        /// <param name="newHeadAddress">Address to shift head until</param>
-        /// <param name="wait">Wait to ensure shift is registered (may involve page flushing)</param>
-        public bool ShiftHeadAddress(long newHeadAddress, bool wait = false)
-        {
-            return InternalShiftHeadAddress(newHeadAddress, wait);
-        }
-
-        /// <summary>
-        /// Shift log read-only address
-        /// </summary>
-        /// <param name="newReadOnlyAddress">Address to shift read-only until</param>
-        public bool ShiftReadOnlyAddress(long newReadOnlyAddress)
-        {
-            return hlog.ShiftReadOnlyAddress(newReadOnlyAddress);
-        }
-
-        /// <summary>
         /// Grow the hash index
         /// </summary>
         /// <returns></returns>
@@ -467,18 +439,6 @@ namespace FASTER.core
         {
             base.Free();
             hlog.Dispose();
-        }
-
-        /// <summary>
-        /// Scan the log underlying FASTER, for address range
-        /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public IFasterScanIterator<Key, Value> LogScan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-        {
-            return hlog.Scan(beginAddress, endAddress, scanBufferingMode);
         }
     }
 }

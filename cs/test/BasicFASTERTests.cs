@@ -86,7 +86,7 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.OK);
             }
 
-            long tail = fht.LogTailAddress;
+            long tail = fht.Log.TailAddress;
 
             fht.DeleteFromMemory(ref key1, 0);
 
@@ -137,7 +137,7 @@ namespace FASTER.test
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
-            var tail = fht.LogTailAddress;
+            var tail = fht.Log.TailAddress;
 
             for (int i = 0; i < 10 * count; i++)
             {
@@ -217,7 +217,7 @@ namespace FASTER.test
             }
 
             // Clean up and retry - should not find now
-            fht.ShiftBeginAddress(fht.LogTailAddress);
+            fht.Log.ShiftBeginAddress(fht.Log.TailAddress);
 
             r = new Random(10);
             for (int c = 0; c < 1000; c++)
@@ -264,7 +264,7 @@ namespace FASTER.test
             }
 
             // Shift head and retry - should not find in main memory now
-            fht.ShiftHeadAddress(fht.LogTailAddress, true);
+            fht.Log.FlushAndEvict(true);
 
             r = new Random(10);
             for (int c = 0; c < 1000; c++)

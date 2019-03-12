@@ -416,7 +416,6 @@ namespace FASTER.core
             {
                 ReadCache = true;
                 EvictCallback = evictCallback;
-                FlushedUntilAddress = long.MaxValue;
             }
         }
 
@@ -490,7 +489,7 @@ namespace FASTER.core
             ReadOnlyAddress = firstValidAddress;
             SafeHeadAddress = firstValidAddress;
             HeadAddress = firstValidAddress;
-            if (!ReadCache) FlushedUntilAddress = firstValidAddress;
+            FlushedUntilAddress = firstValidAddress;
             BeginAddress = firstValidAddress;
 
             TailPageOffset.Page = (int)(firstValidAddress >> LogPageSizeBits);
@@ -515,6 +514,11 @@ namespace FASTER.core
             HeadAddress = 0;
             BeginAddress = 1;
         }
+
+        /// <summary>
+        /// Delete in-memory portion of the log
+        /// </summary>
+        internal abstract void DeleteFromMemory();
 
         /// <summary>
         /// Segment size

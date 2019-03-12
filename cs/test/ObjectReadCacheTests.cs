@@ -43,6 +43,7 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Close();
+            objlog.Close();
         }
 
         [Test]
@@ -59,7 +60,7 @@ namespace FASTER.test
             fht.CompletePending(true);
 
             // Evict all records from main memory of hybrid log
-            fht.ShiftHeadAddress(fht.LogTailAddress, true);
+            fht.Log.FlushAndEvict(true);
 
             // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
             for (int i = 0; i < 2000; i++)
@@ -86,7 +87,7 @@ namespace FASTER.test
             }
 
             // Evict the read cache entirely
-            fht.ReadCache.ShiftHeadAddress(fht.ReadCache.GetTailAddress());
+            fht.ReadCache.FlushAndEvict(true);
 
             // Read 100 keys - all should be served from disk, populating cache
             for (int i = 1900; i < 2000; i++)
@@ -137,6 +138,74 @@ namespace FASTER.test
                 MyOutput output = new MyOutput();
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(output.value.value == value.value);
+            }
+        }
+
+        [Test]
+        public void ObjectDiskWriteReadCache2()
+        {
+            MyInput input = default(MyInput);
+
+            for (int i = 0; i < 2000; i++)
+            {
+                var key = new MyKey { key = i };
+                var value = new MyValue { value = i };
+                fht.Upsert(ref key, ref value, Empty.Default, 0);
+            }
+            fht.CompletePending(true);
+
+            // Dispose the hybrid log from memory entirely
+            fht.Log.DisposeFromMemory();
+
+            // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
+            for (int i = 0; i < 2000; i++)
+            {
+                MyOutput output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.PENDING);
+                fht.CompletePending(true);
+            }
+
+            // Read last 100 keys - all should be served from cache
+            for (int i = 1900; i < 2000; i++)
+            {
+                MyOutput output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(output.value.value == value.value);
+            }
+
+            // Evict the read cache entirely
+            fht.ReadCache.FlushAndEvict(true);
+
+            // Read 100 keys - all should be served from disk, populating cache
+            for (int i = 1900; i < 2000; i++)
+            {
+                MyOutput output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.PENDING);
+                fht.CompletePending(true);
+            }
+
+            // Read 100 keys - all should be served from cache
+            for (int i = 1900; i < 2000; i++)
+            {
+                MyOutput output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
 
                 var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);

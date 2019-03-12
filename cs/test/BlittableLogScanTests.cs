@@ -42,16 +42,16 @@ namespace FASTER.test
         public void BlittableDiskWriteScan()
         {
             const int totalRecords = 2000;
-            var start = fht.LogTailAddress;
+            var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
-            fht.ShiftHeadAddress(fht.LogTailAddress, true);
+            fht.Log.FlushAndEvict(true);
 
-            var iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.SinglePageBuffering);
+            var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering);
 
             int val = 0;
             while (iter.GetNext(out KeyStruct key, out ValueStruct value))
@@ -64,7 +64,7 @@ namespace FASTER.test
             }
             Assert.IsTrue(totalRecords == val);
 
-            iter = fht.LogScan(start, fht.LogTailAddress, ScanBufferingMode.DoublePageBuffering);
+            iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering);
 
             val = 0;
             while (iter.GetNext(out KeyStruct key, out ValueStruct value))

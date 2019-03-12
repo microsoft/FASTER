@@ -64,41 +64,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InternalShiftBeginAddress(long untilAddress)
-        {
-            if (_systemState.phase == Phase.REST)
-            {
-                var version = _systemState.version;
-
-                SystemState nextState = SystemState.Make(Phase.GC, version);
-                long oldBeginAddress = untilAddress;
-                if (GlobalMoveToNextState(SystemState.Make(Phase.REST, version), nextState, ref oldBeginAddress))
-                {
-                    InternalRefresh();
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InternalShiftHeadAddress(long untilAddress, bool wait = false)
-        {
-            // First shift read-only
-            hlog.ShiftReadOnlyAddress(untilAddress);
-
-            // Wait for flush to complete
-            while (wait && hlog.FlushedUntilAddress < untilAddress)
-                InternalRefresh();
-
-            // Then shift head address
-            var newHeadAddress = hlog.ShiftHeadAddress(untilAddress);
-
-            return newHeadAddress >= untilAddress;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool InternalGrowIndex()
         {
             if (_systemState.phase == Phase.GC)

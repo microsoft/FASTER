@@ -30,7 +30,6 @@ namespace StructSampleCore
 
             fht.StartSession();
 
-
             fht.Upsert(ref key, ref value, Empty.Default, 0);
             fht.Read(ref key, ref input, ref output, Empty.Default, 0);
             if (output == value)

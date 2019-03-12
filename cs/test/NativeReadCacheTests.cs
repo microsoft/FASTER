@@ -53,7 +53,7 @@ namespace FASTER.test
             fht.CompletePending(true);
 
             // Evict all records from main memory of hybrid log
-            fht.ShiftHeadAddress(fht.LogTailAddress, true);
+            fht.Log.FlushAndEvict(true);
 
             // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
             for (int i = 0; i < 2000; i++)
@@ -81,9 +81,7 @@ namespace FASTER.test
             }
 
             // Evict the read cache entirely
-            var tailAddress = fht.ReadCache.GetTailAddress();
-            fht.ReadCache.ShiftReadOnlyAddress(tailAddress);
-            fht.ReadCache.ShiftHeadAddress(tailAddress);
+            fht.ReadCache.FlushAndEvict(true);
 
             // Read 100 keys - all should be served from disk, populating cache
             for (int i = 1900; i < 2000; i++)
@@ -142,6 +140,76 @@ namespace FASTER.test
                 Assert.IsTrue(output.value.vfield2 == value.vfield2);
             }
 
+        }
+
+        [Test]
+        public void NativeDiskWriteReadCache2()
+        {
+            InputStruct input = default(InputStruct);
+
+            for (int i = 0; i < 2000; i++)
+            {
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+            }
+            fht.CompletePending(true);
+
+            // Dispose the hybrid log from memory entirely
+            fht.Log.DisposeFromMemory();
+
+            // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
+            for (int i = 0; i < 2000; i++)
+            {
+                OutputStruct output = default(OutputStruct);
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.PENDING);
+                fht.CompletePending(true);
+            }
+
+            // Read last 100 keys - all should be served from cache
+            for (int i = 1900; i < 2000; i++)
+            {
+                OutputStruct output = default(OutputStruct);
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(output.value.vfield1 == value.vfield1);
+                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            }
+
+            // Evict the read cache entirely
+            fht.ReadCache.FlushAndEvict(true);
+
+            // Read 100 keys - all should be served from disk, populating cache
+            for (int i = 1900; i < 2000; i++)
+            {
+                OutputStruct output = default(OutputStruct);
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.PENDING);
+                fht.CompletePending(true);
+            }
+
+            // Read 100 keys - all should be served from cache
+            for (int i = 1900; i < 2000; i++)
+            {
+                OutputStruct output = default(OutputStruct);
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(output.value.vfield1 == value.vfield1);
+                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            }
         }
     }
 }
