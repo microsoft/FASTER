@@ -1,0 +1,18 @@
+remote_theme: pmarsceill/just-the-docs
+
+title: FASTER
+
+description: Fast resilient key-value store and cache for larger-than-memory data  
+
+# baseurl: "/FASTER/" 
+
+
+
+aux_links:
+
+    "FASTER on GitHub":
+
+      - "//github.com/Microsoft/FASTER"
+
+
+search_enabled: true
