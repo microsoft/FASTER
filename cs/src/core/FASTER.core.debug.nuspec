@@ -4,14 +4,15 @@
     <id>FASTER.Debug</id>
     <version>$version$</version>
     <title>FASTER</title>
-    <authors>FASTER</authors>
+    <authors>Microsoft</authors>
     <owners>Microsoft</owners>
     <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
     <licenseUrl>https://raw.githubusercontent.com/Microsoft/FASTER/master/LICENSE</licenseUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <description>Debug version. FASTER is a fast concurrent key-value store that also supports indexing of larger-than-memory data</description>
     <releaseNotes>See the project website at https://github.com/Microsoft/FASTER for more details</releaseNotes>
-    <copyright>Copyright 2018</copyright>
+    <copyright>© Microsoft Corporation. All rights reserved.</copyright>
+    <language>en-US</language>
     <tags>key-value store dictionary hashtable concurrent log persistent</tags>
     <dependencies>
       <group targetFramework="net46">
