@@ -63,10 +63,12 @@ jobs:
   strategy:
     maxParallel: 2
     matrix:
-      Debug:
-        BuildType: Debug
-      Release:
-        BuildType: Release 
+      x64-Debug:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Debug'
+      x64-Release:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Release'
   
   steps:
   - task: CMake@1
@@ -79,9 +81,9 @@ jobs:
     displayName: 'Build solution cc/build/FASTER.sln'
     inputs:
       solution: 'cc/build/FASTER.sln'
-      msbuildArguments: '/m /p:Configuration=$(BuildType)'
+      msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
 
-  - script: 'ctest -j 4 --interactive-debug-mode 0 --output-on-failure -C $(BuildType)'
+  - script: 'ctest --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration)'
     workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
 
