@@ -3,7 +3,7 @@
   <metadata>
     <id>FASTER.Debug</id>
     <version>$version$</version>
-    <title>FASTER</title>
+    <title>FASTER.Debug</title>
     <authors>Microsoft</authors>
     <owners>Microsoft</owners>
     <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
