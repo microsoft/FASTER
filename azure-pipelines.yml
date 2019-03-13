@@ -51,6 +51,7 @@ jobs:
        **\$(BuildConfiguration)\**\netcoreapp*\*test*.dll
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
+       !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
       otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
