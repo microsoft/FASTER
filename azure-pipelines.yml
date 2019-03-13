@@ -46,6 +46,11 @@ jobs:
 
   - task: VSTest@2
     inputs:
+      testAssemblyVer2: |
+       **\$(BuildConfiguration)\netcoreapp*\*test*.dll
+       **\$(BuildConfiguration)\**\netcoreapp*\*test*.dll
+       !**\*Microsoft.VisualStudio.TestPlatform*
+       !**\obj\**
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
       otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
@@ -67,17 +72,17 @@ jobs:
   - task: CMake@1
     displayName: 'CMake .. -G"Visual Studio 15 2017 Win64"'
     inputs:
-      workingDirectory: 'cc\build'
+      workingDirectory: 'cc/build'
       cmakeArgs: '.. -G"Visual Studio 15 2017 Win64"'
 
   - task: MSBuild@1
-    displayName: 'Build solution build/FASTER.sln'
+    displayName: 'Build solution cc/build/FASTER.sln'
     inputs:
-      solution: build/FASTER.sln
+      solution: 'cc/build/FASTER.sln'
       msbuildArguments: '/m /p:Configuration=$(BuildType)'
 
   - script: 'ctest -j 4 --interactive-debug-mode 0 --output-on-failure -C $(BuildType)'
-    workingDirectory: build
+    workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
 
 - job: 'cppLinux'
