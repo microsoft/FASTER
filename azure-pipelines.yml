@@ -2,6 +2,60 @@ variables:
   solution: 'cs/FASTER.sln'
 
 jobs:
+- job: 'csharpWindows'  
+  pool:
+    vmImage: vs2017-win2016    
+  displayName: 'C# (Windows)'
+
+  strategy:
+    maxParallel: 2
+    matrix:
+      AnyCPU-Debug:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Debug'
+      AnyCPU-Release:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Release'
+      x64-Debug:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Debug'
+      x64-Release:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Release'
+  
+  steps:
+  - task: NuGetToolInstaller@0
+    inputs:
+      versionSpec: '4.4.1' 
+    
+  - task: NuGetCommand@2
+    inputs:
+      restoreSolution: '$(solution)'
+
+  - task: VSBuild@1
+    inputs:
+      solution: '$(solution)'
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+
+  - task: VSTest@2
+    inputs:
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
+
+  - task: VSTest@2
+    inputs:
+      testAssemblyVer2: |
+       **\$(BuildConfiguration)\netcoreapp*\*test*.dll
+       **\$(BuildConfiguration)\**\netcoreapp*\*test*.dll
+       !**\*Microsoft.VisualStudio.TestPlatform*
+       !**\obj\**
+       !**\*TestAdapter.dll
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
+
 - job: 'cppWindows'  
   pool:
     vmImage: vs2017-win2016    
@@ -34,3 +88,39 @@ jobs:
     workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
 
+- job: 'cppLinux'
+  pool:
+    vmImage: ubuntu-16.04
+  displayName: 'C++ (Linux)'
+  
+  steps:
+  - script: |
+      sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+      sudo apt update
+      sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
+    displayName: 'Install depdendencies'
+  
+  - script: |
+      export CXX='g++-7'
+      cd cc
+      mkdir -p build/Debug build/Release
+      cd build/Debug
+      cmake -DCMAKE_BUILD_TYPE=Debug ../..
+      make -j
+      cd ../../build/Release
+      cmake -DCMAKE_BUILD_TYPE=Release ../..
+      make -j
+    displayName: 'Compile'
+
+- job: 'csharpLinux'
+  pool:
+    vmImage: ubuntu-16.04
+  displayName: 'C# (Linux)'
+
+  steps:
+  - script: |
+      mono --version
+      msbuild /version
+      msbuild /t:restore $(solution)
+      msbuild /p:Configuration=Release $(solution)
+    displayName: 'Build'
