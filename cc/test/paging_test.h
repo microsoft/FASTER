@@ -702,7 +702,7 @@ TEST(CLASS, Rmw) {
 
   Guid session_id = store.StartSession();
 
-  constexpr size_t kNumRecords = 25000;
+  constexpr size_t kNumRecords = 200000;
 
   // Initial RMW.
   static std::atomic<uint64_t> records_touched{ 0 };
