@@ -54,7 +54,6 @@ class Address {
   }
   Address(uint64_t control)
     : control_{ control } {
-    // assert(reserved_ == 0);
   }
 
   inline Address& operator=(const Address& other) {

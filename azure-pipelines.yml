@@ -30,7 +30,7 @@ jobs:
       solution: 'cc/build/FASTER.sln'
       msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
 
-  - script: 'ctest --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration)'
+  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration)'
     workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
 
