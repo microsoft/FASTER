@@ -35,7 +35,7 @@ TEST(MallocFixedPageSize, Alloc) {
   LightEpoch epoch;
   alloc_t allocator{};
   allocator.Initialize(128, epoch);
-  for(size_t idx = 0; idx < 32000000; ++idx) {
+  for(size_t idx = 0; idx < 3200000; ++idx) {
     FixedPageAddress address = allocator.Allocate();
     Item* item = &allocator.Get(address);
     ASSERT_EQ(0, reinterpret_cast<size_t>(item) % alignof(Item));
@@ -45,7 +45,7 @@ TEST(MallocFixedPageSize, Alloc) {
 
 
 static void MultiThread_Worker(alloc_t* allocator) {
-  constexpr size_t kAllocCount = 2000000;
+  constexpr size_t kAllocCount = 1600000;
   FixedPageAddress* addresses = new FixedPageAddress[kAllocCount];
 
   for(size_t idx = 0; idx < kAllocCount; ++idx) {
@@ -62,7 +62,7 @@ static void MultiThread_Worker(alloc_t* allocator) {
 }
 
 TEST(MallocFixedPageSize, Concurrent) {
-  constexpr size_t kNumThreads = 16;
+  constexpr size_t kNumThreads = 2;
   LightEpoch epoch;
   alloc_t allocator{};
   allocator.Initialize(64, epoch);

@@ -61,16 +61,16 @@ namespace FASTER.core
         /// </summary>
         public void Free()
         {
-            if (freeBuffer1.buffer != null)
+            if (freeBuffer1 != null)
             {
                 freeBuffer1.Return();
-                freeBuffer1.buffer = null;
+                freeBuffer1 = null;
             }
 
-            if (freeBuffer2.buffer != null)
+            if (freeBuffer2 != null)
             {
                 freeBuffer2.Return();
-                freeBuffer2.buffer = null;
+                freeBuffer2 = null;
             }
         }
     }
@@ -128,11 +128,16 @@ namespace FASTER.core
         /// </summary>
         public void Free()
         {
-            if (freeBuffer1.buffer != null)
+            if (freeBuffer1 != null)
+            {
                 freeBuffer1.Return();
-            if (freeBuffer2.buffer != null)
+                freeBuffer1 = null;
+            }
+            if (freeBuffer2 != null)
+            {
                 freeBuffer2.Return();
-
+                freeBuffer2 = null;
+            }
             if (handle != null)
             {
                 handle.Signal();
