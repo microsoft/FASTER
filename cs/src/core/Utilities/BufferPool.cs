@@ -20,7 +20,7 @@ namespace FASTER.core
     /// <summary>
     /// Sector aligned memory allocator
     /// </summary>
-    public unsafe struct SectorAlignedMemory
+    public unsafe class SectorAlignedMemory
     {
         /// <summary>
         /// Actual buffer
@@ -78,6 +78,15 @@ namespace FASTER.core
         {
             return aligned_pointer + valid_offset;
         }
+
+        /// <summary>
+        /// ToString
+        /// </summary>
+        /// <returns></returns>
+        public override string ToString()
+        {
+            return string.Format("{0} {1} {2} {3} {4}", (long)aligned_pointer, offset, valid_offset, required_bytes, available_bytes);
+        }
     }
 
     /// <summary>
@@ -95,6 +104,30 @@ namespace FASTER.core
 
         private static SafeConcurrentDictionary<Tuple<int, int>, SectorAlignedBufferPool> _instances
             = new SafeConcurrentDictionary<Tuple<int, int>, SectorAlignedBufferPool>();
+
+        /// <summary>
+        /// Clear buffer pool
+        /// </summary>
+        public static void Clear()
+        {
+            foreach (var pool in _instances.Values)
+            {
+                pool.Free();
+            }
+            _instances.Clear();
+        }
+
+        /// <summary>
+        /// Print contents of buffer pool
+        /// </summary>
+        public static void PrintAll()
+        {
+            foreach (var kvp in _instances)
+            {
+                Console.WriteLine("Pool Key: {0}", kvp.Key);
+                kvp.Value.Print();
+            }
+        }
 
         /// <summary>
         /// Get cached instance of buffer pool for specified params
@@ -132,6 +165,7 @@ namespace FASTER.core
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
+            Array.Clear(page.buffer, 0, page.buffer.Length);
             queue[page.level].Enqueue(page);
         }
 
@@ -172,6 +206,7 @@ namespace FASTER.core
                 return page;
             }
 
+            page = new SectorAlignedMemory();
             page.level = index;
             page.buffer = new byte[sectorSize * (1 << index)];
             page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
@@ -194,6 +229,21 @@ namespace FASTER.core
                 {
                     result.handle.Free();
                     result.buffer = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Print pool contents
+        /// </summary>
+        public void Print()
+        {
+            for (int i = 0; i < levels; i++)
+            {
+                if (queue[i] == null) continue;
+                foreach (var item in queue[i])
+                {
+                    Console.WriteLine("  " + item.ToString());
                 }
             }
         }

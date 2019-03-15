@@ -378,8 +378,7 @@ namespace FASTER.core
                         Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, _s.Length, _s.Length);
 
                     foreach (var address in addr)
-                        *((long*)address) += _objAddr;
-
+                        ((AddressInfo*)address)->Address += _objAddr;
 
                     if (i < (end / recordSize) - 1)
                     {
@@ -509,7 +508,7 @@ namespace FASTER.core
                 var frame = (GenericFrame<Key, Value>)result.frame;
                 src = frame.GetPage(result.page % frame.frameSize);
 
-                if (result.freeBuffer1.buffer != null && result.freeBuffer1.required_bytes > 0)
+                if (result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
                 {
                     PopulatePageFrame(result.freeBuffer1.GetValidPointer(), PageSize, src);
                     result.freeBuffer1.required_bytes = 0;
@@ -517,7 +516,7 @@ namespace FASTER.core
             }
             else
             {
-                if (result.freeBuffer1.buffer != null && result.freeBuffer1.required_bytes > 0)
+                if (result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
                 {
                     PopulatePage(result.freeBuffer1.GetValidPointer(), PageSize, result.page);
                     result.freeBuffer1.required_bytes = 0;
@@ -544,7 +543,7 @@ namespace FASTER.core
 
                 ptr = result.untilptr;
                 result.freeBuffer2.Return();
-                result.freeBuffer2.buffer = null;
+                result.freeBuffer2 = null;
                 result.resumeptr = ptr;
             }
 
@@ -902,7 +901,7 @@ namespace FASTER.core
             if (!(KeyHasObjects() || ValueHasObjects()))
                 return true;
 
-            if (ctx.objBuffer.buffer == null)
+            if (ctx.objBuffer == null)
             {
                 // Issue IO for objects
                 long startAddress = -1;
