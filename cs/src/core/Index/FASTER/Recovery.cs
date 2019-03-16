@@ -179,8 +179,8 @@ namespace FASTER.core
             {
                 RecoverHybridLogFromSnapshotFile(recoveredICInfo.info, recoveredHLCInfo.info);
             }
-
             
+
             // Read appropriate hybrid log pages into memory
             RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress);
 
@@ -266,7 +266,7 @@ namespace FASTER.core
 
             // Issue request to read pages as much as possible
             hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, AsyncReadPagesCallbackForRecovery, recoveryStatus);
-
+           
             for (long page = startPage; page < endPage; page++)
             {
                 // Ensure page has been read into memory
@@ -290,7 +290,7 @@ namespace FASTER.core
                 {
                     pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
                 }
-
+                
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
                                 startLogicalAddress, physicalAddress, recoveryInfo.version);
@@ -503,7 +503,7 @@ namespace FASTER.core
             // Set the page status to flushed
             var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
 
-            if (result.freeBuffer1.buffer != null)
+            if (result.freeBuffer1 != null)
             {
                 hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();

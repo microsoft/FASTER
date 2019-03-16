@@ -1366,7 +1366,7 @@ namespace FASTER.core
             }
             Interlocked.Increment(ref numPendingReads);
 
-            if (result.buffer == null)
+            if (result == null)
                 AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
             else
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
