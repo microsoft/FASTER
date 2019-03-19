@@ -1,4 +1,4 @@
----
+﻿---
 layout: default
 title: Overview
 nav_order: 1
@@ -29,15 +29,11 @@ C# and C++ versions of FASTER are very similar.
 
 # Getting Started
 
-Visit [our website](http://aka.ms/FASTER) for technical details and papers. **NEW**: A detailed guide to getting started
-with FASTER C# is available at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER 
-C# binaries are also available via [NuGet](https://www.nuget.org/packages/FASTER/).
+* Visit [our website](http://aka.ms/FASTER) for technical details and papers.
+* Start reading about FASTER C# [here](/cs).
+* FASTER C# binaries are available via [NuGet](https://www.nuget.org/packages/FASTER/).
+* Start reading about FASTER C++ [here](/cc).
 
-# Build and Test
-
-For C#, click [here](https://github.com/Microsoft/FASTER/tree/master/cs).
-
-For C++, click [here](https://github.com/Microsoft/FASTER/tree/master/cc).
 
 # Recovery in FASTER
 
@@ -50,5 +46,5 @@ operations, of the form “all operations until offset Ti in session i”; and (
 incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
 
 CPR is available in the C# and C++ versions of FASTER. More documentation on recovery in the C# version is
-[here](https://github.com/Microsoft/FASTER/tree/master/cs#checkpointing-and-recovery). For C++, we only
+[here](/cs#checkpointing-and-recovery). For C++, we only
 have examples in code right now. The sum-store, located [here](https://github.com/Microsoft/FASTER/tree/master/cc/playground/sum_store-dir), is a good example of checkpointing and recovery.
