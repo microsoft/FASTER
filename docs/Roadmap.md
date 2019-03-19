@@ -36,9 +36,9 @@ Completed items are included to provide the context and progress of the work.
 
 #### Log, Cache, and Storage
 
-* [x] Variable sized keys and values using separate object log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c-1))
+* [x] Variable sized keys and values using separate object log, see [[here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c-1)]
 * [x] Two allocators (specializing for Blittable and Generic key-value types), with common extensible base class
-* [x] Generic `IDevice` abstraction with out-of-the-box implementations for local storage
+* [x] Generic IDevice abstraction with out-of-the-box implementations for local storage
 * [x] Segmented log on storage (log file broken into segments of configurable size)
 * [x] Allocator support for copying reads to tail, useful for update-intensive workloads
 * [x] Highly configurable allocator parameters (log and read cache) with respect to memory size, page size, mutable fraction of memory, etc.
@@ -47,7 +47,7 @@ Completed items are included to provide the context and progress of the work.
 
 #### Checkpoint and Recovery
 
-* [x] CPR-based checkpointing and recovery (snapshot and fold-over modes), see [here](https://microsoft.github.io/FASTER/#recovery-in-faster) for details
+* [x] CPR-based checkpointing and recovery (snapshot and fold-over modes), see [[here](https://microsoft.github.io/FASTER/#recovery-in-faster)] for details
 * [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
 * [x] Auto-recover to most recent checkpoint
 
@@ -72,7 +72,7 @@ guidelines. It supports the following features as of now:
 
 * [x] Full Read, Upsert, RMW functionality
 * [x] Persistence support for larger-than-memory data
-* [x] Variable sized payloads; no separate object log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c)
+* [x] Variable sized payloads; no separate object log, see [[here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c)]
 * [x] Log segments on storage, with truncation from head of log
-* [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [here](https://microsoft.github.io/FASTER/#recovery-in-faster)
+* [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [[here](https://microsoft.github.io/FASTER/#recovery-in-faster)]
 * [x] Ability to resize the hash table
