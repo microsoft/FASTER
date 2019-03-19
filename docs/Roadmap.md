@@ -27,24 +27,27 @@ Completed items are included to provide the context and progress of the work.
 * [x] Separately configurable optional *read cache* for read-heavy workloads
 * [x] *Scan* operation support for scanning a specified range of log
 * [x] Allocator support for copying reads to tail, useful for update-intensive workloads
-* [x] Segmented log on storage, with user-initiated truncation from head of log (`ShiftBeginAddress`)
+* [x] Bulk delete via key expiry: user-initiated truncation from head of log (`ShiftBeginAddress`)
 * [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [here](https://microsoft.github.io/FASTER/#recovery-in-faster)
 * [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
 * [x] Ability to resize (grow) the hash table in powers of two (user-initiated)
 * [x] Support for separate user-defined object hash/equality comparers and serializers
 * [x] Remove C# dynamic code-gen for quicker instantiation, stability, debuggability
 * [x] Two allocators (specializing for Blittable and Generic key-value types), with common extensible base class
+* [x] Segmented log on storage (log file broken into segments of configurable size)
 * [x] Full support for .NET core and Linux/Mac
 * [x] Generic `IDevice` abstraction with out-of-the-box implementations for local storage
-
 * [x] Highly configurable allocator parameters (log and read cache) with respect to memory size, page size, mutable fraction of memory, etc.
 * [x] Support for runtime shifting of address markers (e.g., begin, head, read-only) for dynamic tuning of memory contents of allocators (log and read cache).
-
+* [x] Experimental feature: DeleteFromMemory to delete recently added keys that are still in memory
 
 ### Ongoing and Future Work
 
 * [ ] Log compaction by rolling forward older active keys
 * [ ] Checksums for storage pages
+* [ ] Individual key delete support at data structure level (users can already implement individual deletes at payload level, and FASTER already supports bulk deletes via truncation from head of log)
+* [ ] Support iteration over all and only live key-value pairs (different from log scan)
+* [ ] Handle log logical addresses greater than 48 bit (up to 64 bit)
 
 ## Release Notes
 
