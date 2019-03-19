@@ -30,9 +30,9 @@ C# and C++ versions of FASTER are very similar.
 # Getting Started
 
 * Visit our [research page](http://aka.ms/FASTER) for technical details and papers.
-* Start reading about FASTER C# [here](cs/).
+* Start reading about FASTER C# [here](cs).
 * FASTER C# binaries are available via [NuGet](https://www.nuget.org/packages/FASTER/).
-* Start reading about FASTER C++ [here](cc/).
+* Start reading about FASTER C++ [here](cc).
 
 
 # Recovery in FASTER
