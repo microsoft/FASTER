@@ -4,7 +4,7 @@ title: FASTER
 
 description: Fast resilient key-value store and cache for larger-than-memory data  
 
-# baseurl: "/FASTER/" 
+baseurl: "/FASTER/" 
 
 
 
