@@ -1,3 +1,11 @@
+---
+layout: default
+title: Project Roadmap
+nav_order: 2000
+description: Project Roadmap
+permalink: /roadmap
+---
+
 # Roadmap
 
 _This is a living document containing the FASTER team's priorities as well as release notes
@@ -13,25 +21,36 @@ Completed items are included to provide the context and progress of the work.
 
 ### Past Work
 
-#### System Features
 * [x] Full Read, Upsert, RMW functionality
 * [x] Persistence support for larger-than-memory data
 * [x] Variable sized keys and values using separate object log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c-1))
+* [x] Separately configurable optional *read cache* for read-heavy workloads
+* [x] *Scan* operation support for scanning a specified range of log
+* [x] Allocator support for copying reads to tail, useful for update-intensive workloads
 * [x] Segmented log on storage, with user-initiated truncation from head of log (`ShiftBeginAddress`)
 * [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [here](https://microsoft.github.io/FASTER/#recovery-in-faster)
-* [x] Ability to resize the hash table (user-initiated)
-* [x] Support for separate user-defined object hash/equality compareers and serializers
+* [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
+* [x] Ability to resize (grow) the hash table in powers of two (user-initiated)
+* [x] Support for separate user-defined object hash/equality comparers and serializers
 * [x] Remove C# dynamic code-gen for quicker instantiation, stability, debuggability
-* [x] Provide two allocators (Blittable and Generic) with common extensible base class
+* [x] Two allocators (specializing for Blittable and Generic key-value types), with common extensible base class
+* [x] Full support for .NET core and Linux/Mac
+* [x] Generic `IDevice` abstraction with out-of-the-box implementations for local storage
+
+* [x] Highly configurable allocator parameters (log and read cache) with respect to memory size, page size, mutable fraction of memory, etc.
+* [x] Support for runtime shifting of address markers (e.g., begin, head, read-only) for dynamic tuning of memory contents of allocators (log and read cache).
+
 
 ### Ongoing and Future Work
-* [ ] Log compaction (in progress)
 
+* [ ] Log compaction by rolling forward older active keys
+* [ ] Checksums for storage pages
 
 ## Release Notes
 
 #### FASTER v2019.3.16.1 (cumulative feature list)
 
+See features above.
 
 ## C++ Porting Notes
 
