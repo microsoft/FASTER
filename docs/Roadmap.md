@@ -21,25 +21,35 @@ Completed items are included to provide the context and progress of the work.
 
 ### Past Work
 
+#### General
+
 * [x] Full Read, Upsert, RMW functionality
-* [x] Persistence support for larger-than-memory data
-* [x] Variable sized keys and values using separate object log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c-1))
-* [x] Separately configurable optional *read cache* for read-heavy workloads
-* [x] *Scan* operation support for scanning a specified range of log
-* [x] Allocator support for copying reads to tail, useful for update-intensive workloads
 * [x] Bulk delete via key expiry: user-initiated truncation from head of log (`ShiftBeginAddress`)
-* [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [here](https://microsoft.github.io/FASTER/#recovery-in-faster)
-* [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
+* [x] Persistence support for larger-than-memory data
+* [x] *Scan* operation support for scanning a specified range of log
 * [x] Ability to resize (grow) the hash table in powers of two (user-initiated)
-* [x] Support for separate user-defined object hash/equality comparers and serializers
+* [x] Separately configurable optional *read cache* for read-heavy workloads
+* [x] Support for separate user-defined object hash/equality comparers and object serializers
 * [x] Remove C# dynamic code-gen for quicker instantiation, stability, debuggability
-* [x] Two allocators (specializing for Blittable and Generic key-value types), with common extensible base class
-* [x] Segmented log on storage (log file broken into segments of configurable size)
 * [x] Full support for .NET core and Linux/Mac
+* [x] Experimental feature: DeleteFromMemory to delete recently added keys that are still in memory
+
+#### Log, Cache, and Storage
+
+* [x] Variable sized keys and values using separate object log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c-1))
+* [x] Two allocators (specializing for Blittable and Generic key-value types), with common extensible base class
 * [x] Generic `IDevice` abstraction with out-of-the-box implementations for local storage
+* [x] Segmented log on storage (log file broken into segments of configurable size)
+* [x] Allocator support for copying reads to tail, useful for update-intensive workloads
 * [x] Highly configurable allocator parameters (log and read cache) with respect to memory size, page size, mutable fraction of memory, etc.
 * [x] Support for runtime shifting of address markers (e.g., begin, head, read-only) for dynamic tuning of memory contents of allocators (log and read cache).
-* [x] Experimental feature: DeleteFromMemory to delete recently added keys that are still in memory
+
+
+#### Checkpoint and Recovery
+
+* [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [here](https://microsoft.github.io/FASTER/#recovery-in-faster) for details
+* [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
+* [x] Auto-recover to most recent checkpoint
 
 ### Ongoing and Future Work
 
@@ -53,7 +63,7 @@ Completed items are included to provide the context and progress of the work.
 
 #### FASTER v2019.3.16.1 (cumulative feature list)
 
-See features above.
+See completed features above.
 
 ## C++ Porting Notes
 
@@ -64,6 +74,5 @@ guidelines. It supports the following features as of now:
 * [x] Persistence support for larger-than-memory data
 * [x] Variable sized keys and values; there is no separate object log because C++ supports variable sized allocations on log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c)
 * [x] Log segments on storage, with truncation from head of log
-* [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see 
-[here](https://microsoft.github.io/FASTER/#recovery-in-faster)
+* [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [here](https://microsoft.github.io/FASTER/#recovery-in-faster)
 * [x] Ability to resize the hash table
