@@ -154,10 +154,11 @@ namespace FASTER.core
 
             var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
-            if (result.freeBuffer1.buffer != null)
+            if (result.freeBuffer1 != null)
             {
                 hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();
+                result.freeBuffer1 = null;
             }
 
             if (result.handle != null)

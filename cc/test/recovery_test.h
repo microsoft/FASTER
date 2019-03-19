@@ -26,7 +26,7 @@ TEST(CLASS, MallocFixedPageSize) {
   alloc_t allocator{};
   allocator.Initialize(512, epoch);
 
-  size_t num_buckets_to_add = 16 * FixedPage<HashBucket>::kPageSize + 5;
+  size_t num_buckets_to_add = 2 * FixedPage<HashBucket>::kPageSize + 5;
 
   FixedPageAddress* buckets = new FixedPageAddress[num_buckets_to_add];
 
@@ -102,7 +102,7 @@ TEST(CLASS, InternalHashTable) {
   std::mt19937_64 rng{ seed };
   std::experimental::filesystem::create_directories("test_ht");
 
-  constexpr uint64_t kNumBuckets = 8388608;
+  constexpr uint64_t kNumBuckets = 8388608/8;
   size_t num_bytes_written;
   {
     LightEpoch epoch;
@@ -424,7 +424,7 @@ TEST(CLASS, Serial) {
 
   std::experimental::filesystem::create_directories("storage");
 
-  static constexpr size_t kNumRecords = 6000000;
+  static constexpr size_t kNumRecords = 600000;
 
   Guid session_id;
   Guid token;
@@ -932,7 +932,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
 
   std::experimental::filesystem::create_directories("storage");
 
-  static constexpr size_t kNumRecords = 6000000;
+  static constexpr size_t kNumRecords = 600000;
 
   Guid session_id;
   Guid token;
@@ -1258,8 +1258,8 @@ TEST(CLASS, Concurrent_Insert_Small) {
 
   std::experimental::filesystem::create_directories("storage");
 
-  static constexpr uint32_t kNumRecords = 200000;
-  static constexpr uint32_t kNumThreads = 16;
+  static constexpr uint32_t kNumRecords = 500000;
+  static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
@@ -1676,8 +1676,8 @@ TEST(CLASS, Concurrent_Insert_Large) {
 
   std::experimental::filesystem::create_directories("storage");
 
-  static constexpr uint32_t kNumRecords = 6000000;
-  static constexpr uint32_t kNumThreads = 16;
+  static constexpr uint32_t kNumRecords = 1000000;
+  static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
@@ -2092,7 +2092,7 @@ TEST(CLASS, Concurrent_Update_Small) {
   std::experimental::filesystem::create_directories("storage");
 
   static constexpr uint32_t kNumRecords = 200000;
-  static constexpr uint32_t kNumThreads = 16;
+  static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
@@ -2520,8 +2520,8 @@ TEST(CLASS, Concurrent_Update_Large) {
 
   std::experimental::filesystem::create_directories("storage");
 
-  static constexpr uint32_t kNumRecords = 10000000;
-  static constexpr uint32_t kNumThreads = 16;
+  static constexpr uint32_t kNumRecords = 1000000;
+  static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
@@ -2648,6 +2648,7 @@ TEST(CLASS, Concurrent_Update_Large) {
       while(!index_checkpoint_completed) {
         store->CompletePending(false);
       }
+	  store->CompletePending(false);
 
       // checkpoint the hybrid log (transition from REST to PREPARE)
       ASSERT_TRUE(store->CheckpointHybridLog(hybrid_log_persistence_callback, hybrid_log_token));
@@ -2972,7 +2973,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
   std::experimental::filesystem::create_directories("storage");
 
   static constexpr uint32_t kNumRecords = 200000;
-  static constexpr uint32_t kNumThreads = 16;
+  static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
@@ -3411,8 +3412,8 @@ TEST(CLASS, Concurrent_Rmw_Large) {
 
   std::experimental::filesystem::create_directories("storage");
 
-  static constexpr uint32_t kNumRecords = 6000000;
-  static constexpr uint32_t kNumThreads = 16;
+  static constexpr uint32_t kNumRecords = 1000000;
+  static constexpr uint32_t kNumThreads = 2;
   static_assert(kNumRecords % kNumThreads == 0, "kNumRecords % kNumThreads != 0");
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 

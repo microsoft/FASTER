@@ -517,7 +517,7 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
   };
 
   static constexpr size_t kNumOps = 1024;
-  static constexpr size_t kNumThreads = 8;
+  static constexpr size_t kNumThreads = 2;
 
   auto upsert_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
   size_t thread_idx) {
@@ -837,7 +837,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
   };
 
   static constexpr size_t kNumOps = 1024;
-  static constexpr size_t kNumThreads = 8;
+  static constexpr size_t kNumThreads = 2;
 
   auto upsert_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
   size_t thread_idx, uint32_t value_length) {
@@ -1240,7 +1240,7 @@ TEST(InMemFaster, Rmw_Concurrent) {
     int64_t output;
   };
 
-  static constexpr size_t kNumThreads = 8;
+  static constexpr size_t kNumThreads = 2;
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
@@ -1573,7 +1573,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     int8_t output_bytes[2];
   };
 
-  static constexpr int8_t kNumThreads = 8;
+  static constexpr int8_t kNumThreads = 2;
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
@@ -1791,7 +1791,7 @@ TEST(InMemFaster, GrowHashTable) {
     int64_t output;
   };
 
-  static constexpr size_t kNumThreads = 8;
+  static constexpr size_t kNumThreads = 2;
   static constexpr size_t kNumRmws = 32768;
   static constexpr size_t kRange = 8192;
 

@@ -40,8 +40,59 @@ jobs:
 
   - task: VSTest@2
     inputs:
+      testAssemblyVer2: |
+       **\$(BuildConfiguration)\net46*\*test*.dll
+       **\$(BuildConfiguration)\**\net46*\*test*.dll
+       !**\*Microsoft.VisualStudio.TestPlatform*
+       !**\obj\**
+       !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
+
+  - task: VSTest@2
+    inputs:
+      testAssemblyVer2: |
+       **\$(BuildConfiguration)\netcoreapp*\*test*.dll
+       **\$(BuildConfiguration)\**\netcoreapp*\*test*.dll
+       !**\*Microsoft.VisualStudio.TestPlatform*
+       !**\obj\**
+       !**\*TestAdapter.dll
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
+
+- job: 'cppWindows'  
+  pool:
+    vmImage: vs2017-win2016    
+  displayName: 'C++ (Windows)'
+
+  strategy:
+    maxParallel: 2
+    matrix:
+      x64-Debug:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Debug'
+      x64-Release:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Release'
+  
+  steps:
+  - task: CMake@1
+    displayName: 'CMake .. -G"Visual Studio 15 2017 Win64"'
+    inputs:
+      workingDirectory: 'cc/build'
+      cmakeArgs: '.. -G"Visual Studio 15 2017 Win64"'
+
+  - task: MSBuild@1
+    displayName: 'Build solution cc/build/FASTER.sln'
+    inputs:
+      solution: 'cc/build/FASTER.sln'
+      msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
+
+  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "in_memory"'
+    workingDirectory: 'cc/build'
+    displayName: 'Run Ctest'
 
 - job: 'cppLinux'
   pool:
