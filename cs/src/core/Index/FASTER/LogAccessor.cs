@@ -4,6 +4,8 @@
 #pragma warning disable 0162
 
 
+using System;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -41,6 +43,11 @@ namespace FASTER.core
         /// Read-only address of log, i.e. boundary between read-only region and mutable region
         /// </summary>
         public long ReadOnlyAddress => allocator.ReadOnlyAddress;
+
+        /// <summary>
+        /// Safe read-only address of log, i.e. boundary between read-only region and mutable region
+        /// </summary>
+        public long SafeReadOnlyAddress => allocator.SafeReadOnlyAddress;
 
         /// <summary>
         /// Head address of log, i.e. beginning of in-memory regions
@@ -135,6 +142,58 @@ namespace FASTER.core
 
             // Delete from memory
             allocator.DeleteFromMemory();
+        }
+
+        /// <summary>
+        /// Compact the log until specified address, moving active
+        /// records to the tail of the log
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        public void Compact(long untilAddress)
+        {
+            var tempKv = new FasterKV<Key, Value, Input, Output, Context, LogCompactFunctions>
+                (fht.IndexSize, new LogCompactFunctions(), new LogSettings(), comparer: fht.Comparer);
+            var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
+
+            while (iter1.GetNext(out Key key, out Value value))
+            {
+                tempKv.Upsert(ref key, ref value, default(Context), 0);
+            }
+            iter1.Dispose();
+
+            var iter2 = fht.Log.Scan(untilAddress, fht.Log.SafeReadOnlyAddress);
+            while (iter2.GetNext(out Key key, out Value value))
+            {
+                tempKv.DeleteFromMemory(ref key, 0);
+            }
+            iter2.Dispose();
+
+            // TODO: make sure the key wasn't already inserted
+            // between SafeReadOnlyAddress and TailAddress
+            var iter3 = tempKv.Log.Scan(0, tempKv.Log.TailAddress);
+            while (iter3.GetNext(out Key key, out Value value))
+            {
+                fht.Upsert(ref key, ref value, default(Context), 0);
+            }
+            iter3.Dispose();
+            tempKv.Dispose();
+
+            ShiftBeginAddress(untilAddress);
+        }
+
+        private class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { }
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
+            public void InPlaceUpdater(ref Key key, ref Input input, ref Value value) { }
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { }
+            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         }
     }
 }

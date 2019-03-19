@@ -152,6 +152,16 @@ namespace FASTER.core
         long EntryCount { get; }
 
         /// <summary>
+        /// Get size of index in #cache lines (64 bytes each)
+        /// </summary>
+        long IndexSize { get; }
+
+        /// <summary>
+        /// Get comparer used by this instance of FASTER
+        /// </summary>
+        IFasterEqualityComparer<Key> Comparer { get; }
+
+        /// <summary>
         /// Dump distribution of #entries in hash table, to console
         /// </summary>
         void DumpDistribution();

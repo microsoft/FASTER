@@ -29,6 +29,16 @@ namespace FASTER.core
         public long EntryCount => GetEntryCount();
 
         /// <summary>
+        /// Size of index in #cache lines (64 bytes each)
+        /// </summary>
+        public long IndexSize => state[resizeInfo.version].size;
+
+        /// <summary>
+        /// Comparer used by FASTER
+        /// </summary>
+        public IFasterEqualityComparer<Key> Comparer => comparer;
+
+        /// <summary>
         /// Hybrid log used by this FASTER instance
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context> Log { get; }
