@@ -62,7 +62,7 @@ guidelines. It supports the following features as of now:
 
 * [x] Full Read, Upsert, RMW functionality
 * [x] Persistence support for larger-than-memory data
-* [x] Variable sized keys and values (no separate  object log as C++ supports variable sized allocations on log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c))
+* [x] Variable sized keys and values; there is no separate object log because C++ supports variable sized allocations on log, see [here](https://github.com/Microsoft/FASTER/wiki/Variable-length-values#in-c)
 * [x] Log segments on storage, with truncation from head of log
 * [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see 
 [here](https://microsoft.github.io/FASTER/#recovery-in-faster)
