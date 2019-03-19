@@ -40,13 +40,13 @@ FASTER supports three basic operations:
 
 Before instantiating FASTER, you need to create storage devices that FASTER will use. If you are using blittable types, you only need the hybrid log device. If you are also using objects, you need to create a separate object log device.
 
-```Csharp
+```cs
 IDevice log = Devices.CreateLogDevice("C:\\Temp\\hybridlog_native.log");
 ```
 
 Then, an instance of FASTER is created as follows:
 
-```Csharp
+```cs
 fht = new FasterKV<Key, Value, Input, Output, Empty, Functions>
   (1L << 20, new Functions(), new LogSettings { LogDevice = log });
 ```
@@ -86,19 +86,19 @@ The total in-memory footprint of FASTER is controlled by the following parameter
 
 Once FASTER is instantiated, threads may use FASTER by registering themselves via the concept of a Session, using the call 
 
-```CSharp
+```cs
 fht.StartSession();
 ```
 
 At the end, the thread calls:
 
-```CSharp
+```cs
 fht.StopSession();
 ```
 
 When all threads are done operating on FASTER, you finally dispose the FASTER instance:
 
-```CSharp
+```cs
 fht.Dispose();
 ```
 
@@ -131,7 +131,7 @@ public static void Test()
 
 Functions for this example:
 
-```CSharp
+```cs
 public class Funcs : IFunctions<long, long, long, long, Empty>
 {
   public void SingleReader(ref long key, ref long input, ref long value, ref long dst) => dst = value;
@@ -165,7 +165,7 @@ This sequence number can be used by the FASTER thread to clear any in-memory buf
 During recovery, threads can continue their session with the same Guid using `ContinueSession`. The function returns the thread-local sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted operations since that point.
 
 Below, we show a simple recovery example for a single thread. 
-```Csharp
+```cs
 public class PersistenceExample 
 {
   private FasterKV<long, long, long, long, Empty, Funcs> fht;
