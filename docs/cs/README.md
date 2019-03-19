@@ -108,7 +108,7 @@ fht.Dispose();
 Following is a simple end-to-end sample where all data is in memory, so we do not worry about pending 
 I/O operations. There is no checkpointing in this example as well.
 
-```CSharp
+```cs
 public static void Test()
 {
   var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
