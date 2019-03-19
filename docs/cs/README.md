@@ -86,15 +86,21 @@ The total in-memory footprint of FASTER is controlled by the following parameter
 
 Once FASTER is instantiated, threads may use FASTER by registering themselves via the concept of a Session, using the call 
 
-```fht.StartSession();```
+```CSharp
+fht.StartSession();
+```
 
 At the end, the thread calls:
 
-```fht.StopSession();```
+```CSharp
+fht.StopSession();
+```
 
 When all threads are done operating on FASTER, you finally dispose the FASTER instance:
 
-```fht.Dispose();```
+```CSharp
+fht.Dispose();
+```
 
 
 ## Quick End-To-End Sample
