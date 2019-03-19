@@ -58,6 +58,7 @@ Completed items are included to provide the context and progress of the work.
 * [ ] Individual key delete support at data structure level (users can already implement individual deletes at payload level, and FASTER already supports bulk deletes via truncation from head of log)
 * [ ] Support iteration over all and only live key-value pairs (different from log scan)
 * [ ] Handle log logical addresses greater than 48 bit (up to 64 bit)
+* [ ] Expose other data structures, starting with a FIFO FasterQueue
 
 ## Release Notes
 
