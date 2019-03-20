@@ -100,12 +100,17 @@ namespace FASTER.core
                     currentAddress += recordSize;
 
                     var page = currentPage % hlog.BufferSize;
+
+                    if (hlog.values[page][offset].info.Invalid)
+                        continue;
                     key = hlog.values[page][offset].key;
                     value = hlog.values[page][offset].value;
                     return true;
                 }
 
                 currentAddress += recordSize;
+                if (frame.GetInfo(currentFrame, offset).Invalid)
+                    continue;
                 key = frame.GetKey(currentFrame, offset);
                 value = frame.GetValue(currentFrame, offset);
                 return true;

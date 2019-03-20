@@ -97,6 +97,12 @@ namespace FASTER.core
                     // Read record from cached page memory
                     var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
 
+                    if (hlog.GetInfo(_physicalAddress).Invalid)
+                    {
+                        currentAddress += hlog.GetRecordSize(_physicalAddress);
+                        continue;
+                    }
+
                     key = hlog.GetKey(_physicalAddress);
                     value = hlog.GetValue(_physicalAddress);
                     currentAddress += hlog.GetRecordSize(_physicalAddress);
@@ -104,6 +110,13 @@ namespace FASTER.core
                 }
 
                 var physicalAddress = frame.GetPhysicalAddress(currentFrame, offset);
+
+                if (hlog.GetInfo(physicalAddress).Invalid)
+                {
+                    currentAddress += hlog.GetRecordSize(physicalAddress);
+                    continue;
+                }
+
                 key = hlog.GetKey(physicalAddress);
                 value = hlog.GetValue(physicalAddress);
                 currentAddress += hlog.GetRecordSize(physicalAddress);

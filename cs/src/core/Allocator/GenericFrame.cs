@@ -47,6 +47,11 @@ namespace FASTER.core
             return ref frame[frameNumber][offset].value;
         }
 
+        public ref RecordInfo GetInfo(long frameNumber, long offset)
+        {
+            return ref frame[frameNumber][offset].info;
+        }
+
         public ref Record<Key, Value>[] GetPage(long frameNumber)
         {
             return ref frame[frameNumber];

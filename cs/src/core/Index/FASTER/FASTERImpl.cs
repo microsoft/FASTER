@@ -1376,6 +1376,8 @@ namespace FASTER.core
 
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
+                // Invalidate record
+                hlog.GetInfo(physicalAddress).Invalid = true;
                 Value v = default(Value);
                 functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
             }

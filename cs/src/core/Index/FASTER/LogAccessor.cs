@@ -153,6 +153,8 @@ namespace FASTER.core
         {
             var tempKv = new FasterKV<Key, Value, Input, Output, Context, LogCompactFunctions>
                 (fht.IndexSize, new LogCompactFunctions(), new LogSettings(), comparer: fht.Comparer);
+            tempKv.StartSession();
+
             var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
 
             while (iter1.GetNext(out Key key, out Value value))
@@ -170,12 +172,13 @@ namespace FASTER.core
 
             // TODO: make sure the key wasn't already inserted
             // between SafeReadOnlyAddress and TailAddress
-            var iter3 = tempKv.Log.Scan(0, tempKv.Log.TailAddress);
+            var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
             while (iter3.GetNext(out Key key, out Value value))
             {
                 fht.Upsert(ref key, ref value, default(Context), 0);
             }
             iter3.Dispose();
+            tempKv.StopSession();
             tempKv.Dispose();
 
             ShiftBeginAddress(untilAddress);
@@ -185,14 +188,14 @@ namespace FASTER.core
         {
             public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
-            public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { }
+            public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; }
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
             public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
             public void InPlaceUpdater(ref Key key, ref Input input, ref Value value) { }
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
             public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
             public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { }
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { dst = src; }
             public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         }
     }
