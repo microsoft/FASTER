@@ -119,6 +119,10 @@ namespace FASTER.test
         {
         }
 
+        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
+        {
+        }
+
         public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
@@ -170,6 +174,10 @@ namespace FASTER.test
         }
 
         public void UpsertCompletionCallback(ref int key, ref MyValue value, Empty ctx)
+        {
+        }
+
+        public void DeleteCompletionCallback(ref int key, Empty ctx)
         {
         }
 
@@ -240,6 +248,10 @@ namespace FASTER.test
 
 
         public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, Empty ctx)
+        {
+        }
+
+        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
         {
         }
 

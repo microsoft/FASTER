@@ -65,6 +65,10 @@ namespace FASTER.test
         {
         }
 
+        public void DeleteCompletionCallback(ref KeyStruct key, Empty ctx)
+        {
+        }
+
         public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
             Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);

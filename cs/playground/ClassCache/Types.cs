@@ -157,5 +157,10 @@ namespace ClassCache
         {
             throw new NotImplementedException();
         }
+
+        public void DeleteCompletionCallback(ref CacheKey key, CacheContext ctx)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

@@ -413,17 +413,20 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Delete hash entry if possible as a best effort
-        /// Entry is deleted if key is in memory and at the head of hash chain
+        /// Delete entry (use tombstone if necessary)
+        /// Hash entry is removed as a best effort (if key is in memory and at 
+        /// the head of hash chain.
         /// Value is set to null (using ConcurrentWrite) if it is in mutable region
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="userContext"></param>
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status DeleteFromMemory(ref Key key, long monotonicSerialNum)
+        public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
         {
-            var internalStatus = InternalDeleteFromMemory(ref key);
+            var context = default(PendingContext);
+            var internalStatus = InternalDelete(ref key, ref userContext, ref context);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {

@@ -166,7 +166,7 @@ namespace FASTER.core
             var iter2 = fht.Log.Scan(untilAddress, fht.Log.SafeReadOnlyAddress);
             while (iter2.GetNext(out Key key, out Value value))
             {
-                tempKv.DeleteFromMemory(ref key, 0);
+                tempKv.Delete(ref key, default(Context), 0);
             }
             iter2.Dispose();
 
@@ -197,6 +197,7 @@ namespace FASTER.core
             public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
             public void SingleWriter(ref Key key, ref Value src, ref Value dst) { dst = src; }
             public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+            public void DeleteCompletionCallback(ref Key key, Context ctx) { }
         }
     }
 }
