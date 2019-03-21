@@ -45,11 +45,15 @@ namespace FASTER.core
             frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
             loaded = new CountdownEvent[frameSize];
 
-            var frameNumber = (currentAddress >> hlog.LogPageSizeBits) % frameSize;
-            hlog.AsyncReadPagesFromDeviceToFrame
-                (currentAddress >> hlog.LogPageSizeBits,
-                1, AsyncReadPagesCallback, Empty.Default,
-                frame, out loaded[frameNumber]);
+            // Only load addresses flushed to disk
+            if (currentAddress < hlog.HeadAddress)
+            {
+                var frameNumber = (currentAddress >> hlog.LogPageSizeBits) % frameSize;
+                hlog.AsyncReadPagesFromDeviceToFrame
+                    (currentAddress >> hlog.LogPageSizeBits,
+                    1, AsyncReadPagesCallback, Empty.Default,
+                    frame, out loaded[frameNumber]);
+            }
         }
 
         /// <summary>

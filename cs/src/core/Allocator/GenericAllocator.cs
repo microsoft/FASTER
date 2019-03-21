@@ -46,12 +46,12 @@ namespace FASTER.core
         {
             SerializerSettings = serializerSettings;
 
-            if (default(Key) == null && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
+            if (default(Key) == null && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
                 throw new Exception("Key is a class, but no serializer specified via SerializerSettings");
             }
 
-            if (default(Value) == null && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
+            if (default(Value) == null && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
                 throw new Exception("Value is a class, but no serializer specified via SerializerSettings");
             }
@@ -61,7 +61,7 @@ namespace FASTER.core
 
             objectLogDevice = settings.ObjectLogDevice;
 
-            if (KeyHasObjects() || ValueHasObjects())
+            if ((settings.LogDevice as NullDevice == null) && (KeyHasObjects() || ValueHasObjects()))
             {
                 if (objectLogDevice == null)
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
