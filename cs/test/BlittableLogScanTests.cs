@@ -54,7 +54,7 @@ namespace FASTER.test
             var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering);
 
             int val = 0;
-            while (iter.GetNext(out KeyStruct key, out ValueStruct value))
+            while (iter.GetNext(out RecordInfo recordInfo, out KeyStruct key, out ValueStruct value))
             {
                 Assert.IsTrue(key.kfield1 == val);
                 Assert.IsTrue(key.kfield2 == val + 1);
@@ -67,7 +67,7 @@ namespace FASTER.test
             iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering);
 
             val = 0;
-            while (iter.GetNext(out KeyStruct key, out ValueStruct value))
+            while (iter.GetNext(out RecordInfo recordInfo, out KeyStruct key, out ValueStruct value))
             {
                 Assert.IsTrue(key.kfield1 == val);
                 Assert.IsTrue(key.kfield2 == val + 1);

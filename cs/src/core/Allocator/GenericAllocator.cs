@@ -350,7 +350,7 @@ namespace FASTER.core
                         addr.Add((long)key_address);
                     }
 
-                    if (ValueHasObjects())
+                    if (ValueHasObjects() && !src[i].info.Tombstone)
                     {
                         long pos = ms.Position;
                         valueSerializer.Serialize(ref src[i].value);
@@ -708,7 +708,7 @@ namespace FASTER.core
 
             while (ptr < untilptr)
             {
-                if (!src[ptr/recordSize].info.Invalid)
+                if (!src[ptr / recordSize].info.Invalid)
                 {
                     if (KeyHasObjects())
                     {
@@ -723,7 +723,7 @@ namespace FASTER.core
                         keySerializer.Deserialize(ref src[ptr/recordSize].key);
                     } 
 
-                    if (ValueHasObjects())
+                    if (ValueHasObjects() && !src[ptr / recordSize].info.Tombstone)
                     {
                         var value_addr = GetValueAddressInfo((long)raw + ptr);
                         if (start_addr == -1) start_addr = value_addr->Address;
@@ -788,7 +788,7 @@ namespace FASTER.core
                         addr.Add((long)key_address);
                     }
 
-                    if (ValueHasObjects())
+                    if (ValueHasObjects() && !GetInfo(ptr).Tombstone)
                     {
                         pos = stream.Position;
                         var value_address = GetValueAddressInfo(ptr);
@@ -851,7 +851,7 @@ namespace FASTER.core
                     }
 
 
-                    if (ValueHasObjects())
+                    if (ValueHasObjects() && !src[ptr / recordSize].info.Tombstone)
                     {
                         var value_addr = GetValueAddressInfo((long)raw + ptr);
                         var addr = value_addr->Address;
@@ -913,7 +913,7 @@ namespace FASTER.core
                     endAddress = x->Address + x->Size;
                 }
 
-                if (ValueHasObjects())
+                if (ValueHasObjects() && !GetInfoFromBytePointer(record).Tombstone)
                 {
                     var x = GetValueAddressInfo((long)record);
                     if (startAddress == -1)
@@ -943,7 +943,7 @@ namespace FASTER.core
                 keySerializer.EndDeserialize();
             }
 
-            if (ValueHasObjects())
+            if (ValueHasObjects() && !GetInfoFromBytePointer(record).Tombstone)
             {
                 ctx.value = new Value();
 

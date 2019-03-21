@@ -58,11 +58,13 @@ namespace FASTER.core
         /// <summary>
         /// Get next record using iterator
         /// </summary>
+        /// <param name="recordInfo"></param>
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public bool GetNext(out Key key, out Value value)
+        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
+            recordInfo = default(RecordInfo);
             key = default(Key);
             value = default(Value);
 
@@ -101,16 +103,14 @@ namespace FASTER.core
 
                     var page = currentPage % hlog.BufferSize;
 
-                    if (hlog.values[page][offset].info.Invalid)
-                        continue;
+                    recordInfo = hlog.values[page][offset].info;
                     key = hlog.values[page][offset].key;
                     value = hlog.values[page][offset].value;
                     return true;
                 }
 
                 currentAddress += recordSize;
-                if (frame.GetInfo(currentFrame, offset).Invalid)
-                    continue;
+                recordInfo = frame.GetInfo(currentFrame, offset);
                 key = frame.GetKey(currentFrame, offset);
                 value = frame.GetValue(currentFrame, offset);
                 return true;

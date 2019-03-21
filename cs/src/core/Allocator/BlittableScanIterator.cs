@@ -55,11 +55,13 @@ namespace FASTER.core
         /// <summary>
         /// Get next record in iterator
         /// </summary>
+        /// <param name="recordInfo"></param>
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public bool GetNext(out Key key, out Value value)
+        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
+            recordInfo = default(RecordInfo);
             key = default(Key);
             value = default(Value);
 
@@ -97,12 +99,7 @@ namespace FASTER.core
                     // Read record from cached page memory
                     var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
 
-                    if (hlog.GetInfo(_physicalAddress).Invalid)
-                    {
-                        currentAddress += hlog.GetRecordSize(_physicalAddress);
-                        continue;
-                    }
-
+                    recordInfo = hlog.GetInfo(_physicalAddress);
                     key = hlog.GetKey(_physicalAddress);
                     value = hlog.GetValue(_physicalAddress);
                     currentAddress += hlog.GetRecordSize(_physicalAddress);
@@ -111,12 +108,7 @@ namespace FASTER.core
 
                 var physicalAddress = frame.GetPhysicalAddress(currentFrame, offset);
 
-                if (hlog.GetInfo(physicalAddress).Invalid)
-                {
-                    currentAddress += hlog.GetRecordSize(physicalAddress);
-                    continue;
-                }
-
+                recordInfo = hlog.GetInfo(physicalAddress);
                 key = hlog.GetKey(physicalAddress);
                 value = hlog.GetValue(physicalAddress);
                 currentAddress += hlog.GetRecordSize(physicalAddress);
