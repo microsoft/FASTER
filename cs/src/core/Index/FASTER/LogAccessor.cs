@@ -151,44 +151,80 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         public void Compact(long untilAddress)
         {
+            long originalUntilAddress = untilAddress;
+
             var tempKv = new FasterKV<Key, Value, Input, Output, Context, LogCompactFunctions>
                 (fht.IndexSize, new LogCompactFunctions(), new LogSettings(), comparer: fht.Comparer);
             tempKv.StartSession();
 
-            var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
+            int cnt = 0;
 
-            while (iter1.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
+            using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
             {
-                if (!recordInfo.Invalid && !recordInfo.Tombstone)
-                    tempKv.Upsert(ref key, ref value, default(Context), 0);
+                while (iter1.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
+                {
+                    if (!recordInfo.Invalid && !recordInfo.Tombstone)
+                        tempKv.Upsert(ref key, ref value, default(Context), 0);
 
-                if (recordInfo.Tombstone)
-                    tempKv.Delete(ref key, default(Context), 0);
+                    if (recordInfo.Tombstone)
+                        tempKv.Delete(ref key, default(Context), 0);
+
+                    if (++cnt % 1000 == 0)
+                        fht.Refresh();
+                }
             }
-            iter1.Dispose();
 
-            // TODO: Scan only until SafeReadOnlyAddress
-            var iter2 = fht.Log.Scan(untilAddress, fht.Log.TailAddress);
-            while (iter2.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
+            // TODO: Scan until SafeReadOnlyAddress
+            long scanUntil = untilAddress;
+            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKv);
+
+            // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
+
+            cnt = 0;
+            using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
             {
-                if (!recordInfo.Invalid)
-                    tempKv.Delete(ref key, default(Context), 0);
-            }
-            iter2.Dispose();
+                while (iter3.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
+                {
+                    if (!recordInfo.Invalid && !recordInfo.Tombstone)
+                    {
+                        if (fht.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
+                            fht.Upsert(ref key, ref value, default(Context), 0);
+                    }
+                    if (++cnt % 1000 == 0)
+                        fht.Refresh();
 
-            // TODO: make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
-
-            var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
-            while (iter3.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
-            {
-                if (!recordInfo.Invalid && !recordInfo.Tombstone)
-                    fht.Upsert(ref key, ref value, default(Context), 0);
+                    if (scanUntil < fht.Log.SafeReadOnlyAddress)
+                    {
+                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKv);
+                    }
+                }
             }
-            iter3.Dispose();
             tempKv.StopSession();
             tempKv.Dispose();
 
-            ShiftBeginAddress(untilAddress);
+            ShiftBeginAddress(originalUntilAddress);
+        }
+
+        private void LogScanForValidity(ref long untilAddress, ref long scanUntil, ref FasterKV<Key, Value, Input, Output, Context, LogCompactFunctions> tempKv)
+        {
+            while (scanUntil < fht.Log.SafeReadOnlyAddress)
+            {
+                untilAddress = scanUntil;
+                scanUntil = fht.Log.SafeReadOnlyAddress;
+                int cnt = 0;
+                using (var iter2 = fht.Log.Scan(untilAddress, scanUntil))
+                {
+                    while (iter2.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
+                    {
+                        if (!recordInfo.Invalid)
+                            tempKv.Delete(ref key, default(Context), 0);
+
+                        if (++cnt % 1000 == 0)
+                            fht.Refresh();
+                    }
+                }
+                fht.Refresh();
+            }
         }
 
         private class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>

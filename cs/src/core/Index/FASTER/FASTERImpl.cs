@@ -1646,6 +1646,78 @@ namespace FASTER.core
 
         #endregion
 
+        #region ContainsKeyInMemory
+        /// <summary>
+        /// Experimental feature
+        /// Checks whether specified record is present in memory
+        /// (between HeadAddress and tail, or between fromAddress
+        /// and tail)
+        /// </summary>
+        /// <param name="key">Key of the record.</param>
+        /// <param name="fromAddress">Look until this address</param>
+        /// <returns>Status</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
+        {
+            if (fromAddress == -1)
+                fromAddress = hlog.HeadAddress;
+            else
+                Debug.Assert(fromAddress >= hlog.HeadAddress);
+
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+            var logicalAddress = Constants.kInvalidAddress;
+            var physicalAddress = default(long);
+            var latestRecordVersion = -1;
+
+            var hash = comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+            if (threadCtx.phase != Phase.REST)
+                HeavyEnter(hash);
+
+            HashBucketEntry entry = default(HashBucketEntry);
+            var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+
+            if (tagExists)
+            {
+                logicalAddress = entry.Address;
+
+                if (UseReadCache)
+                    SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+
+                if (logicalAddress >= fromAddress)
+                {
+                    physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                    if (latestRecordVersion == -1)
+                        latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+
+                    if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                    {
+                        logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                        TraceBackForKeyMatch(ref key,
+                                                logicalAddress,
+                                                fromAddress,
+                                                out logicalAddress,
+                                                out physicalAddress);
+                    }
+
+                    if (logicalAddress < fromAddress)
+                        return Status.NOTFOUND;
+                    else
+                        return Status.OK;
+                }
+                else
+                    return Status.NOTFOUND;
+            }
+            else
+            {
+                // no tag found
+                return Status.NOTFOUND;
+            }
+        }
+        #endregion
+
         #region Helper Functions
 
         /// <summary>

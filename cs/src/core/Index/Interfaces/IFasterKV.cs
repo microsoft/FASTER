@@ -167,6 +167,17 @@ namespace FASTER.core
         void DumpDistribution();
 
         /// <summary>
+        /// Experimental feature
+        /// Check if FASTER contains key in memory (between HeadAddress 
+        /// and tail), or between the specified fromAddress (after 
+        /// HeadAddress) and tail
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="fromAddress"></param>
+        /// <returns></returns>
+        Status ContainsKeyInMemory(ref Key key, long fromAddress = -1);
+
+        /// <summary>
         /// Get accessor for FASTER hybrid log
         /// </summary>
         LogAccessor<Key, Value, Input, Output, Context> Log { get; }
