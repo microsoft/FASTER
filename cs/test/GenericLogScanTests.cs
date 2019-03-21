@@ -42,6 +42,7 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Close();
+            objlog.Close();
         }
 
 

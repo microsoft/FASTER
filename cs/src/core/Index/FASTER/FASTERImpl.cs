@@ -444,7 +444,7 @@ namespace FASTER.core
             #endregion
 
             // Optimization for most common case
-            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
+            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
@@ -531,7 +531,7 @@ namespace FASTER.core
             #region Normal processing
 
             // Mutable Region: Update the record in-place
-            if (logicalAddress >= hlog.ReadOnlyAddress)
+            if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
@@ -708,7 +708,7 @@ namespace FASTER.core
             #endregion
 
             // Optimization for the most common case
-            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
+            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
@@ -795,7 +795,7 @@ namespace FASTER.core
             #region Normal processing
 
             // Mutable Region: Update the record in-place
-            if (logicalAddress >= hlog.ReadOnlyAddress)
+            if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 if (FoldOverSnapshot)
                 {
@@ -807,7 +807,7 @@ namespace FASTER.core
             }
 
             // Fuzzy Region: Must go pending due to lost-update anomaly
-            else if (logicalAddress >= hlog.SafeReadOnlyAddress)
+            else if (logicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 status = OperationStatus.RETRY_LATER;
                 // Retain the shared latch (if acquired)
@@ -864,10 +864,18 @@ namespace FASTER.core
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    functions.CopyUpdater(ref key, ref input,
-                                            ref hlog.GetValue(physicalAddress),
-                                            ref hlog.GetValue(newPhysicalAddress));
-                    status = OperationStatus.SUCCESS;
+                    if (hlog.GetInfo(physicalAddress).Tombstone)
+                    {
+                        functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                        status = OperationStatus.NOTFOUND;
+                    }
+                    else
+                    {
+                        functions.CopyUpdater(ref key, ref input,
+                                                ref hlog.GetValue(physicalAddress),
+                                                ref hlog.GetValue(newPhysicalAddress));
+                        status = OperationStatus.SUCCESS;
+                    }
                 }
                 else
                 {
@@ -1286,7 +1294,7 @@ namespace FASTER.core
             }
 
             #region Create record in mutable region
-            if (request.logicalAddress < hlog.BeginAddress)
+            if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
                 recordSize = hlog.GetInitialRecordSize(ref pendingContext.key, ref pendingContext.input);
             }
@@ -1302,7 +1310,7 @@ namespace FASTER.core
                                 true, false, false,
                                 latestLogicalAddress);
             hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
-            if (request.logicalAddress < hlog.BeginAddress)
+            if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
                 functions.InitialUpdater(ref pendingContext.key,
                                          ref pendingContext.input,
@@ -1513,9 +1521,10 @@ namespace FASTER.core
             #region Normal processing
 
             // Record is in memory, try to update hash chain and completely elide record
+            // only if previous address points to invalid address
             if (logicalAddress >= hlog.HeadAddress)
             {
-                if (entry.Address == logicalAddress)
+                if (entry.Address == logicalAddress && hlog.GetInfo(physicalAddress).PreviousAddress < hlog.BeginAddress)
                 {
                     var updatedEntry = default(HashBucketEntry);
                     updatedEntry.Tag = tag;

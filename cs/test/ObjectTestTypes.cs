@@ -158,7 +158,7 @@ namespace FASTER.test
 
         public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
-            dst.value = src.value;
+            dst = src;
         }
 
         public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
@@ -180,7 +180,10 @@ namespace FASTER.test
 
         public void RMWCompletionCallback(ref MyKey key, ref MyInput input, int ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
+            if (ctx == 0)
+                Assert.IsTrue(status == Status.OK);
+            else if (ctx == 1)
+                Assert.IsTrue(status == Status.NOTFOUND);
         }
 
         public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, int ctx)

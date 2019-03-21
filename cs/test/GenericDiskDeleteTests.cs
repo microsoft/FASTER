@@ -28,7 +28,7 @@ namespace FASTER.test
 
             fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete>
                 (128, new MyFunctionsDelete(),
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
@@ -42,6 +42,7 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Close();
+            objlog.Close();
         }
 
 
@@ -70,7 +71,6 @@ namespace FASTER.test
                 }
                 else
                 {
-                    Assert.IsTrue(output.value.value == value.value);
                     Assert.IsTrue(output.value.value == value.value);
                 }
             }
@@ -116,6 +116,72 @@ namespace FASTER.test
                 Assert.IsTrue(totalRecords == val);
             }
             
+        }
+
+        [Test]
+        public void GenericDiskDeleteTest2()
+        {
+            const int totalRecords = 2000;
+            var start = fht.Log.TailAddress;
+            for (int i = 0; i < totalRecords; i++)
+            {
+                var _key = new MyKey { key = i };
+                var _value = new MyValue { value = i };
+                fht.Upsert(ref _key, ref _value, 0, 0);
+            }
+
+            var key100 = new MyKey { key = 100 };
+            var value100 = new MyValue { value = 100 };
+            var key200 = new MyKey { key = 200 };
+            var value200 = new MyValue { value = 200 };
+
+            fht.Delete(ref key100, 0, 0);
+
+            var input = new MyInput { value = 1000 };
+            var output = new MyOutput();
+            var status = fht.Read(ref key100, ref input, ref output, 1, 0);
+            Assert.IsTrue(status == Status.NOTFOUND);
+
+            status = fht.Upsert(ref key100, ref value100, 0, 0);
+            Assert.IsTrue(status == Status.OK);
+
+            status = fht.Read(ref key100, ref input, ref output, 0, 0);
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output.value.value == value100.value);
+
+            fht.Delete(ref key100, 0, 0);
+            fht.Delete(ref key200, 0, 0);
+
+            // This RMW should create new initial value, since item is deleted
+            status = fht.RMW(ref key200, ref input, 1, 0);
+            Assert.IsTrue(status == Status.NOTFOUND);
+
+            status = fht.Read(ref key200, ref input, ref output, 0, 0);
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output.value.value == input.value);
+
+            // Delete key 200 again
+            fht.Delete(ref key200, 0, 0);
+
+            // Eliminate all records from memory
+            for (int i = 201; i < 2000; i++)
+            {
+                var _key = new MyKey { key = i };
+                var _value = new MyValue { value = i };
+                fht.Upsert(ref _key, ref _value, 0, 0);
+            }
+            status = fht.Read(ref key100, ref input, ref output, 1, 0);
+            Assert.IsTrue(status == Status.PENDING);
+            fht.CompletePending(true);
+
+            // This RMW should create new initial value, since item is deleted
+            status = fht.RMW(ref key200, ref input, 1, 0);
+            Assert.IsTrue(status == Status.PENDING);
+            fht.CompletePending(true);
+
+            status = fht.Read(ref key200, ref input, ref output, 0, 0);
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output.value.value == input.value);
         }
     }
 }
