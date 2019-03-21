@@ -26,9 +26,14 @@ C# and C++ versions of FASTER are very similar.
 
 # Getting Started
 
-Visit [our website](http://aka.ms/FASTER) for technical details and papers. **NEW**: A detailed guide to getting started
-with FASTER C# is available at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER 
-C# binaries are also available via [NuGet](https://www.nuget.org/packages/FASTER/).
+Visit our [research website](http://aka.ms/FASTER) for technical details and papers.
+
+:new: For FASTER usage and getting started information, head over to our 
+[GitHub Pages](https://microsoft.github.io/FASTER) website. A detailed guide to getting started with FASTER 
+C# is also available in the repository at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER 
+C# binaries are available via [NuGet](https://www.nuget.org/packages/FASTER/).
+
+:new: You can take a look at the project roadmap [here](https://microsoft.github.io/FASTER/roadmap).
 
 # Build and Test
 
