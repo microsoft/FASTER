@@ -1522,12 +1522,12 @@ namespace FASTER.core
 
             // Record is in memory, try to update hash chain and completely elide record
             // only if previous address points to invalid address
-            if (logicalAddress >= hlog.HeadAddress)
+            if (logicalAddress >= hlog.ReadOnlyAddress)
             {
                 if (entry.Address == logicalAddress && hlog.GetInfo(physicalAddress).PreviousAddress < hlog.BeginAddress)
                 {
                     var updatedEntry = default(HashBucketEntry);
-                    updatedEntry.Tag = tag;
+                    updatedEntry.Tag = 0;
                     if (hlog.GetInfo(physicalAddress).PreviousAddress == Constants.kTempInvalidAddress)
                         updatedEntry.Address = Constants.kInvalidAddress;
                     else
@@ -1539,13 +1539,11 @@ namespace FASTER.core
                     {
                         // If possible, apply both tombstone and invalid bits to the record
                         // We apply invalid bit as the record is not part of any hash chain now
-                        if (logicalAddress >= hlog.ReadOnlyAddress)
-                        {
-                            hlog.GetInfo(physicalAddress).Tombstone = true;
-                            hlog.GetInfo(physicalAddress).Invalid = true;
-                            Value v = default(Value);
-                            functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
-                        }
+                        hlog.GetInfo(physicalAddress).Tombstone = true;
+                        hlog.GetInfo(physicalAddress).Invalid = true;
+                        Value v = default(Value);
+                        functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+
                         status = OperationStatus.SUCCESS;
                         goto LatchRelease; // Release shared latch (if acquired)
                     }

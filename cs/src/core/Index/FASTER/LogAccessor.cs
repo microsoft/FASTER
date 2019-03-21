@@ -161,10 +161,14 @@ namespace FASTER.core
             {
                 if (!recordInfo.Invalid && !recordInfo.Tombstone)
                     tempKv.Upsert(ref key, ref value, default(Context), 0);
+
+                if (recordInfo.Tombstone)
+                    tempKv.Delete(ref key, default(Context), 0);
             }
             iter1.Dispose();
 
-            var iter2 = fht.Log.Scan(untilAddress, fht.Log.SafeReadOnlyAddress);
+            // TODO: Scan only until SafeReadOnlyAddress
+            var iter2 = fht.Log.Scan(untilAddress, fht.Log.TailAddress);
             while (iter2.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
             {
                 if (!recordInfo.Invalid)
@@ -172,8 +176,8 @@ namespace FASTER.core
             }
             iter2.Dispose();
 
-            // TODO: make sure the key wasn't already inserted
-            // between SafeReadOnlyAddress and TailAddress
+            // TODO: make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
+
             var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
             while (iter3.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
             {
