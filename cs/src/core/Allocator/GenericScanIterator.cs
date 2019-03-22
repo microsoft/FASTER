@@ -152,6 +152,9 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            for (int i = 0; i < frameSize; i++)
+                loaded[i]?.Wait();
+
             frame.Dispose();
         }
 
