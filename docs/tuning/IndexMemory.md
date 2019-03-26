@@ -5,7 +5,12 @@ parent: Tuning FASTER
 nav_order: 2
 ---
 
-In FASTER, the number of main hash buckets is set by the constructor argument, called _index size_:
+# Managing Index Size
+
+FASTER consists of a hash index (pure in-memory) that stores pointers to data, and logs that
+store the actual key-value data itself (spanning memory and storage. This document discusses 
+the hash index size. In FASTER, the number of main hash buckets is set by the constructor 
+argument, called _index size_.
 
 In C#:
 ```cs
@@ -17,8 +22,8 @@ FasterKv<Key, Value, disk_t> store{ index_size, ... };
 ```
 
 Each hash bucket is of size 64 bytes (one cache line). It holds 8 _hash entries_, each of size 8 bytes.
-The 8th entry is a pointer to an overflow bucket (allocated separately at page granularity). Each overflow
-bucket is sized at 8 entries, similar to the main bucket. Each entry itself is 8 bytes long.
+The 8th entry is a pointer to an overflow bucket (allocated separately at page granularity in memory). Each
+overflow bucket is sized at 8 entries, similar to the main bucket. Each entry itself is 8 bytes long.
 
 The invariant is that there will be at most one hash entry in a bucket, per _hash tag_, where hash tag stands
 for the 14 most significant bits in the 64-bit hash code of the key. All colliding keys having the same bucket 
