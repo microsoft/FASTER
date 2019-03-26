@@ -6,8 +6,14 @@ nav_order: 2
 ---
 
 In FASTER, the number of main hash buckets is set by the constructor argument, called _index size_:
+
+In C#:
 ```cs
-store = new FasterKV<K, V, I, O, C, F>(1L << 20, ...);
+store = new FasterKV<K, V, I, O, C, F>(indexSize, ...);
+```
+In C++:
+```cpp
+FasterKv<Key, Value, disk_t> store{ index_size, ... };
 ```
 
 Each hash bucket is of size 64 bytes (one cache line). It holds 8 _hash entries_, each of size 8 bytes.
