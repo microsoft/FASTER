@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -375,9 +377,6 @@ namespace FASTER.core
                     if (tag == entry.Tag)
                     {
                         slot = index;
-
-                        // If (final key, return immediately)
-                        //if ((entry.tag & ~Constants.kTagMask) == 0) -- Guna: Is this correct?
                         if (!entry.Tentative)
                             return true;
                     }
@@ -462,9 +461,6 @@ namespace FASTER.core
                     if (tag == entry.Tag)
                     {
                         slot = index;
-
-                        // If (final key, return immediately)
-                        //if ((entry.tag & ~Constants.kTagMask) == 0) -- Guna: Is this correct?
                         if (!entry.Tentative)
                             return true;
                     }
@@ -740,7 +736,7 @@ namespace FASTER.core
             var table_size_ = state[version].size;
             var ptable_ = state[version].tableAligned;
             long total_record_count = 0;
-            long[] histogram = new long[14];
+            Dictionary<int, long> histogram = new Dictionary<int, long>();
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
@@ -759,16 +755,19 @@ namespace FASTER.core
                     if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
                     b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
                 }
-                if (cnt < 14)
-                    histogram[cnt]++;
+
+                if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;
+                histogram[cnt]++;
             }
 
             Console.WriteLine("Number of hash buckets: {0}", table_size_);
             Console.WriteLine("Total distinct hash-table entry count: {0}", total_record_count);
+            Console.WriteLine("Average #entries per hash bucket: {0:0.00}", total_record_count / (double)table_size_);
             Console.WriteLine("Histogram of #entries per bucket: ");
-            for (int i=0; i<14; i++)
+
+            foreach (var kvp in histogram.OrderBy(e => e.Key))
             {
-                Console.WriteLine(i.ToString() + ": " + histogram[i].ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine(kvp.Key.ToString() + ": " + kvp.Value.ToString(CultureInfo.InvariantCulture));
             }
         }
 
