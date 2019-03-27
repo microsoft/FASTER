@@ -36,5 +36,10 @@ namespace FASTER.core
         /// <param name="value"></param>
         /// <returns>True if record found, false if end of scan</returns>
         bool GetNext(out RecordInfo recordInfo, out Key key, out Value value);
+
+        /// <summary>
+        /// Current address
+        /// </summary>
+        long CurrentAddress { get; }
     }
 }

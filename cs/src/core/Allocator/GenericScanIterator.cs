@@ -22,8 +22,13 @@ namespace FASTER.core
         private readonly int recordSize;
 
         private bool first = true;
-        private long currentAddress;
-        
+        private long currentAddress, nextAddress;
+
+        /// <summary>
+        /// Current address
+        /// </summary>
+        public long CurrentAddress => currentAddress;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -38,7 +43,8 @@ namespace FASTER.core
             this.endAddress = endAddress;
 
             recordSize = hlog.GetRecordSize(0);
-            currentAddress = beginAddress;
+            currentAddress = -1;
+            nextAddress = beginAddress;
 
             if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
                 frameSize = 1;
@@ -49,11 +55,11 @@ namespace FASTER.core
             loaded = new CountdownEvent[frameSize];
 
             // Only load addresses flushed to disk
-            if (currentAddress < hlog.HeadAddress)
+            if (nextAddress < hlog.HeadAddress)
             {
-                var frameNumber = (currentAddress >> hlog.LogPageSizeBits) % frameSize;
+                var frameNumber = (nextAddress >> hlog.LogPageSizeBits) % frameSize;
                 hlog.AsyncReadPagesFromDeviceToFrame
-                    (currentAddress >> hlog.LogPageSizeBits,
+                    (nextAddress >> hlog.LogPageSizeBits,
                     1, AsyncReadPagesCallback, Empty.Default,
                     frame, out loaded[frameNumber]);
             }
@@ -72,6 +78,7 @@ namespace FASTER.core
             key = default(Key);
             value = default(Value);
 
+            currentAddress = nextAddress;
             while (true)
             {
                 // Check for boundary conditions
@@ -103,9 +110,12 @@ namespace FASTER.core
                 if (currentAddress >= hlog.HeadAddress)
                 {
                     // Read record from cached page memory
-                    currentAddress += recordSize;
+                    nextAddress = currentAddress + recordSize;
 
                     var page = currentPage % hlog.BufferSize;
+
+                    if (hlog.values[page][offset].info.Invalid)
+                        continue;
 
                     recordInfo = hlog.values[page][offset].info;
                     key = hlog.values[page][offset].key;
@@ -113,7 +123,11 @@ namespace FASTER.core
                     return true;
                 }
 
-                currentAddress += recordSize;
+                nextAddress = currentAddress + recordSize;
+
+                if (frame.GetInfo(currentFrame, offset).Invalid)
+                    continue;
+
                 recordInfo = frame.GetInfo(currentFrame, offset);
                 key = frame.GetKey(currentFrame, offset);
                 value = frame.GetValue(currentFrame, offset);

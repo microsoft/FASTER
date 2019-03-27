@@ -1537,10 +1537,10 @@ namespace FASTER.core
 
                     if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
                     {
-                        // If possible, apply both tombstone and invalid bits to the record
-                        // We apply invalid bit as the record is not part of any hash chain now
+                        // Apply tombstone bit to the record
                         hlog.GetInfo(physicalAddress).Tombstone = true;
-                        hlog.GetInfo(physicalAddress).Invalid = true;
+
+                        // Write default value
                         Value v = default(Value);
                         functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
 

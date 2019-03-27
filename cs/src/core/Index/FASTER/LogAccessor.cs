@@ -163,11 +163,10 @@ namespace FASTER.core
             {
                 while (iter1.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
                 {
-                    if (!recordInfo.Invalid && !recordInfo.Tombstone)
-                        tempKv.Upsert(ref key, ref value, default(Context), 0);
-
                     if (recordInfo.Tombstone)
                         tempKv.Delete(ref key, default(Context), 0);
+                    else
+                        tempKv.Upsert(ref key, ref value, default(Context), 0);
 
                     if (++cnt % 1000 == 0)
                         fht.Refresh();
@@ -185,7 +184,7 @@ namespace FASTER.core
             {
                 while (iter3.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
                 {
-                    if (!recordInfo.Invalid && !recordInfo.Tombstone)
+                    if (!recordInfo.Tombstone)
                     {
                         if (fht.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
                             fht.Upsert(ref key, ref value, default(Context), 0);
@@ -216,8 +215,7 @@ namespace FASTER.core
                 {
                     while (iter2.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
                     {
-                        if (!recordInfo.Invalid)
-                            tempKv.Delete(ref key, default(Context), 0);
+                        tempKv.Delete(ref key, default(Context), 0);
 
                         if (++cnt % 1000 == 0)
                             fht.Refresh();
