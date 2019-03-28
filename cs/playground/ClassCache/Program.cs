@@ -16,31 +16,36 @@ namespace ClassCache
     {
         // Whether we use read cache in this sample
         static readonly bool useReadCache = true;
+        const int max = 1000000;
 
         static void Main(string[] args)
         {
-            var context = default(CacheContext);
+            // This sample shows the use of FASTER as a cache + key-value store for 
+            // C# objects.
 
+            // Create files for storing data
+            // We set deleteOnClose to true, so logs will auto-delete on completion
             var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log", deleteOnClose: true);
             var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log", deleteOnClose: true);
 
-            var logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = objlog };
+            // We use context to store and report latency of async operations
+            var context = default(CacheContext);
 
+            // Define settings for log
+            var logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = objlog };
             if (useReadCache)
-            {
                 logSettings.ReadCacheSettings = new ReadCacheSettings();
-            }
 
             var h = new FasterKV
                 <CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>(
                 1L << 20, new CacheFunctions(), logSettings,
-                null,
+                null, // no checkpoints in this sample
+                // Provide serializers for key and value types
                 new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() }
                 );
 
+            // Thread starts session with FASTER
             h.StartSession();
-
-            const int max = 1000000;
 
             Console.WriteLine("Writing keys from 0 to {0} to FASTER", max);
 
@@ -84,6 +89,12 @@ namespace ClassCache
                 RandomReadWorkload(h, max);
             else
                 InteractiveReadWorkload(h, max);
+
+            // Stop session and clean up
+            h.StopSession();
+            h.Dispose();
+            log.Close();
+            objlog.Close();
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();

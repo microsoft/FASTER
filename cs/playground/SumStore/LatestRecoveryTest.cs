@@ -157,9 +157,9 @@ namespace SumStore
             fht.StartSession();
 
             // Issue read requests
-            Output output = default(Output);
             for (int i = 0; i < numUniqueKeys; i++)
             {
+                Output output = default(Output);
                 var status = fht.Read(ref inputArray[i].adId, ref inputArray[i], ref output, Empty.Default, i);
                 Debug.Assert(status == Status.OK || status == Status.NOTFOUND);
                 inputArray[i].numClicks.numClicks = output.value.numClicks;

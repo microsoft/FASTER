@@ -168,12 +168,12 @@ namespace SumStore
 
             // Register with thread
             fht.StartSession();
-            Input input = default(Input);
-            Output output = default(Output);
 
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
+                Input input = default(Input);
+                Output output = default(Output);
                 var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 inputArray[i].numClicks = output.value;
             }

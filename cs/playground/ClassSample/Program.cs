@@ -115,6 +115,7 @@ namespace ClassSample
 
             var context = default(MyContext);
 
+            // Each thread calls StartSession to register itself with FASTER
             h.StartSession();
 
             for (int i = 0; i < 20000; i++)
@@ -122,7 +123,9 @@ namespace ClassSample
                 var _key = new MyKey { key = i };
                 var value = new MyValue { value = i };
                 h.Upsert(ref _key, ref value, context, 0);
-                if (i % 32 == 0) h.Refresh();
+
+                // Each thread calls Refresh periodically for thread coordination
+                if (i % 1024 == 0) h.Refresh();
             }
             var key = new MyKey { key = 23 };
             var input = default(MyInput);
@@ -142,6 +145,23 @@ namespace ClassSample
                 Console.WriteLine("Success!");
             else
                 Console.WriteLine("Error!");
+
+            /// Delete key, read to verify deletion
+            var output = new MyOutput();
+            h.Delete(ref key, context, 0);
+            status = h.Read(ref key, ref input, ref output, context, 0);
+            if (status == Status.NOTFOUND)
+                Console.WriteLine("Success!");
+            else
+                Console.WriteLine("Error!");
+
+            // Each thread ends session when done
+            h.StopSession();
+
+            // Dispose FASTER instance and log
+            h.Dispose();
+            log.Close();
+            objlog.Close();
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();

@@ -27,11 +27,6 @@ namespace SumStore
                 Console.WriteLine("Usage: SumStore.exe [single|concurrent|test|latest] [populate|recover|continue] [guid]");
                 return;
             }
-            if (!Directory.Exists("D:\\logs"))
-                Directory.CreateDirectory("D:\\logs");
-            if (!Directory.Exists("D:\\clients"))
-                Directory.CreateDirectory("D:\\clients");
-
             
             int nextArg = 0;
             var test = default(IFasterRecoveryTest);

@@ -30,6 +30,7 @@ namespace StructSampleCore
 
             fht.StartSession();
 
+            // Upsert and read back upserted value
             fht.Upsert(ref key, ref value, Empty.Default, 0);
             fht.Read(ref key, ref input, ref output, Empty.Default, 0);
             if (output == value)
@@ -37,10 +38,19 @@ namespace StructSampleCore
             else
                 Console.WriteLine("Sample1: Error!");
 
+            // Perform two RMW operations (addition) and verify result
             fht.RMW(ref key, ref input, Empty.Default, 0);
             fht.RMW(ref key, ref input, Empty.Default, 0);
             fht.Read(ref key, ref input, ref output, Empty.Default, 0);
             if (output == value + 2 * input)
+                Console.WriteLine("Sample1: Success!");
+            else
+                Console.WriteLine("Sample1: Error!");
+
+            /// Delete key, read to verify deletion
+            fht.Delete(ref key, Empty.Default, 0);
+            var status = fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+            if (status == Status.NOTFOUND)
                 Console.WriteLine("Sample1: Success!");
             else
                 Console.WriteLine("Sample1: Error!");
@@ -92,6 +102,14 @@ namespace StructSampleCore
             fht.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
             if ((output.value.vfield1 == input.ifield1 * 2) && (output.value.vfield2 == input.ifield2 * 2))
+                Console.WriteLine("Sample2: Success!");
+            else
+                Console.WriteLine("Sample2: Error!");
+
+            /// Delete key, read to verify deletion
+            fht.Delete(ref key1, Empty.Default, 0);
+            var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            if (status == Status.NOTFOUND)
                 Console.WriteLine("Sample2: Success!");
             else
                 Console.WriteLine("Sample2: Error!");
