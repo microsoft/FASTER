@@ -27,22 +27,22 @@ namespace FASTER.test.largeobjects
             MyInput input = default(MyInput);
             MyLargeOutput output = new MyLargeOutput();
 
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\LargeObjectTest1.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\LargeObjectTest1.obj.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints1");
 
             fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints1", CheckPointType = CheckpointType.Snapshot },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
             fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints1", CheckPointType = CheckpointType.Snapshot },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -84,7 +84,7 @@ namespace FASTER.test.largeobjects
 
             log.Close();
             objlog.Close();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints").Delete(true);
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints1").Delete(true);
         }
 
         [Test]
@@ -93,22 +93,22 @@ namespace FASTER.test.largeobjects
             MyInput input = default(MyInput);
             MyLargeOutput output = new MyLargeOutput();
 
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\LargeObjectTest2.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\LargeObjectTest2.obj.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints2");
 
             fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints2", CheckPointType = CheckpointType.FoldOver },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
             fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver },
+                new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints2", CheckPointType = CheckpointType.FoldOver },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -150,7 +150,7 @@ namespace FASTER.test.largeobjects
 
             log.Close();
             objlog.Close();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints").Delete(true);
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints2").Delete(true);
         }
     }
 }

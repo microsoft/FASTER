@@ -25,22 +25,22 @@ namespace FASTER.test.recovery.sumstore.simple
         [Test]
         public void SimpleRecoveryTest1()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest1.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
 
             fht1 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.Snapshot }
                 );
 
 
@@ -83,28 +83,28 @@ namespace FASTER.test.recovery.sumstore.simple
             log.Close();
             fht1.Dispose();
             fht2.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints").Delete(true);
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
 
         [Test]
         public void SimpleRecoveryTest2()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints5");
 
             fht1 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints5", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints5", CheckPointType = CheckpointType.FoldOver }
                 );
 
 
@@ -147,7 +147,7 @@ namespace FASTER.test.recovery.sumstore.simple
             log.Close();
             fht1.Dispose();
             fht2.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints").Delete(true);
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints5").Delete(true);
         }
     }
 
