@@ -23,7 +23,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog4.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BlittableLogCompactionTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction>
                 (1L << 20, new FunctionsCompaction(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
             fht.StartSession();

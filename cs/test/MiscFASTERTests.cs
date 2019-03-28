@@ -23,8 +23,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog2.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog2.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MiscFASTERTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MiscFASTERTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<int, MyValue, MyInput, MyOutput, Empty, MixedFunctions>
                 (128, new MixedFunctions(),
