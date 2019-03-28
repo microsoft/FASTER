@@ -30,7 +30,7 @@ namespace FASTER.test.recovery.sumstore
         {
             if (test_path == null)
             {
-                test_path = Path.GetTempPath() + Path.GetRandomFileName();
+                test_path = TestContext.CurrentContext.TestDirectory + "\\" + Path.GetRandomFileName();
                 if (!Directory.Exists(test_path))
                     Directory.CreateDirectory(test_path);
             }
