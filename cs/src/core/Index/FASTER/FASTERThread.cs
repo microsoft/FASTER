@@ -222,6 +222,11 @@ namespace FASTER.core
                                                     ref pendingContext.userContext, 
                                                     ref pendingContext);
                     break;
+                case OperationType.DELETE:
+                    internalStatus = InternalDelete(ref pendingContext.key,
+                                                    ref pendingContext.userContext,
+                                                    ref pendingContext);
+                    break;
                 case OperationType.READ:
                     throw new Exception("Cannot happen!");
             }
@@ -253,6 +258,10 @@ namespace FASTER.core
                     case OperationType.UPSERT:
                         functions.UpsertCompletionCallback(ref pendingContext.key,
                                                  ref pendingContext.value,
+                                                 pendingContext.userContext);
+                        break;
+                    case OperationType.DELETE:
+                        functions.DeleteCompletionCallback(ref pendingContext.key,
                                                  pendingContext.userContext);
                         break;
                     default:

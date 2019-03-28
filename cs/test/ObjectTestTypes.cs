@@ -119,6 +119,81 @@ namespace FASTER.test
         {
         }
 
+        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
+        {
+        }
+
+        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        {
+            dst = src;
+        }
+    }
+
+    public class MyFunctionsDelete : IFunctions<MyKey, MyValue, MyInput, MyOutput, int>
+    {
+        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        {
+            value = new MyValue { value = input.value };
+        }
+
+        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        {
+            value.value += input.value;
+        }
+
+        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        {
+            newValue = new MyValue { value = oldValue.value + input.value };
+        }
+
+        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+        }
+
+        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        {
+            dst = src;
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+        }
+
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status)
+        {
+            if (ctx == 0)
+            {
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(key.key == output.value.value);
+            }
+            else if (ctx == 1)
+            {
+                Assert.IsTrue(status == Status.NOTFOUND);
+            }
+        }
+
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, int ctx, Status status)
+        {
+            if (ctx == 0)
+                Assert.IsTrue(status == Status.OK);
+            else if (ctx == 1)
+                Assert.IsTrue(status == Status.NOTFOUND);
+        }
+
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, int ctx)
+        {
+        }
+
+        public void DeleteCompletionCallback(ref MyKey key, int ctx)
+        {
+        }
+
         public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
@@ -170,6 +245,10 @@ namespace FASTER.test
         }
 
         public void UpsertCompletionCallback(ref int key, ref MyValue value, Empty ctx)
+        {
+        }
+
+        public void DeleteCompletionCallback(ref int key, Empty ctx)
         {
         }
 
@@ -240,6 +319,10 @@ namespace FASTER.test
 
 
         public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, Empty ctx)
+        {
+        }
+
+        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
         {
         }
 

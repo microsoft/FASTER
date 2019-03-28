@@ -152,9 +152,30 @@ namespace FASTER.core
         long EntryCount { get; }
 
         /// <summary>
+        /// Get size of index in #cache lines (64 bytes each)
+        /// </summary>
+        long IndexSize { get; }
+
+        /// <summary>
+        /// Get comparer used by this instance of FASTER
+        /// </summary>
+        IFasterEqualityComparer<Key> Comparer { get; }
+
+        /// <summary>
         /// Dump distribution of #entries in hash table, to console
         /// </summary>
         void DumpDistribution();
+
+        /// <summary>
+        /// Experimental feature
+        /// Check if FASTER contains key in memory (between HeadAddress 
+        /// and tail), or between the specified fromAddress (after 
+        /// HeadAddress) and tail
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="fromAddress"></param>
+        /// <returns></returns>
+        Status ContainsKeyInMemory(ref Key key, long fromAddress = -1);
 
         /// <summary>
         /// Get accessor for FASTER hybrid log

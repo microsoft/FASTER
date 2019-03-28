@@ -10,21 +10,26 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ClassCache
+namespace PeriodicCompaction
 {
     class Program
     {
         // Whether we use read cache in this sample
-        static readonly bool useReadCache = true;
+        static readonly bool useReadCache = false;
 
         static void Main(string[] args)
         {
+            Console.WriteLine("This sample runs forever and takes up around 200MB of storage space while running");
+
             var context = default(CacheContext);
 
-            var log =  Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log", deleteOnClose: true);
-            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log", deleteOnClose: true);
+            var log =  Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
+            var objlog = Devices.CreateLogDevice("hlog.obj.log", deleteOnClose: true);
 
-            var logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = objlog };
+            var logSettings = new LogSettings {
+                LogDevice = log, ObjectLogDevice = objlog,
+                MutableFraction = 0.9, MemorySizeBits = 20, PageSizeBits = 12, SegmentSizeBits = 20
+            };
 
             if (useReadCache)
             {
@@ -63,30 +68,52 @@ namespace ClassCache
             }
             sw.Stop();
             Console.WriteLine("Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds/1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
+            Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
 
-            // Uncomment below to copy entire log to disk, but retain tail of log in memory
-            // h.Log.Flush(true);
+            // Issue mix of deletes and upserts
+            Random r = new Random(3);
 
-            // Uncomment below to move entire log to disk and eliminate data from memory as 
-            // well. This will serve workload entirely from disk using read cache if enabled.
-            // This will *allow* future updates to the store.
-            // h.Log.FlushAndEvict(true);
+            while (true)
+            {
+                for (int iter = 0; iter < 3; iter++)
+                {
+                    sw.Restart();
+                    for (int i = 0; i < max; i++)
+                    {
+                        if (i % 256 == 0)
+                        {
+                            h.Refresh();
+                            if (i % (1 << 19) == 0)
+                            {
+                                long workingSet = Process.GetCurrentProcess().WorkingSet64;
+                                Console.WriteLine($"{i}: {workingSet / 1048576}M");
+                            }
+                        }
 
-            // Uncomment below to move entire log to disk and eliminate data from memory as 
-            // well. This will serve workload entirely from disk using read cache if enabled.
-            // This will *prevent* future updates to the store.
-            h.Log.DisposeFromMemory();
 
-            Console.Write("Enter read workload type (0 = random reads; 1 = interactive): ");
-            var workload = int.Parse(Console.ReadLine());
+                        var key = new CacheKey(iter == 2 ? i : r.Next(max));
+                        if (iter < 2 && r.Next(2) == 0)
+                        {
+                            h.Delete(ref key, context, 0);
+                        }
+                        else
+                        {
+                            var value = new CacheValue(key.key);
+                            h.Upsert(ref key, ref value, context, 0);
+                        }
+                    }
+                    sw.Stop();
+                    Console.WriteLine("Total time to delete/upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
+                    Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
+                }
 
-            if (workload == 0)
-                RandomReadWorkload(h, max);
-            else
-                InteractiveReadWorkload(h, max);
+                h.CompletePending(true);
+                Console.WriteLine("Compacting log");
+                h.Log.Compact(h.Log.HeadAddress);
 
-            Console.WriteLine("Press <ENTER> to end");
-            Console.ReadLine();
+                Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
+                Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
+            }
         }
 
         private static void RandomReadWorkload(FasterKV<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> h, int max)

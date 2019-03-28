@@ -23,8 +23,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlogscan.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlogscan.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericFASTERScanTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericFASTERScanTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
                 (128, new MyFunctions(),
@@ -42,6 +42,7 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Close();
+            objlog.Close();
         }
 
 
@@ -58,28 +59,30 @@ namespace FASTER.test
                 if (i % 100 == 0) fht.Log.FlushAndEvict(true);
             }
             fht.Log.FlushAndEvict(true);
-            var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering);
-
-            int val = 0;
-            while (iter.GetNext(out MyKey key, out MyValue value))
+            using (var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering))
             {
-                Assert.IsTrue(key.key == val);
-                Assert.IsTrue(value.value == val);
-                val++;
+
+                int val = 0;
+                while (iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value))
+                {
+                    Assert.IsTrue(key.key == val);
+                    Assert.IsTrue(value.value == val);
+                    val++;
+                }
+                Assert.IsTrue(totalRecords == val);
             }
-            Assert.IsTrue(totalRecords == val);
 
-            iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering);
-
-            val = 0;
-            while (iter.GetNext(out MyKey key, out MyValue value))
+            using (var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering))
             {
-                Assert.IsTrue(key.key == val);
-                Assert.IsTrue(value.value == val);
-                val++;
+                int val = 0;
+                while (iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value))
+                {
+                    Assert.IsTrue(key.key == val);
+                    Assert.IsTrue(value.value == val);
+                    val++;
+                }
+                Assert.IsTrue(totalRecords == val);
             }
-            Assert.IsTrue(totalRecords == val);
-
         }
     }
 }

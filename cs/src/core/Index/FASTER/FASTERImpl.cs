@@ -151,6 +151,9 @@ namespace FASTER.core
             // Mutable region (even fuzzy region is included here)
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
+                if (hlog.GetInfo(physicalAddress).Tombstone)
+                    return OperationStatus.NOTFOUND;
+
                 functions.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
                 return OperationStatus.SUCCESS;
             }
@@ -158,6 +161,9 @@ namespace FASTER.core
             // Immutable region
             else if (logicalAddress >= hlog.HeadAddress)
             {
+                if (hlog.GetInfo(physicalAddress).Tombstone)
+                    return OperationStatus.NOTFOUND;
+
                 functions.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
                 return OperationStatus.SUCCESS;
             }
@@ -234,6 +240,10 @@ namespace FASTER.core
             if (request.logicalAddress >= hlog.BeginAddress)
             {
                 Debug.Assert(hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Version <= ctx.version);
+
+                if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
+                    return OperationStatus.NOTFOUND;
+
                 functions.SingleReader(ref pendingContext.key, ref pendingContext.input,
                                        ref request.value, ref pendingContext.output);
 
@@ -413,7 +423,7 @@ namespace FASTER.core
             logicalAddress = entry.Address;
 
             if (UseReadCache)
-                SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+                SkipAndInvalidateReadCache(ref logicalAddress, ref latestRecordVersion, ref key);
             var latestLogicalAddress = logicalAddress;
 
             if (logicalAddress >= hlog.ReadOnlyAddress)
@@ -434,7 +444,7 @@ namespace FASTER.core
             #endregion
 
             // Optimization for most common case
-            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
+            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
@@ -521,7 +531,7 @@ namespace FASTER.core
             #region Normal processing
 
             // Mutable Region: Update the record in-place
-            if (logicalAddress >= hlog.ReadOnlyAddress)
+            if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
@@ -698,7 +708,7 @@ namespace FASTER.core
             #endregion
 
             // Optimization for the most common case
-            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
+            if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
@@ -785,7 +795,7 @@ namespace FASTER.core
             #region Normal processing
 
             // Mutable Region: Update the record in-place
-            if (logicalAddress >= hlog.ReadOnlyAddress)
+            if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 if (FoldOverSnapshot)
                 {
@@ -797,7 +807,7 @@ namespace FASTER.core
             }
 
             // Fuzzy Region: Must go pending due to lost-update anomaly
-            else if (logicalAddress >= hlog.SafeReadOnlyAddress)
+            else if (logicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 status = OperationStatus.RETRY_LATER;
                 // Retain the shared latch (if acquired)
@@ -854,10 +864,18 @@ namespace FASTER.core
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    functions.CopyUpdater(ref key, ref input,
-                                            ref hlog.GetValue(physicalAddress),
-                                            ref hlog.GetValue(newPhysicalAddress));
-                    status = OperationStatus.SUCCESS;
+                    if (hlog.GetInfo(physicalAddress).Tombstone)
+                    {
+                        functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                        status = OperationStatus.NOTFOUND;
+                    }
+                    else
+                    {
+                        functions.CopyUpdater(ref key, ref input,
+                                                ref hlog.GetValue(physicalAddress),
+                                                ref hlog.GetValue(newPhysicalAddress));
+                        status = OperationStatus.SUCCESS;
+                    }
                 }
                 else
                 {
@@ -1276,7 +1294,7 @@ namespace FASTER.core
             }
 
             #region Create record in mutable region
-            if (request.logicalAddress < hlog.BeginAddress)
+            if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
                 recordSize = hlog.GetInitialRecordSize(ref pendingContext.key, ref pendingContext.input);
             }
@@ -1292,7 +1310,7 @@ namespace FASTER.core
                                 true, false, false,
                                 latestLogicalAddress);
             hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
-            if (request.logicalAddress < hlog.BeginAddress)
+            if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
                 functions.InitialUpdater(ref pendingContext.key,
                                          ref pendingContext.input,
@@ -1336,10 +1354,316 @@ namespace FASTER.core
 
         #endregion
 
+        #region Delete Operation
 
+        /// <summary>
+        /// Delete operation. Replaces the value corresponding to 'key' with tombstone.
+        /// If at head, tries to remove item from hash chain
+        /// </summary>
+        /// <param name="key">Key of the record to be deleted.</param>
+        /// <param name="userContext">User context for the operation, in case it goes pending.</param>
+        /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <returns>
+        /// <list type="table">
+        ///     <listheader>
+        ///     <term>Value</term>
+        ///     <term>Description</term>
+        ///     </listheader>
+        ///     <item>
+        ///     <term>SUCCESS</term>
+        ///     <term>The value has been successfully deleted</term>
+        ///     </item>
+        ///     <item>
+        ///     <term>RETRY_LATER</term>
+        ///     <term>Cannot  be processed immediately due to system state. Add to pending list and retry later</term>
+        ///     </item>
+        ///     <item>
+        ///     <term>CPR_SHIFT_DETECTED</term>
+        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
+        ///     </item>
+        /// </list>
+        /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDeleteFromMemory(ref Key key)
+        internal OperationStatus InternalDelete(
+                            ref Key key,
+                            ref Context userContext,
+                            ref PendingContext pendingContext)
         {
+            var status = default(OperationStatus);
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+            var logicalAddress = Constants.kInvalidAddress;
+            var physicalAddress = default(long);
+            var latchOperation = default(LatchOperation);
+            var version = default(int);
+            var latestRecordVersion = -1;
+
+            var hash = comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+            if (threadCtx.phase != Phase.REST)
+                HeavyEnter(hash);
+
+            #region Trace back for record in in-memory HybridLog
+            var entry = default(HashBucketEntry);
+            var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+            if (!tagExists)
+                return OperationStatus.NOTFOUND;
+
+            logicalAddress = entry.Address;
+
+            if (UseReadCache)
+                SkipAndInvalidateReadCache(ref logicalAddress, ref latestRecordVersion, ref key);
+            var latestLogicalAddress = logicalAddress;
+
+            if (logicalAddress >= hlog.ReadOnlyAddress)
+            {
+                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                if (latestRecordVersion == -1)
+                    latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                {
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    TraceBackForKeyMatch(ref key,
+                                        logicalAddress,
+                                        hlog.ReadOnlyAddress,
+                                        out logicalAddress,
+                                        out physicalAddress);
+                }
+            }
+            #endregion
+
+            // NO optimization for most common case
+            //if (threadCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
+            //{
+            //    hlog.GetInfo(physicalAddress).Tombstone = true;
+            //    return OperationStatus.SUCCESS;
+            //}
+
+            #region Entry latch operation
+            if (threadCtx.phase != Phase.REST)
+            {
+                switch (threadCtx.phase)
+                {
+                    case Phase.PREPARE:
+                        {
+                            version = threadCtx.version;
+                            if (HashBucket.TryAcquireSharedLatch(bucket))
+                            {
+                                // Set to release shared latch (default)
+                                latchOperation = LatchOperation.ReleaseShared;
+                                if (latestRecordVersion != -1 && latestRecordVersion > version)
+                                {
+                                    status = OperationStatus.CPR_SHIFT_DETECTED;
+                                    goto CreatePendingContext; // Pivot Thread
+                                }
+                                break; // Normal Processing
+                            }
+                            else
+                            {
+                                status = OperationStatus.CPR_SHIFT_DETECTED;
+                                goto CreatePendingContext; // Pivot Thread
+                            }
+                        }
+                    case Phase.IN_PROGRESS:
+                        {
+                            version = (threadCtx.version - 1);
+                            if (latestRecordVersion != -1 && latestRecordVersion <= version)
+                            {
+                                if (HashBucket.TryAcquireExclusiveLatch(bucket))
+                                {
+                                    // Set to release exclusive latch (default)
+                                    latchOperation = LatchOperation.ReleaseExclusive;
+                                    goto CreateNewRecord; // Create a (v+1) record
+                                }
+                                else
+                                {
+                                    status = OperationStatus.RETRY_LATER;
+                                    goto CreatePendingContext; // Go Pending
+                                }
+                            }
+                            break; // Normal Processing
+                        }
+                    case Phase.WAIT_PENDING:
+                        {
+                            version = (threadCtx.version - 1);
+                            if (latestRecordVersion != -1 && latestRecordVersion <= version)
+                            {
+                                if (HashBucket.NoSharedLatches(bucket))
+                                {
+                                    goto CreateNewRecord; // Create a (v+1) record
+                                }
+                                else
+                                {
+                                    status = OperationStatus.RETRY_LATER;
+                                    goto CreatePendingContext; // Go Pending
+                                }
+                            }
+                            break; // Normal Processing
+                        }
+                    case Phase.WAIT_FLUSH:
+                        {
+                            version = (threadCtx.version - 1);
+                            if (latestRecordVersion != -1 && latestRecordVersion <= version)
+                            {
+                                goto CreateNewRecord; // Create a (v+1) record
+                            }
+                            break; // Normal Processing
+                        }
+                    default:
+                        break;
+                }
+            }
+            #endregion
+
+            Debug.Assert(latestRecordVersion <= threadCtx.version);
+
+            #region Normal processing
+
+            // Record is in memory, try to update hash chain and completely elide record
+            // only if previous address points to invalid address
+            if (logicalAddress >= hlog.ReadOnlyAddress)
+            {
+                if (entry.Address == logicalAddress && hlog.GetInfo(physicalAddress).PreviousAddress < hlog.BeginAddress)
+                {
+                    var updatedEntry = default(HashBucketEntry);
+                    updatedEntry.Tag = 0;
+                    if (hlog.GetInfo(physicalAddress).PreviousAddress == Constants.kTempInvalidAddress)
+                        updatedEntry.Address = Constants.kInvalidAddress;
+                    else
+                        updatedEntry.Address = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    updatedEntry.Pending = entry.Pending;
+                    updatedEntry.Tentative = false;
+
+                    if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
+                    {
+                        // Apply tombstone bit to the record
+                        hlog.GetInfo(physicalAddress).Tombstone = true;
+
+                        // Write default value
+                        Value v = default(Value);
+                        functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+
+                        status = OperationStatus.SUCCESS;
+                        goto LatchRelease; // Release shared latch (if acquired)
+                    }
+                }
+            }
+
+            // Mutable Region: Update the record in-place
+            if (logicalAddress >= hlog.ReadOnlyAddress)
+            {
+                hlog.GetInfo(physicalAddress).Tombstone = true;
+                Value v = default(Value);
+                functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                status = OperationStatus.SUCCESS;
+                goto LatchRelease; // Release shared latch (if acquired)
+            }
+
+            // All other regions: Create a record in the mutable region
+            #endregion
+
+            #region Create new record in the mutable region
+            CreateNewRecord:
+            {
+                var value = default(Value);
+                // Immutable region or new record
+                // Allocate default record size for tombstone
+                var recordSize = hlog.GetRecordSize(ref key, ref value); 
+                BlockAllocate(recordSize, out long newLogicalAddress);
+                var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
+                                        threadCtx.version,
+                                        true, true, false,
+                                        latestLogicalAddress);
+                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+
+                var updatedEntry = default(HashBucketEntry);
+                updatedEntry.Tag = tag;
+                updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
+                updatedEntry.Pending = entry.Pending;
+                updatedEntry.Tentative = false;
+
+                var foundEntry = default(HashBucketEntry);
+                foundEntry.word = Interlocked.CompareExchange(
+                                        ref bucket->bucket_entries[slot],
+                                        updatedEntry.word, entry.word);
+
+                if (foundEntry.word == entry.word)
+                {
+                    status = OperationStatus.SUCCESS;
+                    goto LatchRelease;
+                }
+                else
+                {
+                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    status = OperationStatus.RETRY_NOW;
+                    goto LatchRelease;
+                }
+            }
+            #endregion
+
+            #region Create pending context
+            CreatePendingContext:
+            {
+                pendingContext.type = OperationType.DELETE;
+                pendingContext.key = key;
+                pendingContext.value = default(Value);
+                pendingContext.userContext = userContext;
+                pendingContext.entry.word = entry.word;
+                pendingContext.logicalAddress = logicalAddress;
+                pendingContext.version = threadCtx.version;
+                pendingContext.serialNum = threadCtx.serialNum + 1;
+            }
+            #endregion
+
+            #region Latch release
+            LatchRelease:
+            {
+                switch (latchOperation)
+                {
+                    case LatchOperation.ReleaseShared:
+                        HashBucket.ReleaseSharedLatch(bucket);
+                        break;
+                    case LatchOperation.ReleaseExclusive:
+                        HashBucket.ReleaseExclusiveLatch(bucket);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            #endregion
+
+            if (status == OperationStatus.RETRY_NOW)
+            {
+                return InternalDelete(ref key, ref userContext, ref pendingContext);
+            }
+            else
+            {
+                return status;
+            }
+        }
+
+        #endregion
+
+        #region ContainsKeyInMemory
+        /// <summary>
+        /// Experimental feature
+        /// Checks whether specified record is present in memory
+        /// (between HeadAddress and tail, or between fromAddress
+        /// and tail)
+        /// </summary>
+        /// <param name="key">Key of the record.</param>
+        /// <param name="fromAddress">Look until this address</param>
+        /// <returns>Status</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
+        {
+            if (fromAddress == -1)
+                fromAddress = hlog.HeadAddress;
+            else
+                Debug.Assert(fromAddress >= hlog.HeadAddress);
+
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
@@ -1352,57 +1676,47 @@ namespace FASTER.core
             if (threadCtx.phase != Phase.REST)
                 HeavyEnter(hash);
 
-            // Check if hash table points directly to given key
             HashBucketEntry entry = default(HashBucketEntry);
             var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+
             if (tagExists)
             {
                 logicalAddress = entry.Address;
-                if (logicalAddress >= hlog.HeadAddress)
+
+                if (UseReadCache)
+                    SkipReadCache(ref logicalAddress, ref latestRecordVersion);
+
+                if (logicalAddress >= fromAddress)
                 {
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+                    if (latestRecordVersion == -1)
+                        latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
+
                     if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                     {
-                        return OperationStatus.NOTFOUND;
+                        logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                        TraceBackForKeyMatch(ref key,
+                                                logicalAddress,
+                                                fromAddress,
+                                                out logicalAddress,
+                                                out physicalAddress);
                     }
+
+                    if (logicalAddress < fromAddress)
+                        return Status.NOTFOUND;
+                    else
+                        return Status.OK;
                 }
+                else
+                    return Status.NOTFOUND;
             }
             else
             {
                 // no tag found
-                return OperationStatus.NOTFOUND;
+                return Status.NOTFOUND;
             }
-
-            if (logicalAddress >= hlog.ReadOnlyAddress)
-            {
-                Value v = default(Value);
-                functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
-            }
-
-            // Record is in memory, can update hash index if relevant
-            if (logicalAddress >= hlog.HeadAddress)
-            {
-                if (entry.Address == logicalAddress)
-                {
-                    var updatedEntry = default(HashBucketEntry);
-                    updatedEntry.Tag = tag;
-                    if (hlog.GetInfo(physicalAddress).PreviousAddress == Constants.kTempInvalidAddress)
-                        updatedEntry.Address = Constants.kInvalidAddress;
-                    else
-                        updatedEntry.Address = hlog.GetInfo(physicalAddress).PreviousAddress;
-                    updatedEntry.Pending = entry.Pending;
-                    updatedEntry.Tentative = false;
-
-                    if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
-                    {
-                        return OperationStatus.SUCCESS;
-                    }
-                }
-            }
-
-            return OperationStatus.NOTFOUND;
         }
+        #endregion
 
         #region Helper Functions
 
@@ -1460,6 +1774,11 @@ namespace FASTER.core
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref pendingContext.key,
                                                         ref pendingContext.value,
+                                                        ref pendingContext.userContext,
+                                                        ref pendingContext);
+                        break;
+                    case OperationType.DELETE:
+                        internalStatus = InternalDelete(ref pendingContext.key,
                                                         ref pendingContext.userContext,
                                                         ref pendingContext);
                         break;
@@ -1910,9 +2229,7 @@ namespace FASTER.core
 
             while (true)
             {
-
-
-                if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
+                if (!readcache.GetInfo(physicalAddress).Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
                     if ((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeReadOnlyAddress)
                     {
@@ -1943,6 +2260,30 @@ namespace FASTER.core
 
             while (true)
             {
+                logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
+                entry.word = logicalAddress;
+                if (!entry.ReadCache) return;
+                physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+            }
+        }
+
+        private void SkipAndInvalidateReadCache(ref long logicalAddress, ref int latestRecordVersion, ref Key key)
+        {
+            HashBucketEntry entry = default(HashBucketEntry);
+            entry.word = logicalAddress;
+            if (!entry.ReadCache) return;
+
+            var physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+            latestRecordVersion = readcache.GetInfo(physicalAddress).Version;
+
+            while (true)
+            {
+                // Invalidate read cache entry if key found
+                if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
+                {
+                    readcache.GetInfo(physicalAddress).Invalid = true;
+                }
+
                 logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
                 entry.word = logicalAddress;
                 if (!entry.ReadCache) return;

@@ -88,7 +88,7 @@ namespace FASTER.test
 
             long tail = fht.Log.TailAddress;
 
-            fht.DeleteFromMemory(ref key1, 0);
+            fht.Delete(ref key1, Empty.Default, 0);
 
             status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
@@ -144,7 +144,7 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                fht.DeleteFromMemory(ref key1, 0);
+                fht.Delete(ref key1, Empty.Default, 0);
             }
 
             for (int i = 0; i < 10 * count; i++)

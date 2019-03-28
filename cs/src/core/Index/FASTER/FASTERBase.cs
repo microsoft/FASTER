@@ -269,8 +269,6 @@ namespace FASTER.core
 
         internal ResizeInfo resizeInfo;
 
-        internal long currentSize;
-
         /// <summary>
         /// Constructor
         /// </summary>

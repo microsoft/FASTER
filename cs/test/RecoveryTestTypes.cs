@@ -58,6 +58,10 @@ namespace FASTER.test.recovery.sumstore
         {
         }
 
+        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
+        {
+        }
+
         public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
         {
             Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);

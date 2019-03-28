@@ -22,8 +22,13 @@ namespace FASTER.core
         private readonly int recordSize;
 
         private bool first = true;
-        private long currentAddress;
-        
+        private long currentAddress, nextAddress;
+
+        /// <summary>
+        /// Current address
+        /// </summary>
+        public long CurrentAddress => currentAddress;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -38,7 +43,8 @@ namespace FASTER.core
             this.endAddress = endAddress;
 
             recordSize = hlog.GetRecordSize(0);
-            currentAddress = beginAddress;
+            currentAddress = -1;
+            nextAddress = beginAddress;
 
             if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
                 frameSize = 1;
@@ -48,24 +54,31 @@ namespace FASTER.core
             frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
             loaded = new CountdownEvent[frameSize];
 
-            var frameNumber = (currentAddress >> hlog.LogPageSizeBits) % frameSize;
-            hlog.AsyncReadPagesFromDeviceToFrame
-                (currentAddress >> hlog.LogPageSizeBits,
-                1, AsyncReadPagesCallback, Empty.Default,
-                frame, out loaded[frameNumber]);
+            // Only load addresses flushed to disk
+            if (nextAddress < hlog.HeadAddress)
+            {
+                var frameNumber = (nextAddress >> hlog.LogPageSizeBits) % frameSize;
+                hlog.AsyncReadPagesFromDeviceToFrame
+                    (nextAddress >> hlog.LogPageSizeBits,
+                    1, AsyncReadPagesCallback, Empty.Default,
+                    frame, out loaded[frameNumber]);
+            }
         }
 
         /// <summary>
         /// Get next record using iterator
         /// </summary>
+        /// <param name="recordInfo"></param>
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public bool GetNext(out Key key, out Value value)
+        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
+            recordInfo = default(RecordInfo);
             key = default(Key);
             value = default(Value);
 
+            currentAddress = nextAddress;
             while (true)
             {
                 // Check for boundary conditions
@@ -97,15 +110,25 @@ namespace FASTER.core
                 if (currentAddress >= hlog.HeadAddress)
                 {
                     // Read record from cached page memory
-                    currentAddress += recordSize;
+                    nextAddress = currentAddress + recordSize;
 
                     var page = currentPage % hlog.BufferSize;
+
+                    if (hlog.values[page][offset].info.Invalid)
+                        continue;
+
+                    recordInfo = hlog.values[page][offset].info;
                     key = hlog.values[page][offset].key;
                     value = hlog.values[page][offset].value;
                     return true;
                 }
 
-                currentAddress += recordSize;
+                nextAddress = currentAddress + recordSize;
+
+                if (frame.GetInfo(currentFrame, offset).Invalid)
+                    continue;
+
+                recordInfo = frame.GetInfo(currentFrame, offset);
                 key = frame.GetKey(currentFrame, offset);
                 value = frame.GetValue(currentFrame, offset);
                 return true;
@@ -143,6 +166,9 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            for (int i = 0; i < frameSize; i++)
+                loaded[i]?.Wait();
+
             frame.Dispose();
         }
 

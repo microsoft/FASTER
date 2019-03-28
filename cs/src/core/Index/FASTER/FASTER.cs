@@ -29,6 +29,16 @@ namespace FASTER.core
         public long EntryCount => GetEntryCount();
 
         /// <summary>
+        /// Size of index in #cache lines (64 bytes each)
+        /// </summary>
+        public long IndexSize => state[resizeInfo.version].size;
+
+        /// <summary>
+        /// Comparer used by FASTER
+        /// </summary>
+        public IFasterEqualityComparer<Key> Comparer => comparer;
+
+        /// <summary>
         /// Hybrid log used by this FASTER instance
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context> Log { get; }
@@ -403,17 +413,20 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Delete hash entry if possible as a best effort
-        /// Entry is deleted if key is in memory and at the head of hash chain
+        /// Delete entry (use tombstone if necessary)
+        /// Hash entry is removed as a best effort (if key is in memory and at 
+        /// the head of hash chain.
         /// Value is set to null (using ConcurrentWrite) if it is in mutable region
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="userContext"></param>
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status DeleteFromMemory(ref Key key, long monotonicSerialNum)
+        public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
         {
-            var internalStatus = InternalDeleteFromMemory(ref key);
+            var context = default(PendingContext);
+            var internalStatus = InternalDelete(ref key, ref userContext, ref context);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {

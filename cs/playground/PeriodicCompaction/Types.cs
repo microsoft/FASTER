@@ -9,7 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ClassCache
+namespace PeriodicCompaction
 {
     public class CacheKey : IFasterEqualityComparer<CacheKey>
     {

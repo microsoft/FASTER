@@ -30,12 +30,12 @@ namespace FASTER.test.recovery.sumstore
         {
             if (test_path == null)
             {
-                test_path = Path.GetTempPath() + Path.GetRandomFileName();
+                test_path = TestContext.CurrentContext.TestDirectory + "\\" + Path.GetRandomFileName();
                 if (!Directory.Exists(test_path))
                     Directory.CreateDirectory(test_path);
             }
 
-            log = Devices.CreateLogDevice(test_path + "\\hlog");
+            log = Devices.CreateLogDevice(test_path + "\\FullRecoveryTests.log");
 
             fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (keySpace, new Functions(), 

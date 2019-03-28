@@ -23,7 +23,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog4.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BlittableFASTERScanTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
                 (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
             fht.StartSession();
@@ -54,7 +54,7 @@ namespace FASTER.test
             var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering);
 
             int val = 0;
-            while (iter.GetNext(out KeyStruct key, out ValueStruct value))
+            while (iter.GetNext(out RecordInfo recordInfo, out KeyStruct key, out ValueStruct value))
             {
                 Assert.IsTrue(key.kfield1 == val);
                 Assert.IsTrue(key.kfield2 == val + 1);
@@ -67,7 +67,7 @@ namespace FASTER.test
             iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering);
 
             val = 0;
-            while (iter.GetNext(out KeyStruct key, out ValueStruct value))
+            while (iter.GetNext(out RecordInfo recordInfo, out KeyStruct key, out ValueStruct value))
             {
                 Assert.IsTrue(key.kfield1 == val);
                 Assert.IsTrue(key.kfield2 == val + 1);

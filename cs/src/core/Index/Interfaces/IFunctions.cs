@@ -40,6 +40,13 @@ namespace FASTER.core
         void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status);
 
         /// <summary>
+        /// Delete completion
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="ctx"></param>
+        void DeleteCompletionCallback(ref Key key, Context ctx);
+
+        /// <summary>
         /// Checkpoint completion callback (called per client session)
         /// </summary>
         /// <param name="sessionId">Session ID reporting persistence</param>

@@ -53,7 +53,8 @@ namespace FASTER.core
         {
             for (int i = 0; i < frameSize; i++)
             {
-                handles[i].Free();
+                if (handles[i] != default(GCHandle))
+                    handles[i].Free();
                 frame[i] = null;
                 pointers[i] = 0;
             }

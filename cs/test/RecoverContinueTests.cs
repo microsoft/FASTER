@@ -25,28 +25,28 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog", deleteOnClose: true);
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints");
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\RecoverContinueTests.log", deleteOnClose: true);
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints3");
 
             fht1 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht3 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             numOps = 5000;
@@ -62,7 +62,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             fht2 = null;
             fht3 = null;
             log.Close();
-            Directory.Delete(TestContext.CurrentContext.TestDirectory + "\\checkpoints", true);
+            Directory.Delete(TestContext.CurrentContext.TestDirectory + "\\checkpoints3", true);
         }
 
         public static void DeleteDirectory(string path)
@@ -183,6 +183,10 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
+        {
+        }
+
+        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
         {
         }
 
