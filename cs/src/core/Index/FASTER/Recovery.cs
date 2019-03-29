@@ -239,7 +239,7 @@ namespace FASTER.core
                 }
             }
 
-            var headAddress = hlog.GetStartLogicalAddress(headPage);
+            var headAddress = hlog.GetFirstValidLogicalAddress(headPage);
             hlog.RecoveryReset(untilAddress, headAddress);
         }
 

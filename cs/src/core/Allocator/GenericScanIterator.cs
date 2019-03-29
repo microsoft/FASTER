@@ -39,6 +39,10 @@ namespace FASTER.core
         public unsafe GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             this.hlog = hlog;
+
+            if (beginAddress == 0)
+                beginAddress = hlog.GetFirstValidLogicalAddress(0);
+
             this.beginAddress = beginAddress;
             this.endAddress = endAddress;
 

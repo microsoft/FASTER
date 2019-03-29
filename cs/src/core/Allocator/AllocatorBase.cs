@@ -231,6 +231,12 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract long GetStartLogicalAddress(long page);
         /// <summary>
+        /// Get first valid logical address
+        /// </summary>
+        /// <param name="page"></param>
+        /// <returns></returns>
+        public abstract long GetFirstValidLogicalAddress(long page);
+        /// <summary>
         /// Get physical address
         /// </summary>
         /// <param name="newLogicalAddress"></param>

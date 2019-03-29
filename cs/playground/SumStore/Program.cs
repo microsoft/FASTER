@@ -16,15 +16,17 @@ namespace SumStore
     {
         void Populate();
         void Continue();
+        void RecoverAndTest();
         void RecoverAndTest(Guid indexToken, Guid hybridLogToken);
     }
+
     public class Program
     {
         static void Main(string[] args)
         {
             if (args.Length == 0)
             {
-                Console.WriteLine("Usage: SumStore.exe [single|concurrent|test|latest] [populate|recover|continue] [guid]");
+                Console.WriteLine("Usage: SumStore.exe [single|concurrent (count)|test (count)] [populate|recover|continue] [() | (single_guid) | (index_guid hlog_guid)]");
                 return;
             }
             
@@ -44,10 +46,8 @@ namespace SumStore
             {
                 int threadCount = int.Parse(args[nextArg++]);
                 test = new ConcurrentTest(threadCount);
-            }
-            else if (type == "latest")
-            {
-                test = new LatestRecoveryTest();
+                test.Populate();
+                return;
             }
             else
             {
@@ -61,14 +61,20 @@ namespace SumStore
             }
             else if (task == "recover")
             {
-                if(type == "latest")
+                switch (args.Length)
                 {
-                    ((LatestRecoveryTest)test).RecoverAndTest();
-                }
-                else
-                {
-                    Guid version = Guid.Parse(args[nextArg++]);
-                    test.RecoverAndTest(version, version);
+                    case 3:
+                        test.RecoverAndTest();
+                        break;
+                    case 4:
+                        test.RecoverAndTest(Guid.Parse(args[nextArg++]), Guid.Parse(args[nextArg++]));
+                        break;
+                    case 5:
+                        var version = Guid.Parse(args[nextArg++]);
+                        test.RecoverAndTest(version, version);
+                        break;
+                    default:
+                        throw new Exception("Invalid input");
                 }
             }
             else if (task == "continue")
@@ -77,7 +83,7 @@ namespace SumStore
             }
             else
             {
-                Debug.Assert(false);
+                throw new InvalidOperationException();
             }
         }
     }

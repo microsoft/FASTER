@@ -18,7 +18,7 @@ namespace SumStore
     {
         const long numUniqueKeys = (1 << 22);
         const long keySpace = (1L << 14);
-        const long numOps = (1L << 25);
+        const long numOps = (1L << 20);
         const long refreshInterval = (1 << 8);
         const long completePendingInterval = (1 << 12);
         const long checkpointInterval = (1 << 22);
@@ -129,11 +129,14 @@ namespace SumStore
 
             // Process the batch of input data
             var random = new Random(threadId + 1);
-            threadNumOps[threadId] = (numOps / 2) + random.Next() % (numOps / 4);
+            threadNumOps[threadId] = (numOps / 2); // + random.Next() % (numOps / 4);
             
             for (long i = 0; i < threadNumOps[threadId]; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                var status = fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+
+                if (status != Status.OK && status != Status.NOTFOUND)
+                    throw new Exception();
 
                 if (i % completePendingInterval == 0)
                 {
@@ -175,6 +178,9 @@ namespace SumStore
                 Input input = default(Input);
                 Output output = default(Output);
                 var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                if (status == Status.PENDING)
+                    throw new NotImplementedException();
+
                 inputArray[i].numClicks = output.value;
             }
 
@@ -228,12 +234,17 @@ namespace SumStore
 
         public void Continue()
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
         }
 
         public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
         {
-            throw new NotImplementedException();
+            throw new InvalidOperationException();
+        }
+
+        public void RecoverAndTest()
+        {
+            throw new InvalidOperationException();
         }
     }
 }

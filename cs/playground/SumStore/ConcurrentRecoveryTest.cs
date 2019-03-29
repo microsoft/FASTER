@@ -257,6 +257,11 @@ namespace SumStore
             Console.WriteLine("Populate successful on thread {0}", threadId);
         }
 
+        public void RecoverAndTest()
+        {
+            throw new NotImplementedException();
+        }
+
         public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
         {
             // Recover

@@ -83,6 +83,16 @@ namespace FASTER.core
         /// <returns></returns>
         public override long GetStartLogicalAddress(long page)
         {
+            return page << LogPageSizeBits;
+        }
+
+        /// <summary>
+        /// Get first valid logical address
+        /// </summary>
+        /// <param name="page"></param>
+        /// <returns></returns>
+        public override long GetFirstValidLogicalAddress(long page)
+        {
             if (page == 0)
                 return (page << LogPageSizeBits) + recordSize;
 

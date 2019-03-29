@@ -1,26 +1,24 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license.
-
-using FASTER.core;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
+using FASTER.core;
 
 namespace SumStore
 {
-    public class SingleThreadedRecoveryTest : IFasterRecoveryTest
+    class SingleThreadedRecoveryTest : IFasterRecoveryTest
     {
         const long numUniqueKeys = (1 << 23);
-        const long keySpace = (1L << 15);
-        const long numOps = (1L << 25);
+        const long numOps = 4 * numUniqueKeys;
         const long refreshInterval = (1 << 8);
         const long completePendingInterval = (1 << 12);
-        const long checkpointInterval = (1 << 20);
+        const int checkpointInterval = 10 * 1000;
         FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+
+        Input[] inputArray;
 
         public SingleThreadedRecoveryTest()
         {
@@ -28,92 +26,161 @@ namespace SumStore
             var log = Devices.CreateLogDevice("logs\\hlog");
             fht = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, Functions>
-                (keySpace, new Functions(),
+                (numUniqueKeys, new Functions(),
                 new LogSettings { LogDevice = log },
-                new CheckpointSettings { CheckpointDir = "logs" });
-        }
-
-        public void Continue()
-        {
-            throw new NotImplementedException();
+                new CheckpointSettings { CheckpointDir = "logs" });   
         }
 
         public void Populate()
         {
-            List<Guid> tokens = new List<Guid>();
+            // Register thread with FASTER
+            Guid sessionGuid = fht.StartSession();
 
+            Directory.CreateDirectory("logs\\clients");
+            // Persist session id
+            System.IO.File.WriteAllText("logs\\clients\\0.txt", sessionGuid.ToString());
+
+            // Create a thread to issue periodic checkpoints
+            var t = new Thread(() => PeriodicCheckpoints());
+            t.Start();
+
+            // Generate clicks from start
+            GenerateClicks(0);
+        }
+
+        public void Continue()
+        {
+            // Recover the latest checkpoint
+            fht.Recover();
+
+            // Find out session Guid
+            string sessionGuidText = System.IO.File.ReadAllText("logs\\clients\\0.txt");
+            Guid.TryParse(sessionGuidText, out Guid sessionGuid);
+
+            // Register with thread
+            long sno = fht.ContinueSession(sessionGuid);
+
+            Console.WriteLine("Session {0} recovered until {1}", sessionGuid, sno);
+
+            // Create a thread to issue periodic checkpoints
+            var t = new Thread(() => PeriodicCheckpoints());
+            t.Start();
+
+            GenerateClicks(sno + 1);
+        }
+
+        public void RecoverAndTest()
+        {
+            // Recover the latest checkpoint
+            fht.Recover();
+
+            // Find out session Guid
+            string sessionGuidText = System.IO.File.ReadAllText("logs\\clients\\0.txt");
+            Guid.TryParse(sessionGuidText, out Guid sessionGuid);
+
+            // Register with thread
+            long sno = fht.ContinueSession(sessionGuid);
+
+            Console.WriteLine("Session {0} recovered until {1}", sessionGuid, sno);
+
+            // De-register session
+            fht.StopSession();
+
+            Test(sno);
+        }
+
+        private void GenerateClicks(long sno)
+        {
             // Prepare the dataset
-            var inputArray = new Input[numOps];
-            for (int i = 0; i < numOps; i++)
+            inputArray = new Input[numUniqueKeys];
+            for (int i = 0; i < numUniqueKeys; i++)
             {
-                inputArray[i].adId.adId = i % numUniqueKeys;
+                inputArray[i].adId.adId = (i % numUniqueKeys);
                 inputArray[i].numClicks.numClicks = 1;
             }
 
-            // Register thread with FASTER
-            fht.StartSession();
+            // Increment in round-robin fashion starting from sno
 
-            // Prpcess the batch of input data
-            for (int i = 0; i < numOps; i++)
+            while (true)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                var key = (sno % numUniqueKeys);
+                fht.RMW(ref inputArray[key].adId, ref inputArray[key], Empty.Default, sno);
 
-                if (i % checkpointInterval == 0)
-                {
-                    if(fht.TakeFullCheckpoint(out Guid token))
-                    {
-                        tokens.Add(token);
-                    }
-                }
+                sno++;
 
-                if (i % completePendingInterval == 0)
-                {
-                    fht.CompletePending(false);
-                }
-                else if (i % refreshInterval == 0)
+                if (sno % refreshInterval == 0)
                 {
                     fht.Refresh();
                 }
+                else if (sno % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (sno % numUniqueKeys == 0)
+                {
+                    fht.CompletePending(true);
+                }
             }
+        }
 
-            // Make sure operations are completed
-            fht.CompleteCheckpoint(true);
-            fht.CompletePending(true);
+        private void PeriodicCheckpoints()
+        {
 
-            // Deregister thread from FASTER
-            fht.StopSession();
+            Console.WriteLine("Started checkpoint thread");
 
-            Console.WriteLine("Populate successful");
-            foreach(var token in tokens)
+            while(true)
             {
-                Console.WriteLine(token);
+                Thread.Sleep(checkpointInterval);
+
+                fht.TakeFullCheckpoint(out Guid token);
+
+                fht.CompleteCheckpoint(true);
+
+                Console.WriteLine("Completed checkpoint {0}", token);
             }
-            Console.ReadLine();
         }
 
         public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
         {
-            // Recover
+            // Recover the latest checkpoint
             fht.Recover(indexToken, hybridLogToken);
 
-            // Create array for reading
-            var inputArray = new Input[numUniqueKeys];
+            // Find out session Guid
+            string sessionGuidText = System.IO.File.ReadAllText("logs\\clients\\0.txt");
+            Guid.TryParse(sessionGuidText, out Guid sessionGuid);
+
+            // Register with thread
+            long sno = fht.ContinueSession(sessionGuid);
+
+            Console.WriteLine("Session {0} recovered until {1}", sessionGuid, sno);
+
+            // De-register session
+            fht.StopSession();
+
+            Test(sno);
+
+        }
+
+        private void Test(long sno)
+        {
+            // Initalize array to store values
+            Input[] inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
-                inputArray[i].adId.adId = i;
+                inputArray[i].adId.adId = (i % numUniqueKeys);
                 inputArray[i].numClicks.numClicks = 0;
             }
 
-            // Register with thread
+            // Start a new session
             fht.StartSession();
 
             // Issue read requests
-            for (var i = 0; i < numUniqueKeys; i++)
+            for (int i = 0; i < numUniqueKeys; i++)
             {
-                Input input = default(Input);
                 Output output = default(Output);
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                inputArray[i].numClicks = output.value;
+                var status = fht.Read(ref inputArray[i].adId, ref inputArray[i], ref output, Empty.Default, i);
+                Debug.Assert(status == Status.OK || status == Status.NOTFOUND);
+                inputArray[i].numClicks.numClicks = output.value.numClicks;
             }
 
             // Complete all pending requests
@@ -122,32 +189,12 @@ namespace SumStore
             // Release
             fht.StopSession();
 
-            // Test outputs
-            var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(hybridLogToken, "logs");
-
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
-            foreach (var guid in checkpointInfo.continueTokens.Keys)
+            for (long i = 0; i <= sno; i++)
             {
-                var sno = checkpointInfo.continueTokens[guid];
-                for (long i = 0; i <= sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            int threadCount = 1; // single threaded test
-            int numCompleted = threadCount - checkpointInfo.continueTokens.Count;
-            for (int t = 0; t < numCompleted; t++)
-            {
-                var sno = numOps;
-                for (long i = 0; i < sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
+                var id = i % numUniqueKeys;
+                expected[id]++;
             }
 
             // Assert if expected is same as found
