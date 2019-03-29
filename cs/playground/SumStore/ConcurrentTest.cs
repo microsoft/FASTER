@@ -172,6 +172,8 @@ namespace SumStore
             // Register with thread
             fht.StartSession();
 
+            fht.DumpDistribution();
+
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {

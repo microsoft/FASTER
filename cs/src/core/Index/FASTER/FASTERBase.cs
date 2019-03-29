@@ -740,6 +740,7 @@ namespace FASTER.core
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
+                List<int> tags = new List<int>();
                 int cnt = 0;
                 HashBucket b = *(ptable_ + bucket);
                 while (true)
@@ -748,6 +749,11 @@ namespace FASTER.core
                     {
                         if (0 != b.bucket_entries[bucket_entry])
                         {
+                            var x = default(HashBucketEntry);
+                            x.word = b.bucket_entries[bucket_entry];
+                            if (tags.Contains(x.Tag) && !x.Tentative)
+                                throw new Exception("Duplicate tag found in index");
+                            tags.Add(x.Tag);
                             ++cnt;
                             ++total_record_count;
                         }
