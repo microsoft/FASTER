@@ -553,7 +553,7 @@ namespace FASTER.core
                     }
 
                     entry.word = target_entry_word;
-                    if (entry.Address < BeginAddress)
+                    if (entry.Address < BeginAddress && entry.Address != Constants.kTempInvalidAddress)
                     {
                         if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[index], Constants.kInvalidAddress, target_entry_word))
                         {

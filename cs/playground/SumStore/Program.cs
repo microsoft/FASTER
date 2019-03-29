@@ -12,14 +12,6 @@ using System.Threading.Tasks;
 
 namespace SumStore
 {
-    public interface IFasterRecoveryTest
-    {
-        void Populate();
-        void Continue();
-        void RecoverAndTest();
-        void RecoverAndTest(Guid indexToken, Guid hybridLogToken);
-    }
-
     public class Program
     {
         static void Main(string[] args)
@@ -61,17 +53,17 @@ namespace SumStore
             }
             else if (task == "recover")
             {
-                switch (args.Length)
+                switch (args.Length - nextArg)
                 {
-                    case 3:
-                        test.RecoverAndTest();
+                    case 0:
+                        test.RecoverLatest();
                         break;
-                    case 4:
-                        test.RecoverAndTest(Guid.Parse(args[nextArg++]), Guid.Parse(args[nextArg++]));
-                        break;
-                    case 5:
+                    case 1:
                         var version = Guid.Parse(args[nextArg++]);
-                        test.RecoverAndTest(version, version);
+                        test.Recover(version, version);
+                        break;
+                    case 2:
+                        test.Recover(Guid.Parse(args[nextArg++]), Guid.Parse(args[nextArg++]));
                         break;
                     default:
                         throw new Exception("Invalid input");

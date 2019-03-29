@@ -69,7 +69,7 @@ namespace SumStore
             GenerateClicks(sno + 1);
         }
 
-        public void RecoverAndTest()
+        public void RecoverLatest()
         {
             // Recover the latest checkpoint
             fht.Recover();
@@ -140,7 +140,7 @@ namespace SumStore
             }
         }
 
-        public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
+        public void Recover(Guid indexToken, Guid hybridLogToken)
         {
             // Recover the latest checkpoint
             fht.Recover(indexToken, hybridLogToken);

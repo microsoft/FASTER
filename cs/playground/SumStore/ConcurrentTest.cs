@@ -239,12 +239,12 @@ namespace SumStore
             throw new InvalidOperationException();
         }
 
-        public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
+        public void Recover(Guid indexToken, Guid hybridLogToken)
         {
             throw new InvalidOperationException();
         }
 
-        public void RecoverAndTest()
+        public void RecoverLatest()
         {
             throw new InvalidOperationException();
         }

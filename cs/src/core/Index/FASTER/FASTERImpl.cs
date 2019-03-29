@@ -2010,7 +2010,7 @@ namespace FASTER.core
                     for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
                     {
                         entry.word = *(((long*)src_start) + index);
-                        if (entry.Address != Constants.kInvalidAddress && entry.Address < hlog.BeginAddress)
+                        if (entry.Address != Constants.kInvalidAddress && entry.Address != Constants.kTempInvalidAddress && entry.Address < hlog.BeginAddress)
                         {
                             Interlocked.CompareExchange(ref *(((long*)src_start) + index), Constants.kInvalidAddress, entry.word);
                         }
