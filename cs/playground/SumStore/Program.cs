@@ -18,21 +18,17 @@ namespace SumStore
         {
             if (args.Length == 0)
             {
-                Console.WriteLine("Usage: SumStore.exe [single|concurrent (count)|test (count)] [populate|recover|continue] [() | (single_guid) | (index_guid hlog_guid)]");
+                Console.WriteLine("Usage: SumStore.exe [recovery #threads|test #threads] [populate|recover|continue] [() | (single_guid) | (index_guid hlog_guid)]");
                 return;
             }
             
             int nextArg = 0;
             var test = default(IFasterRecoveryTest);
             var type = args[nextArg++];
-            if (type == "single")
-            {
-                test = new SingleThreadedRecoveryTest();
-            }
-            else if (type == "concurrent")
+            if (type == "recovery")
             {
                 int threadCount = int.Parse(args[nextArg++]);
-                test = new ConcurrentRecoveryTest(threadCount);
+                test = new RecoveryTest(threadCount);
             }
             else if (type == "test")
             {
