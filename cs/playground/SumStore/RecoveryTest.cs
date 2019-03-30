@@ -10,7 +10,7 @@ using FASTER.core;
 
 namespace SumStore
 {
-    class RecoveryTest : IFasterRecoveryTest
+    class RecoveryTest
     {
         const long numUniqueKeys = 1 << 23;
         const long indexSize = 1L << 20;
@@ -121,8 +121,10 @@ namespace SumStore
                 Guid.TryParse(sessionGuidText, out Guid sessionGuid);
 
                 // Register with thread
-                sno = fht.ContinueSession(sessionGuid);
-
+                do
+                {
+                    sno = fht.ContinueSession(sessionGuid);
+                } while (sno == -1);
                 Console.WriteLine("Session {0} recovered until {1}", sessionGuid, sno);
                 sno++;
             }
@@ -193,7 +195,10 @@ namespace SumStore
                 Guid.TryParse(sessionGuidText, out Guid sessionGuid);
 
                 // Register with thread
-                var _sno = fht.ContinueSession(sessionGuid);
+                long _sno = -1;
+                do {
+                    _sno = fht.ContinueSession(sessionGuid);
+                } while (_sno == -1);
                 sno.Add(_sno);
 
                 Console.WriteLine("Session {0} recovered until {1}", sessionGuid, _sno);

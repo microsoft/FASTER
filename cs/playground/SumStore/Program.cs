@@ -18,29 +18,33 @@ namespace SumStore
         {
             if (args.Length == 0)
             {
-                Console.WriteLine("Usage: SumStore.exe [recovery #threads|test #threads] [populate|recover|continue] [() | (single_guid) | (index_guid hlog_guid)]");
+                Console.WriteLine("Usage:");
+                Console.WriteLine("Concurrency Test:\n  SumStore.exe concurrency_test #threads");
+                Console.WriteLine("Recovery Test:\n  SumStore.exe recovery #threads populate");
+                Console.WriteLine("  SumStore.exe recovery_test #threads continue");
+                Console.WriteLine("  SumStore.exe recovery_test #threads recover");
+                Console.WriteLine("  SumStore.exe recovery_test #threads recover single_guid");
+                Console.WriteLine("  SumStore.exe recovery_test #threads recover index_guid hlog_guid");
                 return;
             }
             
             int nextArg = 0;
-            var test = default(IFasterRecoveryTest);
             var type = args[nextArg++];
-            if (type == "recovery")
+            int threadCount = int.Parse(args[nextArg++]);
+
+            if (type == "concurrency_test")
             {
-                int threadCount = int.Parse(args[nextArg++]);
-                test = new RecoveryTest(threadCount);
-            }
-            else if (type == "test")
-            {
-                int threadCount = int.Parse(args[nextArg++]);
-                test = new ConcurrentTest(threadCount);
-                test.Populate();
+                var ctest = new ConcurrencyTest(threadCount);
+                ctest.Populate();
                 return;
             }
-            else
+
+            if (type != "recovery_test" || args.Length < 3)
             {
-                Debug.Assert(false);
+                throw new Exception("Invalid test");
             }
+
+            RecoveryTest test = new RecoveryTest(threadCount);
 
             var task = args[nextArg++];
             if (task == "populate")
@@ -71,7 +75,7 @@ namespace SumStore
             }
             else
             {
-                throw new InvalidOperationException();
+                throw new Exception("Invalid test");
             }
         }
     }

@@ -5,16 +5,11 @@ using FASTER.core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace SumStore
 {
-    public class ConcurrentTest: IFasterRecoveryTest
+    public class ConcurrencyTest
     {
         const long numUniqueKeys = (1 << 22);
         const long keySpace = (1L << 14);
@@ -28,7 +23,7 @@ namespace SumStore
         BlockingCollection<Input[]> inputArrays;
         readonly long[] threadNumOps;
 
-        public ConcurrentTest(int threadCount)
+        public ConcurrencyTest(int threadCount)
         {
             this.threadCount = threadCount;
 
@@ -48,15 +43,12 @@ namespace SumStore
 
         public void Prepare()
         {
-            Console.WriteLine("Creating Input Arrays");
-
             Thread[] workers = new Thread[threadCount];
             for (int idx = 0; idx < threadCount; ++idx)
             {
                 int x = idx;
                 workers[idx] = new Thread(() => CreateInputArrays(x));
             }
-
 
             // Start threads.
             foreach (Thread worker in workers)
@@ -92,9 +84,6 @@ namespace SumStore
                 int x = idx;
                 workers[idx] = new Thread(() => PopulateWorker(x));
             }
-
-            Console.WriteLine("Ready to Populate, Press [Enter]");
-            Console.ReadLine(); 
 
             // Start threads.
             foreach (Thread worker in workers)
@@ -154,8 +143,6 @@ namespace SumStore
             // Deregister thread from FASTER
             fht.StopSession();
 
-            //Interlocked.Decrement(ref numActiveThreads);
-
             Console.WriteLine("Populate successful on thread {0}", threadId);
         }
 
@@ -171,8 +158,6 @@ namespace SumStore
 
             // Register with thread
             fht.StartSession();
-
-            fht.DumpDistribution();
 
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
@@ -232,21 +217,6 @@ namespace SumStore
                 Console.WriteLine("Sum : {0:X}, (1 << {1})", sum, Math.Log(sum, 2));
             }
             Console.WriteLine("Test successful");
-        }
-
-        public void Continue()
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void Recover(Guid indexToken, Guid hybridLogToken)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public void RecoverLatest()
-        {
-            throw new InvalidOperationException();
         }
     }
 }
