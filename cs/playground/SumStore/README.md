@@ -1,7 +1,10 @@
 # Sum Store
 
-The sum store example allows you to test FASTER operations as well
-as recovery. It has two modes: `concurrency_test` and `recovery_test`.
+The [sum store sample](https://github.com/Microsoft/FASTER/tree/master/cs/playground/SumStore)
+allows you to test FASTER operations as well as recovery. The sample 
+models a set of threads performing RMW operations that each increment
+the number of clicks associated with some `adId` in the store. The 
+sample has two modes of execution: `concurrency_test` and `recovery_test`.
 
 ## Concurrency Test
 
