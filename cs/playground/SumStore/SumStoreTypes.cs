@@ -102,7 +102,7 @@ namespace SumStore
 
         public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
         {
-            newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
+            newValue.numClicks = oldValue.numClicks + input.numClicks.numClicks;
         }
     }
 }

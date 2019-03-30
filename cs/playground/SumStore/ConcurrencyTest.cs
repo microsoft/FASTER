@@ -5,20 +5,15 @@ using FASTER.core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace SumStore
 {
-    public class ConcurrentTest: IFasterRecoveryTest
+    public class ConcurrencyTest
     {
         const long numUniqueKeys = (1 << 22);
         const long keySpace = (1L << 14);
-        const long numOps = (1L << 25);
+        const long numOps = (1L << 20);
         const long refreshInterval = (1 << 8);
         const long completePendingInterval = (1 << 12);
         const long checkpointInterval = (1 << 22);
@@ -28,7 +23,7 @@ namespace SumStore
         BlockingCollection<Input[]> inputArrays;
         readonly long[] threadNumOps;
 
-        public ConcurrentTest(int threadCount)
+        public ConcurrencyTest(int threadCount)
         {
             this.threadCount = threadCount;
 
@@ -48,15 +43,12 @@ namespace SumStore
 
         public void Prepare()
         {
-            Console.WriteLine("Creating Input Arrays");
-
             Thread[] workers = new Thread[threadCount];
             for (int idx = 0; idx < threadCount; ++idx)
             {
                 int x = idx;
                 workers[idx] = new Thread(() => CreateInputArrays(x));
             }
-
 
             // Start threads.
             foreach (Thread worker in workers)
@@ -93,9 +85,6 @@ namespace SumStore
                 workers[idx] = new Thread(() => PopulateWorker(x));
             }
 
-            Console.WriteLine("Ready to Populate, Press [Enter]");
-            Console.ReadLine(); 
-
             // Start threads.
             foreach (Thread worker in workers)
             {
@@ -129,11 +118,14 @@ namespace SumStore
 
             // Process the batch of input data
             var random = new Random(threadId + 1);
-            threadNumOps[threadId] = (numOps / 2) + random.Next() % (numOps / 4);
+            threadNumOps[threadId] = (numOps / 2); // + random.Next() % (numOps / 4);
             
             for (long i = 0; i < threadNumOps[threadId]; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                var status = fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+
+                if (status != Status.OK && status != Status.NOTFOUND)
+                    throw new Exception();
 
                 if (i % completePendingInterval == 0)
                 {
@@ -151,8 +143,6 @@ namespace SumStore
             // Deregister thread from FASTER
             fht.StopSession();
 
-            //Interlocked.Decrement(ref numActiveThreads);
-
             Console.WriteLine("Populate successful on thread {0}", threadId);
         }
 
@@ -168,13 +158,16 @@ namespace SumStore
 
             // Register with thread
             fht.StartSession();
-            Input input = default(Input);
-            Output output = default(Output);
 
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
+                Input input = default(Input);
+                Output output = default(Output);
                 var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                if (status == Status.PENDING)
+                    throw new NotImplementedException();
+
                 inputArray[i].numClicks = output.value;
             }
 
@@ -224,16 +217,6 @@ namespace SumStore
                 Console.WriteLine("Sum : {0:X}, (1 << {1})", sum, Math.Log(sum, 2));
             }
             Console.WriteLine("Test successful");
-        }
-
-        public void Continue()
-        {
-            throw new NotImplementedException();
-        }
-
-        public void RecoverAndTest(Guid indexToken, Guid hybridLogToken)
-        {
-            throw new NotImplementedException();
         }
     }
 }

@@ -114,6 +114,8 @@ namespace PeriodicCompaction
                 Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
                 Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
             }
+
+            // Inifinite loop - no need to clean up
         }
 
         private static void RandomReadWorkload(FasterKV<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> h, int max)
