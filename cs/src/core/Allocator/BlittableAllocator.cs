@@ -31,14 +31,12 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
-            : base(settings, comparer, evictCallback)
+        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
+            : base(settings, comparer, evictCallback, epoch)
         {
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
             pointers = new long[BufferSize];
-
-            epoch = LightEpoch.Instance;
 
             ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
             nativePointers = (long*)ptrHandle.AddrOfPinnedObject();

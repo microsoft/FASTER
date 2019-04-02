@@ -41,8 +41,8 @@ namespace FASTER.core
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
-            : base(settings, comparer, evictCallback)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
+            : base(settings, comparer, evictCallback, epoch)
         {
             SerializerSettings = serializerSettings;
 
@@ -67,7 +67,6 @@ namespace FASTER.core
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
             }
 
-            epoch = LightEpoch.Instance;
             ioBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
         }
 

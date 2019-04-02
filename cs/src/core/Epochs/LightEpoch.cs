@@ -16,11 +16,6 @@ namespace FASTER.core
     public unsafe class LightEpoch
     {
         /// <summary>
-        /// 
-        /// </summary>
-        public static LightEpoch Instance = new LightEpoch();
-
-        /// <summary>
         /// Default invalid index entry.
         /// </summary>
         private const int kInvalidIndex = 0;
@@ -57,8 +52,7 @@ namespace FASTER.core
         /// <summary>
         /// A thread's entry in the epoch table.
         /// </summary>
-        [ThreadStatic]
-        public static int threadEntryIndex;
+        private ThreadLocal<int> threadEntryIndex;
 
         /// <summary>
         /// Global current epoch value
@@ -93,6 +87,7 @@ namespace FASTER.core
         /// <param name="size"></param>
         unsafe void Initialize(int size)
         {
+            threadEntryIndex = new ThreadLocal<int>();
             numEntries = size;
 
             // Over-allocate to do cache-line alignment
@@ -132,7 +127,7 @@ namespace FASTER.core
         /// <returns>Result of the check</returns>
         public bool IsProtected()
         {
-            return (kInvalidIndex != threadEntryIndex);
+            return kInvalidIndex != threadEntryIndex.Value;
         }
 
 
@@ -143,11 +138,11 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int ProtectAndDrain()
         {
-            int entry = threadEntryIndex;
+            int entry = threadEntryIndex.Value;
             if (kInvalidIndex == entry)
             {
                 entry = ReserveEntryForThread();
-                threadEntryIndex = entry;
+                threadEntryIndex.Value = entry;
             }
 
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
@@ -192,13 +187,13 @@ namespace FASTER.core
         /// </summary>
         public void Release()
         {
-            int entry = threadEntryIndex;
+            int entry = threadEntryIndex.Value;
             if (kInvalidIndex == entry)
             {
                 return;
             }
 
-            threadEntryIndex = kInvalidIndex;
+            threadEntryIndex.Value = kInvalidIndex;
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
         }
@@ -391,7 +386,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MarkAndCheckIsComplete(int markerIdx, int version)
         {
-            int entry = threadEntryIndex;
+            int entry = threadEntryIndex.Value;
             if (kInvalidIndex == entry)
             {
                 Debug.WriteLine("New Thread entered during CPR");

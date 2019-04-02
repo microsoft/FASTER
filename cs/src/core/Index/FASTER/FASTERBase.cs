@@ -251,7 +251,7 @@ namespace FASTER.core
         internal long minTableSize = 16;
 
         // Allocator for the hash buckets
-        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+        internal readonly MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
 
         // An array of size two, that contains the old and new versions of the hash-table
         internal InternalHashTable[] state = new InternalHashTable[2];
@@ -274,7 +274,8 @@ namespace FASTER.core
         /// </summary>
         public FasterBase()
         {
-            epoch = LightEpoch.Instance;
+            epoch = new LightEpoch();
+            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(false, epoch);
         }
 
         internal Status Free()

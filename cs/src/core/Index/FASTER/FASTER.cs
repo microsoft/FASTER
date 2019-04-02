@@ -117,7 +117,7 @@ namespace FASTER.core
 
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
             {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
+                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
                 {
@@ -127,14 +127,14 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict);
+                        }, this.comparer, ReadCacheEvict, epoch);
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }
             }
             else
             {
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
+                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
                 {
@@ -145,7 +145,7 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict);
+                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch);
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }

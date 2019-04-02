@@ -60,7 +60,7 @@ namespace FASTER.core
         /// <summary>
         /// Epoch information
         /// </summary>
-        protected LightEpoch epoch;
+        protected readonly LightEpoch epoch;
 
         /// <summary>
         /// Comparer
@@ -415,8 +415,9 @@ namespace FASTER.core
         /// <param name="settings"></param>
         /// <param name="comparer"></param>
         /// <param name="evictCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback) 
-            : this(settings, comparer)
+        /// <param name="epoch"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch)
+            : this(settings, comparer, epoch)
         {
             if (evictCallback != null)
             {
@@ -430,9 +431,12 @@ namespace FASTER.core
         /// </summary>
         /// <param name="settings"></param>
         /// <param name="comparer"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer)
+        /// <param name="epoch"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, LightEpoch epoch)
         {
             this.comparer = comparer;
+            this.epoch = epoch ?? new LightEpoch();
+
             settings.LogDevice.Initialize(1L << settings.SegmentSizeBits);
             settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits);
 

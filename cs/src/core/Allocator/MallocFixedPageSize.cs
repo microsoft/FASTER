@@ -47,6 +47,8 @@ namespace FASTER.core
 
         private CountdownEvent checkpointEvent;
 
+        private readonly LightEpoch epoch;
+
         [ThreadStatic]
         private static Queue<FreeItem> freeList;
 
@@ -54,8 +56,11 @@ namespace FASTER.core
         /// Create new instance
         /// </summary>
         /// <param name="returnPhysicalAddress"></param>
-        public MallocFixedPageSize(bool returnPhysicalAddress = false)
+        /// <param name="epoch"></param>
+        public MallocFixedPageSize(bool returnPhysicalAddress = false, LightEpoch epoch = null)
         {
+            this.epoch = epoch ?? new LightEpoch();
+
             values[0] = new T[PageSize];
 
 #if !(CALLOC)
@@ -298,7 +303,7 @@ namespace FASTER.core
             }
             if (freeList.Count > 0)
             {
-                if (freeList.Peek().removal_epoch <= LightEpoch.Instance.SafeToReclaimEpoch)
+                if (freeList.Peek().removal_epoch <= epoch.SafeToReclaimEpoch)
                     return freeList.Dequeue().removed_item;
 
                 //if (freeList.Count % 64 == 0)
