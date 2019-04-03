@@ -372,9 +372,21 @@ namespace FASTER.core
 
                 if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
+                    if (KeyHasObjects())
+                        keySerializer.EndSerialize();
+                    if (ValueHasObjects())
+                        valueSerializer.EndSerialize();
                     var _s = ms.ToArray();
                     ms.Close();
-                    ms = new MemoryStream();
+
+                    if (i < (end / recordSize) - 1)
+                    {
+                        ms = new MemoryStream();
+                        if (KeyHasObjects())
+                            keySerializer.BeginSerialize(ms);
+                        if (ValueHasObjects())
+                            valueSerializer.BeginSerialize(ms);
+                    }
 
                     var _objBuffer = ioBufferPool.Get(_s.Length);
 
@@ -754,73 +766,6 @@ namespace FASTER.core
             if (ValueHasObjects())
             {
                 valueSerializer.EndDeserialize();
-            }
-        }
-
-        /// <summary>
-        /// Serialize part of page to stream
-        /// </summary>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="untilptr">Until pointer</param>
-        /// <param name="stream">Stream</param>
-        /// <param name="objectBlockSize">Size of blocks to serialize in chunks of</param>
-        /// <param name="addr">List of addresses that need to be updated with offsets</param>
-        public void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr)
-        {
-            IObjectSerializer<Key> keySerializer = null;
-            IObjectSerializer<Value> valueSerializer = null;
-
-            if (KeyHasObjects())
-            {
-                keySerializer = SerializerSettings.keySerializer();
-                keySerializer.BeginSerialize(stream);
-            }
-            if (ValueHasObjects())
-            {
-                valueSerializer = SerializerSettings.valueSerializer();
-                valueSerializer.BeginSerialize(stream);
-            }
-
-            addr = new List<long>();
-            while (ptr < untilptr)
-            {
-                if (!GetInfo(ptr).Invalid)
-                {
-                    long pos = stream.Position;
-
-                    if (KeyHasObjects())
-                    {
-                        keySerializer.Serialize(ref GetKey(ptr));
-                        var key_address = GetKeyAddressInfo(ptr);
-                        key_address->Address = pos;
-                        key_address->Size = (int)(stream.Position - pos);
-                        addr.Add((long)key_address);
-                    }
-
-                    if (ValueHasObjects() && !GetInfo(ptr).Tombstone)
-                    {
-                        pos = stream.Position;
-                        var value_address = GetValueAddressInfo(ptr);
-                        valueSerializer.Serialize(ref GetValue(ptr));
-                        value_address->Address = pos;
-                        value_address->Size = (int)(stream.Position - pos);
-                        addr.Add((long)value_address);
-                    }
-
-                }
-                ptr += GetRecordSize(ptr);
-
-                if (stream.Position > objectBlockSize)
-                    break;
-            }
-
-            if (KeyHasObjects())
-            {
-                keySerializer.EndSerialize();
-            }
-            if (ValueHasObjects())
-            {
-                valueSerializer.EndSerialize();
             }
         }
 
