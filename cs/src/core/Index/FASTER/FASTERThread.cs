@@ -119,24 +119,26 @@ namespace FASTER.core
 
         internal void InitLocalContext(Guid token)
         {
-            threadCtx.Value =
-            new FasterExecutionContext
-            {
-                phase = Phase.REST,
-                version = _systemState.version,
-                markers = new bool[8],
-                serialNum = 0,
-                totalPending = 0,
-                guid = token,
-                retryRequests = new Queue<PendingContext>(),
-                readyResponses = new BlockingCollection<AsyncIOContext<Key, Value>>(),
-                ioPendingRequests = new Dictionary<long, PendingContext>()
-            };
+            var ctx = 
+                new FasterExecutionContext
+                {
+                    phase = Phase.REST,
+                    version = _systemState.version,
+                    markers = new bool[8],
+                    serialNum = 0,
+                    totalPending = 0,
+                    guid = token,
+                    retryRequests = new Queue<PendingContext>(),
+                    readyResponses = new BlockingCollection<AsyncIOContext<Key, Value>>(),
+                    ioPendingRequests = new Dictionary<long, PendingContext>()
+                };
 
             for(int i = 0; i < 8; i++)
             {
-                threadCtx.Value.markers[i] = false;
+                ctx.markers[i] = false;
             }
+
+            threadCtx.Value = ctx;
         }
 
         internal bool InternalCompletePending(bool wait = false)

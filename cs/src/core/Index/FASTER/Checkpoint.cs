@@ -472,7 +472,7 @@ namespace FASTER.core
 
                             if (!ctx.markers[EpochPhaseIdx.InProgress])
                             {
-                                prevThreadCtx = threadCtx;
+                                prevThreadCtx.Value = threadCtx.Value;
 
                                 InitLocalContext(prevThreadCtx.Value.guid);
 
