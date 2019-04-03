@@ -67,11 +67,8 @@ namespace FASTER.core
 
         private SafeConcurrentDictionary<Guid, long> _recoveredSessions;
 
-        [ThreadStatic]
-        private static FasterExecutionContext prevThreadCtx = default(FasterExecutionContext);
-
-        [ThreadStatic]
-        private static FasterExecutionContext threadCtx = default(FasterExecutionContext);
+        private FastThreadLocal<FasterExecutionContext> prevThreadCtx;
+        private FastThreadLocal<FasterExecutionContext> threadCtx;
 
 
         /// <summary>
@@ -85,6 +82,9 @@ namespace FASTER.core
         /// <param name="serializerSettings">Serializer settings</param>
         public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null)
         {
+            threadCtx = new FastThreadLocal<FasterExecutionContext>();
+            prevThreadCtx = new FastThreadLocal<FasterExecutionContext>();
+
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -353,9 +353,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 
@@ -380,9 +380,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 
@@ -406,9 +406,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 
@@ -432,7 +432,7 @@ namespace FASTER.core
             {
                 status = (Status)internalStatus;
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 

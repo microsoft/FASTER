@@ -202,7 +202,7 @@ namespace FASTER.core
         /// <summary>
         /// Number of pending reads
         /// </summary>
-        private static int numPendingReads = 0;
+        private int numPendingReads = 0;
         #endregion
 
         /// <summary>

@@ -49,8 +49,7 @@ namespace FASTER.core
 
         private readonly LightEpoch epoch;
 
-        [ThreadStatic]
-        private static Queue<FreeItem> freeList;
+        private FastThreadLocal<Queue<FreeItem>> freeList;
 
         /// <summary>
         /// Create new instance
@@ -59,6 +58,7 @@ namespace FASTER.core
         /// <param name="epoch"></param>
         public MallocFixedPageSize(bool returnPhysicalAddress = false, LightEpoch epoch = null)
         {
+            freeList = new FastThreadLocal<Queue<FreeItem>>();
             this.epoch = epoch ?? new LightEpoch();
 
             values[0] = new T[PageSize];
@@ -178,8 +178,12 @@ namespace FASTER.core
             {
                 values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
             }
-            if (freeList == null) freeList = new Queue<FreeItem>();
-            freeList.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
+
+            freeList.InitializeThread();
+
+            if (freeList.Value == null)
+                freeList.Value = new Queue<FreeItem>();
+            freeList.Value.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
         }
 
         private const int kAllocateChunkSize = 16;
@@ -297,14 +301,15 @@ namespace FASTER.core
         /// <returns></returns>
         public long Allocate()
         {
-            if (freeList == null)
+            freeList.InitializeThread();
+            if (freeList.Value == null)
             {
-                freeList = new Queue<FreeItem>();
+                freeList.Value = new Queue<FreeItem>();
             }
-            if (freeList.Count > 0)
+            if (freeList.Value.Count > 0)
             {
-                if (freeList.Peek().removal_epoch <= epoch.SafeToReclaimEpoch)
-                    return freeList.Dequeue().removed_item;
+                if (freeList.Value.Peek().removal_epoch <= epoch.SafeToReclaimEpoch)
+                    return freeList.Value.Dequeue().removed_item;
 
                 //if (freeList.Count % 64 == 0)
                 //    LightEpoch.Instance.BumpCurrentEpoch();

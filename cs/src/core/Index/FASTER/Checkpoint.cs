@@ -386,7 +386,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void HandleCheckpointingPhases()
         {
-            var previousState = SystemState.Make(threadCtx.phase, threadCtx.version);
+            var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
 
             // Don't play around when system state is being changed
@@ -412,13 +412,13 @@ namespace FASTER.core
                 {
                     case Phase.PREP_INDEX_CHECKPOINT:
                         {
-                            if (!threadCtx.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
+                            if (!threadCtx.Value.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
                             {
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, threadCtx.version))
+                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, threadCtx.Value.version))
                                 {
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
-                                threadCtx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
+                                threadCtx.Value.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
                             }
                             break;
                         }
@@ -427,7 +427,7 @@ namespace FASTER.core
                             if (_checkpointType == CheckpointType.INDEX_ONLY)
                             {
                                 // Reseting the marker for a potential FULL or INDEX_ONLY checkpoint in the future
-                                threadCtx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = false;
+                                threadCtx.Value.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = false;
                             }
 
                             if (IsIndexFuzzyCheckpointCompleted())
@@ -438,7 +438,7 @@ namespace FASTER.core
                         }
                     case Phase.PREPARE:
                         {
-                            if (!threadCtx.markers[EpochPhaseIdx.Prepare])
+                            if (!threadCtx.Value.markers[EpochPhaseIdx.Prepare])
                             {
                                 // Thread local action
                                 AcquireSharedLatchesForAllPendingRequests();
@@ -446,14 +446,14 @@ namespace FASTER.core
                                 var idx = Interlocked.Increment(ref _hybridLogCheckpoint.info.numThreads);
                                 idx -= 1;
 
-                                _hybridLogCheckpoint.info.guids[idx] = threadCtx.guid;
+                                _hybridLogCheckpoint.info.guids[idx] = threadCtx.Value.guid;
 
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.Prepare, threadCtx.version))
+                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.Prepare, threadCtx.Value.version))
                                 {
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
 
-                                threadCtx.markers[EpochPhaseIdx.Prepare] = true;
+                                threadCtx.Value.markers[EpochPhaseIdx.Prepare] = true;
                             }
                             break;
                         }
@@ -463,41 +463,41 @@ namespace FASTER.core
                             FasterExecutionContext ctx;
                             if (previousState.phase == Phase.PREPARE)
                             {
-                                ctx = threadCtx;
+                                ctx = threadCtx.Value;
                             }
                             else
                             {
-                                ctx = prevThreadCtx;
+                                ctx = prevThreadCtx.Value;
                             }
 
                             if (!ctx.markers[EpochPhaseIdx.InProgress])
                             {
                                 prevThreadCtx = threadCtx;
 
-                                InitLocalContext(ref threadCtx, prevThreadCtx.guid);
+                                InitLocalContext(prevThreadCtx.Value.guid);
 
                                 if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.InProgress, ctx.version))
                                 {
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
-                                prevThreadCtx.markers[EpochPhaseIdx.InProgress] = true;
+                                prevThreadCtx.Value.markers[EpochPhaseIdx.InProgress] = true;
                             }
                             break;
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            if (!prevThreadCtx.markers[EpochPhaseIdx.WaitPending])
+                            if (!prevThreadCtx.Value.markers[EpochPhaseIdx.WaitPending])
                             {
-                                var notify = (prevThreadCtx.ioPendingRequests.Count == 0);
-                                notify = notify && (prevThreadCtx.retryRequests.Count == 0);
+                                var notify = (prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                                notify = notify && (prevThreadCtx.Value.retryRequests.Count == 0);
 
                                 if (notify)
                                 {
-                                    if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitPending, threadCtx.version))
+                                    if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitPending, threadCtx.Value.version))
                                     {
                                         GlobalMoveToNextCheckpointState(currentState);
                                     }
-                                    prevThreadCtx.markers[EpochPhaseIdx.WaitPending] = true;
+                                    prevThreadCtx.Value.markers[EpochPhaseIdx.WaitPending] = true;
                                 }
 
                             }
@@ -505,7 +505,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_FLUSH:
                         {
-                            if (!prevThreadCtx.markers[EpochPhaseIdx.WaitFlush])
+                            if (!prevThreadCtx.Value.markers[EpochPhaseIdx.WaitFlush])
                             {
                                 var notify = false;
                                 if (FoldOverSnapshot)
@@ -526,12 +526,12 @@ namespace FASTER.core
                                 {
                                     WriteHybridLogContextInfo();
 
-                                    if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, prevThreadCtx.version))
+                                    if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, prevThreadCtx.Value.version))
                                     {
                                         GlobalMoveToNextCheckpointState(currentState);
                                     }
 
-                                    prevThreadCtx.markers[EpochPhaseIdx.WaitFlush] = true;
+                                    prevThreadCtx.Value.markers[EpochPhaseIdx.WaitFlush] = true;
                                 }
                             }
                             break;
@@ -539,17 +539,17 @@ namespace FASTER.core
 
                     case Phase.PERSISTENCE_CALLBACK:
                         {
-                            if (!prevThreadCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
+                            if (!prevThreadCtx.Value.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                             {
                                 // Thread local action
-                                functions.CheckpointCompletionCallback(threadCtx.guid, prevThreadCtx.serialNum);
+                                functions.CheckpointCompletionCallback(threadCtx.Value.guid, prevThreadCtx.Value.serialNum);
 
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.version))
+                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.Value.version))
                                 {
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
 
-                                prevThreadCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
+                                prevThreadCtx.Value.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                             }
                             break;
                         }
@@ -563,8 +563,8 @@ namespace FASTER.core
                 }
 
                 // update thread local variables
-                threadCtx.phase = currentState.phase;
-                threadCtx.version = currentState.version;
+                threadCtx.Value.phase = currentState.phase;
+                threadCtx.Value.version = currentState.version;
 
                 previousState.word = currentState.word;
             } while (previousState.word != finalState.word);
@@ -596,11 +596,11 @@ namespace FASTER.core
 
         private void AcquireSharedLatchesForAllPendingRequests()
         {
-            foreach (var ctx in threadCtx.retryRequests)
+            foreach (var ctx in threadCtx.Value.retryRequests)
             {
                 AcquireSharedLatch(ctx.key);
             }
-            foreach (var ctx in threadCtx.ioPendingRequests.Values)
+            foreach (var ctx in threadCtx.Value.ioPendingRequests.Values)
             {
                 AcquireSharedLatch(ctx.key);
             }
@@ -720,10 +720,10 @@ namespace FASTER.core
 
         private void WriteHybridLogContextInfo()
         {
-            string filename = directoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.guid);
+            string filename = directoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.Value.guid);
             using (var file = new StreamWriter(filename, false))
             {
-                prevThreadCtx.Write(file);
+                prevThreadCtx.Value.Write(file);
                 file.Flush();
             }
 

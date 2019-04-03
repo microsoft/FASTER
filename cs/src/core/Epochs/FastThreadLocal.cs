@@ -42,6 +42,8 @@ namespace FASTER.core
 
         public void DisposeThread()
         {
+            Value = default(T);
+
             // Dispose values only if there are no other
             // instances active for this thread
             for (int i = 0; i < kMaxInstances; i++)
