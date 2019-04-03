@@ -425,14 +425,6 @@ namespace FASTER.core
                     }
                 }
             }
-            if (KeyHasObjects())
-            {
-                keySerializer.EndSerialize();
-            }
-            if (ValueHasObjects())
-            {
-                valueSerializer.EndSerialize();
-            }
 
             if (asyncResult.partial)
             {
