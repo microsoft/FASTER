@@ -61,6 +61,7 @@ namespace FASTER.core
         /// Epoch information
         /// </summary>
         protected readonly LightEpoch epoch;
+        private readonly bool toDisposeEpoch;
 
         /// <summary>
         /// Comparer
@@ -435,7 +436,13 @@ namespace FASTER.core
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, LightEpoch epoch)
         {
             this.comparer = comparer;
-            this.epoch = epoch ?? new LightEpoch();
+            if (epoch == null)
+            {
+                epoch = new LightEpoch();
+                toDisposeEpoch = true;
+            }
+            else
+                this.epoch = epoch;
 
             settings.LogDevice.Initialize(1L << settings.SegmentSizeBits);
             settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits);
@@ -523,6 +530,9 @@ namespace FASTER.core
             SafeHeadAddress = 0;
             HeadAddress = 0;
             BeginAddress = 1;
+
+            if (toDisposeEpoch)
+                epoch.Dispose();
         }
 
         /// <summary>

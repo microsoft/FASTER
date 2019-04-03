@@ -169,7 +169,10 @@ namespace FASTER.core
                         tempKv.Upsert(ref key, ref value, default(Context), 0);
 
                     if (++cnt % 1000 == 0)
+                    {
                         fht.Refresh();
+                        tempKv.Refresh();
+                    }
                 }
             }
 
@@ -190,8 +193,10 @@ namespace FASTER.core
                             fht.Upsert(ref key, ref value, default(Context), 0);
                     }
                     if (++cnt % 1000 == 0)
+                    {
                         fht.Refresh();
-
+                        tempKv.Refresh();
+                    }
                     if (scanUntil < fht.Log.SafeReadOnlyAddress)
                     {
                         LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKv);
@@ -218,7 +223,10 @@ namespace FASTER.core
                         tempKv.Delete(ref key, default(Context), 0);
 
                         if (++cnt % 1000 == 0)
+                        {
                             fht.Refresh();
+                            tempKv.Refresh();
+                        }
                     }
                 }
                 fht.Refresh();

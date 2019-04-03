@@ -18,6 +18,7 @@ namespace FASTER.core
     {
         internal Guid InternalAcquire()
         {
+            epoch.Acquire();
             Phase phase = _systemState.phase;
             if (phase != Phase.REST)
             {
@@ -31,6 +32,7 @@ namespace FASTER.core
 
         internal long InternalContinue(Guid guid)
         {
+            epoch.Acquire();
             if (_recoveredSessions != null)
             {
                 if (_recoveredSessions.TryGetValue(guid, out long serialNum))

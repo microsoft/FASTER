@@ -283,6 +283,7 @@ namespace FASTER.core
             Free(0);
             Free(1);
             overflowBucketsAllocator.Dispose();
+            epoch.Dispose();
             return Status.OK;
         }
 
