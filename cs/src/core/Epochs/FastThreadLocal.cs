@@ -19,7 +19,7 @@ namespace FASTER.core
         private static T[] values;
 
         private readonly int id;
-        private static int[] instances = new int[kMaxInstances];
+        private static readonly int[] instances = new int[kMaxInstances];
 
         public FastThreadLocal()
         {
