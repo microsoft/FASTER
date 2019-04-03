@@ -451,6 +451,8 @@ namespace FASTER.core
         public void Dispose()
         {
             base.Free();
+            threadCtx.Dispose();
+            prevThreadCtx.Dispose();
             hlog.Dispose();
         }
     }

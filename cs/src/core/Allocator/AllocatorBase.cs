@@ -61,7 +61,7 @@ namespace FASTER.core
         /// Epoch information
         /// </summary>
         protected readonly LightEpoch epoch;
-        private readonly bool toDisposeEpoch;
+        private readonly bool ownedEpoch;
 
         /// <summary>
         /// Comparer
@@ -438,8 +438,8 @@ namespace FASTER.core
             this.comparer = comparer;
             if (epoch == null)
             {
-                epoch = new LightEpoch();
-                toDisposeEpoch = true;
+                this.epoch = new LightEpoch();
+                ownedEpoch = true;
             }
             else
                 this.epoch = epoch;
@@ -516,6 +516,24 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Acquire thread
+        /// </summary>
+        public void Acquire()
+        {
+            if (ownedEpoch)
+                epoch.Acquire();
+        }
+
+        /// <summary>
+        /// Release thread
+        /// </summary>
+        public void Release()
+        {
+            if (ownedEpoch)
+                epoch.Release();
+        }
+
+        /// <summary>
         /// Dispose allocator
         /// </summary>
         public virtual void Dispose()
@@ -531,7 +549,7 @@ namespace FASTER.core
             HeadAddress = 0;
             BeginAddress = 1;
 
-            if (toDisposeEpoch)
+            if (ownedEpoch)
                 epoch.Dispose();
         }
 

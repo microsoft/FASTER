@@ -19,6 +19,7 @@ namespace FASTER.core
         internal Guid InternalAcquire()
         {
             epoch.Acquire();
+            overflowBucketsAllocator.Acquire();
             threadCtx.InitializeThread();
             prevThreadCtx.InitializeThread();
             Phase phase = _systemState.phase;
@@ -35,6 +36,7 @@ namespace FASTER.core
         internal long InternalContinue(Guid guid)
         {
             epoch.Acquire();
+            overflowBucketsAllocator.Acquire();
             threadCtx.InitializeThread();
             prevThreadCtx.InitializeThread();
             if (_recoveredSessions != null)
@@ -115,6 +117,7 @@ namespace FASTER.core
             threadCtx.DisposeThread();
             prevThreadCtx.DisposeThread();
             epoch.Release();
+            overflowBucketsAllocator.Release();
         }
 
         internal void InitLocalContext(Guid token)

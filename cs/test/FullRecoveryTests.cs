@@ -78,6 +78,8 @@ namespace FASTER.test.recovery.sumstore
         public void RecoveryTest1()
         {
             Populate();
+            fht.Dispose();
+            fht = null;
             log.Close();
             Setup();
             RecoverAndTest(token, token);

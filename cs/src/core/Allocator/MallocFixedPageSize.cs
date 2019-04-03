@@ -48,6 +48,7 @@ namespace FASTER.core
         private CountdownEvent checkpointEvent;
 
         private readonly LightEpoch epoch;
+        private readonly bool ownedEpoch;
 
         private FastThreadLocal<Queue<FreeItem>> freeList;
 
@@ -59,7 +60,13 @@ namespace FASTER.core
         public MallocFixedPageSize(bool returnPhysicalAddress = false, LightEpoch epoch = null)
         {
             freeList = new FastThreadLocal<Queue<FreeItem>>();
-            this.epoch = epoch ?? new LightEpoch();
+            if (epoch == null)
+            {
+                this.epoch = new LightEpoch();
+                ownedEpoch = true;
+            }
+            else
+                this.epoch = epoch;
 
             values[0] = new T[PageSize];
 
@@ -417,6 +424,26 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Acquire thread
+        /// </summary>
+        public void Acquire()
+        {
+            if (ownedEpoch)
+                epoch.Acquire();
+            freeList.InitializeThread();
+        }
+
+        /// <summary>
+        /// Release thread
+        /// </summary>
+        public void Release()
+        {
+            if (ownedEpoch)
+                epoch.Release();
+            freeList.DisposeThread();
+        }
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -431,6 +458,9 @@ namespace FASTER.core
             values = null;
             values0 = null;
             count = 0;
+            if (ownedEpoch)
+                epoch.Dispose();
+            freeList.Dispose();
         }
 
 

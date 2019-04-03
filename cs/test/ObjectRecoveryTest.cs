@@ -87,6 +87,8 @@ namespace FASTER.test.recovery.objectstore
         public void ObjectRecoveryTest1()
         {
             Populate();
+            fht.Dispose();
+            fht = null;
             log.Close();
             objlog.Close();
             Setup();
