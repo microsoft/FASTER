@@ -97,50 +97,15 @@ namespace FASTER.core
     /// </summary>
     public class SectorAlignedBufferPool
     {
+        /// <summary>
+        /// Disable buffer pool
+        /// </summary>
+        public static bool Disabled = false;
+
         private const int levels = 32;
         private readonly int recordSize;
         private readonly int sectorSize;
         private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
-
-        private static SafeConcurrentDictionary<Tuple<int, int>, SectorAlignedBufferPool> _instances
-            = new SafeConcurrentDictionary<Tuple<int, int>, SectorAlignedBufferPool>();
-
-        /// <summary>
-        /// Clear buffer pool
-        /// </summary>
-        public static void Clear()
-        {
-            foreach (var pool in _instances.Values)
-            {
-                pool.Free();
-            }
-            _instances.Clear();
-        }
-
-        /// <summary>
-        /// Print contents of buffer pool
-        /// </summary>
-        public static void PrintAll()
-        {
-            foreach (var kvp in _instances)
-            {
-                Console.WriteLine("Pool Key: {0}", kvp.Key);
-                kvp.Value.Print();
-            }
-        }
-
-        /// <summary>
-        /// Get cached instance of buffer pool for specified params
-        /// </summary>
-        /// <param name="recordSize">Record size</param>
-        /// <param name="sectorSize">Sector size</param>
-        /// <returns></returns>
-        public static SectorAlignedBufferPool GetPool(int recordSize, int sectorSize)
-        {
-            return
-                _instances.GetOrAdd(new Tuple<int, int>(recordSize, sectorSize),
-                    t => new SectorAlignedBufferPool(t.Item1, t.Item2));
-        }
 
         /// <summary>
         /// Constructor
@@ -159,14 +124,15 @@ namespace FASTER.core
         /// </summary>
         /// <param name="page"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void Return(SectorAlignedMemory page)
+        public void Return(SectorAlignedMemory page)
         {
             Debug.Assert(queue[page.level] != null);
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
             Array.Clear(page.buffer, 0, page.buffer.Length);
-            queue[page.level].Enqueue(page);
+            if (!Disabled)
+                queue[page.level].Enqueue(page);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -201,7 +167,7 @@ namespace FASTER.core
                 Interlocked.CompareExchange(ref queue[index], localPool, null);
             }
 
-            if (queue[index].TryDequeue(out SectorAlignedMemory page))
+            if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
             {
                 return page;
             }

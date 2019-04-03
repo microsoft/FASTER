@@ -35,8 +35,6 @@ namespace FASTER.core
         private const int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
-        // Buffer pool for object log related work
-        SectorAlignedBufferPool ioBufferPool;
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
@@ -66,8 +64,6 @@ namespace FASTER.core
                 if (objectLogDevice == null)
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
             }
-
-            ioBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
         }
 
         public override void Initialize()
@@ -294,7 +290,7 @@ namespace FASTER.core
             if (localSegmentOffsets == null) localSegmentOffsets = segmentOffsets;
 
             var src = values[flushPage % BufferSize];
-            var buffer = ioBufferPool.Get((int)numBytesToWrite);
+            var buffer = bufferPool.Get((int)numBytesToWrite);
 
             if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
             {
@@ -388,7 +384,7 @@ namespace FASTER.core
                             valueSerializer.BeginSerialize(ms);
                     }
 
-                    var _objBuffer = ioBufferPool.Get(_s.Length);
+                    var _objBuffer = bufferPool.Get(_s.Length);
 
                     asyncResult.done = new AutoResetEvent(false);
 
@@ -459,7 +455,7 @@ namespace FASTER.core
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-            asyncResult.freeBuffer1 = readBufferPool.Get((int)aligned_read_length);
+            asyncResult.freeBuffer1 = bufferPool.Get((int)aligned_read_length);
             asyncResult.freeBuffer1.required_bytes = (int)aligned_read_length;
 
             if (!(KeyHasObjects() || ValueHasObjects()))
@@ -584,7 +580,7 @@ namespace FASTER.core
             if (size > int.MaxValue)
                 throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
 
-            var objBuffer = ioBufferPool.Get((int)size);
+            var objBuffer = bufferPool.Get((int)size);
             result.freeBuffer2 = objBuffer;
             var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
 
@@ -612,7 +608,7 @@ namespace FASTER.core
             uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
-            var record = readBufferPool.Get((int)alignedReadLength);
+            var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;

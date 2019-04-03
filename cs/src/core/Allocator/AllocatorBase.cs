@@ -206,9 +206,9 @@ namespace FASTER.core
         #endregion
 
         /// <summary>
-        /// Read buffer pool
+        /// Buffer pool
         /// </summary>
-        protected SectorAlignedBufferPool readBufferPool;
+        protected SectorAlignedBufferPool bufferPool;
 
         /// <summary>
         /// Read cache
@@ -492,7 +492,7 @@ namespace FASTER.core
             Debug.Assert(firstValidAddress <= PageSize);
             Debug.Assert(PageSize >= GetRecordSize(0));
 
-            readBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
+            bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
             long tailPage = firstValidAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
@@ -551,6 +551,7 @@ namespace FASTER.core
 
             if (ownedEpoch)
                 epoch.Dispose();
+            bufferPool.Free();
         }
 
         /// <summary>
@@ -1152,7 +1153,7 @@ namespace FASTER.core
             uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
-            var record = readBufferPool.Get((int)alignedReadLength);
+            var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
