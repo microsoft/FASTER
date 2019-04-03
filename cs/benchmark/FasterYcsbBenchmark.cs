@@ -248,7 +248,7 @@ namespace FASTER.benchmark
 
 
             idx_ = 0;
-            store.DumpDistribution();
+            Console.WriteLine(store.DumpDistribution());
 
             Console.WriteLine("Executing experiment.");
 

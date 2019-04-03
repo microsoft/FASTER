@@ -162,9 +162,9 @@ namespace FASTER.core
         IFasterEqualityComparer<Key> Comparer { get; }
 
         /// <summary>
-        /// Dump distribution of #entries in hash table, to console
+        /// Dump distribution of #entries in hash table
         /// </summary>
-        void DumpDistribution();
+        string DumpDistribution();
 
         /// <summary>
         /// Experimental feature
