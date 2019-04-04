@@ -121,7 +121,7 @@ namespace FASTER.core
         /// <returns>Result of the check</returns>
         public bool IsProtected()
         {
-            return kInvalidIndex != threadEntryIndex.Value;
+            return threadEntryIndex.IsInitializedForThread && kInvalidIndex != threadEntryIndex.Value;
         }
 
         /// <summary>

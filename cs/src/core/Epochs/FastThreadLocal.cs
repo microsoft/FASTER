@@ -64,8 +64,10 @@ namespace FASTER.core
 
         public T Value
         {
-            get { return values[id]; }
-            set { values[id] = value; }
+            get => values[id];
+            set => values[id] = value;
         }
+
+        public bool IsInitializedForThread => values != null;
     }
 }
