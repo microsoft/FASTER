@@ -1407,14 +1407,13 @@ namespace FASTER.core
                               AsyncIOContext<Key, Value> context,
                               SectorAlignedMemory result = default(SectorAlignedMemory))
         {
-            while (numPendingReads > 120)
+            if (epoch.IsProtected()) // Do not spin for unprotected IO threads
             {
-                Thread.SpinWait(100);
-
-                // Do not protect if we are not already protected
-                // E.g., we are in an IO thread
-                if (epoch.IsProtected())
+                while (numPendingReads > 120)
+                {
+                    Thread.SpinWait(100);
                     epoch.ProtectAndDrain();
+                }
             }
             Interlocked.Increment(ref numPendingReads);
 
