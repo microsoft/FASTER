@@ -14,27 +14,19 @@ namespace FASTER.core
     /// <typeparam name="TContext"></typeparam>
     public class PageAsyncReadResult<TContext> : IAsyncResult
     {
-        /// <summary>
-        /// Page
-        /// </summary>
-        public long page;
-        /// <summary>
-        /// Context
-        /// </summary>
-        public TContext context;
-        /// <summary>
-        /// Count
-        /// </summary>
-        public int count;
-
+        internal long page;
+        internal TContext context;
         internal CountdownEvent handle;
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
         internal IOCompletionCallback callback;
         internal IDevice objlogDevice;
-        internal long resumeptr;
-        internal long untilptr;
         internal object frame;
+
+        /* Used for iteration */
+        internal long resumePtr;
+        internal long untilPtr;
+        internal long maxPtr;
 
         /// <summary>
         /// 

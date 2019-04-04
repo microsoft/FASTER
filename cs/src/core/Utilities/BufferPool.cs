@@ -172,9 +172,11 @@ namespace FASTER.core
                 return page;
             }
 
-            page = new SectorAlignedMemory();
-            page.level = index;
-            page.buffer = new byte[sectorSize * (1 << index)];
+            page = new SectorAlignedMemory
+            {
+                level = index,
+                buffer = new byte[sectorSize * (1 << index)]
+            };
             page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
             page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~(sectorSize - 1));
             page.offset = (int) ((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());

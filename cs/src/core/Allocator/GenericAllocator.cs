@@ -368,11 +368,26 @@ namespace FASTER.core
 
                 if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
+                    var memoryStreamLength = (int)ms.Position;
+
+                    var _objBuffer = bufferPool.Get(memoryStreamLength);
+
+                    asyncResult.done = new AutoResetEvent(false);
+
+                    var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
+                    fixed (void* src_ = ms.GetBuffer())
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
+
+                    foreach (var address in addr)
+                        ((AddressInfo*)address)->Address += _objAddr;
+
                     if (KeyHasObjects())
                         keySerializer.EndSerialize();
                     if (ValueHasObjects())
                         valueSerializer.EndSerialize();
-                    var _s = ms.ToArray();
+
                     ms.Close();
 
                     if (i < (end / recordSize) - 1)
@@ -382,23 +397,7 @@ namespace FASTER.core
                             keySerializer.BeginSerialize(ms);
                         if (ValueHasObjects())
                             valueSerializer.BeginSerialize(ms);
-                    }
 
-                    var _objBuffer = bufferPool.Get(_s.Length);
-
-                    asyncResult.done = new AutoResetEvent(false);
-
-                    var _alignedLength = (_s.Length + (sectorSize - 1)) & ~(sectorSize - 1);
-
-                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
-                    fixed (void* src_ = _s)
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, _s.Length, _s.Length);
-
-                    foreach (var address in addr)
-                        ((AddressInfo*)address)->Address += _objAddr;
-
-                    if (i < (end / recordSize) - 1)
-                    {
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
@@ -466,7 +465,6 @@ namespace FASTER.core
             }
 
             asyncResult.callback = callback;
-            asyncResult.count++;
 
             if (objlogDevice == null)
             {
@@ -517,47 +515,34 @@ namespace FASTER.core
                 var frame = (GenericFrame<Key, Value>)result.frame;
                 src = frame.GetPage(result.page % frame.frameSize);
 
-                if (result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
+                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
                 {
-                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), PageSize, src);
-                    result.freeBuffer1.required_bytes = 0;
+                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, src);
                 }
             }
             else
             {
-                if (result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
+                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
                 {
-                    PopulatePage(result.freeBuffer1.GetValidPointer(), PageSize, result.page);
-                    result.freeBuffer1.required_bytes = 0;
+                    PopulatePage(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, result.page);
                 }
             }
 
-            long ptr = 0;
-
-            // Correct for page 0 of HLOG
-            //if (result.page == 0)
-            //    ptr += Constants.kFirstValidAddress;
-
-            // Check if we are resuming
-            if (result.resumeptr > ptr)
-                ptr = result.resumeptr;
-
             // Deserialize all objects until untilptr
-            if (ptr < result.untilptr)
+            if (result.resumePtr < result.untilPtr)
             {
                 MemoryStream ms = new MemoryStream(result.freeBuffer2.buffer);
                 ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
-                Deserialize(result.freeBuffer1.GetValidPointer(), ptr, result.untilptr, src, ms);
+                Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms);
                 ms.Dispose();
 
-                ptr = result.untilptr;
                 result.freeBuffer2.Return();
                 result.freeBuffer2 = null;
-                result.resumeptr = ptr;
+                result.resumePtr = result.untilPtr;
             }
 
             // If we have processed entire page, return
-            if (ptr >= PageSize)
+            if (result.untilPtr >= result.maxPtr)
             {
                 result.Free();
 
@@ -569,13 +554,12 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref ptr, PageSize, ObjectBlockSize, src, out long startptr, out long size);
+            // Compute new untilPtr
+            // We will now be able to process all records until (but not including) untilPtr
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, src, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
-
-            // We will be able to process all records until (but not including) ptr
-            result.untilptr = ptr;
 
             if (size > int.MaxValue)
                 throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
@@ -632,6 +616,7 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="readPageStart"></param>
         /// <param name="numPages"></param>
+        /// <param name="untilAddress"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="frame"></param>
@@ -642,6 +627,7 @@ namespace FASTER.core
         internal void AsyncReadPagesFromDeviceToFrame<TContext>(
                                         long readPageStart,
                                         int numPages,
+                                        long untilAddress,
                                         IOCompletionCallback callback,
                                         TContext context,
                                         GenericFrame<Key, Value> frame,
@@ -674,16 +660,25 @@ namespace FASTER.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    count = 1,
-                    frame = frame
+                    maxPtr = PageSize,
+                    frame = frame,
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+                uint readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    asyncResult.maxPtr = readLength;
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
 
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pageIndex, (uint)AlignedPageSizeBytes, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 

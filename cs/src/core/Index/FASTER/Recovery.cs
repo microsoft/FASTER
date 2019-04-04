@@ -22,6 +22,7 @@ namespace FASTER.core
     {
         public long startPage;
         public long endPage;
+        public long untilAddress;
         public int capacity;
 
         public IDevice recoveryDevice;
@@ -33,11 +34,12 @@ namespace FASTER.core
 
         public RecoveryStatus(int capacity,
                               long startPage,
-                              long endPage)
+                              long endPage, long untilAddress)
         {
             this.capacity = capacity;
             this.startPage = startPage;
             this.endPage = endPage;
+            this.untilAddress = untilAddress;
             readStatus = new ReadStatus[capacity];
             flushStatus = new FlushStatus[capacity];
             for (int i = 0; i < capacity; i++)
@@ -208,7 +210,7 @@ namespace FASTER.core
             }
             headPage = headPage > 0 ? headPage : 0;
 
-            var recoveryStatus = new RecoveryStatus(hlog.GetCapacityNumPages(), headPage, tailPage);
+            var recoveryStatus = new RecoveryStatus(hlog.GetCapacityNumPages(), headPage, tailPage, untilAddress);
             for (int i = 0; i < recoveryStatus.capacity; i++)
             {
                 recoveryStatus.readStatus[i] = ReadStatus.Done;
@@ -222,7 +224,7 @@ namespace FASTER.core
                 numPages++;
             }
 
-            hlog.AsyncReadPagesFromDevice(headPage, numPages, AsyncReadPagesCallbackForRecovery, recoveryStatus);
+            hlog.AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
 
             var done = false;
             while (!done)
@@ -259,13 +261,13 @@ namespace FASTER.core
 
             // By default first page has one extra record
             var capacity = hlog.GetCapacityNumPages();
-            var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage);
+            var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress);
 
             int totalPagesToRead = (int)(endPage - startPage);
             int numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
 
             // Issue request to read pages as much as possible
-            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, AsyncReadPagesCallbackForRecovery, recoveryStatus);
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
            
             for (long page = startPage; page < endPage; page++)
             {
@@ -343,7 +345,7 @@ namespace FASTER.core
             var objectLogRecoveryDevice = Devices.CreateLogDevice(directoryConfiguration.GetHybridLogObjectCheckpointFileName(recoveryInfo.guid), false);
             recoveryDevice.Initialize(hlog.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(hlog.GetSegmentSize());
-            var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage)
+            var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress)
             {
                 recoveryDevice = recoveryDevice,
                 objectLogRecoveryDevice = objectLogRecoveryDevice,
@@ -354,7 +356,7 @@ namespace FASTER.core
             int totalPagesToRead = (int)(endPage - startPage);
             int numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
 
-            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst,
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress,
                             AsyncReadPagesCallbackForRecovery,
                             recoveryStatus,
                             recoveryStatus.recoveryDevicePageOffset,
@@ -533,11 +535,11 @@ namespace FASTER.core
                     long readPage = result.page + result.context.capacity;
                     if (FoldOverSnapshot)
                     {
-                        hlog.AsyncReadPagesFromDevice(readPage, 1, AsyncReadPagesCallbackForRecovery, result.context);
+                        hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, AsyncReadPagesCallbackForRecovery, result.context);
                     }
                     else
                     {
-                        hlog.AsyncReadPagesFromDevice(readPage, 1, AsyncReadPagesCallbackForRecovery,
+                        hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, AsyncReadPagesCallbackForRecovery,
                                                             result.context,
                                                             result.context.recoveryDevicePageOffset,
                                                             result.context.recoveryDevice, result.context.objectLogRecoveryDevice);

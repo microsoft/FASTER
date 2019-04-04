@@ -1174,6 +1174,7 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="readPageStart"></param>
         /// <param name="numPages"></param>
+        /// <param name="untilAddress"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="devicePageOffset"></param>
@@ -1182,12 +1183,13 @@ namespace FASTER.core
         public void AsyncReadPagesFromDevice<TContext>(
                                 long readPageStart,
                                 int numPages,
+                                long untilAddress,
                                 IOCompletionCallback callback,
                                 TContext context,
                                 long devicePageOffset = 0,
                                 IDevice logDevice = null, IDevice objectLogDevice = null)
         {
-            AsyncReadPagesFromDevice(readPageStart, numPages, callback, context,
+            AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context,
                 out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
         }
 
@@ -1197,6 +1199,7 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="readPageStart"></param>
         /// <param name="numPages"></param>
+        /// <param name="untilAddress"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="completed"></param>
@@ -1206,6 +1209,7 @@ namespace FASTER.core
         private void AsyncReadPagesFromDevice<TContext>(
                                         long readPageStart,
                                         int numPages,
+                                        long untilAddress,
                                         IOCompletionCallback callback,
                                         TContext context,
                                         out CountdownEvent completed,
@@ -1238,15 +1242,24 @@ namespace FASTER.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    count = 1
+                    maxPtr = PageSize
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+                uint readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
 
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    asyncResult.maxPtr = readLength;
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
+                
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pageIndex, (uint)PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
