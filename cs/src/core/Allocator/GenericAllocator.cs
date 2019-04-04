@@ -368,11 +368,26 @@ namespace FASTER.core
 
                 if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
+                    var memoryStreamLength = (int)ms.Position;
+
+                    var _objBuffer = bufferPool.Get(memoryStreamLength);
+
+                    asyncResult.done = new AutoResetEvent(false);
+
+                    var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
+                    fixed (void* src_ = ms.GetBuffer())
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
+
+                    foreach (var address in addr)
+                        ((AddressInfo*)address)->Address += _objAddr;
+
                     if (KeyHasObjects())
                         keySerializer.EndSerialize();
                     if (ValueHasObjects())
                         valueSerializer.EndSerialize();
-                    var _s = ms.ToArray();
+
                     ms.Close();
 
                     if (i < (end / recordSize) - 1)
@@ -382,23 +397,7 @@ namespace FASTER.core
                             keySerializer.BeginSerialize(ms);
                         if (ValueHasObjects())
                             valueSerializer.BeginSerialize(ms);
-                    }
 
-                    var _objBuffer = bufferPool.Get(_s.Length);
-
-                    asyncResult.done = new AutoResetEvent(false);
-
-                    var _alignedLength = (_s.Length + (sectorSize - 1)) & ~(sectorSize - 1);
-
-                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
-                    fixed (void* src_ = _s)
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, _s.Length, _s.Length);
-
-                    foreach (var address in addr)
-                        ((AddressInfo*)address)->Address += _objAddr;
-
-                    if (i < (end / recordSize) - 1)
-                    {
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
