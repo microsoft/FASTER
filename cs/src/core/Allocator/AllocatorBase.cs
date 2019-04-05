@@ -1411,7 +1411,7 @@ namespace FASTER.core
             {
                 while (numPendingReads > 120)
                 {
-                    Thread.SpinWait(100);
+                    Thread.Yield();
                     epoch.ProtectAndDrain();
                 }
             }
