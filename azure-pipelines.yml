@@ -64,7 +64,7 @@ jobs:
 
   - task: PublishTestResults@2
     inputs:
-      testRunner: NUnit
+      testRunner: VSTest
       testResultsFiles: '**/*.trx'
 
 - job: 'cppWindows'  
