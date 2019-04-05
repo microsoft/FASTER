@@ -62,6 +62,13 @@ jobs:
       configuration: '$(buildConfiguration)'
       otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
 
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'NUnit'
+      testResultsFiles: '**\TestResults\*.trx'
+      buildPlatform: '$(buildPlatform)'
+      buildConfiguration: '$(buildConfiguration)'
+
 - job: 'cppWindows'  
   pool:
     vmImage: vs2017-win2016    
