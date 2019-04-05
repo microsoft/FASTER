@@ -377,11 +377,6 @@ namespace FASTER.core
                     var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
-                    fixed (void* src_ = ms.GetBuffer())
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
-
-                    foreach (var address in addr)
-                        ((AddressInfo*)address)->Address += _objAddr;
 
                     if (KeyHasObjects())
                         keySerializer.EndSerialize();
@@ -389,6 +384,13 @@ namespace FASTER.core
                         valueSerializer.EndSerialize();
 
                     ms.Close();
+
+                    fixed (void* src_ = ms.GetBuffer())
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
+
+                    foreach (var address in addr)
+                        ((AddressInfo*)address)->Address += _objAddr;
+
 
                     if (i < (end / recordSize) - 1)
                     {
