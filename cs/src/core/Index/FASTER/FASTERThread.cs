@@ -183,6 +183,7 @@ namespace FASTER.core
 
                 if (wait)
                 {
+                    // Yield before checking again
                     Thread.Yield();
                 }
             } while (wait);
