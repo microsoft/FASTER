@@ -180,6 +180,12 @@ namespace FASTER.core
                 {
                     return true;
                 }
+
+                if (wait)
+                {
+                    // Yield before checking again
+                    Thread.Yield();
+                }
             } while (wait);
 
             return false;
