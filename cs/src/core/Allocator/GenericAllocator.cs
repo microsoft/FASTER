@@ -294,17 +294,20 @@ namespace FASTER.core
 
             if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
             {
-                // Get the overlapping HLOG from disk as we wrote it with
-                // object pointers previously. This avoids object reserialization
-                PageAsyncReadResult<Empty> result =
-                    new PageAsyncReadResult<Empty>
-                    {
-                        handle = new CountdownEvent(1)
-                    };
-                device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
-                    (uint)sectorSize, AsyncReadPageCallback, result);
-                result.handle.Wait();
-
+                // Do not read back the invalid header of page 0
+                if ((flushPage > 0) || (start > GetFirstValidLogicalAddress(flushPage)))
+                {
+                    // Get the overlapping HLOG from disk as we wrote it with
+                    // object pointers previously. This avoids object reserialization
+                    PageAsyncReadResult<Empty> result =
+                        new PageAsyncReadResult<Empty>
+                        {
+                            handle = new CountdownEvent(1)
+                        };
+                    device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
+                        (uint)sectorSize, AsyncReadPageCallback, result);
+                    result.handle.Wait();
+                }
                 fixed (RecordInfo* pin = &src[0].info)
                 {
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start, 
