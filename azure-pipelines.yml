@@ -64,10 +64,8 @@ jobs:
 
   - task: PublishTestResults@2
     inputs:
-      testResultsFormat: 'NUnit'
-      testResultsFiles: '**\TestResults\*.trx'
-      buildPlatform: '$(buildPlatform)'
-      buildConfiguration: '$(buildConfiguration)'
+      testRunner: NUnit
+      testResultsFiles: '**/*.trx'
 
 - job: 'cppWindows'  
   pool:
