@@ -47,15 +47,27 @@ namespace FASTER.core
 
         private CountdownEvent checkpointEvent;
 
-        [ThreadStatic]
-        private static Queue<FreeItem> freeList;
+        private readonly LightEpoch epoch;
+        private readonly bool ownedEpoch;
+
+        private FastThreadLocal<Queue<FreeItem>> freeList;
 
         /// <summary>
         /// Create new instance
         /// </summary>
         /// <param name="returnPhysicalAddress"></param>
-        public MallocFixedPageSize(bool returnPhysicalAddress = false)
+        /// <param name="epoch"></param>
+        public MallocFixedPageSize(bool returnPhysicalAddress = false, LightEpoch epoch = null)
         {
+            freeList = new FastThreadLocal<Queue<FreeItem>>();
+            if (epoch == null)
+            {
+                this.epoch = new LightEpoch();
+                ownedEpoch = true;
+            }
+            else
+                this.epoch = epoch;
+
             values[0] = new T[PageSize];
 
 #if !(CALLOC)
@@ -173,8 +185,12 @@ namespace FASTER.core
             {
                 values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
             }
-            if (freeList == null) freeList = new Queue<FreeItem>();
-            freeList.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
+
+            freeList.InitializeThread();
+
+            if (freeList.Value == null)
+                freeList.Value = new Queue<FreeItem>();
+            freeList.Value.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
         }
 
         private const int kAllocateChunkSize = 16;
@@ -292,14 +308,15 @@ namespace FASTER.core
         /// <returns></returns>
         public long Allocate()
         {
-            if (freeList == null)
+            freeList.InitializeThread();
+            if (freeList.Value == null)
             {
-                freeList = new Queue<FreeItem>();
+                freeList.Value = new Queue<FreeItem>();
             }
-            if (freeList.Count > 0)
+            if (freeList.Value.Count > 0)
             {
-                if (freeList.Peek().removal_epoch <= LightEpoch.Instance.SafeToReclaimEpoch)
-                    return freeList.Dequeue().removed_item;
+                if (freeList.Value.Peek().removal_epoch <= epoch.SafeToReclaimEpoch)
+                    return freeList.Value.Dequeue().removed_item;
 
                 //if (freeList.Count % 64 == 0)
                 //    LightEpoch.Instance.BumpCurrentEpoch();
@@ -407,6 +424,26 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Acquire thread
+        /// </summary>
+        public void Acquire()
+        {
+            if (ownedEpoch)
+                epoch.Acquire();
+            freeList.InitializeThread();
+        }
+
+        /// <summary>
+        /// Release thread
+        /// </summary>
+        public void Release()
+        {
+            if (ownedEpoch)
+                epoch.Release();
+            freeList.DisposeThread();
+        }
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -421,6 +458,9 @@ namespace FASTER.core
             values = null;
             values0 = null;
             count = 0;
+            if (ownedEpoch)
+                epoch.Dispose();
+            freeList.Dispose();
         }
 
 

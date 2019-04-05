@@ -64,7 +64,7 @@ namespace FASTER.core
                 var frameNumber = (nextAddress >> hlog.LogPageSizeBits) % frameSize;
                 hlog.AsyncReadPagesFromDeviceToFrame
                     (nextAddress >> hlog.LogPageSizeBits,
-                    1, AsyncReadPagesCallback, Empty.Default,
+                    1, endAddress, AsyncReadPagesCallback, Empty.Default,
                     frame, out loaded[frameNumber]);
             }
         }
@@ -148,7 +148,7 @@ namespace FASTER.core
                 {
                     if (!first)
                     {
-                        hlog.AsyncReadPagesFromDeviceToFrame(currentAddress >> hlog.LogPageSizeBits, 1, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
+                        hlog.AsyncReadPagesFromDeviceToFrame(currentAddress >> hlog.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
                     }
                 }
                 else
@@ -157,7 +157,7 @@ namespace FASTER.core
                     if ((endPage > currentPage) &&
                         ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))
                     {
-                        hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, AsyncReadPagesCallback, Empty.Default, frame, out loaded[(currentPage + 1) % frameSize]);
+                        hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[(currentPage + 1) % frameSize]);
                     }
                 }
                 first = false;

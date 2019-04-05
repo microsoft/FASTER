@@ -67,11 +67,8 @@ namespace FASTER.core
 
         private SafeConcurrentDictionary<Guid, long> _recoveredSessions;
 
-        [ThreadStatic]
-        private static FasterExecutionContext prevThreadCtx = default(FasterExecutionContext);
-
-        [ThreadStatic]
-        private static FasterExecutionContext threadCtx = default(FasterExecutionContext);
+        private FastThreadLocal<FasterExecutionContext> prevThreadCtx;
+        private FastThreadLocal<FasterExecutionContext> threadCtx;
 
 
         /// <summary>
@@ -85,6 +82,9 @@ namespace FASTER.core
         /// <param name="serializerSettings">Serializer settings</param>
         public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null)
         {
+            threadCtx = new FastThreadLocal<FasterExecutionContext>();
+            prevThreadCtx = new FastThreadLocal<FasterExecutionContext>();
+
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -117,7 +117,7 @@ namespace FASTER.core
 
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
             {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer);
+                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
                 {
@@ -127,14 +127,14 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict);
+                        }, this.comparer, ReadCacheEvict, epoch);
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }
             }
             else
             {
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer);
+                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
                 {
@@ -145,7 +145,7 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict);
+                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch);
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }
@@ -353,9 +353,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 
@@ -380,9 +380,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 
@@ -406,9 +406,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 
@@ -432,7 +432,7 @@ namespace FASTER.core
             {
                 status = (Status)internalStatus;
             }
-            threadCtx.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
 
@@ -451,6 +451,8 @@ namespace FASTER.core
         public void Dispose()
         {
             base.Free();
+            threadCtx.Dispose();
+            prevThreadCtx.Dispose();
             hlog.Dispose();
         }
     }

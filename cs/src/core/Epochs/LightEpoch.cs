@@ -16,11 +16,6 @@ namespace FASTER.core
     public unsafe class LightEpoch
     {
         /// <summary>
-        /// 
-        /// </summary>
-        public static LightEpoch Instance = new LightEpoch();
-
-        /// <summary>
         /// Default invalid index entry.
         /// </summary>
         private const int kInvalidIndex = 0;
@@ -57,8 +52,7 @@ namespace FASTER.core
         /// <summary>
         /// A thread's entry in the epoch table.
         /// </summary>
-        [ThreadStatic]
-        public static int threadEntryIndex;
+        private FastThreadLocal<int> threadEntryIndex;
 
         /// <summary>
         /// Global current epoch value
@@ -80,19 +74,12 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// 
-        /// </summary>
-        ~LightEpoch()
-        {
-            Uninitialize();
-        }
-
-        /// <summary>
         /// Initialize the epoch table
         /// </summary>
         /// <param name="size"></param>
         unsafe void Initialize(int size)
         {
+            threadEntryIndex = new FastThreadLocal<int>();
             numEntries = size;
 
             // Over-allocate to do cache-line alignment
@@ -115,7 +102,7 @@ namespace FASTER.core
         /// <summary>
         /// Clean up epoch table
         /// </summary>
-        void Uninitialize()
+        public void Dispose()
         {
             tableHandle.Free();
             tableAligned = null;
@@ -124,6 +111,8 @@ namespace FASTER.core
             numEntries = 0;
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
+
+            threadEntryIndex.Dispose();
         }
 
         /// <summary>
@@ -132,9 +121,8 @@ namespace FASTER.core
         /// <returns>Result of the check</returns>
         public bool IsProtected()
         {
-            return (kInvalidIndex != threadEntryIndex);
+            return threadEntryIndex.IsInitializedForThread && kInvalidIndex != threadEntryIndex.Value;
         }
-
 
         /// <summary>
         /// Enter the thread into the protected code region
@@ -143,12 +131,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int ProtectAndDrain()
         {
-            int entry = threadEntryIndex;
-            if (kInvalidIndex == entry)
-            {
-                entry = ReserveEntryForThread();
-                threadEntryIndex = entry;
-            }
+            int entry = threadEntryIndex.Value;
 
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
@@ -188,17 +171,28 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Thread acquires its epoch entry
+        /// </summary>
+        public void Acquire()
+        {
+            threadEntryIndex.InitializeThread();
+            threadEntryIndex.Value = ReserveEntryForThread();
+        }
+
+
+        /// <summary>
         /// Thread releases its epoch entry
         /// </summary>
         public void Release()
         {
-            int entry = threadEntryIndex;
+            int entry = threadEntryIndex.Value;
             if (kInvalidIndex == entry)
             {
                 return;
             }
 
-            threadEntryIndex = kInvalidIndex;
+            threadEntryIndex.Value = kInvalidIndex;
+            threadEntryIndex.DisposeThread();
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
         }
@@ -285,9 +279,12 @@ namespace FASTER.core
             for (int index = 1; index <= numEntries; ++index)
             {
                 int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                if (0 != entry_epoch && entry_epoch < oldestOngoingCall)
+                if (0 != entry_epoch)
                 {
-                    oldestOngoingCall = entry_epoch;
+                    if (entry_epoch < oldestOngoingCall)
+                    {
+                        oldestOngoingCall = entry_epoch;
+                    }
                 }
             }
 
@@ -391,7 +388,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MarkAndCheckIsComplete(int markerIdx, int version)
         {
-            int entry = threadEntryIndex;
+            int entry = threadEntryIndex.Value;
             if (kInvalidIndex == entry)
             {
                 Debug.WriteLine("New Thread entered during CPR");

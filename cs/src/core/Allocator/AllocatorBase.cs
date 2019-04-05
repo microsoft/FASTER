@@ -60,7 +60,8 @@ namespace FASTER.core
         /// <summary>
         /// Epoch information
         /// </summary>
-        protected LightEpoch epoch;
+        protected readonly LightEpoch epoch;
+        private readonly bool ownedEpoch;
 
         /// <summary>
         /// Comparer
@@ -201,13 +202,13 @@ namespace FASTER.core
         /// <summary>
         /// Number of pending reads
         /// </summary>
-        private static int numPendingReads = 0;
+        private int numPendingReads = 0;
         #endregion
 
         /// <summary>
-        /// Read buffer pool
+        /// Buffer pool
         /// </summary>
-        protected SectorAlignedBufferPool readBufferPool;
+        protected SectorAlignedBufferPool bufferPool;
 
         /// <summary>
         /// Read cache
@@ -415,8 +416,9 @@ namespace FASTER.core
         /// <param name="settings"></param>
         /// <param name="comparer"></param>
         /// <param name="evictCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback) 
-            : this(settings, comparer)
+        /// <param name="epoch"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch)
+            : this(settings, comparer, epoch)
         {
             if (evictCallback != null)
             {
@@ -430,9 +432,18 @@ namespace FASTER.core
         /// </summary>
         /// <param name="settings"></param>
         /// <param name="comparer"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer)
+        /// <param name="epoch"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, LightEpoch epoch)
         {
             this.comparer = comparer;
+            if (epoch == null)
+            {
+                this.epoch = new LightEpoch();
+                ownedEpoch = true;
+            }
+            else
+                this.epoch = epoch;
+
             settings.LogDevice.Initialize(1L << settings.SegmentSizeBits);
             settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits);
 
@@ -481,7 +492,7 @@ namespace FASTER.core
             Debug.Assert(firstValidAddress <= PageSize);
             Debug.Assert(PageSize >= GetRecordSize(0));
 
-            readBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
+            bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
             long tailPage = firstValidAddress >> LogPageSizeBits;
             int tailPageIndex = (int)(tailPage % BufferSize);
@@ -505,6 +516,24 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Acquire thread
+        /// </summary>
+        public void Acquire()
+        {
+            if (ownedEpoch)
+                epoch.Acquire();
+        }
+
+        /// <summary>
+        /// Release thread
+        /// </summary>
+        public void Release()
+        {
+            if (ownedEpoch)
+                epoch.Release();
+        }
+
+        /// <summary>
         /// Dispose allocator
         /// </summary>
         public virtual void Dispose()
@@ -519,6 +548,10 @@ namespace FASTER.core
             SafeHeadAddress = 0;
             HeadAddress = 0;
             BeginAddress = 1;
+
+            if (ownedEpoch)
+                epoch.Dispose();
+            bufferPool.Free();
         }
 
         /// <summary>
@@ -1120,7 +1153,7 @@ namespace FASTER.core
             uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
-            var record = readBufferPool.Get((int)alignedReadLength);
+            var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
@@ -1141,6 +1174,7 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="readPageStart"></param>
         /// <param name="numPages"></param>
+        /// <param name="untilAddress"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="devicePageOffset"></param>
@@ -1149,12 +1183,13 @@ namespace FASTER.core
         public void AsyncReadPagesFromDevice<TContext>(
                                 long readPageStart,
                                 int numPages,
+                                long untilAddress,
                                 IOCompletionCallback callback,
                                 TContext context,
                                 long devicePageOffset = 0,
                                 IDevice logDevice = null, IDevice objectLogDevice = null)
         {
-            AsyncReadPagesFromDevice(readPageStart, numPages, callback, context,
+            AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context,
                 out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
         }
 
@@ -1164,6 +1199,7 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="readPageStart"></param>
         /// <param name="numPages"></param>
+        /// <param name="untilAddress"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="completed"></param>
@@ -1173,6 +1209,7 @@ namespace FASTER.core
         private void AsyncReadPagesFromDevice<TContext>(
                                         long readPageStart,
                                         int numPages,
+                                        long untilAddress,
                                         IOCompletionCallback callback,
                                         TContext context,
                                         out CountdownEvent completed,
@@ -1205,15 +1242,24 @@ namespace FASTER.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    count = 1
+                    maxPtr = PageSize
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+                uint readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
 
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    asyncResult.maxPtr = readLength;
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
+                
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pageIndex, (uint)PageSize, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
@@ -1361,14 +1407,13 @@ namespace FASTER.core
                               AsyncIOContext<Key, Value> context,
                               SectorAlignedMemory result = default(SectorAlignedMemory))
         {
-            while (numPendingReads > 120)
+            if (epoch.IsProtected()) // Do not spin for unprotected IO threads
             {
-                Thread.SpinWait(100);
-
-                // Do not protect if we are not already protected
-                // E.g., we are in an IO thread
-                if (epoch.IsProtected())
+                while (numPendingReads > 120)
+                {
+                    Thread.Yield();
                     epoch.ProtectAndDrain();
+                }
             }
             Interlocked.Increment(ref numPendingReads);
 

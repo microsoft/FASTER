@@ -31,14 +31,12 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
-            : base(settings, comparer, evictCallback)
+        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
+            : base(settings, comparer, evictCallback, epoch)
         {
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
             pointers = new long[BufferSize];
-
-            epoch = LightEpoch.Instance;
 
             ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
             nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
@@ -333,6 +331,7 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="readPageStart"></param>
         /// <param name="numPages"></param>
+        /// <param name="untilAddress"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="frame"></param>
@@ -343,6 +342,7 @@ namespace FASTER.core
         internal void AsyncReadPagesFromDeviceToFrame<TContext>(
                                         long readPageStart,
                                         int numPages,
+                                        long untilAddress,
                                         IOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
@@ -375,16 +375,24 @@ namespace FASTER.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    count = 1,
                     frame = frame
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
 
+                uint readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
+
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], (uint)AlignedPageSizeBytes, callback, asyncResult);
+                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
             }
         }
     }

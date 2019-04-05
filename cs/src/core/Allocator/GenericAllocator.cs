@@ -35,14 +35,12 @@ namespace FASTER.core
         private const int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
-        // Buffer pool for object log related work
-        SectorAlignedBufferPool ioBufferPool;
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null)
-            : base(settings, comparer, evictCallback)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
+            : base(settings, comparer, evictCallback, epoch)
         {
             SerializerSettings = serializerSettings;
 
@@ -66,9 +64,6 @@ namespace FASTER.core
                 if (objectLogDevice == null)
                     throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
             }
-
-            epoch = LightEpoch.Instance;
-            ioBufferPool = SectorAlignedBufferPool.GetPool(1, sectorSize);
         }
 
         public override void Initialize()
@@ -295,7 +290,7 @@ namespace FASTER.core
             if (localSegmentOffsets == null) localSegmentOffsets = segmentOffsets;
 
             var src = values[flushPage % BufferSize];
-            var buffer = ioBufferPool.Get((int)numBytesToWrite);
+            var buffer = bufferPool.Get((int)numBytesToWrite);
 
             if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
             {
@@ -373,25 +368,36 @@ namespace FASTER.core
 
                 if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
-                    var _s = ms.ToArray();
-                    ms.Close();
-                    ms = new MemoryStream();
+                    var memoryStreamLength = (int)ms.Position;
 
-                    var _objBuffer = ioBufferPool.Get(_s.Length);
+                    var _objBuffer = bufferPool.Get(memoryStreamLength);
 
                     asyncResult.done = new AutoResetEvent(false);
 
-                    var _alignedLength = (_s.Length + (sectorSize - 1)) & ~(sectorSize - 1);
+                    var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
-                    fixed (void* src_ = _s)
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, _s.Length, _s.Length);
+                    fixed (void* src_ = ms.GetBuffer())
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
 
                     foreach (var address in addr)
                         ((AddressInfo*)address)->Address += _objAddr;
 
+                    if (KeyHasObjects())
+                        keySerializer.EndSerialize();
+                    if (ValueHasObjects())
+                        valueSerializer.EndSerialize();
+
+                    ms.Close();
+
                     if (i < (end / recordSize) - 1)
                     {
+                        ms = new MemoryStream();
+                        if (KeyHasObjects())
+                            keySerializer.BeginSerialize(ms);
+                        if (ValueHasObjects())
+                            valueSerializer.BeginSerialize(ms);
+
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
@@ -413,14 +419,6 @@ namespace FASTER.core
                             (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
                     }
                 }
-            }
-            if (KeyHasObjects())
-            {
-                keySerializer.EndSerialize();
-            }
-            if (ValueHasObjects())
-            {
-                valueSerializer.EndSerialize();
             }
 
             if (asyncResult.partial)
@@ -456,7 +454,7 @@ namespace FASTER.core
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-            asyncResult.freeBuffer1 = readBufferPool.Get((int)aligned_read_length);
+            asyncResult.freeBuffer1 = bufferPool.Get((int)aligned_read_length);
             asyncResult.freeBuffer1.required_bytes = (int)aligned_read_length;
 
             if (!(KeyHasObjects() || ValueHasObjects()))
@@ -467,7 +465,6 @@ namespace FASTER.core
             }
 
             asyncResult.callback = callback;
-            asyncResult.count++;
 
             if (objlogDevice == null)
             {
@@ -518,47 +515,34 @@ namespace FASTER.core
                 var frame = (GenericFrame<Key, Value>)result.frame;
                 src = frame.GetPage(result.page % frame.frameSize);
 
-                if (result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
+                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
                 {
-                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), PageSize, src);
-                    result.freeBuffer1.required_bytes = 0;
+                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, src);
                 }
             }
             else
             {
-                if (result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
+                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
                 {
-                    PopulatePage(result.freeBuffer1.GetValidPointer(), PageSize, result.page);
-                    result.freeBuffer1.required_bytes = 0;
+                    PopulatePage(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, result.page);
                 }
             }
 
-            long ptr = 0;
-
-            // Correct for page 0 of HLOG
-            //if (result.page == 0)
-            //    ptr += Constants.kFirstValidAddress;
-
-            // Check if we are resuming
-            if (result.resumeptr > ptr)
-                ptr = result.resumeptr;
-
             // Deserialize all objects until untilptr
-            if (ptr < result.untilptr)
+            if (result.resumePtr < result.untilPtr)
             {
                 MemoryStream ms = new MemoryStream(result.freeBuffer2.buffer);
                 ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
-                Deserialize(result.freeBuffer1.GetValidPointer(), ptr, result.untilptr, src, ms);
+                Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms);
                 ms.Dispose();
 
-                ptr = result.untilptr;
                 result.freeBuffer2.Return();
                 result.freeBuffer2 = null;
-                result.resumeptr = ptr;
+                result.resumePtr = result.untilPtr;
             }
 
             // If we have processed entire page, return
-            if (ptr >= PageSize)
+            if (result.untilPtr >= result.maxPtr)
             {
                 result.Free();
 
@@ -570,18 +554,17 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref ptr, PageSize, ObjectBlockSize, src, out long startptr, out long size);
+            // Compute new untilPtr
+            // We will now be able to process all records until (but not including) untilPtr
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, src, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
 
-            // We will be able to process all records until (but not including) ptr
-            result.untilptr = ptr;
-
             if (size > int.MaxValue)
                 throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
 
-            var objBuffer = ioBufferPool.Get((int)size);
+            var objBuffer = bufferPool.Get((int)size);
             result.freeBuffer2 = objBuffer;
             var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
 
@@ -609,7 +592,7 @@ namespace FASTER.core
             uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
-            var record = readBufferPool.Get((int)alignedReadLength);
+            var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
@@ -633,6 +616,7 @@ namespace FASTER.core
         /// <typeparam name="TContext"></typeparam>
         /// <param name="readPageStart"></param>
         /// <param name="numPages"></param>
+        /// <param name="untilAddress"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="frame"></param>
@@ -643,6 +627,7 @@ namespace FASTER.core
         internal void AsyncReadPagesFromDeviceToFrame<TContext>(
                                         long readPageStart,
                                         int numPages,
+                                        long untilAddress,
                                         IOCompletionCallback callback,
                                         TContext context,
                                         GenericFrame<Key, Value> frame,
@@ -675,16 +660,25 @@ namespace FASTER.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    count = 1,
-                    frame = frame
+                    maxPtr = PageSize,
+                    frame = frame,
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+                uint readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    asyncResult.maxPtr = readLength;
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
 
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pageIndex, (uint)AlignedPageSizeBytes, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
@@ -755,73 +749,6 @@ namespace FASTER.core
             if (ValueHasObjects())
             {
                 valueSerializer.EndDeserialize();
-            }
-        }
-
-        /// <summary>
-        /// Serialize part of page to stream
-        /// </summary>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="untilptr">Until pointer</param>
-        /// <param name="stream">Stream</param>
-        /// <param name="objectBlockSize">Size of blocks to serialize in chunks of</param>
-        /// <param name="addr">List of addresses that need to be updated with offsets</param>
-        public void Serialize(ref long ptr, long untilptr, Stream stream, int objectBlockSize, out List<long> addr)
-        {
-            IObjectSerializer<Key> keySerializer = null;
-            IObjectSerializer<Value> valueSerializer = null;
-
-            if (KeyHasObjects())
-            {
-                keySerializer = SerializerSettings.keySerializer();
-                keySerializer.BeginSerialize(stream);
-            }
-            if (ValueHasObjects())
-            {
-                valueSerializer = SerializerSettings.valueSerializer();
-                valueSerializer.BeginSerialize(stream);
-            }
-
-            addr = new List<long>();
-            while (ptr < untilptr)
-            {
-                if (!GetInfo(ptr).Invalid)
-                {
-                    long pos = stream.Position;
-
-                    if (KeyHasObjects())
-                    {
-                        keySerializer.Serialize(ref GetKey(ptr));
-                        var key_address = GetKeyAddressInfo(ptr);
-                        key_address->Address = pos;
-                        key_address->Size = (int)(stream.Position - pos);
-                        addr.Add((long)key_address);
-                    }
-
-                    if (ValueHasObjects() && !GetInfo(ptr).Tombstone)
-                    {
-                        pos = stream.Position;
-                        var value_address = GetValueAddressInfo(ptr);
-                        valueSerializer.Serialize(ref GetValue(ptr));
-                        value_address->Address = pos;
-                        value_address->Size = (int)(stream.Position - pos);
-                        addr.Add((long)value_address);
-                    }
-
-                }
-                ptr += GetRecordSize(ptr);
-
-                if (stream.Position > objectBlockSize)
-                    break;
-            }
-
-            if (KeyHasObjects())
-            {
-                keySerializer.EndSerialize();
-            }
-            if (ValueHasObjects())
-            {
-                valueSerializer.EndSerialize();
             }
         }
 

@@ -19,7 +19,6 @@ namespace SumStore
         const long completePendingInterval = 1 << 12;
         const int checkpointInterval = 10 * 1000;
         readonly int threadCount;
-        readonly int numActiveThreads;
         FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
 
         BlockingCollection<Input[]> inputArrays;
@@ -27,7 +26,6 @@ namespace SumStore
         public RecoveryTest(int threadCount)
         {
             this.threadCount = threadCount;
-            numActiveThreads = 0;
 
             // Create FASTER index
             var log = Devices.CreateLogDevice("logs\\hlog");

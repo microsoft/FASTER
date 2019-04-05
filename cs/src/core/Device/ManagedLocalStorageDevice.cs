@@ -30,7 +30,7 @@ namespace FASTER.core
         public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false)
             : base(filename, GetSectorSize(filename))
         {
-            pool = SectorAlignedBufferPool.GetPool(1, 1);
+            pool = new SectorAlignedBufferPool(1, 1);
 
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
@@ -162,6 +162,7 @@ namespace FASTER.core
         {
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();
+            pool.Free();
         }
 
 
