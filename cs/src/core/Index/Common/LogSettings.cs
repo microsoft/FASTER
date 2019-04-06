@@ -24,6 +24,26 @@ namespace FASTER.core
         public Func<IObjectSerializer<Value>> valueSerializer;
     }
 
+    public interface IStructLength<T>
+    {
+        int GetLength(ref T t);
+        int GetAverageLength();
+        int GetInitialLength<Input>(ref Input input);
+    }
+
+    public class VariableLengthStructSettings<Key, Value>
+    {
+        /// <summary>
+        /// Key length
+        /// </summary>
+        public IStructLength<Key> keyLength;
+
+        /// <summary>
+        /// Value length
+        /// </summary>
+        public IStructLength<Value> valueLength;
+    }
+
 
     /// <summary>
     /// Configuration settings for hybrid log
