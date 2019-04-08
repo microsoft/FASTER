@@ -100,6 +100,10 @@ namespace FASTER.test
         public void ReadCompletionCallback(ref VLKey key, ref VLInput input, ref byte[] output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
+            for (int i=0; i<output.Length; i++)
+            {
+                Assert.IsTrue(output[i] == output.Length);
+            }
         }
 
         public void UpsertCompletionCallback(ref VLKey key, ref VLValue output, Empty ctx)

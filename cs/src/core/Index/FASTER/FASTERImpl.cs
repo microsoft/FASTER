@@ -245,7 +245,7 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
 
                 functions.SingleReader(ref pendingContext.key, ref pendingContext.input,
-                                       ref request.value, ref pendingContext.output);
+                                       ref hlog.GetValueFromContext(ref request), ref pendingContext.output);
 
                 if (CopyReadsToTail || UseReadCache)
                 {
@@ -326,7 +326,7 @@ namespace FASTER.core
                                      entry.Address);
                 readcache.ShallowCopy(ref pendingContext.key, ref readcache.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref pendingContext.key,
-                                       ref request.value,
+                                       ref hlog.GetValueFromContext(ref request),
                                        ref readcache.GetValue(newPhysicalAddress));
             }
             else
@@ -339,7 +339,7 @@ namespace FASTER.core
                                      latestLogicalAddress);
                 hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref pendingContext.key,
-                                       ref request.value,
+                                       ref hlog.GetValueFromContext(ref request),
                                        ref hlog.GetValue(newPhysicalAddress));
             }
 
@@ -1321,7 +1321,7 @@ namespace FASTER.core
             {
                 functions.CopyUpdater(ref pendingContext.key,
                                       ref pendingContext.input,
-                                      ref request.value,
+                                      ref hlog.GetValueFromContext(ref request),
                                       ref hlog.GetValue(newPhysicalAddress));
                 status = OperationStatus.SUCCESS;
             }

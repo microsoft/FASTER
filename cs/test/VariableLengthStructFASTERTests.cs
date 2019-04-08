@@ -26,7 +26,7 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
             fht = new FasterKV<VLKey, VLValue, VLInput, byte[], Empty, VLFunctions>
                 (128, new VLFunctions(),
-                new LogSettings { LogDevice = log, MemorySizeBits = 29 },
+                new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 },
                 null, null, null, new VariableLengthStructSettings<VLKey, VLValue> { keyLength = new VLKey(), valueLength = new VLValue() }
                 );
             fht.StartSession();

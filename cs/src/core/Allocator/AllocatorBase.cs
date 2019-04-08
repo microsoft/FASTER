@@ -380,6 +380,14 @@ namespace FASTER.core
         /// <param name="ctx"></param>
         /// <returns></returns>
         protected abstract bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
+
+        /// <summary>
+        /// Retrieve value from context
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <returns></returns>
+        public virtual ref Value GetValueFromContext(ref AsyncIOContext<Key, Value> ctx) => ref ctx.value;
+
         /// <summary>
         /// Whether key has objects
         /// </summary>
