@@ -17,14 +17,14 @@ namespace FASTER.test
     [TestFixture]
     internal class VariableLengthStructFASTERTests
     {
-        private FasterKV<VLKey, VLValue, VLInput, VLOutput, Empty, VLFunctions> fht;
+        private FasterKV<VLKey, VLValue, VLInput, byte[], Empty, VLFunctions> fht;
         private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<VLKey, VLValue, VLInput, VLOutput, Empty, VLFunctions>
+            fht = new FasterKV<VLKey, VLValue, VLInput, byte[], Empty, VLFunctions>
                 (128, new VLFunctions(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 29 },
                 null, null, null, new VariableLengthStructSettings<VLKey, VLValue> { keyLength = new VLKey(), valueLength = new VLValue() }
@@ -42,28 +42,48 @@ namespace FASTER.test
         }
 
         [Test]
-        public void NativeInMemWriteRead()
+        public unsafe void VariableLengthTest1()
         {
             VLInput input = default(VLInput);
-            VLOutput output = default(VLOutput);
 
-            var key1 = new VLKey { key = 13 };
-            var value = new VLValue();
+            Random r = new Random(100);
 
-            fht.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
-
-            if (status == Status.PENDING)
+            for (int i = 0; i < 500; i++)
             {
-                fht.CompletePending(true);
-            }
-            else
-            {
-                Assert.IsTrue(status == Status.OK);
+                var key1 = new VLKey { key = i };
+                var len = 1 + r.Next(100);
+                byte* val = stackalloc byte[4 + len];
+                ref VLValue value = ref *(VLValue*)val;
+                * (int*)val = len;
+                for (int j = 0; j < len; j++)
+                    *(val + 4 + j) = (byte)len;
+
+                fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
-            //Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            //Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            r = new Random(100);
+            for (int i = 0; i < 500; i++)
+            {
+                var key1 = new VLKey { key = i };
+                var len = 1 + r.Next(100);
+
+                byte[] output = null;
+                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+
+                if (status == Status.PENDING)
+                {
+                    fht.CompletePending(true);
+                }
+                else
+                {
+                    Assert.IsTrue(status == Status.OK);
+                    Assert.IsTrue(output.Length == len);
+                    for (int j = 0; j < len; j++)
+                    {
+                        Assert.IsTrue(output[j] == len);
+                    }
+                }
+            }
         }
     }
 }

@@ -2298,14 +2298,13 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
 
-            var recordSize = readcache.GetRecordSize(0);
-
             HashBucketEntry entry = default(HashBucketEntry);
             logicalAddress = fromHeadAddress;
 
             while (logicalAddress < toHeadAddress)
             {
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                var recordSize = readcache.GetRecordSize(physicalAddress);
                 ref Key key = ref readcache.GetKey(physicalAddress);
                 ref RecordInfo info = ref readcache.GetInfo(physicalAddress);
                 entry.word = info.PreviousAddress;

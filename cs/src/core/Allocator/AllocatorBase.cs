@@ -490,7 +490,6 @@ namespace FASTER.core
         protected void Initialize(long firstValidAddress)
         {
             Debug.Assert(firstValidAddress <= PageSize);
-            Debug.Assert(PageSize >= GetRecordSize(0));
 
             bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 

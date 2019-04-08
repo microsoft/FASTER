@@ -12,6 +12,7 @@ using System.Runtime.CompilerServices;
 using System.IO;
 using System.Diagnostics;
 using NUnit.Framework;
+using System.Runtime.InteropServices;
 
 namespace FASTER.test
 {
@@ -44,21 +45,43 @@ namespace FASTER.test
         }
     }
 
+    [StructLayout(LayoutKind.Explicit)]
     public unsafe struct VLValue : IStructLength<VLValue>
     {
+        [FieldOffset(0)]
+        public int length;
+
         public int GetAverageLength()
         {
-            return 8;
+            return sizeof(int) + 8;
         }
 
         public int GetInitialLength<Input>(ref Input input)
         {
-            return 8;
+            return sizeof(int) + 8;
         }
 
         public int GetLength(ref VLValue t)
         {
-            return *(int*)Unsafe.AsPointer(ref t);
+            return sizeof(int) + t.length;
+        }
+
+        public void ToByteArray(ref byte[] dst)
+        {
+            dst = new byte[length];
+            byte* src = (byte*)Unsafe.AsPointer(ref this) + 4;
+            for (int i=0; i<length; i++)
+            {
+                dst[i] = *src;
+                src++;
+            }
+        }
+
+        public void CopyTo(ref VLValue dst)
+        {
+            var fulllength = GetLength(ref this);
+            Buffer.MemoryCopy(Unsafe.AsPointer(ref this),
+                Unsafe.AsPointer(ref dst), fulllength, fulllength);
         }
     }
 
@@ -67,19 +90,14 @@ namespace FASTER.test
         public long input;
     }
 
-    public struct VLOutput
-    {
-        public long output;
-    }
-
-    public class VLFunctions : IFunctions<VLKey, VLValue, VLInput, VLOutput, Empty>
+    public class VLFunctions : IFunctions<VLKey, VLValue, VLInput, byte[], Empty>
     {
         public void RMWCompletionCallback(ref VLKey key, ref VLInput input, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref VLKey key, ref VLInput input, ref VLOutput output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref VLKey key, ref VLInput input, ref byte[] output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
@@ -98,23 +116,25 @@ namespace FASTER.test
         }
 
         // Read functions
-        public void SingleReader(ref VLKey key, ref VLInput input, ref VLValue value, ref VLOutput dst)
+        public void SingleReader(ref VLKey key, ref VLInput input, ref VLValue value, ref byte[] dst)
         {
+            value.ToByteArray(ref dst);
         }
 
-        public void ConcurrentReader(ref VLKey key, ref VLInput input, ref VLValue value, ref VLOutput dst)
+        public void ConcurrentReader(ref VLKey key, ref VLInput input, ref VLValue value, ref byte[] dst)
         {
+            value.ToByteArray(ref dst);
         }
 
         // Upsert functions
         public void SingleWriter(ref VLKey key, ref VLValue src, ref VLValue dst)
         {
-            dst = src;
+            src.CopyTo(ref dst);
         }
 
         public void ConcurrentWriter(ref VLKey key, ref VLValue src, ref VLValue dst)
         {
-            dst = src;
+            src.CopyTo(ref dst);
         }
 
         // RMW functions

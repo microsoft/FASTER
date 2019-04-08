@@ -102,6 +102,24 @@ namespace FASTER.core
                 vlSettings.valueLength.GetLength(ref value);
         }
 
+        public override void ShallowCopy(ref Key src, ref Key dst)
+        {
+            Buffer.MemoryCopy(
+                Unsafe.AsPointer(ref src), 
+                Unsafe.AsPointer(ref dst),
+                vlSettings.keyLength.GetLength(ref src),
+                vlSettings.keyLength.GetLength(ref src));
+        }
+
+        public override void ShallowCopy(ref Value src, ref Value dst)
+        {
+            Buffer.MemoryCopy(
+                Unsafe.AsPointer(ref src),
+                Unsafe.AsPointer(ref dst),
+                vlSettings.valueLength.GetLength(ref src),
+                vlSettings.valueLength.GetLength(ref src));
+        }
+
         /// <summary>
         /// Dispose memory allocator
         /// </summary>
