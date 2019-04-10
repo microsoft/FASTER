@@ -345,13 +345,13 @@ namespace FASTER.core
 
         public override IHeapContainer<Key> GetKeyContainer(ref Key key)
         {
-            if (fixedSizeKey) return new BlittableHeapContainer<Key>(ref key);
+            if (fixedSizeKey) return new StandardHeapContainer<Key>(ref key);
             else return new VarLenHeapContainer<Key>(ref key, KeyLength, bufferPool);
         }
 
         public override IHeapContainer<Value> GetValueContainer(ref Value value)
         {
-            if (fixedSizeValue) return new BlittableHeapContainer<Value>(ref value);
+            if (fixedSizeValue) return new StandardHeapContainer<Value>(ref value);
             else return new VarLenHeapContainer<Value>(ref value, ValueLength, bufferPool);
         }
 

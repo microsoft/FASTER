@@ -45,7 +45,7 @@ namespace FASTER.core
         int GetAverageLength();
 
         /// <summary>
-        /// Initial length, when populating from given input
+        /// Initial length, when populating for RMW from given input
         /// </summary>
         /// <typeparam name="Input"></typeparam>
         /// <param name="input"></param>

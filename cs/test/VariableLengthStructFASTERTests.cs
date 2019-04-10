@@ -39,7 +39,7 @@ namespace FASTER.test
             {
                 var key1 = new Key { key = i };
 
-                var len = 2 + r.Next(100);
+                var len = 2 + r.Next(10);
                 int* val = stackalloc int[len];
                 ref VLValue value = ref *(VLValue*)val;
                 for (int j = 0; j < len; j++)
@@ -53,7 +53,7 @@ namespace FASTER.test
             {
                 var key1 = new Key { key = i };
 
-                var len = 2 + r.Next(100);
+                var len = 2 + r.Next(10);
                 int[] output = null;
                 var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
@@ -95,15 +95,16 @@ namespace FASTER.test
 
             Random r = new Random(100);
 
-            for (int i = 0; i < 1; i++)
+            for (int i = 0; i < 5000; i++)
             {
-                var keylen = 1 + r.Next(100);
+                var keylen = 2 + r.Next(10);
                 int* keyval = stackalloc int[keylen];
                 ref VLValue key1 = ref *(VLValue*)keyval;
-                for (int j = 0; j < keylen; j++)
-                    *(keyval + j) = keylen;
+                key1.length = keylen;
+                for (int j = 1; j < keylen; j++)
+                    *(keyval + j) = i;
 
-                var len = 1 + r.Next(100);
+                var len = 2 + r.Next(10);
                 int* val = stackalloc int[len];
                 ref VLValue value = ref *(VLValue*)val;
                 for (int j = 0; j < len; j++)
@@ -113,15 +114,16 @@ namespace FASTER.test
             }
 
             r = new Random(100);
-            for (int i = 0; i < 1; i++)
+            for (int i = 0; i < 5000; i++)
             {
-                var keylen = 1 + r.Next(100);
+                var keylen = 2 + r.Next(10);
                 int* keyval = stackalloc int[keylen];
                 ref VLValue key1 = ref *(VLValue*)keyval;
-                for (int j = 0; j < keylen; j++)
-                    *(keyval + j) = keylen;
+                key1.length = keylen;
+                for (int j = 1; j < keylen; j++)
+                    *(keyval + j) = i;
 
-                var len = 1 + r.Next(100);
+                var len = 2 + r.Next(10);
 
                 int[] output = null;
                 var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
