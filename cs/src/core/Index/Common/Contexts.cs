@@ -58,6 +58,88 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// Heap container interface
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    public interface IHeapContainer<T>
+    {
+        /// <summary>
+        /// Get object
+        /// </summary>
+        /// <returns></returns>
+        ref T Get();
+
+        /// <summary>
+        /// Dispose container
+        /// </summary>
+        void Dispose();
+    }
+
+    /// <summary>
+    /// Blittable heap container
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    internal unsafe struct BlittableHeapContainer<T> : IHeapContainer<T>
+    {
+        private T obj;
+
+
+        public BlittableHeapContainer(ref T obj)
+        {
+            this.obj = obj;
+        }
+
+        public ref T Get() => ref Unsafe.AsRef<T>(Unsafe.AsPointer(ref obj));
+
+        public void Dispose() { }
+    }
+
+    /// <summary>
+    /// Heap container for class objects
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    internal unsafe class ClassHeapContainer<T> : IHeapContainer<T>
+    {
+        private T obj;
+
+        public ClassHeapContainer(ref T obj)
+        {
+            this.obj = obj;
+        }
+
+        public ref T Get() => ref obj;
+
+        public void Dispose() { }
+    }
+
+    /// <summary>
+    /// Heap container for variable length structs
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    internal class VarLenHeapContainer<T> : IHeapContainer<T>
+    {
+        private SectorAlignedMemory mem;
+
+
+        public unsafe VarLenHeapContainer(ref T obj, IVarLenStruct<T> varLenStruct, SectorAlignedBufferPool pool)
+        {
+            var len = varLenStruct.GetLength(ref obj);
+            mem = pool.Get(len);
+            Buffer.MemoryCopy(Unsafe.AsPointer(ref obj), mem.GetValidPointer(), len, len);
+        }
+
+        public unsafe ref T Get()
+        {
+            return ref Unsafe.AsRef<T>(mem.GetValidPointer());
+        }
+
+        public void Dispose()
+        {
+            mem.Return();
+        }
+    }
+
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : new()
         where Value : new()
@@ -70,8 +152,8 @@ namespace FASTER.core
 
             public OperationType type;
 
-            public Key key;
-            public Value value;
+            public IHeapContainer<Key> key;
+            public IHeapContainer<Value> value;
             public Input input;
             public Output output;
             public Context userContext;
@@ -87,6 +169,12 @@ namespace FASTER.core
             public long serialNum;
 
             public HashBucketEntry entry;
+
+            public void Dispose()
+            {
+                key?.Dispose();
+                value?.Dispose();
+            }
         }
 
         internal class FasterExecutionContext : SerializedFasterExecutionContext

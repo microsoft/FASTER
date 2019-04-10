@@ -301,6 +301,9 @@ namespace FASTER.core
             return false;
         }
 
+        public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new BlittableHeapContainer<Key>(ref key);
+        public override IHeapContainer<Value> GetValueContainer(ref Value value) => new BlittableHeapContainer<Value>(ref value);
+
         public override long[] GetSegmentOffsets()
         {
             return null;

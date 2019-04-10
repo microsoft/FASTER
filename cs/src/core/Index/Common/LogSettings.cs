@@ -24,24 +24,72 @@ namespace FASTER.core
         public Func<IObjectSerializer<Value>> valueSerializer;
     }
 
-    public interface IStructLength<T>
+    /// <summary>
+    /// Interface for variable length in-place objects
+    /// modeled as structs, in FASTER
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    public interface IVarLenStruct<T>
     {
+        /// <summary>
+        /// Actual length of object
+        /// </summary>
+        /// <param name="t"></param>
+        /// <returns></returns>
         int GetLength(ref T t);
+
+        /// <summary>
+        /// Average length of objects
+        /// </summary>
+        /// <returns></returns>
         int GetAverageLength();
+
+        /// <summary>
+        /// Initial length, when populating from given input
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <param name="input"></param>
+        /// <returns></returns>
         int GetInitialLength<Input>(ref Input input);
     }
 
+
+    internal struct FixedLengthStruct<T> : IVarLenStruct<T>
+    {
+        private static readonly int size = Utility.GetSize(default(T));
+
+        public int GetAverageLength()
+        {
+            return size;
+        }
+
+        public int GetInitialLength<Input>(ref Input input)
+        {
+            return size;
+        }
+
+        public int GetLength(ref T t)
+        {
+            return size;
+        }
+    }
+
+    /// <summary>
+    /// Settings for variable length keys and values
+    /// </summary>
+    /// <typeparam name="Key"></typeparam>
+    /// <typeparam name="Value"></typeparam>
     public class VariableLengthStructSettings<Key, Value>
     {
         /// <summary>
         /// Key length
         /// </summary>
-        public IStructLength<Key> keyLength;
+        public IVarLenStruct<Key> keyLength;
 
         /// <summary>
         /// Value length
         /// </summary>
-        public IStructLength<Value> valueLength;
+        public IVarLenStruct<Value> valueLength;
     }
 
 

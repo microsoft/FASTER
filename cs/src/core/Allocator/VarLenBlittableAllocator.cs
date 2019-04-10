@@ -25,7 +25,10 @@ namespace FASTER.core
         private long[] pointers;
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
-        private readonly VariableLengthStructSettings<Key, Value> vlSettings;
+        private readonly IVarLenStruct<Key> KeyLength;
+        private readonly IVarLenStruct<Value> ValueLength;
+        private readonly bool fixedSizeKey;
+        private readonly bool fixedSizeValue;
 
         public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
             : base(settings, comparer, evictCallback, epoch)
@@ -37,7 +40,20 @@ namespace FASTER.core
             ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
             nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
 
-            this.vlSettings = vlSettings;
+            KeyLength = vlSettings.keyLength;
+            ValueLength = vlSettings.valueLength;
+
+            if (KeyLength == null)
+            {
+                fixedSizeKey = true;
+                KeyLength = new FixedLengthStruct<Key>();
+            }
+
+            if (ValueLength == null)
+            {
+                fixedSizeValue = true;
+                ValueLength = new FixedLengthStruct<Value>();
+            }
         }
 
         public override void Initialize()
@@ -67,12 +83,12 @@ namespace FASTER.core
 
         private int KeySize(long physicalAddress)
         {
-            return vlSettings.keyLength.GetLength(ref GetKey(physicalAddress));
+            return KeyLength.GetLength(ref GetKey(physicalAddress));
         }
 
         private int ValueSize(long physicalAddress)
         {
-            return vlSettings.valueLength.GetLength(ref GetValue(physicalAddress));
+            return ValueLength.GetLength(ref GetValue(physicalAddress));
         }
 
         public override int GetRecordSize(long physicalAddress)
@@ -84,22 +100,22 @@ namespace FASTER.core
         public override int GetAverageRecordSize()
         {
             return RecordInfo.GetLength() +
-                vlSettings.keyLength.GetAverageLength() +
-                vlSettings.valueLength.GetAverageLength();
+                KeyLength.GetAverageLength() +
+                ValueLength.GetAverageLength();
         }
 
         public override int GetInitialRecordSize<Input>(ref Key key, ref Input input)
         {
             return RecordInfo.GetLength() +
-                 vlSettings.keyLength.GetLength(ref key) +
-                 vlSettings.valueLength.GetInitialLength(ref input);
+                 KeyLength.GetLength(ref key) +
+                 ValueLength.GetInitialLength(ref input);
         }
 
         public override int GetRecordSize(ref Key key, ref Value value)
         {
             return RecordInfo.GetLength() +
-                vlSettings.keyLength.GetLength(ref key) +
-                vlSettings.valueLength.GetLength(ref value);
+                KeyLength.GetLength(ref key) +
+                ValueLength.GetLength(ref value);
         }
 
         public override void ShallowCopy(ref Key src, ref Key dst)
@@ -107,8 +123,8 @@ namespace FASTER.core
             Buffer.MemoryCopy(
                 Unsafe.AsPointer(ref src), 
                 Unsafe.AsPointer(ref dst),
-                vlSettings.keyLength.GetLength(ref src),
-                vlSettings.keyLength.GetLength(ref src));
+                KeyLength.GetLength(ref src),
+                KeyLength.GetLength(ref src));
         }
 
         public override void ShallowCopy(ref Value src, ref Value dst)
@@ -116,8 +132,8 @@ namespace FASTER.core
             Buffer.MemoryCopy(
                 Unsafe.AsPointer(ref src),
                 Unsafe.AsPointer(ref dst),
-                vlSettings.valueLength.GetLength(ref src),
-                vlSettings.valueLength.GetLength(ref src));
+                ValueLength.GetLength(ref src),
+                ValueLength.GetLength(ref src));
         }
 
         /// <summary>
@@ -313,14 +329,30 @@ namespace FASTER.core
         /// <returns></returns>
         protected override bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
         {
-            // Assume that keys are not variable sized
-            ShallowCopy(ref GetKey((long)record), ref ctx.key);
             return true;
         }
 
-        public override ref Value GetValueFromContext(ref AsyncIOContext<Key, Value> ctx)
+
+        public override ref Key GetContextRecordKey(ref AsyncIOContext<Key, Value> ctx)
+        {
+            return ref GetKey((long)ctx.record.GetValidPointer());
+        }
+
+        public override ref Value GetContextRecordValue(ref AsyncIOContext<Key, Value> ctx)
         {
             return ref GetValue((long)ctx.record.GetValidPointer());
+        }
+
+        public override IHeapContainer<Key> GetKeyContainer(ref Key key)
+        {
+            if (fixedSizeKey) return new BlittableHeapContainer<Key>(ref key);
+            else return new VarLenHeapContainer<Key>(ref key, KeyLength, bufferPool);
+        }
+
+        public override IHeapContainer<Value> GetValueContainer(ref Value value)
+        {
+            if (fixedSizeValue) return new BlittableHeapContainer<Value>(ref value);
+            else return new VarLenHeapContainer<Value>(ref value, ValueLength, bufferPool);
         }
 
         /// <summary>

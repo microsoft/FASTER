@@ -918,6 +918,9 @@ namespace FASTER.core
         }
         #endregion
 
+        public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new ClassHeapContainer<Key>(ref key);
+        public override IHeapContainer<Value> GetValueContainer(ref Value value) => new ClassHeapContainer<Value>(ref value);
+
         public override long[] GetSegmentOffsets()
         {
             return segmentOffsets;
