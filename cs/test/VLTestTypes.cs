@@ -46,31 +46,34 @@ namespace FASTER.test
     }
 
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct VLValue : IVarLenStruct<VLValue>
+    public unsafe struct VLValue : IFasterEqualityComparer<VLValue>, IVarLenStruct<VLValue>
     {
         [FieldOffset(0)]
         public int length;
 
+        [FieldOffset(4)]
+        public int field1;
+
         public int GetAverageLength()
         {
-            return sizeof(int) + 8;
+            return 2*sizeof(int);
         }
 
         public int GetInitialLength<Input>(ref Input input)
         {
-            return sizeof(int) + 8;
+            return 2*sizeof(int);
         }
 
         public int GetLength(ref VLValue t)
         {
-            return sizeof(int) + t.length;
+            return sizeof(int) * t.length;
         }
 
-        public void ToByteArray(ref byte[] dst)
+        public void ToIntArray(ref int[] dst)
         {
-            dst = new byte[length];
-            byte* src = (byte*)Unsafe.AsPointer(ref this) + 4;
-            for (int i=0; i<length; i++)
+            dst = new int[length];
+            int* src = (int*)Unsafe.AsPointer(ref this);
+            for (int i = 0; i < length; i++)
             {
                 dst[i] = *src;
                 src++;
@@ -83,6 +86,23 @@ namespace FASTER.test
             Buffer.MemoryCopy(Unsafe.AsPointer(ref this),
                 Unsafe.AsPointer(ref dst), fulllength, fulllength);
         }
+
+        public long GetHashCode64(ref VLValue k)
+        {
+            return Utility.GetHashCode(k.length) ^ Utility.GetHashCode(k.field1);
+        }
+
+        public bool Equals(ref VLValue k1, ref VLValue k2)
+        {
+            int* src = (int*)Unsafe.AsPointer(ref k1);
+            int* dst = (int*)Unsafe.AsPointer(ref k2);
+            int len = *src;
+
+            for (int i = 0; i < len; i++)
+                if (*(src + i) != *(dst + i))
+                    return false;
+            return true;
+        }
     }
 
     public struct Input
@@ -90,19 +110,19 @@ namespace FASTER.test
         public long input;
     }
 
-    public class VLFunctions : IFunctions<Key, VLValue, Input, byte[], Empty>
+    public class VLFunctions : IFunctions<Key, VLValue, Input, int[], Empty>
     {
         public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref byte[] output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i=0; i<output.Length; i++)
             {
-                Assert.IsTrue(output[i] == (byte)output.Length);
+                Assert.IsTrue(output[i] == output.Length);
             }
         }
 
@@ -120,14 +140,14 @@ namespace FASTER.test
         }
 
         // Read functions
-        public void SingleReader(ref Key key, ref Input input, ref VLValue value, ref byte[] dst)
+        public void SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
         {
-            value.ToByteArray(ref dst);
+            value.ToIntArray(ref dst);
         }
 
-        public void ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref byte[] dst)
+        public void ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
         {
-            value.ToByteArray(ref dst);
+            value.ToIntArray(ref dst);
         }
 
         // Upsert functions
@@ -155,19 +175,19 @@ namespace FASTER.test
         }
     }
 
-    public class VLFunctions2 : IFunctions<VLValue, VLValue, Input, byte[], Empty>
+    public class VLFunctions2 : IFunctions<VLValue, VLValue, Input, int[], Empty>
     {
         public void RMWCompletionCallback(ref VLValue key, ref Input input, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref VLValue key, ref Input input, ref byte[] output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.Length; i++)
             {
-                Assert.IsTrue(output[i] == (byte)output.Length);
+                Assert.IsTrue(output[i] == output.Length);
             }
         }
 
@@ -185,14 +205,14 @@ namespace FASTER.test
         }
 
         // Read functions
-        public void SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref byte[] dst)
+        public void SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
         {
-            value.ToByteArray(ref dst);
+            value.ToIntArray(ref dst);
         }
 
-        public void ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref byte[] dst)
+        public void ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
         {
-            value.ToByteArray(ref dst);
+            value.ToIntArray(ref dst);
         }
 
         // Upsert functions

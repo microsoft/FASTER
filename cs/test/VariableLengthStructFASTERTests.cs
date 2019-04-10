@@ -20,10 +20,10 @@ namespace FASTER.test
         [Test]
         public unsafe void VariableLengthTest1()
         {
-            FasterKV<Key, VLValue, Input, byte[], Empty, VLFunctions> fht;
+            FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions> fht;
             IDevice log;
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<Key, VLValue, Input, byte[], Empty, VLFunctions>
+            fht = new FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions>
                 (128, new VLFunctions(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = new VLValue() }
@@ -38,12 +38,12 @@ namespace FASTER.test
             for (int i = 0; i < 5000; i++)
             {
                 var key1 = new Key { key = i };
-                var len = 1 + r.Next(1000);
-                byte* val = stackalloc byte[4 + len];
+
+                var len = 2 + r.Next(100);
+                int* val = stackalloc int[len];
                 ref VLValue value = ref *(VLValue*)val;
-                *(int*)val = len;
                 for (int j = 0; j < len; j++)
-                    *(val + 4 + j) = (byte)len;
+                    *(val + j) = len;
 
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
@@ -52,9 +52,9 @@ namespace FASTER.test
             for (int i = 0; i < 5000; i++)
             {
                 var key1 = new Key { key = i };
-                var len = 1 + r.Next(1000);
 
-                byte[] output = null;
+                var len = 2 + r.Next(100);
+                int[] output = null;
                 var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
@@ -67,7 +67,7 @@ namespace FASTER.test
                     Assert.IsTrue(output.Length == len);
                     for (int j = 0; j < len; j++)
                     {
-                        Assert.IsTrue(output[j] == (byte)len);
+                        Assert.IsTrue(output[j] == len);
                     }
                 }
             }
@@ -77,13 +77,13 @@ namespace FASTER.test
             log.Close();
         }
 
-        /*
+        [Test]
         public unsafe void VariableLengthTest2()
         {
-            FasterKV<VLValue, VLValue, Input, byte[], Empty, VLFunctions2> fht;
+            FasterKV<VLValue, VLValue, Input, int[], Empty, VLFunctions2> fht;
             IDevice log;
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<VLValue, VLValue, Input, byte[], Empty, VLFunctions2>
+            fht = new FasterKV<VLValue, VLValue, Input, int[], Empty, VLFunctions2>
                 (128, new VLFunctions2(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<VLValue, VLValue> { keyLength = new VLValue(), valueLength = new VLValue() }
@@ -95,26 +95,35 @@ namespace FASTER.test
 
             Random r = new Random(100);
 
-            for (int i = 0; i < 5000; i++)
+            for (int i = 0; i < 1; i++)
             {
-                var key1 = new Key { key = i };
-                var len = 1 + r.Next(1000);
-                byte* val = stackalloc byte[4 + len];
-                ref VLValue value = ref *(VLValue*)val;
-                *(int*)val = len;
-                for (int j = 0; j < len; j++)
-                    *(val + 4 + j) = (byte)len;
+                var keylen = 1 + r.Next(100);
+                int* keyval = stackalloc int[keylen];
+                ref VLValue key1 = ref *(VLValue*)keyval;
+                for (int j = 0; j < keylen; j++)
+                    *(keyval + j) = keylen;
 
-                // fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                var len = 1 + r.Next(100);
+                int* val = stackalloc int[len];
+                ref VLValue value = ref *(VLValue*)val;
+                for (int j = 0; j < len; j++)
+                    *(val + j) = len;
+
+                fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             r = new Random(100);
-            for (int i = 0; i < 5000; i++)
+            for (int i = 0; i < 1; i++)
             {
-                var key1 = new Key { key = i };
-                var len = 1 + r.Next(1000);
+                var keylen = 1 + r.Next(100);
+                int* keyval = stackalloc int[keylen];
+                ref VLValue key1 = ref *(VLValue*)keyval;
+                for (int j = 0; j < keylen; j++)
+                    *(keyval + j) = keylen;
 
-                byte[] output = null;
+                var len = 1 + r.Next(100);
+
+                int[] output = null;
                 var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
@@ -127,7 +136,7 @@ namespace FASTER.test
                     Assert.IsTrue(output.Length == len);
                     for (int j = 0; j < len; j++)
                     {
-                        Assert.IsTrue(output[j] == (byte)len);
+                        Assert.IsTrue(output[j] == len);
                     }
                 }
             }
@@ -136,6 +145,6 @@ namespace FASTER.test
             fht = null;
             log.Close();
         }
-        */
+        
     }
 }
