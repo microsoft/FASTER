@@ -54,20 +54,39 @@ namespace FASTER.core
     }
 
 
-    internal struct FixedLengthStruct<T> : IVarLenStruct<T>
+    /// <summary>
+    /// Length specification for fixed size (normal) structs
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    public struct FixedLengthStruct<T> : IVarLenStruct<T>
     {
         private static readonly int size = Utility.GetSize(default(T));
 
+        /// <summary>
+        /// Get average length
+        /// </summary>
+        /// <returns></returns>
         public int GetAverageLength()
         {
             return size;
         }
 
+        /// <summary>
+        /// Get initial length
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <param name="input"></param>
+        /// <returns></returns>
         public int GetInitialLength<Input>(ref Input input)
         {
             return size;
         }
 
+        /// <summary>
+        /// Get length
+        /// </summary>
+        /// <param name="t"></param>
+        /// <returns></returns>
         public int GetLength(ref T t)
         {
             return size;
