@@ -16,7 +16,7 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.test
 {
-    public struct Key : IFasterEqualityComparer<Key>, IVarLenStruct<Key>
+    public struct Key : IFasterEqualityComparer<Key>, IVariableLengthStruct<Key>
     {
         public long key;
 
@@ -46,7 +46,7 @@ namespace FASTER.test
     }
 
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct VLValue : IFasterEqualityComparer<VLValue>, IVarLenStruct<VLValue>
+    public unsafe struct VLValue : IFasterEqualityComparer<VLValue>, IVariableLengthStruct<VLValue>
     {
         [FieldOffset(0)]
         public int length;

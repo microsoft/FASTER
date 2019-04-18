@@ -52,7 +52,7 @@ namespace FASTER.core
         private SectorAlignedMemory mem;
 
 
-        public unsafe VarLenHeapContainer(ref T obj, IVarLenStruct<T> varLenStruct, SectorAlignedBufferPool pool)
+        public unsafe VarLenHeapContainer(ref T obj, IVariableLengthStruct<T> varLenStruct, SectorAlignedBufferPool pool)
         {
             var len = varLenStruct.GetLength(ref obj);
             mem = pool.Get(len);

@@ -25,8 +25,8 @@ namespace FASTER.core
         private long[] pointers;
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
-        private readonly IVarLenStruct<Key> KeyLength;
-        private readonly IVarLenStruct<Value> ValueLength;
+        private readonly IVariableLengthStruct<Key> KeyLength;
+        private readonly IVariableLengthStruct<Value> ValueLength;
         private readonly bool fixedSizeKey;
         private readonly bool fixedSizeValue;
 

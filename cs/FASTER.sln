@@ -33,6 +33,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PeriodicCompaction", "playg
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClassCacheMT", "playground\ClassCacheMT\ClassCacheMT.csproj", "{F989FF23-5DD7-4D8F-9458-BDA22EFC038D}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VarLenStructSample", "playground\VarLenStructSample\VarLenStructSample.csproj", "{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -121,6 +123,14 @@ Global
 		{F989FF23-5DD7-4D8F-9458-BDA22EFC038D}.Release|Any CPU.Build.0 = Release|x64
 		{F989FF23-5DD7-4D8F-9458-BDA22EFC038D}.Release|x64.ActiveCfg = Release|x64
 		{F989FF23-5DD7-4D8F-9458-BDA22EFC038D}.Release|x64.Build.0 = Release|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Debug|Any CPU.Build.0 = Debug|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Debug|x64.ActiveCfg = Debug|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Debug|x64.Build.0 = Debug|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Release|Any CPU.ActiveCfg = Release|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Release|Any CPU.Build.0 = Release|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Release|x64.ActiveCfg = Release|x64
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -137,6 +147,7 @@ Global
 		{18B6FB88-202F-4DAD-A582-17E1CEB873EC} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{079F8DF4-96D4-41AC-AD04-308FDF70E371} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{F989FF23-5DD7-4D8F-9458-BDA22EFC038D} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
+		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}

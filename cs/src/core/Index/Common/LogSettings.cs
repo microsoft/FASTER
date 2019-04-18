@@ -29,7 +29,7 @@ namespace FASTER.core
     /// modeled as structs, in FASTER
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public interface IVarLenStruct<T>
+    public interface IVariableLengthStruct<T>
     {
         /// <summary>
         /// Actual length of object
@@ -58,7 +58,7 @@ namespace FASTER.core
     /// Length specification for fixed size (normal) structs
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public struct FixedLengthStruct<T> : IVarLenStruct<T>
+    public struct FixedLengthStruct<T> : IVariableLengthStruct<T>
     {
         private static readonly int size = Utility.GetSize(default(T));
 
@@ -103,12 +103,12 @@ namespace FASTER.core
         /// <summary>
         /// Key length
         /// </summary>
-        public IVarLenStruct<Key> keyLength;
+        public IVariableLengthStruct<Key> keyLength;
 
         /// <summary>
         /// Value length
         /// </summary>
-        public IVarLenStruct<Value> valueLength;
+        public IVariableLengthStruct<Value> valueLength;
     }
 
 
