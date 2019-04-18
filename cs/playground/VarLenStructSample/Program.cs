@@ -13,9 +13,9 @@ namespace VarLenStructSample
         // length keys and/or values without a separate object log. The basic idea is to use 
         // "ref struct" as a proxy for pointers to variable-sized memory in C#. These objects are
         // placed contiguously in the single hybrid log, leading to efficient packing while
-        // avoiding the additional I/O (on reads) that a separate object log entails.
+        // avoiding the additional I/O (on reads and writes) that a separate object log entails.
         // Users provide information on the actual length of the data underlying the types, by
-        // providing implementations for an IVarLenStruct<T> interface. Serializers are not
+        // providing implementations for an IVariableLengthStruct<T> interface. Serializers are not
         // required, as these are effectively value-types. One may provide safe APIs on top of 
         // this raw functionality using, for example, Span<T> and Memory<T>.
 
