@@ -180,6 +180,12 @@ namespace FASTER.core
                 {
                     return true;
                 }
+
+                if (wait)
+                {
+                    // Yield before checking again
+                    Thread.Yield();
+                }
             } while (wait);
 
             return false;
@@ -211,6 +217,8 @@ namespace FASTER.core
         {
             var status = default(Status);
             var internalStatus = default(OperationStatus);
+            ref Key key = ref pendingContext.key.Get();
+            ref Value value = ref pendingContext.value.Get();
 
             #region Entry latch operation
             var handleLatches = false;
@@ -229,13 +237,13 @@ namespace FASTER.core
                     internalStatus = InternalRetryPendingRMW(ctx, ref pendingContext);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(ref pendingContext.key, 
-                                                    ref pendingContext.value, 
+                    internalStatus = InternalUpsert(ref key, 
+                                                    ref value, 
                                                     ref pendingContext.userContext, 
                                                     ref pendingContext);
                     break;
                 case OperationType.DELETE:
-                    internalStatus = InternalDelete(ref pendingContext.key,
+                    internalStatus = InternalDelete(ref key,
                                                     ref pendingContext.userContext,
                                                     ref pendingContext);
                     break;
@@ -258,22 +266,22 @@ namespace FASTER.core
             if (status == Status.OK || status == Status.NOTFOUND)
             {
                 if (handleLatches)
-                    ReleaseSharedLatch(pendingContext.key);
+                    ReleaseSharedLatch(key);
 
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
-                        functions.RMWCompletionCallback(ref pendingContext.key,
+                        functions.RMWCompletionCallback(ref key,
                                                 ref pendingContext.input,
                                                 pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
-                        functions.UpsertCompletionCallback(ref pendingContext.key,
-                                                 ref pendingContext.value,
+                        functions.UpsertCompletionCallback(ref key,
+                                                 ref value,
                                                  pendingContext.userContext);
                         break;
                     case OperationType.DELETE:
-                        functions.DeleteCompletionCallback(ref pendingContext.key,
+                        functions.DeleteCompletionCallback(ref key,
                                                  pendingContext.userContext);
                         break;
                     default:
@@ -299,6 +307,7 @@ namespace FASTER.core
             {
                 var status = default(Status);
                 var internalStatus = default(OperationStatus);
+                ref Key key = ref pendingContext.key.Get();
 
                 // Remove from pending dictionary
                 ctx.ioPendingRequests.Remove(request.id);
@@ -312,8 +321,8 @@ namespace FASTER.core
                 {
                     internalStatus = InternalContinuePendingRMW(ctx, request, ref pendingContext); ;
                 }
-                
-                request.record.Return();
+
+                request.Dispose();
 
                 // Handle operation status
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -329,11 +338,11 @@ namespace FASTER.core
                 if(status == Status.OK || status == Status.NOTFOUND)
                 {
                     if (handleLatches)
-                        ReleaseSharedLatch(pendingContext.key);
+                        ReleaseSharedLatch(key);
 
                     if (pendingContext.type == OperationType.READ)
                     {
-                        functions.ReadCompletionCallback(ref pendingContext.key, 
+                        functions.ReadCompletionCallback(ref key, 
                                                          ref pendingContext.input, 
                                                          ref pendingContext.output, 
                                                          pendingContext.userContext,
@@ -341,12 +350,13 @@ namespace FASTER.core
                     }
                     else
                     {
-                        functions.RMWCompletionCallback(ref pendingContext.key,
+                        functions.RMWCompletionCallback(ref key,
                                                         ref pendingContext.input,
                                                         pendingContext.userContext,
                                                         status);
                     }
                 }
+                pendingContext.Dispose();
             }
         }
 

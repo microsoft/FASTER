@@ -38,6 +38,8 @@ namespace FASTER.core
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
+        private readonly bool keyBlittable = Utility.IsBlittable<Key>();
+        private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
         public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
             : base(settings, comparer, evictCallback, epoch)
@@ -294,17 +296,20 @@ namespace FASTER.core
 
             if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
             {
-                // Get the overlapping HLOG from disk as we wrote it with
-                // object pointers previously. This avoids object reserialization
-                PageAsyncReadResult<Empty> result =
-                    new PageAsyncReadResult<Empty>
-                    {
-                        handle = new CountdownEvent(1)
-                    };
-                device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
-                    (uint)sectorSize, AsyncReadPageCallback, result);
-                result.handle.Wait();
-
+                // Do not read back the invalid header of page 0
+                if ((flushPage > 0) || (start > GetFirstValidLogicalAddress(flushPage)))
+                {
+                    // Get the overlapping HLOG from disk as we wrote it with
+                    // object pointers previously. This avoids object reserialization
+                    PageAsyncReadResult<Empty> result =
+                        new PageAsyncReadResult<Empty>
+                        {
+                            handle = new CountdownEvent(1)
+                        };
+                    device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
+                        (uint)sectorSize, AsyncReadPageCallback, result);
+                    result.handle.Wait();
+                }
                 fixed (RecordInfo* pin = &src[0].info)
                 {
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start, 
@@ -377,11 +382,6 @@ namespace FASTER.core
                     var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
-                    fixed (void* src_ = ms.GetBuffer())
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
-
-                    foreach (var address in addr)
-                        ((AddressInfo*)address)->Address += _objAddr;
 
                     if (KeyHasObjects())
                         keySerializer.EndSerialize();
@@ -389,6 +389,13 @@ namespace FASTER.core
                         valueSerializer.EndSerialize();
 
                     ms.Close();
+
+                    fixed (void* src_ = ms.GetBuffer())
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
+
+                    foreach (var address in addr)
+                        ((AddressInfo*)address)->Address += _objAddr;
+
 
                     if (i < (end / recordSize) - 1)
                     {
@@ -912,6 +919,9 @@ namespace FASTER.core
             return SerializerSettings.valueSerializer != null;
         }
         #endregion
+
+        public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new StandardHeapContainer<Key>(ref key);
+        public override IHeapContainer<Value> GetValueContainer(ref Value value) => new StandardHeapContainer<Value>(ref value);
 
         public override long[] GetSegmentOffsets()
         {

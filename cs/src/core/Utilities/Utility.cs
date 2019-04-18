@@ -178,6 +178,18 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Hash byte array
+        /// </summary>
+        /// <param name="pbString"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe long HashBytes(byte* pbString)
+        {
+            int len = *(int*)pbString;
+            return HashBytes(pbString + 4, len);
+        }
+
+        /// <summary>
         /// Is power of 2
         /// </summary>
         /// <param name="x"></param>

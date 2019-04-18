@@ -15,7 +15,7 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
-    public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    public unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -25,13 +25,12 @@ namespace FASTER.core
         private long[] pointers;
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
+        private readonly IVariableLengthStruct<Key> KeyLength;
+        private readonly IVariableLengthStruct<Value> ValueLength;
+        private readonly bool fixedSizeKey;
+        private readonly bool fixedSizeValue;
 
-        // Record sizes
-        private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
-        private static readonly int keySize = Utility.GetSize(default(Key));
-        private static readonly int valueSize = Utility.GetSize(default(Value));
-
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
+        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
             : base(settings, comparer, evictCallback, epoch)
         {
             values = new byte[BufferSize][];
@@ -40,6 +39,21 @@ namespace FASTER.core
 
             ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
             nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
+
+            KeyLength = vlSettings.keyLength;
+            ValueLength = vlSettings.valueLength;
+
+            if (KeyLength == null)
+            {
+                fixedSizeKey = true;
+                KeyLength = new FixedLengthStruct<Key>();
+            }
+
+            if (ValueLength == null)
+            {
+                fixedSizeValue = true;
+                ValueLength = new FixedLengthStruct<Value>();
+            }
         }
 
         public override void Initialize()
@@ -64,27 +78,62 @@ namespace FASTER.core
 
         public override ref Value GetValue(long physicalAddress)
         {
-            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
+            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress));
+        }
+
+        private int KeySize(long physicalAddress)
+        {
+            return KeyLength.GetLength(ref GetKey(physicalAddress));
+        }
+
+        private int ValueSize(long physicalAddress)
+        {
+            return ValueLength.GetLength(ref GetValue(physicalAddress));
         }
 
         public override int GetRecordSize(long physicalAddress)
         {
-            return recordSize;
+            return RecordInfo.GetLength() +
+                 KeySize(physicalAddress) + ValueSize(physicalAddress);
         }
 
         public override int GetAverageRecordSize()
         {
-            return recordSize;
+            return RecordInfo.GetLength() +
+                KeyLength.GetAverageLength() +
+                ValueLength.GetAverageLength();
         }
 
         public override int GetInitialRecordSize<Input>(ref Key key, ref Input input)
         {
-            return recordSize;
+            return RecordInfo.GetLength() +
+                 KeyLength.GetLength(ref key) +
+                 ValueLength.GetInitialLength(ref input);
         }
 
         public override int GetRecordSize(ref Key key, ref Value value)
         {
-            return recordSize;
+            return RecordInfo.GetLength() +
+                KeyLength.GetLength(ref key) +
+                ValueLength.GetLength(ref value);
+        }
+
+        public override void ShallowCopy(ref Key src, ref Key dst)
+        {
+            Buffer.MemoryCopy(
+                Unsafe.AsPointer(ref src), 
+                Unsafe.AsPointer(ref dst),
+                KeyLength.GetLength(ref src),
+                KeyLength.GetLength(ref src));
+        }
+
+        public override void ShallowCopy(ref Value src, ref Value dst)
+        {
+            Buffer.MemoryCopy(
+                Unsafe.AsPointer(ref src),
+                Unsafe.AsPointer(ref dst),
+                ValueLength.GetLength(ref src),
+                ValueLength.GetLength(ref src));
         }
 
         /// <summary>
@@ -114,7 +163,9 @@ namespace FASTER.core
 
         public override AddressInfo* GetValueAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
+            return (AddressInfo*)((byte*)physicalAddress + 
+                RecordInfo.GetLength() + 
+                KeySize(physicalAddress));
         }
 
         /// <summary>
@@ -278,9 +329,30 @@ namespace FASTER.core
         /// <returns></returns>
         protected override bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
         {
-            ShallowCopy(ref GetKey((long)record), ref ctx.key);
-            ShallowCopy(ref GetValue((long)record), ref ctx.value);
             return true;
+        }
+
+
+        public override ref Key GetContextRecordKey(ref AsyncIOContext<Key, Value> ctx)
+        {
+            return ref GetKey((long)ctx.record.GetValidPointer());
+        }
+
+        public override ref Value GetContextRecordValue(ref AsyncIOContext<Key, Value> ctx)
+        {
+            return ref GetValue((long)ctx.record.GetValidPointer());
+        }
+
+        public override IHeapContainer<Key> GetKeyContainer(ref Key key)
+        {
+            if (fixedSizeKey) return new StandardHeapContainer<Key>(ref key);
+            else return new VarLenHeapContainer<Key>(ref key, KeyLength, bufferPool);
+        }
+
+        public override IHeapContainer<Value> GetValueContainer(ref Value value)
+        {
+            if (fixedSizeValue) return new StandardHeapContainer<Value>(ref value);
+            else return new VarLenHeapContainer<Value>(ref value, ValueLength, bufferPool);
         }
 
         /// <summary>
@@ -300,9 +372,6 @@ namespace FASTER.core
         {
             return false;
         }
-
-        public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new StandardHeapContainer<Key>(ref key);
-        public override IHeapContainer<Value> GetValueContainer(ref Value value) => new StandardHeapContainer<Value>(ref value);
 
         public override long[] GetSegmentOffsets()
         {
@@ -324,7 +393,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode);
+            throw new NotImplementedException();
         }
 
 

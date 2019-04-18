@@ -19,7 +19,7 @@ namespace FASTER.core
         /// <summary>
         /// Key
         /// </summary>
-        public Key request_key;
+        public IHeapContainer<Key> request_key;
 
         /// <summary>
         /// Retrieved key
@@ -50,5 +50,15 @@ namespace FASTER.core
         /// Callback queue
         /// </summary>
         public BlockingCollection<AsyncIOContext<Key, Value>> callbackQueue;
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            // Do not dispose request_key as it is a shallow copy
+            // of the key in pendingContext
+            record.Return();
+        }
     }
 }

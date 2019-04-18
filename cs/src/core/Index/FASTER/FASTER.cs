@@ -76,11 +76,12 @@ namespace FASTER.core
         /// </summary>
         /// <param name="size">Size of core index (#cache lines)</param>
         /// <param name="comparer">FASTER equality comparer for key</param>
+        /// <param name="variableLengthStructSettings"></param>
         /// <param name="functions">Callback functions</param>
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
-        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null)
+        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
             threadCtx = new FastThreadLocal<FasterExecutionContext>();
             prevThreadCtx = new FastThreadLocal<FasterExecutionContext>();
@@ -117,19 +118,42 @@ namespace FASTER.core
 
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
             {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
-                Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
-                if (UseReadCache)
+                if (variableLengthStructSettings != null)
                 {
-                    readcache = new BlittableAllocator<Key, Value>(
-                        new LogSettings {
-                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict, epoch);
-                    readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                    hlog = new VariableLengthBlittableAllocator<Key, Value>
+                        (logSettings, variableLengthStructSettings, this.comparer, null, epoch);
+                    Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                    if (UseReadCache)
+                    {
+                        readcache = new VariableLengthBlittableAllocator<Key, Value>(
+                            new LogSettings
+                            {
+                                PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                                MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                                SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                                MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
+                            }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
+                        readcache.Initialize();
+                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                    }
+                }
+                else
+                {
+                    hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
+                    Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                    if (UseReadCache)
+                    {
+                        readcache = new BlittableAllocator<Key, Value>(
+                            new LogSettings
+                            {
+                                PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                                MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                                SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                                MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
+                            }, this.comparer, ReadCacheEvict, epoch);
+                        readcache.Initialize();
+                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                    }
                 }
             }
             else
@@ -161,7 +185,6 @@ namespace FASTER.core
             _systemState.version = 1;
             _checkpointType = CheckpointType.HYBRID_LOG_ONLY;
         }
-
 
         /// <summary>
         /// Take full checkpoint

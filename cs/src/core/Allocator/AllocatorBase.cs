@@ -380,6 +380,42 @@ namespace FASTER.core
         /// <param name="ctx"></param>
         /// <returns></returns>
         protected abstract bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
+
+        /// <summary>
+        /// Retrieve value from context
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <returns></returns>
+        public virtual ref Key GetContextRecordKey(ref AsyncIOContext<Key, Value> ctx) => ref ctx.key;
+
+        /// <summary>
+        /// Retrieve value from context
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <returns></returns>
+        public virtual ref Value GetContextRecordValue(ref AsyncIOContext<Key, Value> ctx) => ref ctx.value;
+
+        /// <summary>
+        /// Get heap container for pending key
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        public abstract IHeapContainer<Key> GetKeyContainer(ref Key key);
+
+        /// <summary>
+        /// Get heap container for pending value
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public abstract IHeapContainer<Value> GetValueContainer(ref Value value);
+
+        /// <summary>
+        /// Copy value to context
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="value"></param>
+        public virtual void PutContext(ref AsyncIOContext<Key, Value> ctx, ref Value value) => ctx.value = value;
+
         /// <summary>
         /// Whether key has objects
         /// </summary>
@@ -490,7 +526,6 @@ namespace FASTER.core
         protected void Initialize(long firstValidAddress)
         {
             Debug.Assert(firstValidAddress <= PageSize);
-            Debug.Assert(PageSize >= GetRecordSize(0));
 
             bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
@@ -1442,7 +1477,7 @@ namespace FASTER.core
                 // We have the complete record.
                 if (RetrievedFullRecord(record, ref ctx))
                 {
-                    if (comparer.Equals(ref ctx.request_key, ref ctx.key))
+                    if (comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
                     {
                         // The keys are same, so I/O is complete
                         // ctx.record = result.record;
