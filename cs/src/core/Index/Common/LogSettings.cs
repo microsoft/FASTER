@@ -39,7 +39,8 @@ namespace FASTER.core
         int GetLength(ref T t);
 
         /// <summary>
-        /// Average length of objects
+        /// Average length of objects, make sure this includes the object
+        /// header needed to compute the actual object length
         /// </summary>
         /// <returns></returns>
         int GetAverageLength();

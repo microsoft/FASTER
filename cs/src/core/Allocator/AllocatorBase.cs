@@ -288,6 +288,16 @@ namespace FASTER.core
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
         public abstract int GetRecordSize(long physicalAddress);
+
+
+        /// <summary>
+        /// Get number of bytes required
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <param name="availableBytes"></param>
+        /// <returns></returns>
+        public virtual int GetRequiredRecordSize(long physicalAddress, int availableBytes) => GetAverageRecordSize();
+
         /// <summary>
         /// Get average record size
         /// </summary>
@@ -1471,7 +1481,7 @@ namespace FASTER.core
             var ctx = result.context;
 
             var record = ctx.record.GetValidPointer();
-            int requiredBytes = GetRecordSize((long)record);
+            int requiredBytes = GetRequiredRecordSize((long)record, ctx.record.available_bytes);
             if (ctx.record.available_bytes >= requiredBytes)
             {
                 // We have the complete record.

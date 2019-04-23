@@ -97,6 +97,27 @@ namespace FASTER.core
                  KeySize(physicalAddress) + ValueSize(physicalAddress);
         }
 
+        public override int GetRequiredRecordSize(long physicalAddress, int availableBytes)
+        {
+            // We need at least [record size] + [average key size] + [average value size]
+            var reqBytes = GetAverageRecordSize();
+            if (availableBytes < reqBytes)
+            {
+                return reqBytes;
+            }
+
+            // We need at least [record size] + [actual key size] + [average value size]
+            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueLength.GetAverageLength();
+            if (availableBytes < reqBytes)
+            {
+                return reqBytes;
+            }
+
+            // We need at least [record size] + [actual key size] + [actual value size]
+            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            return reqBytes;
+        }
+
         public override int GetAverageRecordSize()
         {
             return RecordInfo.GetLength() +
