@@ -68,30 +68,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Helper function used to check if two byte arrays are equal
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dest"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe static bool IsEqual(byte* src, byte* dest)
-        {
-            if (*(int*)src == *(int*)dest)
-            {
-                for (int i = 0; i < *(int*)src; i++)
-                {
-                    if (*(src + 4 + i) != *(dest + 4 + i))
-                    {
-                        return false;
-                    }
-                }
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Helper function used to check if two byte arrays of given length are equal
+        /// Check if two byte arrays of given length are equal
         /// </summary>
         /// <param name="src"></param>
         /// <param name="dst"></param>
@@ -160,12 +137,12 @@ namespace FASTER.core
             ulong hashState = (ulong)len;
 
             for (int i = 0; i < cbBuf; i++, pwString++)
-                hashState = magicno * hashState + (ulong)*pwString;
+                hashState = magicno * hashState + *pwString;
 
             if ((len & 1) > 0)
             {
-                char* pC = (char*)pwString;
-                hashState = magicno * hashState + (ulong)*pC;
+                byte* pC = (byte*)pwString;
+                hashState = magicno * hashState + *pC;
             }
 
             return (long)Rotr64(magicno * hashState, 4);

@@ -70,8 +70,8 @@ namespace FASTER.core
 
             public OperationType type;
 
-            public Key key;
-            public Value value;
+            public IHeapContainer<Key> key;
+            public IHeapContainer<Value> value;
             public Input input;
             public Output output;
             public Context userContext;
@@ -87,6 +87,12 @@ namespace FASTER.core
             public long serialNum;
 
             public HashBucketEntry entry;
+
+            public void Dispose()
+            {
+                key?.Dispose();
+                value?.Dispose();
+            }
         }
 
         internal class FasterExecutionContext : SerializedFasterExecutionContext

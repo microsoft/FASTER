@@ -598,11 +598,11 @@ namespace FASTER.core
         {
             foreach (var ctx in threadCtx.Value.retryRequests)
             {
-                AcquireSharedLatch(ctx.key);
+                AcquireSharedLatch(ctx.key.Get());
             }
             foreach (var ctx in threadCtx.Value.ioPendingRequests.Values)
             {
-                AcquireSharedLatch(ctx.key);
+                AcquireSharedLatch(ctx.key.Get());
             }
         }
 

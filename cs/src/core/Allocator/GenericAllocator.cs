@@ -38,6 +38,8 @@ namespace FASTER.core
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
+        private readonly bool keyBlittable = Utility.IsBlittable<Key>();
+        private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
         public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
             : base(settings, comparer, evictCallback, epoch)
@@ -917,6 +919,9 @@ namespace FASTER.core
             return SerializerSettings.valueSerializer != null;
         }
         #endregion
+
+        public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new StandardHeapContainer<Key>(ref key);
+        public override IHeapContainer<Value> GetValueContainer(ref Value value) => new StandardHeapContainer<Value>(ref value);
 
         public override long[] GetSegmentOffsets()
         {

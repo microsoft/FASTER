@@ -118,8 +118,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TValue GetOrAdd(TKey key, Func<TKey, TValue> valueFactory)
         {
-            TValue value;
-            if (dictionary.TryGetValue(key, out value))
+            if (dictionary.TryGetValue(key, out TValue value))
             {
                 return value;
             }

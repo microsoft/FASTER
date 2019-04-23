@@ -197,7 +197,7 @@ namespace FASTER.core
             {
 
                 pendingContext.type = OperationType.READ;
-                pendingContext.key = key;
+                pendingContext.key = hlog.GetKeyContainer(ref key);
                 pendingContext.input = input;
                 pendingContext.output = output;
                 pendingContext.userContext = userContext;
@@ -244,8 +244,8 @@ namespace FASTER.core
                 if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                functions.SingleReader(ref pendingContext.key, ref pendingContext.input,
-                                       ref request.value, ref pendingContext.output);
+                functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
+                                       ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
 
                 if (CopyReadsToTail || UseReadCache)
                 {
@@ -278,7 +278,7 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var latestRecordVersion = default(int);
 
-            var hash = comparer.GetHashCode64(ref pendingContext.key);
+            var hash = comparer.GetHashCode64(ref pendingContext.key.Get());
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             #region Trace back record in in-memory HybridLog
@@ -293,10 +293,10 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!comparer.Equals(ref pendingContext.key, ref hlog.GetKey(physicalAddress)))
+                if (!comparer.Equals(ref pendingContext.key.Get(), ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
-                    TraceBackForKeyMatch(ref pendingContext.key,
+                    TraceBackForKeyMatch(ref pendingContext.key.Get(),
                                             logicalAddress,
                                             hlog.HeadAddress,
                                             out logicalAddress,
@@ -324,9 +324,9 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                      true, false, false,
                                      entry.Address);
-                readcache.ShallowCopy(ref pendingContext.key, ref readcache.GetKey(newPhysicalAddress));
-                functions.SingleWriter(ref pendingContext.key,
-                                       ref request.value,
+                readcache.ShallowCopy(ref pendingContext.key.Get(), ref readcache.GetKey(newPhysicalAddress));
+                functions.SingleWriter(ref pendingContext.key.Get(),
+                                       ref hlog.GetContextRecordValue(ref request),
                                        ref readcache.GetValue(newPhysicalAddress));
             }
             else
@@ -337,9 +337,9 @@ namespace FASTER.core
                 RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                      true, false, false,
                                      latestLogicalAddress);
-                hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
-                functions.SingleWriter(ref pendingContext.key,
-                                       ref request.value,
+                hlog.ShallowCopy(ref pendingContext.key.Get(), ref hlog.GetKey(newPhysicalAddress));
+                functions.SingleWriter(ref pendingContext.key.Get(),
+                                       ref hlog.GetContextRecordValue(ref request),
                                        ref hlog.GetValue(newPhysicalAddress));
             }
 
@@ -585,8 +585,8 @@ namespace FASTER.core
             CreatePendingContext:
             {
                 pendingContext.type = OperationType.UPSERT;
-                pendingContext.key = key;
-                pendingContext.value = value;
+                pendingContext.key = hlog.GetKeyContainer(ref key);
+                pendingContext.value = hlog.GetValueContainer(ref value);
                 pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
@@ -914,7 +914,7 @@ namespace FASTER.core
             CreateFailureContext:
             {
                 pendingContext.type = OperationType.RMW;
-                pendingContext.key = key;
+                pendingContext.key = hlog.GetKeyContainer(ref key);
                 pendingContext.input = input;
                 pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
@@ -989,7 +989,7 @@ namespace FASTER.core
             var latestRecordVersion = -1;
             var status = default(OperationStatus);
             var latchOperation = LatchOperation.None;
-            var key = pendingContext.key;
+            ref Key key = ref pendingContext.key.Get();
 
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -1092,7 +1092,7 @@ namespace FASTER.core
                 {
                     Debug.Assert(hlog.GetInfo(physicalAddress).Version == threadCtx.Value.version);
                 }
-                functions.InPlaceUpdater(ref pendingContext.key, ref pendingContext.input, ref hlog.GetValue(physicalAddress));
+                functions.InPlaceUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease;
             }
@@ -1129,7 +1129,7 @@ namespace FASTER.core
             CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
-                                hlog.GetInitialRecordSize(ref pendingContext.key, ref pendingContext.input) :
+                                hlog.GetInitialRecordSize(ref key, ref pendingContext.input) :
                                 hlog.GetRecordSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -1140,14 +1140,14 @@ namespace FASTER.core
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    functions.InitialUpdater(ref pendingContext.key,
+                    functions.InitialUpdater(ref key,
                                              ref pendingContext.input,
                                              ref hlog.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    functions.CopyUpdater(ref pendingContext.key,
+                    functions.CopyUpdater(ref key,
                                             ref pendingContext.input,
                                             ref hlog.GetValue(physicalAddress),
                                             ref hlog.GetValue(newPhysicalAddress));
@@ -1258,8 +1258,9 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var status = default(OperationStatus);
             var latestRecordVersion = default(int);
+            ref Key key = ref pendingContext.key.Get();
 
-            var hash = comparer.GetHashCode64(ref pendingContext.key);
+            var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             #region Trace Back for Record on In-Memory HybridLog
@@ -1275,10 +1276,10 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!comparer.Equals(ref pendingContext.key, ref hlog.GetKey(physicalAddress)))
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
-                    TraceBackForKeyMatch(ref pendingContext.key,
+                    TraceBackForKeyMatch(ref key,
                                             logicalAddress,
                                             hlog.HeadAddress,
                                             out logicalAddress,
@@ -1296,7 +1297,7 @@ namespace FASTER.core
             #region Create record in mutable region
             if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
-                recordSize = hlog.GetInitialRecordSize(ref pendingContext.key, ref pendingContext.input);
+                recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input);
             }
             else
             {
@@ -1309,19 +1310,19 @@ namespace FASTER.core
             RecordInfo.WriteInfo(ref recordInfo, ctx.version,
                                 true, false, false,
                                 latestLogicalAddress);
-            hlog.ShallowCopy(ref pendingContext.key, ref hlog.GetKey(newPhysicalAddress));
+            hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
             if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
-                functions.InitialUpdater(ref pendingContext.key,
+                functions.InitialUpdater(ref key,
                                          ref pendingContext.input,
                                          ref hlog.GetValue(newPhysicalAddress));
                 status = OperationStatus.NOTFOUND;
             }
             else
             {
-                functions.CopyUpdater(ref pendingContext.key,
+                functions.CopyUpdater(ref key,
                                       ref pendingContext.input,
-                                      ref request.value,
+                                      ref hlog.GetContextRecordValue(ref request),
                                       ref hlog.GetValue(newPhysicalAddress));
                 status = OperationStatus.SUCCESS;
             }
@@ -1607,8 +1608,7 @@ namespace FASTER.core
             CreatePendingContext:
             {
                 pendingContext.type = OperationType.DELETE;
-                pendingContext.key = key;
-                pendingContext.value = default(Value);
+                pendingContext.key = hlog.GetKeyContainer(ref key);
                 pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
@@ -1765,20 +1765,20 @@ namespace FASTER.core
                 switch (pendingContext.type)
                 {
                     case OperationType.READ:
-                        internalStatus = InternalRead(ref pendingContext.key,
+                        internalStatus = InternalRead(ref pendingContext.key.Get(),
                                                       ref pendingContext.input,
                                                       ref pendingContext.output,
                                                       ref pendingContext.userContext,
                                                       ref pendingContext);
                         break;
                     case OperationType.UPSERT:
-                        internalStatus = InternalUpsert(ref pendingContext.key,
-                                                        ref pendingContext.value,
+                        internalStatus = InternalUpsert(ref pendingContext.key.Get(),
+                                                        ref pendingContext.value.Get(),
                                                         ref pendingContext.userContext,
                                                         ref pendingContext);
                         break;
                     case OperationType.DELETE:
-                        internalStatus = InternalDelete(ref pendingContext.key,
+                        internalStatus = InternalDelete(ref pendingContext.key.Get(),
                                                         ref pendingContext.userContext,
                                                         ref pendingContext);
                         break;
@@ -2298,14 +2298,13 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
 
-            var recordSize = readcache.GetRecordSize(0);
-
             HashBucketEntry entry = default(HashBucketEntry);
             logicalAddress = fromHeadAddress;
 
             while (logicalAddress < toHeadAddress)
             {
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                var recordSize = readcache.GetRecordSize(physicalAddress);
                 ref Key key = ref readcache.GetKey(physicalAddress);
                 ref RecordInfo info = ref readcache.GetInfo(physicalAddress);
                 entry.word = info.PreviousAddress;
