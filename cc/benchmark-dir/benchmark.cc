@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <random>
 #include <string>
+#include <map>
 
 #include "file.h"
 
@@ -620,7 +621,17 @@ int main(int argc, char* argv[]) {
     exit(0);
   }
 
-  Workload workload = static_cast<Workload>(std::atol(argv[1]));
+  std::map<std::string, Workload> workloadMap;
+  workloadMap["ycsb_a_50_50"] = Workload::A_50_50;
+  workloadMap["ycsb_rmw_100"] = Workload::RMW_100;
+  auto find_workload = workloadMap.find(argv[1]);
+  Workload workload;
+  if (find_workload != workloadMap.end()) {
+    workload = find_workload->second;
+  } else {
+    printf("Unknown workload!\n");
+    exit(1);
+  }
   size_t num_threads = ::atol(argv[2]);
   std::string load_filename{ argv[3] };
   std::string run_filename{ argv[4] };
