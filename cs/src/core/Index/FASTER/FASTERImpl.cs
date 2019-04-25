@@ -1978,7 +1978,7 @@ namespace FASTER.core
                     long ptr = chunkSize * (i & (numChunks - 1));
 
                     HashBucket* src_start = state[version].tableAligned + ptr;
-                    // CleanBucket(src_start, chunkSize);
+                    CleanBucket(src_start, chunkSize);
 
                     // GC for chunk is done
                     gcStatus[i & (numChunks - 1)] = 2;
@@ -2021,6 +2021,27 @@ namespace FASTER.core
                 } while (true);
             }
         }
+
+        /// <summary>
+        /// Clear index of all entries with expired addresses
+        /// </summary>
+        public bool ResetExpiredEntries()
+        {
+            if (_systemState.phase == Phase.REST)
+            {
+                var version = _systemState.version;
+
+                SystemState nextState = SystemState.Make(Phase.GC, version);
+                if (GlobalMoveToNextState(SystemState.Make(Phase.REST, version), nextState, ref hlog.BeginAddress))
+                {
+                    InternalRefresh();
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         #endregion
 
         #region Split Index

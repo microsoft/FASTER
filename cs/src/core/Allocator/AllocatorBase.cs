@@ -896,7 +896,7 @@ namespace FASTER.core
         /// Shift begin address
         /// </summary>
         /// <param name="newBeginAddress"></param>
-        public void ShiftBeginAddress(long newBeginAddress)
+        public long ShiftBeginAddress(long newBeginAddress)
         {
             // First update the begin address
             MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
@@ -917,6 +917,8 @@ namespace FASTER.core
 
                 DeleteAddressRange(oldBeginAddress, newBeginAddress);
             });
+
+            return oldBeginAddress;
         }
 
         /// <summary>

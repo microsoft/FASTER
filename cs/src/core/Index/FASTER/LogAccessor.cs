@@ -65,7 +65,11 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         public void ShiftBeginAddress(long untilAddress)
         {
-            allocator.ShiftBeginAddress(untilAddress);
+            var oldBeginAddress = allocator.ShiftBeginAddress(untilAddress);
+            if (untilAddress >= Constants.kAddressMask / 4 && oldBeginAddress < Constants.kAddressMask / 4)
+            {
+                // TODO
+            }
         }
 
 
