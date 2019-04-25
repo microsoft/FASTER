@@ -52,7 +52,7 @@ Completed items are included to provide the context and progress of the work.
 * [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
 * [x] Auto-recover to most recent checkpoint
 
-### Ongoing and Future Work
+### Future Work
 
 * [ ] Checksums for storage pages
 * [ ] Support iteration over all and only live key-value pairs (different from log scan)
@@ -61,10 +61,15 @@ Completed items are included to provide the context and progress of the work.
 
 ## Release Notes
 
+#### FASTER v2019.4.24.4
+* [x] Added support for variable sized (inline) structs without object log: [PR](https://github.com/Microsoft/FASTER/pull/120)
+* [x] Removed statics from codebase to better support multiple instances: [PR](https://github.com/Microsoft/FASTER/pull/117)
+* [x] Fixes related to scheduling pending operations: [PR](https://github.com/Microsoft/FASTER/pull/118)
+
 #### FASTER v2019.4.1.1
 
-* [x] Log compaction by rolling forward older active keys
-* [x] Individual key delete support
+* [x] Log compaction by rolling forward older active keys: [PR](https://github.com/Microsoft/FASTER/pull/112)
+* [x] Individual key delete support: [PR](https://github.com/Microsoft/FASTER/pull/114)
 
 #### FASTER v2019.3.16.1 (cumulative feature list)
 
