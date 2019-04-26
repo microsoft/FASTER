@@ -147,6 +147,12 @@ namespace FASTER.core
         bool GrowIndex();
 
         /// <summary>
+        /// Reset hash entries pointing to expired adresses
+        /// </summary>
+        /// <returns></returns>
+        bool ResetExpiredEntries();
+
+        /// <summary>
         /// Get number of (non-zero) hash entries in FASTER
         /// </summary>
         long EntryCount { get; }

@@ -66,9 +66,20 @@ namespace FASTER.core
         public void ShiftBeginAddress(long untilAddress)
         {
             var oldBeginAddress = allocator.ShiftBeginAddress(untilAddress);
-            if (untilAddress >= Constants.kAddressMask / 4 && oldBeginAddress < Constants.kAddressMask / 4)
+
+            // If we are crossing over a quarter of the log space, we clear up 
+            // the invalid entries in the index, in preparation for eventual
+            // rollover.
+            long oldMappedAddress = (oldBeginAddress & Constants.kAddressMask) >> (Constants.kAddressBits - 2);
+            long newMappedAddress = (untilAddress & Constants.kAddressMask) >> (Constants.kAddressBits - 2);
+
+            if (oldMappedAddress != newMappedAddress)
             {
-                // TODO
+                while (!fht.ResetExpiredEntries())
+                {
+                    // Retry until we successfully register the reset operation
+                    fht.Refresh();
+                }
             }
         }
 

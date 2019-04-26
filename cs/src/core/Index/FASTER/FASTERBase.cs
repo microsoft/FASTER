@@ -46,7 +46,8 @@ namespace FASTER.core
 
         public const long kTagPositionMask = (kTagMask << kTagShift);
 
-        public const long kAddressMask = (1L << 48) - 1;
+        public const int kAddressBits = 48;
+        public const long kAddressMask = (1L << kAddressBits) - 1;
 
         // Position of tag in hash value (offset is always in the least significant bits)
         public const int kHashTagShift = 64 - kTagSize;
