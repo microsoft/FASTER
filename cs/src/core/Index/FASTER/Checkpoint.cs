@@ -766,7 +766,7 @@ namespace FASTER.core
             directoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
             _hybridLogCheckpoint.Initialize(hybridLogToken, version);
         }
-        
+
         #endregion
     }
 }
