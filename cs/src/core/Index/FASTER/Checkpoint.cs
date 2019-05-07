@@ -180,7 +180,7 @@ namespace FASTER.core
                         }
                     case Phase.INDEX_CHECKPOINT:
                         {
-                            if (UseReadCache)
+                            if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
                             {
                                 throw new Exception("Index checkpoint with read cache is not supported");
                             }
@@ -203,7 +203,7 @@ namespace FASTER.core
                                     }
                                 case Phase.PREP_INDEX_CHECKPOINT:
                                     {
-                                        if (UseReadCache)
+                                        if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
                                         {
                                             throw new Exception("Index checkpoint with read cache is not supported");
                                         }
@@ -766,7 +766,7 @@ namespace FASTER.core
             directoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
             _hybridLogCheckpoint.Initialize(hybridLogToken, version);
         }
-
+        
         #endregion
     }
 }

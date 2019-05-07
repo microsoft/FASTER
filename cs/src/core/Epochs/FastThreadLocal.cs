@@ -13,7 +13,7 @@ namespace FASTER.core
     internal class FastThreadLocal<T>
     {
         // Max instances supported
-        private const int kMaxInstances = 128;
+        private const int kMaxInstances = 512;
 
         [ThreadStatic]
         private static T[] values;

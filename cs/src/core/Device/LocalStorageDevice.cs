@@ -190,6 +190,12 @@ namespace FASTER.core
                 IntPtr.Zero, fileCreation,
                 fileFlags, IntPtr.Zero);
 
+            if (logHandle.IsInvalid)
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw new IOException($"Error creating log file for {GetSegmentName(segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
+            }
+
             if (preallocateFile)
                 SetFileSize(FileName, logHandle, segmentSize);
 
