@@ -1906,6 +1906,260 @@ TEST(InMemFaster, GrowHashTable) {
   store.StopSession();
 }
 
+TEST(InMemFaster, UpsertRead_VariableLengthKey) {
+  class Key {
+  public:
+      /// This constructor is called when creating a Context so we keep track of memory containing key
+      Key(const uint16_t* key, const uint64_t key_length)
+              : temp_buffer{ key }
+              , key_length_{ key_length } {
+      }
+
+      /// This constructor is called when record is being allocated so we can freely copy into our buffer
+      Key(const Key& other) {
+        key_length_ = other.key_length_;
+        temp_buffer = NULL;
+        if (other.temp_buffer == NULL) {
+          memcpy(buffer(), other.buffer(), key_length_);
+        } else {
+          memcpy(buffer(), other.temp_buffer, key_length_);
+        }
+      }
+
+      /// This destructor ensures we don't leak memory due to Key objects not allocated on HybridLog
+      ~Key() {
+        if (this->temp_buffer != NULL) {
+          free((void*)temp_buffer);
+        }
+      }
+
+      /// Methods and operators required by the (implicit) interface:
+      inline uint32_t size() const {
+        return static_cast<uint32_t>(sizeof(Key) + key_length_);
+      }
+      inline KeyHash GetHash() const {
+        if (this->temp_buffer != NULL) {
+          return KeyHash(Utility::HashBytes(temp_buffer, key_length_));
+        }
+        return KeyHash(Utility::HashBytes(buffer(), key_length_));
+      }
+
+      /// Comparison operators.
+      inline bool operator==(const Key& other) const {
+        if (this->key_length_ != other.key_length_) return false;
+        if (this->temp_buffer != NULL) {
+          return memcmp(temp_buffer, other.buffer(), key_length_) == 0;
+        }
+        return memcmp(buffer(), other.buffer(), key_length_) == 0;
+      }
+      inline bool operator!=(const Key& other) const {
+        if (this->key_length_ != other.key_length_) return true;
+        if (this->temp_buffer != NULL) {
+          return memcmp(temp_buffer, other.buffer(), key_length_) != 0;
+        }
+        return memcmp(buffer(), other.buffer(), key_length_) != 0;
+      }
+
+  private:
+      uint64_t key_length_;
+      const uint16_t* temp_buffer;
+
+      inline const uint16_t* buffer() const {
+        return reinterpret_cast<const uint16_t*>(this + 1);
+      }
+      inline uint16_t* buffer() {
+        return reinterpret_cast<uint16_t*>(this + 1);
+      }
+  };
+
+  class UpsertContext;
+  class ReadContext;
+
+  class Value {
+  public:
+      Value()
+              : value_{ 0 } {
+      }
+      Value(const Value& other)
+              : value_{ other.value_ } {
+      }
+      Value(uint8_t value)
+              : value_{ value } {
+      }
+
+      inline static constexpr uint32_t size() {
+        return static_cast<uint32_t>(sizeof(Value));
+      }
+
+      friend class UpsertContext;
+      friend class ReadContext;
+
+  private:
+      union {
+          uint8_t value_;
+          std::atomic<uint8_t> atomic_value_;
+      };
+  };
+
+  class UpsertContext : public IAsyncContext {
+  public:
+      typedef Key key_t;
+      typedef Value value_t;
+
+      UpsertContext(uint16_t* key, uint64_t key_length)
+              : key_{ key, key_length } {
+      }
+
+      /// Copy (and deep-copy) constructor.
+      UpsertContext(const UpsertContext& other)
+              : key_{ other.key_ } {
+      }
+
+      /// The implicit and explicit interfaces require a key() accessor.
+      inline const Key& key() const {
+        return key_;
+      }
+      inline static constexpr uint32_t value_size() {
+        return sizeof(value_t);
+      }
+      /// Non-atomic and atomic Put() methods.
+      inline void Put(Value& value) {
+        value.value_ = 23;
+      }
+      inline bool PutAtomic(Value& value) {
+        value.atomic_value_.store(42);
+        return true;
+      }
+
+  protected:
+      /// The explicit interface requires a DeepCopy_Internal() implementation.
+      Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+      }
+
+  private:
+      Key key_;
+  };
+
+  class ReadContext : public IAsyncContext {
+  public:
+      typedef Key key_t;
+      typedef Value value_t;
+
+      ReadContext(uint16_t* key, uint64_t key_length)
+              : key_{ key, key_length } {
+      }
+
+      /// Copy (and deep-copy) constructor.
+      ReadContext(const ReadContext& other)
+              : key_{ other.key_ } {
+      }
+
+      /// The implicit and explicit interfaces require a key() accessor.
+      inline const Key& key() const {
+        return key_;
+      }
+
+      inline void Get(const Value& value) {
+        // All reads should be atomic (from the mutable tail).
+        ASSERT_TRUE(false);
+      }
+      inline void GetAtomic(const Value& value) {
+        output = value.atomic_value_.load();
+      }
+
+  protected:
+      /// The explicit interface requires a DeepCopy_Internal() implementation.
+      Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+      }
+
+  private:
+      Key key_;
+  public:
+      uint8_t output;
+  };
+
+  FasterKv<Key, Value, FASTER::device::NullDisk> store { 128, 1073741824, "" };
+
+  store.StartSession();
+
+  // Insert.
+  for(size_t idx = 1; idx < 256; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+    };
+
+    // Create the key as a variable length array
+    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    for (size_t j = 0; j < idx; ++j) {
+      key[j] = 42;
+    }
+
+    UpsertContext context{ key, idx };
+    Status result = store.Upsert(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  // Read.
+  for(size_t idx = 1; idx < 256; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+    };
+
+    // Create the key as a variable length array
+    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    for (size_t j = 0; j < idx; ++j) {
+      key[j] = 42;
+    }
+
+    ReadContext context{ key, idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    // All upserts should have inserts (non-atomic).
+    ASSERT_EQ(23, context.output);
+  }
+  // Update.
+  for(size_t idx = 1; idx < 256; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+    };
+
+    // Create the key as a variable length array
+    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    for (size_t j = 0; j < idx; ++j) {
+      key[j] = 42;
+    }
+
+    UpsertContext context{ key, idx };
+    Status result = store.Upsert(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  // Read again.
+  for(size_t idx = 1; idx < 256; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+    };
+
+    // Create the key as a variable length array
+    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    for (size_t j = 0; j < idx; ++j) {
+      key[j] = 42;
+    }
+
+    ReadContext context{ key, idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    // All upserts should have updates (atomic).
+    ASSERT_EQ(42, context.output);
+  }
+
+  store.StopSession();
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
