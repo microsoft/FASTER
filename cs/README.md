@@ -65,7 +65,7 @@ The user provides an instance of a type that implements `IFunctions<>`. This typ
 ### Constructor Parameters
 
 1. Hash Table Size: This the number of buckets allocated to FASTER, where each bucket is 64 bytes (size of a cache line).
-2. Log Settings: These are setings related to the size of the log and devices used by the log.
+2. Log Settings: These are settings related to the size of the log and devices used by the log.
 3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the section on checkpointing [below](#checkpointing-and-recovery).
 4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for non-blittable types such as C# class objects.*
 5. Key Equality comparer: Used for providing a better comparer for keys, implements `IFasterEqualityComparer<Key>`.
