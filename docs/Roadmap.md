@@ -54,6 +54,9 @@ Completed items are included to provide the context and progress of the work.
 
 ### Future Work
 
+* [ ] Better integration with an async/await threading model in C#
+* [ ] Scale-out and elasticity support
+* [ ] Easier integration into serverless and actor framework deployments
 * [ ] Checksums for storage pages
 * [ ] Support iteration over all and only live key-value pairs (different from log scan)
 * [ ] Handle log logical addresses greater than 48 bit (up to 64 bit)
