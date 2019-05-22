@@ -1720,6 +1720,22 @@ namespace FASTER.core
 
         #region Helper Functions
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private long FixRollover(long logicalAddress)
+        {
+            if (Constants.kSupportAddressRollover)
+            {
+                var beginAddress = hlog.BeginAddress;
+                return ((logicalAddress >= (beginAddress & Constants.kAddressMask)) ?
+                    (beginAddress & ~Constants.kAddressMask) | logicalAddress :
+                    ((1L << Constants.kAddressBits) + (beginAddress & ~Constants.kAddressMask)) | logicalAddress);
+            }
+            else
+            {
+                return logicalAddress;
+            }
+        }
+
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
         /// </summary>

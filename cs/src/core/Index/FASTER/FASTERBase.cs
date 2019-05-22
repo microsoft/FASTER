@@ -49,6 +49,12 @@ namespace FASTER.core
         public const int kAddressBits = 48;
         public const long kAddressMask = (1L << kAddressBits) - 1;
 
+        /// <summary>
+        /// Support logical addresses (offsets and tail) larger than kAddressBits bits
+        /// Addressable space remains kAddressBits bits
+        /// </summary>
+        public const bool kSupportAddressRollover = true;
+
         // Position of tag in hash value (offset is always in the least significant bits)
         public const int kHashTagShift = 64 - kTagSize;
 

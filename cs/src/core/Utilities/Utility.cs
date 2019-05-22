@@ -223,5 +223,16 @@ namespace FASTER.core
             a ^= a >> 16;
             return (int)a;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool GreaterThanEqualR(in long first, in long second) => (first >= second) ||
+                (Constants.kSupportAddressRollover && (second - first > (1L << (Constants.kAddressBits - 1))));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool GreaterThanR(in long first, in long second) => (first > second) ||
+                (Constants.kSupportAddressRollover && (second - first > (1L << (Constants.kAddressBits - 1))));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool LessThanR(in long first, in long second) => !GreaterThanEqualR(first, second);
     }
 }
