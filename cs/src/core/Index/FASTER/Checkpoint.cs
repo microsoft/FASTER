@@ -510,7 +510,7 @@ namespace FASTER.core
                                 var notify = false;
                                 if (FoldOverSnapshot)
                                 {
-                                    notify = (hlog.FlushedUntilAddress >= _hybridLogCheckpoint.info.finalLogicalAddress);
+                                    notify = (Utility.GreaterThanEqualR(hlog.FlushedUntilAddress, _hybridLogCheckpoint.info.finalLogicalAddress));
                                 }
                                 else
                                 {

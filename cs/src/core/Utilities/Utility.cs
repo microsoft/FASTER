@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#pragma warning disable 0162
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -225,14 +227,36 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool GreaterThanEqualR(in long first, in long second) => (first >= second) ||
-                (Constants.kSupportAddressRollover && (second - first > (1L << (Constants.kAddressBits - 1))));
+        internal static bool GreaterThanEqualR(long first, long second)
+        {
+            if (Constants.kSupportAddressRollover)
+            {
+                if (first > Constants.kAddressMask)
+                    first &= Constants.kAddressMask;
+                if (second > Constants.kAddressMask)
+                    second &= Constants.kAddressMask;
+                return first >= second ||
+                second - first > (1L << (Constants.kAddressBits - 1));
+            }
+            return first >= second;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool GreaterThanR(in long first, in long second) => (first > second) ||
-                (Constants.kSupportAddressRollover && (second - first > (1L << (Constants.kAddressBits - 1))));
+        internal static bool GreaterThanR(long first, long second)
+        {
+            if (Constants.kSupportAddressRollover)
+            {
+                if (first > Constants.kAddressMask)
+                    first &= Constants.kAddressMask;
+                if (second > Constants.kAddressMask)
+                    second &= Constants.kAddressMask;
+                return first > second ||
+                second - first > (1L << (Constants.kAddressBits - 1));
+            }
+            return first > second;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool LessThanR(in long first, in long second) => !GreaterThanEqualR(first, second);
+        internal static bool LessThanR(long first, long second) => !GreaterThanEqualR(first, second);
     }
 }

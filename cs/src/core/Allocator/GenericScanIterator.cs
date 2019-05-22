@@ -59,7 +59,7 @@ namespace FASTER.core
             loaded = new CountdownEvent[frameSize];
 
             // Only load addresses flushed to disk
-            if (nextAddress < hlog.HeadAddress)
+            if (Utility.LessThanR(nextAddress, hlog.HeadAddress))
             {
                 var frameNumber = (nextAddress >> hlog.LogPageSizeBits) % frameSize;
                 hlog.AsyncReadPagesFromDeviceToFrame
@@ -91,7 +91,7 @@ namespace FASTER.core
                     return false;
                 }
 
-                if (currentAddress < hlog.BeginAddress)
+                if (Utility.LessThanR(currentAddress, hlog.BeginAddress))
                 {
                     throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
@@ -100,7 +100,7 @@ namespace FASTER.core
                 var currentFrame = currentPage % frameSize;
                 var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
-                if (currentAddress < hlog.HeadAddress)
+                if (Utility.LessThanR(currentAddress, hlog.HeadAddress))
                     BufferAndLoad(currentAddress, currentPage, currentFrame);
 
                 // Check if record fits on page, if not skip to next page
@@ -111,7 +111,7 @@ namespace FASTER.core
                 }
 
 
-                if (currentAddress >= hlog.HeadAddress)
+                if (Utility.GreaterThanEqualR(currentAddress, hlog.HeadAddress))
                 {
                     // Read record from cached page memory
                     nextAddress = currentAddress + recordSize;

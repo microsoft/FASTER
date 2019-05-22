@@ -111,7 +111,7 @@ namespace FASTER.core
             allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
 
             // Wait for flush to complete
-            while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress)
+            while (wait && Utility.LessThanR(allocator.FlushedUntilAddress, newReadOnlyAddress))
                 fht.Refresh();
         }
 

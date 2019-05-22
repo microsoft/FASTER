@@ -1048,7 +1048,7 @@ namespace FASTER.core
             }
             newHeadAddress = newHeadAddress & ~PageSizeMask;
 
-            if (ReadCache && (newHeadAddress > HeadAddress))
+            if (ReadCache && Utility.GreaterThanR(newHeadAddress, HeadAddress))
                 EvictCallback(HeadAddress, newHeadAddress);
 
             if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
@@ -1068,12 +1068,12 @@ namespace FASTER.core
             long currentFlushedUntilAddress = FlushedUntilAddress;
 
             long newHeadAddress = desiredHeadAddress;
-            if (currentFlushedUntilAddress < newHeadAddress)
+            if (Utility.LessThanR(currentFlushedUntilAddress, newHeadAddress))
             {
                 newHeadAddress = currentFlushedUntilAddress;
             }
 
-            if (ReadCache && (newHeadAddress > HeadAddress))
+            if (ReadCache && Utility.GreaterThanR(newHeadAddress, HeadAddress))
                 EvictCallback(HeadAddress, newHeadAddress);
 
             if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
@@ -1095,7 +1095,7 @@ namespace FASTER.core
 
             bool update = false;
             long pageLastFlushedAddress = Interlocked.Read(ref PageStatusIndicator[(int)(page % BufferSize)].LastFlushedUntilAddress);
-            while (pageLastFlushedAddress >= currentFlushedUntilAddress)
+            while (Utility.GreaterThanEqualR(pageLastFlushedAddress, currentFlushedUntilAddress))
             {
                 currentFlushedUntilAddress = pageLastFlushedAddress;
                 update = true;
@@ -1122,7 +1122,7 @@ namespace FASTER.core
         private bool MonotonicUpdate(ref long variable, long newValue, out long oldValue)
         {
             oldValue = variable;
-            while (oldValue < newValue)
+            while (Utility.LessThanR(oldValue, newValue))
             {
                 var foundValue = Interlocked.CompareExchange(ref variable, newValue, oldValue);
                 if (foundValue == oldValue)
@@ -1501,7 +1501,7 @@ namespace FASTER.core
 
                         // Keys are not same. I/O is not complete
                         ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                        if (ctx.logicalAddress >= BeginAddress)
+                        if (Utility.GreaterThanEqualR(ctx.logicalAddress, BeginAddress))
                         {
                             ctx.record.Return();
                             ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
