@@ -42,8 +42,8 @@ namespace FASTER.test
         [Test]
         public void BlittableDiskWriteScan()
         {
-            fht.Log.RegisterReadOnlyCallback(new CacheEvictIterator());
-            
+            var s = fht.Log.Subscribe(new LogObserver());
+
             var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
             {
@@ -78,9 +78,11 @@ namespace FASTER.test
                 val++;
             }
             Assert.IsTrue(totalRecords == val);
+
+            s.Dispose();
         }
 
-        class CacheEvictIterator : IObserver<IFasterScanIterator<KeyStruct, ValueStruct>>
+        class LogObserver : IObserver<IFasterScanIterator<KeyStruct, ValueStruct>>
         {
             int val = 0;
 

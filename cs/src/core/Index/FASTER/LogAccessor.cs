@@ -16,7 +16,7 @@ namespace FASTER.core
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public class LogAccessor<Key, Value, Input, Output, Context>
+    public class LogAccessor<Key, Value, Input, Output, Context> : IObservable<IFasterScanIterator<Key, Value>>
         where Key : new()
         where Value : new()
     {
@@ -87,12 +87,34 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Register callback to notify user when records become read-only in FASTER log
+        /// Subscribe to records (in batches) as they become read-only in the log
+        /// Currently, we support only one subscriber to the log (easy to extend)
+        /// Subscriber only receives new log updates from the time of subscription onwards
+        /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="readOnlyObserver">Observer to which scan iterator is pushed</param>
-        public void RegisterReadOnlyCallback(IObserver<IFasterScanIterator<Key, Value>> readOnlyObserver)
+        public IDisposable Subscribe(IObserver<IFasterScanIterator<Key, Value>> readOnlyObserver)
         {
             allocator.OnReadOnlyObserver = readOnlyObserver;
+            return new LogSubscribeDisposable(allocator);
+        }
+
+        /// <summary>
+        /// Wrapper to help dispose the subscription
+        /// </summary>
+        class LogSubscribeDisposable : IDisposable
+        {
+            private AllocatorBase<Key, Value> allocator;
+
+            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator)
+            {
+                this.allocator = allocator;
+            }
+
+            public void Dispose()
+            {
+                allocator.OnReadOnlyObserver = null;
+            }
         }
 
         /// <summary>

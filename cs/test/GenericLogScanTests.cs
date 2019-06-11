@@ -50,7 +50,7 @@ namespace FASTER.test
         [Test]
         public void GenericDiskWriteScan()
         {
-            fht.Log.RegisterReadOnlyCallback(new CacheEvictIterator());
+            var s = fht.Log.Subscribe(new LogObserver());
 
             var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
@@ -85,9 +85,11 @@ namespace FASTER.test
                 }
                 Assert.IsTrue(totalRecords == val);
             }
+
+            s.Dispose();
         }
 
-        class CacheEvictIterator : IObserver<IFasterScanIterator<MyKey, MyValue>>
+        class LogObserver : IObserver<IFasterScanIterator<MyKey, MyValue>>
         {
             int val = 0;
 
