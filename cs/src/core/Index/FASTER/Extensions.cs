@@ -65,6 +65,7 @@ namespace FASTER.core
                 {
                     observer.OnNext(new Record<Key, Value> { info = info, key = key, value = value });
                 }
+                v.Dispose();
             }
         }
     }
