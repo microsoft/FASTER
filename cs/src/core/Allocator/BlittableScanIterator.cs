@@ -49,8 +49,13 @@ namespace FASTER.core
 
             if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
                 frameSize = 1;
-            else
+            else if (scanBufferingMode == ScanBufferingMode.DoublePageBuffering)
                 frameSize = 2;
+            else if (scanBufferingMode == ScanBufferingMode.NoBuffering)
+            {
+                frameSize = 0;
+                return;
+            }
 
             frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
             loaded = new CountdownEvent[frameSize];
@@ -93,12 +98,16 @@ namespace FASTER.core
                     throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
+                if (frameSize == 0 && currentAddress < hlog.HeadAddress)
+                {
+                    throw new Exception("Iterator address is less than log HeadAddress in memory-scan mode");
+                }
+
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
-                var currentFrame = currentPage % frameSize;
                 var offset = currentAddress & hlog.PageSizeMask;
 
                 if (currentAddress < hlog.HeadAddress)
-                    BufferAndLoad(currentAddress, currentPage, currentFrame);
+                    BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
                 var recordSize = hlog.GetRecordSize(hlog.GetPhysicalAddress(currentAddress));
                 // Check if record fits on page, if not skip to next page
@@ -127,7 +136,7 @@ namespace FASTER.core
                     return true;
                 }
 
-                var physicalAddress = frame.GetPhysicalAddress(currentFrame, offset);
+                var physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
 
                 if (hlog.GetInfo(physicalAddress).Invalid)
                 {
@@ -148,7 +157,7 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            frame.Dispose();
+            frame?.Dispose();
         }
 
         private unsafe void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)

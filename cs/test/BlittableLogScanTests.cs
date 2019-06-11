@@ -19,6 +19,7 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
         private IDevice log;
+        const int totalRecords = 2000;
 
         [SetUp]
         public void Setup()
@@ -41,7 +42,8 @@ namespace FASTER.test
         [Test]
         public void BlittableDiskWriteScan()
         {
-            const int totalRecords = 2000;
+            fht.Log.RegisterReadOnlyCallback(new CacheEvictIterator());
+            
             var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
             {
@@ -54,7 +56,7 @@ namespace FASTER.test
             var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering);
 
             int val = 0;
-            while (iter.GetNext(out RecordInfo recordInfo, out KeyStruct key, out ValueStruct value))
+            while (iter.GetNext(out _, out KeyStruct key, out ValueStruct value))
             {
                 Assert.IsTrue(key.kfield1 == val);
                 Assert.IsTrue(key.kfield2 == val + 1);
@@ -76,6 +78,33 @@ namespace FASTER.test
                 val++;
             }
             Assert.IsTrue(totalRecords == val);
+        }
+
+        class CacheEvictIterator : IObserver<IFasterScanIterator<KeyStruct, ValueStruct>>
+        {
+            int val = 0;
+
+            public void OnCompleted()
+            {
+                Assert.IsTrue(val == totalRecords);
+            }
+
+            public void OnError(Exception error)
+            {
+            }
+
+            public void OnNext(IFasterScanIterator<KeyStruct, ValueStruct> iter)
+            {
+                while (iter.GetNext(out _, out KeyStruct key, out ValueStruct value))
+                {
+                    Assert.IsTrue(key.kfield1 == val);
+                    Assert.IsTrue(key.kfield2 == val + 1);
+                    Assert.IsTrue(value.vfield1 == val);
+                    Assert.IsTrue(value.vfield2 == val + 1);
+                    val++;
+                }
+                iter.Dispose();
+            }
         }
     }
 }

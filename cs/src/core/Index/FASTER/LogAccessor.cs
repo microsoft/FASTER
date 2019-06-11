@@ -87,6 +87,15 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Register callback to notify user when records become read-only in FASTER log
+        /// </summary>
+        /// <param name="readOnlyObserver">Observer to which scan iterator is pushed</param>
+        public void RegisterReadOnlyCallback(IObserver<IFasterScanIterator<Key, Value>> readOnlyObserver)
+        {
+            allocator.OnReadOnlyObserver = readOnlyObserver;
+        }
+
+        /// <summary>
         /// Shift log read-only address
         /// </summary>
         /// <param name="newReadOnlyAddress">Address to shift read-only until</param>
