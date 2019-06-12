@@ -18,7 +18,12 @@ namespace FASTER.core
         /// <summary>
         /// Buffer current and next page in scan sequence
         /// </summary>
-        DoublePageBuffering
+        DoublePageBuffering,
+
+        /// <summary>
+        /// Do not buffer - with this mode, you can only scan records already in main memory
+        /// </summary>
+        NoBuffering
     }
 
     /// <summary>

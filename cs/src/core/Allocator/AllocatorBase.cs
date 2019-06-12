@@ -220,6 +220,11 @@ namespace FASTER.core
         /// </summary>
         protected readonly Action<long, long> EvictCallback = null;
 
+        /// <summary>
+        /// Observer for records entering read-only region
+        /// </summary>
+        internal IObserver<IFasterScanIterator<Key, Value>> OnReadOnlyObserver;
+
         #region Abstract methods
         /// <summary>
         /// Initialize
@@ -597,6 +602,8 @@ namespace FASTER.core
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
+
+            OnReadOnlyObserver?.OnCompleted();
         }
 
         /// <summary>
@@ -943,6 +950,9 @@ namespace FASTER.core
                 long startPage = oldSafeReadOnlyAddress >> LogPageSizeBits;
 
                 long endPage = (newSafeReadOnlyAddress >> LogPageSizeBits);
+
+                OnReadOnlyObserver?.OnNext(Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering));
+
                 int numPages = (int)(endPage - startPage);
                 if (numPages > 10)
                 {

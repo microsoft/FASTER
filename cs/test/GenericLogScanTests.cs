@@ -19,6 +19,7 @@ namespace FASTER.test
     {
         private FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> fht;
         private IDevice log, objlog;
+        const int totalRecords = 2000;
 
         [SetUp]
         public void Setup()
@@ -49,7 +50,8 @@ namespace FASTER.test
         [Test]
         public void GenericDiskWriteScan()
         {
-            const int totalRecords = 2000;
+            var s = fht.Log.Subscribe(new LogObserver());
+
             var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
             {
@@ -82,6 +84,33 @@ namespace FASTER.test
                     val++;
                 }
                 Assert.IsTrue(totalRecords == val);
+            }
+
+            s.Dispose();
+        }
+
+        class LogObserver : IObserver<IFasterScanIterator<MyKey, MyValue>>
+        {
+            int val = 0;
+
+            public void OnCompleted()
+            {
+                Assert.IsTrue(val == totalRecords);
+            }
+
+            public void OnError(Exception error)
+            {
+            }
+
+            public void OnNext(IFasterScanIterator<MyKey, MyValue> iter)
+            {
+                while (iter.GetNext(out _, out MyKey key, out MyValue value))
+                {
+                    Assert.IsTrue(key.key == val);
+                    Assert.IsTrue(value.value == val);
+                    val++;
+                }
+                iter.Dispose();
             }
         }
     }

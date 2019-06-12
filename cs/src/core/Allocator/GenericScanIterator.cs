@@ -52,8 +52,13 @@ namespace FASTER.core
 
             if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
                 frameSize = 1;
-            else
+            else if (scanBufferingMode == ScanBufferingMode.DoublePageBuffering)
                 frameSize = 2;
+            else if (scanBufferingMode == ScanBufferingMode.NoBuffering)
+            {
+                frameSize = 0;
+                return;
+            }
 
             frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
             loaded = new CountdownEvent[frameSize];
@@ -96,12 +101,17 @@ namespace FASTER.core
                     throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
+                if (frameSize == 0 && currentAddress < hlog.HeadAddress)
+                {
+                    throw new Exception("Iterator address is less than log HeadAddress in memory-scan mode");
+                }
+
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
-                var currentFrame = currentPage % frameSize;
+                
                 var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
                 if (currentAddress < hlog.HeadAddress)
-                    BufferAndLoad(currentAddress, currentPage, currentFrame);
+                    BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
                 // Check if record fits on page, if not skip to next page
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
@@ -128,6 +138,8 @@ namespace FASTER.core
                 }
 
                 nextAddress = currentAddress + recordSize;
+
+                var currentFrame = currentPage % frameSize;
 
                 if (frame.GetInfo(currentFrame, offset).Invalid)
                     continue;
@@ -170,10 +182,11 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            for (int i = 0; i < frameSize; i++)
-                loaded[i]?.Wait();
+            if (loaded != null)
+                for (int i = 0; i < frameSize; i++)
+                    loaded[i]?.Wait();
 
-            frame.Dispose();
+            frame?.Dispose();
         }
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
