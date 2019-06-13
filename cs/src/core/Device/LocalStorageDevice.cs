@@ -182,13 +182,25 @@ namespace FASTER.core
 
             fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
             if (deleteOnClose)
+            {
                 fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
+
+                // FILE_SHARE_DELETE allows multiple FASTER instances to share a single log directory and each can specify deleteOnClose.
+                // This will allow the files to persist until all handles across all instances have been closed.
+                fileShare = fileShare | Native32.FILE_SHARE_DELETE;
+            }
 
             var logHandle = Native32.CreateFileW(
                 GetSegmentName(segmentId),
                 fileAccess, fileShare,
                 IntPtr.Zero, fileCreation,
                 fileFlags, IntPtr.Zero);
+
+            if (logHandle.IsInvalid)
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw new IOException($"Error creating log file for {GetSegmentName(segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
+            }
 
             if (preallocateFile)
                 SetFileSize(FileName, logHandle, segmentSize);
