@@ -46,14 +46,14 @@ namespace FASTER.core
         {
             SerializerSettings = serializerSettings;
 
-            if (default(Key) == null && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
+            if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
-                throw new Exception("Key is a class, but no serializer specified via SerializerSettings");
+                throw new Exception("Key is not blittable, but no serializer specified via SerializerSettings");
             }
 
-            if (default(Value) == null && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
+            if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
-                throw new Exception("Value is a class, but no serializer specified via SerializerSettings");
+                throw new Exception("Value is not blittable, but no serializer specified via SerializerSettings");
             }
 
             values = new Record<Key, Value>[BufferSize][];
