@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -524,13 +523,12 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    throw new Win32Exception((int)errorCode, "AsyncFlushCallback received error");
+                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
-                throw;
             }
             finally
             {
@@ -632,13 +630,12 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    throw new Exception($"AsyncPageReadCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}");
+                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
-                throw;
             }
             finally
             {

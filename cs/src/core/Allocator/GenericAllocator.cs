@@ -443,13 +443,13 @@ namespace FASTER.core
 
         private void AsyncReadPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                throw new Exception($"AsyncReadPageCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
+            var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             result.handle.Signal();
 
@@ -492,13 +492,13 @@ namespace FASTER.core
         /// <param name="overlap"></param>
         private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            PageAsyncFlushResult<TContext> result = (PageAsyncFlushResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                throw new Exception($"AsyncFlushPartialObjectLogCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
+            PageAsyncFlushResult<TContext> result = (PageAsyncFlushResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
             result.done.Set();
 
             Overlapped.Free(overlap);
@@ -506,12 +506,12 @@ namespace FASTER.core
 
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
-
             if (errorCode != 0)
             {
-                throw new Exception($"AsyncReadPageWithObjectsCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
+
+            PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
 
             var src = values[result.page % BufferSize];
 

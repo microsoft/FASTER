@@ -5,12 +5,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using System.IO;
 using System.Diagnostics;
-using System.ComponentModel;
 
 namespace FASTER.core
 {
@@ -1478,7 +1473,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                throw new Win32Exception((int)errorCode, "AsyncGetFromDiskCallback received error");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)Overlapped.Unpack(overlap).AsyncResult;
@@ -1535,13 +1530,14 @@ namespace FASTER.core
         /// <param name="overlap"></param>
         private void AsyncFlushPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                throw new Exception($"AsyncFlushPageCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 if (!result.partial || (result.untilAddress >= ((result.page + 1) << LogPageSizeBits)))
@@ -1577,11 +1573,12 @@ namespace FASTER.core
         /// <param name="overlap"></param>
         private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                throw new Exception($"AsyncFlushPageToDeviceCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
+
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {

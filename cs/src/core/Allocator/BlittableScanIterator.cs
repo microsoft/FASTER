@@ -190,7 +190,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                throw new Exception("AsyncReadPagesCallbackOverlappedStream GetQueuedCompletionStatus error: {errorCode}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;

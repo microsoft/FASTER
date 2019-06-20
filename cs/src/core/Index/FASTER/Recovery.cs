@@ -497,13 +497,14 @@ namespace FASTER.core
 
         private void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                throw new Exception($"AsyncReadPagesCallbackForRecovery OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
+            var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+
             if (result.freeBuffer1 != null)
             {
                 hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
@@ -517,13 +518,14 @@ namespace FASTER.core
 
         private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            var result = (PageAsyncFlushResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                throw new Exception($"AsyncFlushPageCallbackForRecovery OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
+            var result = (PageAsyncFlushResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 int index = hlog.GetPageIndexForPage(result.page);
