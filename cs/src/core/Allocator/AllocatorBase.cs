@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.IO;
 using System.Diagnostics;
+using System.ComponentModel;
 
 namespace FASTER.core
 {
@@ -121,6 +122,11 @@ namespace FASTER.core
         /// HeadOffset lag (from tail)
         /// </summary>
         protected const int HeadOffsetLagNumPages = 4;
+
+        /// <summary>
+        /// HeadOffset lag (from tail) for ReadCache
+        /// </summary>
+        protected const int ReadCacheHeadOffsetLagNumPages = 1;
         /// <summary>
         /// HeadOffset lag size
         /// </summary>
@@ -462,30 +468,20 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// 
+        /// Instantiate base allocator
         /// </summary>
         /// <param name="settings"></param>
         /// <param name="comparer"></param>
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch)
-            : this(settings, comparer, epoch)
         {
             if (evictCallback != null)
             {
                 ReadCache = true;
                 EvictCallback = evictCallback;
             }
-        }
 
-        /// <summary>
-        /// Instantiate base allocator
-        /// </summary>
-        /// <param name="settings"></param>
-        /// <param name="comparer"></param>
-        /// <param name="epoch"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, LightEpoch epoch)
-        {
             this.comparer = comparer;
             if (epoch == null)
             {
@@ -509,8 +505,8 @@ namespace FASTER.core
             BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
             BufferSizeMask = BufferSize - 1;
 
-            // HeadOffset lag (from tail)
-            HeadOffsetLagSize = BufferSize - HeadOffsetLagNumPages;
+            // HeadOffset lag (from tail).
+            HeadOffsetLagSize = BufferSize - (ReadCache ? ReadCacheHeadOffsetLagNumPages : HeadOffsetLagNumPages);
             HeadOffsetLagAddress = (long)HeadOffsetLagSize << LogPageSizeBits;
 
             // ReadOnlyOffset lag (from tail). This should not exceed HeadOffset lag.
@@ -1163,7 +1159,7 @@ namespace FASTER.core
             
             HeadAddress = headAddress;
             SafeHeadAddress = headAddress;
-            FlushedUntilAddress = headAddress;
+            FlushedUntilAddress = tailAddress;
             ReadOnlyAddress = tailAddress;
             SafeReadOnlyAddress = tailAddress;
 
@@ -1482,7 +1478,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                throw new Win32Exception((int)errorCode, "AsyncGetFromDiskCallback received error");
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)Overlapped.Unpack(overlap).AsyncResult;
@@ -1539,14 +1535,13 @@ namespace FASTER.core
         /// <param name="overlap"></param>
         private void AsyncFlushPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                throw new Exception($"AsyncFlushPageCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
             }
 
             // Set the page status to flushed
-            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
-
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 if (!result.partial || (result.untilAddress >= ((result.page + 1) << LogPageSizeBits)))
@@ -1582,12 +1577,11 @@ namespace FASTER.core
         /// <param name="overlap"></param>
         private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
+            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                throw new Exception($"AsyncFlushPageToDeviceCallback OverlappedStream GetQueuedCompletionStatus error: {errorCode}, page: {result.page}");
             }
-
-            PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {

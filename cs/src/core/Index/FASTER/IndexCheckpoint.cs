@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -111,12 +112,13 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                    throw new Win32Exception((int)errorCode, "AsyncPageFlushCallback received error");
                 }
             }
             catch (Exception ex)
             {
                 Trace.TraceError("Completion Callback error, {0}", ex.Message);
+                throw;
             }
             finally
             {
