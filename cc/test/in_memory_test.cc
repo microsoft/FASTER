@@ -989,6 +989,9 @@ TEST(InMemFaster, Rmw) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     inline void RmwInitial(Value& value) {
       value.value_ = incr_;
     }
@@ -1176,6 +1179,9 @@ TEST(InMemFaster, Rmw_Concurrent) {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
       return sizeof(value_t);
     }
 
@@ -1472,6 +1478,9 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     inline uint32_t value_size() const {
       return sizeof(value_t) + length_;
     }
+    inline constexpr uint32_t value_size(const Value& old_value) const {
+      return sizeof(value_t) + length_;
+    }
 
     inline void RmwInitial(Value& value) {
       value.gen_lock_.store(GenLock{});
@@ -1727,6 +1736,9 @@ TEST(InMemFaster, GrowHashTable) {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
       return sizeof(value_t);
     }
 
