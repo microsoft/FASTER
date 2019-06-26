@@ -12,6 +12,9 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmark", "benchmark", "{CA6AB459-A31A-4C15-B1A6-A82C349B54B4}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{81B3B5D1-70F6-4979-AC76-003F9A6B316B}"
+	ProjectSection(SolutionItems) = preProject
+		src\core\FASTER.core.nuspec = src\core\FASTER.core.nuspec
+	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SumStore", "playground\SumStore\SumStore.csproj", "{05D61B37-9714-4234-9961-384A63F7175E}"
 EndProject
