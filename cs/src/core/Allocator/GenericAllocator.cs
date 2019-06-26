@@ -329,7 +329,6 @@ namespace FASTER.core
             List<long> addr = new List<long>();
             asyncResult.freeBuffer1 = buffer;
 
-            addr = new List<long>();
             MemoryStream ms = new MemoryStream();
             IObjectSerializer<Key> keySerializer = null;
             IObjectSerializer<Value> valueSerializer = null;
@@ -417,7 +416,7 @@ namespace FASTER.core
                     else
                     {
                         // need to write both page and object cache
-                        asyncResult.count++;
+                        Interlocked.Increment(ref asyncResult.count);
 
                         asyncResult.freeBuffer2 = _objBuffer;
                         objlogDevice.WriteAsync(
