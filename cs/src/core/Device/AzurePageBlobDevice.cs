@@ -15,8 +15,8 @@ namespace FASTER.core
         private CloudBlobContainer container;
         private readonly ConcurrentDictionary<int, CloudPageBlob> blobs;
 
-        // Azure Page Blobs permit blobs of max size 8 TB
-        const long MAX_BLOB_SIZE = (long)(8 * 10e12);
+        // Azure Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
+        const long MAX_BLOB_SIZE = (long)(2 * 10e8);
 
         // I don't believe the FileName attribute on the base class is meaningful here. As no external operation depends on its return value.
         // Therefore, I am using just the connectionString even though it is not a "file name".
@@ -25,7 +25,6 @@ namespace FASTER.core
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);
             CloudBlobClient client = storageAccount.CreateCloudBlobClient();
             container = client.GetContainerReference(containerName);
-            // TODO(Tianyu): WTF does this even do
             container.CreateIfNotExists();
             blobs = new ConcurrentDictionary<int, CloudPageBlob>();
         } 
@@ -90,7 +89,7 @@ namespace FASTER.core
 
             // TODO(Tianyu): There is a race hidden here if multiple applications are interacting with the same underlying blob store.
             // How that should be fixed is dependent on our decision on the architecture.
-            blob.Create(segmentSize);
+            blob.Create(size);
             return blob;
         }
     }
