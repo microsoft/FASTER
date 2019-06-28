@@ -153,10 +153,15 @@ namespace FASTER.core
                 logHandle.Dispose();
         }
 
-
-        private string GetSegmentName(int segmentId)
+        protected string GetSegmentName(int segmentId)
         {
             return FileName + "." + segmentId;
+        }
+
+        // Can be used to pre-load handles, e.g., after a checkpoint
+        protected SafeFileHandle GetOrAddHandle(int _segmentId)
+        {
+            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
         }
 
         private static uint GetSectorSize(string filename)
@@ -214,11 +219,6 @@ namespace FASTER.core
                 throw new Exception("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
             }
             return logHandle;
-        }
-
-        private SafeFileHandle GetOrAddHandle(int _segmentId)
-        {
-            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
         }
 
         /// Sets file size to the specified value.
