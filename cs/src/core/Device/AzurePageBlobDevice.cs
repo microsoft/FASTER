@@ -14,6 +14,10 @@ namespace FASTER.core
     {
         private CloudBlobContainer container;
         private readonly ConcurrentDictionary<int, CloudPageBlob> blobs;
+
+        // Azure Page Blobs permit blobs of max size 8 TB
+        const long MAX_BLOB_SIZE = (long)(8 * 10e12);
+
         // I don't believe the FileName attribute on the base class is meaningful here. As no external operation depends on its return value.
         // Therefore, I am using just the connectionString even though it is not a "file name".
         public AzurePageBlobDevice(string connectionString, string containerName, uint sectorSize = 512) : base(connectionString, sectorSize)
@@ -78,6 +82,12 @@ namespace FASTER.core
             // TODO(Tianyu): Is this now blocking? How sould this work when multiple apps share the same backing blob store?
             // TODO(Tianyu): Need a better naming scheme?
             CloudPageBlob blob = container.GetPageBlobReference("segment." + segmentId);
+
+            // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
+            // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
+            // how large it can grow to.
+            var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
+
             // TODO(Tianyu): There is a race hidden here if multiple applications are interacting with the same underlying blob store.
             // How that should be fixed is dependent on our decision on the architecture.
             blob.Create(segmentSize);
