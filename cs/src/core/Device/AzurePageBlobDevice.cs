@@ -8,7 +8,7 @@ using System.Threading;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 
-namespace FASTER.core.Device
+namespace FASTER.core
 {
     public class AzurePageBlobDevice : StorageDeviceBase
     {
@@ -23,6 +23,7 @@ namespace FASTER.core.Device
             container = client.GetContainerReference(containerName);
             // TODO(Tianyu): WTF does this even do
             container.CreateIfNotExists();
+            blobs = new ConcurrentDictionary<int, CloudPageBlob>();
         } 
 
         public override void Close()
@@ -49,9 +50,10 @@ namespace FASTER.core.Device
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
 
-            UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength);
+            UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength, readLength, FileAccess.Write);
 
-            // What do with the return value, or do I just not care?
+            // TODO(Tianyu): This implementation seems to swallow exceptions that would otherwise be thrown from the synchronous version of this
+            // function. I wasn't able to find any good documentaiton on how exceptions are propagated or handled in this scenario. 
             pageBlob.BeginDownloadRangeToStream(stream, (Int64)sourceAddress, readLength, ar => callback(0, readLength, ovNative), asyncResult);
         }
 
@@ -76,10 +78,9 @@ namespace FASTER.core.Device
             // TODO(Tianyu): Is this now blocking? How sould this work when multiple apps share the same backing blob store?
             // TODO(Tianyu): Need a better naming scheme?
             CloudPageBlob blob = container.GetPageBlobReference("segment." + segmentId);
-            // TODO(Tianyu): There does not seem to be an equivalent concept to preallocating in page blobs
-            // TODO(Tianyu): Also, why the hell is there no CreateIfExists on this thing? This is race-prone if multiple apps are sharing access to an instance
-            // Maybe I should fix this using leases, but the lease API is just absolute shit and has no documentation. 
-            blob.Create(SectorSize);
+            // TODO(Tianyu): There is a race hidden here if multiple applications are interacting with the same underlying blob store.
+            // How that should be fixed is dependent on our decision on the architecture.
+            blob.Create(segmentSize);
             return blob;
         }
     }
