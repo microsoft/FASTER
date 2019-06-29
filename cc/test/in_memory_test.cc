@@ -1478,7 +1478,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     inline uint32_t value_size() const {
       return sizeof(value_t) + length_;
     }
-    inline constexpr uint32_t value_size(const Value& old_value) const {
+    inline uint32_t value_size(const Value& old_value) const {
       return sizeof(value_t) + length_;
     }
 
@@ -1739,7 +1739,7 @@ public:
     inline uint32_t value_size() const {
       return sizeof(value_t) + sizeof(char);
     }
-    inline constexpr uint32_t value_size(const Value& old_value) const {
+    inline uint32_t value_size(const Value& old_value) const {
       return sizeof(value_t) + old_value.length_ + sizeof(char);
     }
 
