@@ -14,33 +14,20 @@ using NUnit.Framework;
 namespace FASTER.test
 {
 
+    // TODO(Tianyu): Now that we are also testing device with Azure Page Blobs here, should we also rename the test?
     [TestFixture]
     internal class BasicDiskFASTERTests
     {
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
         private IDevice log;
 
-        [SetUp]
-        public void Setup()
+        void TestDeviceWriteRead(IDevice log)
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true);
+            this.log = log;
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                (1L<<20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+                       (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
             fht.StartSession();
-        }
 
-        [TearDown]
-        public void TearDown()
-        {
-            fht.StopSession();
-            fht.Dispose();
-            fht = null;
-            log.Close();
-        }
-
-        [Test]
-        public void NativeDiskWriteRead()
-        {
             InputStruct input = default(InputStruct);
 
             for (int i = 0; i < 2000; i++)
@@ -86,6 +73,27 @@ namespace FASTER.test
                     }
                 }
             }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            fht.StopSession();
+            fht.Dispose();
+            fht = null;
+            log.Close();
+        }
+
+        [Test]
+        public void NativeDiskWriteRead()
+        {
+            TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true));
+        }
+
+        [Test]
+        public void PageBlobWriteRead()
+        {
+            TestDeviceWriteRead(Devices.CreateAzurePageBlobDevice("BasicDiskFASTERTests", deleteOnClose: false));
         }
     }
 }

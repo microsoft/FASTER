@@ -14,24 +14,38 @@ namespace FASTER.core
     {
         private CloudBlobContainer container;
         private readonly ConcurrentDictionary<int, CloudPageBlob> blobs;
-
+        private readonly string blobName;
+        private readonly bool deleteOnClose;
         // Azure Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
         const long MAX_BLOB_SIZE = (long)(2 * 10e8);
+        // Azure Page Blobs have a fixed sector size of 512 bytes.
+        const uint PAGE_BLOB_SECTOR_SIZE = 512;
 
-        // I don't believe the FileName attribute on the base class is meaningful here. As no external operation depends on its return value.
-        // Therefore, I am using just the connectionString even though it is not a "file name".
-        public AzurePageBlobDevice(string connectionString, string containerName, uint sectorSize = 512) : base(connectionString, sectorSize)
+        public AzurePageBlobDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false)
+            : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE)
         {
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);
             CloudBlobClient client = storageAccount.CreateCloudBlobClient();
             container = client.GetContainerReference(containerName);
             container.CreateIfNotExists();
             blobs = new ConcurrentDictionary<int, CloudPageBlob>();
-        } 
+            this.blobName = blobName;
+            this.deleteOnClose = deleteOnClose;
+        }
 
         public override void Close()
         {
-            // From what I can tell from the (nonexistent) documentation, no close operation is requried of page blobs
+            // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system
+            // to delete files after the end of our process. This leads to potential problems if multiple instances are sharing the same underlying page blobs.
+            //
+            // Since this flag is presumably only used for testing though, it is probably fine.
+            if (deleteOnClose)
+            {
+                foreach (var entry in blobs)
+                {
+                    entry.Value.Delete();
+                }
+            }
         }
 
         public override void DeleteSegmentRange(int fromSegment, int toSegment)
@@ -80,7 +94,7 @@ namespace FASTER.core
         {
             // TODO(Tianyu): Is this now blocking? How sould this work when multiple apps share the same backing blob store?
             // TODO(Tianyu): Need a better naming scheme?
-            CloudPageBlob blob = container.GetPageBlobReference("segment." + segmentId);
+            CloudPageBlob blob = container.GetPageBlobReference(blobName + segmentId);
 
             // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
             // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
