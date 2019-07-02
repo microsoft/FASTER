@@ -53,7 +53,7 @@ namespace FASTER.core
         /// <param name="connectionString"> The connection string to use when estblishing connection to Azure Blobs</param>
         /// <param name="containerName">Name of the Azure Blob container to use. If there does not exist a container with the supplied name, one is created</param>
         /// <param name = "deleteOnClose" >
-        /// True if the program should delete all blobs created on call to <see cref=IDevice.Close">Close</see>. False otherwise. 
+        /// True if the program should delete all blobs created on call to <see cref="IDevice.Close">Close</see>. False otherwise. 
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <returns>The constructed Device instance</returns>
