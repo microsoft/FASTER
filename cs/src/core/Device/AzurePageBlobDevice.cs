@@ -10,17 +10,33 @@ using Microsoft.Azure.Storage.Blob;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// A IDevice Implementation that is backed by<see href="https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview">Azure Page Blob</see>.
+    /// This device is expected to be an order of magnitude slower than local SSD or HDD, but provide scalability and shared access in the cloud.
+    /// </summary>
     public class AzurePageBlobDevice : StorageDeviceBase
     {
         private CloudBlobContainer container;
         private readonly ConcurrentDictionary<int, CloudPageBlob> blobs;
         private readonly string blobName;
         private readonly bool deleteOnClose;
-        // Azure Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
-        const long MAX_BLOB_SIZE = (long)(2 * 10e8);
-        // Azure Page Blobs have a fixed sector size of 512 bytes.
-        const uint PAGE_BLOB_SECTOR_SIZE = 512;
 
+        // Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
+        private const long MAX_BLOB_SIZE = (long)(2 * 10e8);
+        // Azure Page Blobs have a fixed sector size of 512 bytes.
+        private const uint PAGE_BLOB_SECTOR_SIZE = 512;
+
+        /// <summary>
+        /// Constructs a new AzurePageBlobDevice instance
+        /// </summary>
+        /// <param name="connectionString"> The connection string to use when estblishing connection to Azure Blobs</param>
+        /// <param name="containerName">Name of the Azure Blob container to use. If there does not exist a container with the supplied name, one is created</param>
+        /// <param name="blobName">A descriptive name that will be the prefix of all blobs created with this device</param>
+        /// <param name="deleteOnClose">
+        /// True if the program should delete all blobs created on call to <see cref="Close">Close</see>. False otherwise. 
+        /// The container is not deleted even if it was created in this constructor
+        /// </param>
+        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or -1 if there is no such limit </param>
         public AzurePageBlobDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false, int capacity = -1)
             : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
         {
@@ -33,6 +49,9 @@ namespace FASTER.core
             this.deleteOnClose = deleteOnClose;
         }
 
+        /// <summary>
+        /// <see cref="IDevice.Close">Inherited</see>
+        /// </summary>
         public override void Close()
         {
             // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system
@@ -47,7 +66,9 @@ namespace FASTER.core
                 }
             }
         }
-
+        /// <summary>
+        /// <see cref="IDevice.Close">Inherited</see>
+        /// </summary>
         public override void DeleteSegmentRange(int fromSegment, int toSegment)
         {
             for (int i = fromSegment; i < toSegment; i++)
@@ -58,7 +79,9 @@ namespace FASTER.core
                 }
             }
         }
-
+        /// <summary>
+        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
+        /// </summary>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             CloudPageBlob pageBlob = GetOrAddPageBlob(segmentId);
@@ -73,7 +96,9 @@ namespace FASTER.core
             // function. I wasn't able to find any good documentaiton on how exceptions are propagated or handled in this scenario. 
             pageBlob.BeginDownloadRangeToStream(stream, (Int64)sourceAddress, readLength, ar => callback(0, readLength, ovNative), asyncResult);
         }
-
+        /// <summary>
+        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
+        /// </summary>
         public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             CloudPageBlob pageBlob = GetOrAddPageBlob(segmentId);

@@ -154,11 +154,21 @@ namespace FASTER.core
                 logHandle.Dispose();
         }
 
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name="segmentId"></param>
+        /// <returns></returns>
         protected string GetSegmentName(int segmentId)
         {
             return FileName + "." + segmentId;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="_segmentId"></param>
+        /// <returns></returns>
         // Can be used to pre-load handles, e.g., after a checkpoint
         protected SafeFileHandle GetOrAddHandle(int _segmentId)
         {
