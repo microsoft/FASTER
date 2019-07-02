@@ -44,9 +44,6 @@ jobs:
   - powershell:  'msiexec /passive /lvx installation.log /a azure-storage-emulator.msi TARGETDIR="C:\storage-emulator"'
     displayName: 'Install Azure Storage Emulator'
 
-  - powershell: 'cat installation.log'
-    displayName: 'Dump log'
-
   - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
     displayName: 'Init Test Db'
 
