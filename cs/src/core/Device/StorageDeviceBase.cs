@@ -28,6 +28,11 @@ namespace FASTER.core
         /// </summary>
         public string FileName { get; }
 
+        /// <summary>
+        /// Returns the maximum capacity of the storage device, in number of bytes. 
+        /// If returned -1, the storage device has no capacity limit. 
+        /// </summary>
+        public int Capacity { get; }
 
         /// <summary>
         /// Segment size
@@ -38,11 +43,12 @@ namespace FASTER.core
         private ulong segmentSizeMask;
 
         /// <summary>
-        /// 
+        /// Initializes a new StorageDeviceBase
         /// </summary>
-        /// <param name="filename"></param>
-        /// <param name="sectorSize"></param>
-        public StorageDeviceBase(string filename, uint sectorSize)
+        /// <param name="filename">Name of the file to use</param>
+        /// <param name="sectorSize">The smallest unit of write of the underlying storage device (e.g. 512 bytes for a disk) </param>
+        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or -1 if there is no such limit </param>
+        public StorageDeviceBase(string filename, uint sectorSize, int capacity)
         {
             FileName = filename;        
             SectorSize = sectorSize;
@@ -50,6 +56,8 @@ namespace FASTER.core
             segmentSize = -1;
             segmentSizeBits = 64;
             segmentSizeMask = ~0UL;
+
+            Capacity = capacity;
         }
 
         /// <summary>

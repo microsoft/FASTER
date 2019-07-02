@@ -21,8 +21,8 @@ namespace FASTER.core
         // Azure Page Blobs have a fixed sector size of 512 bytes.
         const uint PAGE_BLOB_SECTOR_SIZE = 512;
 
-        public AzurePageBlobDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false)
-            : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE)
+        public AzurePageBlobDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false, int capacity = -1)
+            : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);
             CloudBlobClient client = storageAccount.CreateCloudBlobClient();

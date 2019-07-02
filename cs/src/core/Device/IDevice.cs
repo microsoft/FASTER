@@ -22,6 +22,12 @@ namespace FASTER.core
         string FileName { get; }
 
         /// <summary>
+        /// Returns the maximum capacity of the storage device, in number of bytes. 
+        /// If returned -1, the storage device has no capacity limit. 
+        /// </summary>
+        public int Capacity { get; }
+
+        /// <summary>
         /// Initialize device
         /// </summary>
         /// <param name="segmentSize"></param>

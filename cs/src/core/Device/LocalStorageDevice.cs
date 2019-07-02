@@ -26,8 +26,9 @@ namespace FASTER.core
         /// <param name="filename"></param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        public LocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false)
-            : base(filename, GetSectorSize(filename))
+        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or -1 if there is no such limit </param>
+        public LocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, int capacity = -1)
+            : base(filename, GetSectorSize(filename), capacity)
         {
             Native32.EnableProcessPrivileges();
             this.preallocateFile = preallocateFile;
