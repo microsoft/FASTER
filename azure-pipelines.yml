@@ -41,7 +41,7 @@ jobs:
   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
     displayName: 'Download Azure Storage Emulator'
 
-  - powershell:  'msiexec /quiet /a .\azure-storage-emulator.msi REINSTALL=ALL REINSTALLMODE=A'
+  - powershell:  'msiexec /passive /a azure-storage-emulator.msi REINSTALL=ALL REINSTALLMODE=A'
     displayName: 'Install Azure Storage Emulator'
 
   - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
