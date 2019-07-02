@@ -50,7 +50,7 @@ jobs:
   - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
     displayName: 'Init Test Db'
 
-  - script: '"C:\storage-emulator\AzureStorageEmulator.exe" start'
+  - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
     displayName: 'Start Storage Emulator'
 
   - task: VSTest@2
