@@ -46,6 +46,17 @@ namespace FASTER.core
 
         // TODO(Tianyu): How do we want to integrate the option of using AzurePageBlobDevice into the original static factory class? We can either follow the original pattern and somehow encode this in the string path argument,
         // or use concrete factories that are initialized per instance to only create one type. 
+        /// <summary>
+        /// Creates a log device backed by <see href="https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview">Azure Page Blob</see>.
+        /// </summary>
+        /// <param name="blobName">A descriptive name that will be the prefix of all blobs created with this device</param>
+        /// <param name="connectionString"> The connection string to use when estblishing connection to Azure Blobs</param>
+        /// <param name="containerName">Name of the Azure Blob container to use. If there does not exist a container with the supplied name, one is created</param>
+        /// <param name = "deleteOnClose" >
+        /// True if the program should delete all blobs created on call to <see cref="Close">Close</see>. False otherwise. 
+        /// The container is not deleted even if it was created in this constructor
+        /// </param>
+        /// <returns>The constructed Device instance</returns>
         public static IDevice CreateAzurePageBlobDevice(string blobName, string storageString = EMULATED_STORAGE_STRING, string containerName = TEST_CONTAINER, bool deleteOnClose = false)
         {
             return new AzurePageBlobDevice(storageString, containerName, blobName, deleteOnClose);
