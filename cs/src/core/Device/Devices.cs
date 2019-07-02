@@ -13,8 +13,8 @@ namespace FASTER.core
     /// </summary>
     public static class Devices
     {
-        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        public const string TEST_CONTAINER = "test";
+        private const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+        private const string TEST_CONTAINER = "test";
 
         /// <summary>
         /// Create a storage device for the log
@@ -57,9 +57,9 @@ namespace FASTER.core
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <returns>The constructed Device instance</returns>
-        public static IDevice CreateAzurePageBlobDevice(string blobName, string storageString = EMULATED_STORAGE_STRING, string containerName = TEST_CONTAINER, bool deleteOnClose = false)
+        public static IDevice CreateAzurePageBlobDevice(string blobName, string connectionString = EMULATED_STORAGE_STRING, string containerName = TEST_CONTAINER, bool deleteOnClose = false)
         {
-            return new AzurePageBlobDevice(storageString, containerName, blobName, deleteOnClose);
+            return new AzurePageBlobDevice(connectionString, containerName, blobName, deleteOnClose);
         }
     }
 

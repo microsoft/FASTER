@@ -41,6 +41,9 @@ jobs:
   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
     displayName: 'Download Azure Storage Emulator'
 
+  - powershell: 'msiexec /passive /uninstall azure-storage-emulator.msi'
+    displayName: 'Remove old Azure Storage Emulator'
+
   - powershell:  'msiexec /passive /a azure-storage-emulator.msi REINSTALL=ALL REINSTALLMODE=A'
     displayName: 'Install Azure Storage Emulator'
 

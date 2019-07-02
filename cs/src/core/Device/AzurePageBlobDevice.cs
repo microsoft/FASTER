@@ -10,6 +10,10 @@ using Microsoft.Azure.Storage.Blob;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// A IDevice Implementation that is backed by<see href="https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview">Azure Page Blob</see>.
+    /// This device is expected to be an order of magnitude slower than local SSD or HDD, but provide scalability and shared access in the cloud.
+    /// </summary>
     public class AzurePageBlobDevice : StorageDeviceBase
     {
         private CloudBlobContainer container;
@@ -23,8 +27,7 @@ namespace FASTER.core
         private const uint PAGE_BLOB_SECTOR_SIZE = 512;
 
         /// <summary>
-        /// A IDevice Implementation that is backed by <see href="https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview">Azure Page Blob</see>.
-        /// This device is expected to be an order of magnitude slower than local SSD or HDD, but provide scalability and shared access in the cloud. 
+        /// Constructs a new AzurePageBlobDevice instance
         /// </summary>
         /// <param name="connectionString"> The connection string to use when estblishing connection to Azure Blobs</param>
         /// <param name="containerName">Name of the Azure Blob container to use. If there does not exist a container with the supplied name, one is created</param>
