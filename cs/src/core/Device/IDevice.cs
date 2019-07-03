@@ -23,9 +23,9 @@ namespace FASTER.core
 
         /// <summary>
         /// Returns the maximum capacity of the storage device, in number of bytes. 
-        /// If returned -1, the storage device has no capacity limit. 
+        /// If returned CAPACITY_UNSPECIFIED, the storage device has no specfied capacity limit. 
         /// </summary>
-        public int Capacity { get; }
+        ulong Capacity { get; }
 
         /// <summary>
         /// Initialize device
@@ -33,9 +33,8 @@ namespace FASTER.core
         /// <param name="segmentSize"></param>
         void Initialize(long segmentSize);
 
-
+        
         /* Segmented addressing API */
-
         /// <summary>
         /// Write
         /// </summary>

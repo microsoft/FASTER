@@ -18,6 +18,12 @@ namespace FASTER.core
     /// </summary>
     public abstract class StorageDeviceBase : IDevice
     {
+
+        /// <summary>
+        /// This value is supplied for capacity when the device does not have a specified limit.
+        /// </summary>
+        public const ulong CAPACITY_UNSPECIFIED = ulong.MaxValue;
+
         /// <summary>
         /// 
         /// </summary>
@@ -32,7 +38,7 @@ namespace FASTER.core
         /// Returns the maximum capacity of the storage device, in number of bytes. 
         /// If returned -1, the storage device has no capacity limit. 
         /// </summary>
-        public int Capacity { get; }
+        public ulong Capacity { get; }
 
         /// <summary>
         /// Segment size
@@ -47,8 +53,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="filename">Name of the file to use</param>
         /// <param name="sectorSize">The smallest unit of write of the underlying storage device (e.g. 512 bytes for a disk) </param>
-        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or -1 if there is no such limit </param>
-        public StorageDeviceBase(string filename, uint sectorSize, int capacity)
+        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPAPCITY_UNSPECIFIED if there is no such limit </param>
+        public StorageDeviceBase(string filename, uint sectorSize, ulong capacity)
         {
             FileName = filename;        
             SectorSize = sectorSize;
@@ -66,6 +72,9 @@ namespace FASTER.core
         /// <param name="segmentSize"></param>
         public void Initialize(long segmentSize)
         {
+            // TODO(Tianyu): Alternatively, we can adjust capacity based on the segment size: given a phsyical upper limit of capacity,
+            // we only make use of (Capacity / segmentSize * segmentSize) many bytes. 
+            Debug.Assert(Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
             this.segmentSize = segmentSize;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
