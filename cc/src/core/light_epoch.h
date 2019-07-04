@@ -177,8 +177,10 @@ class LightEpoch {
   inline uint64_t Protect() {
     uint32_t entry = Thread::id();
 
-    auto e = current_epoch.load();
-    table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
+    auto e = current_epoch.load(std::memory_order_relaxed);
+    table_[entry].local_current_epoch.store(e, std::memory_order_relaxed);
+
+    std::atomic_thread_fence(std::memory_order_seq_cst);
 
     return e;
   }
@@ -187,8 +189,10 @@ class LightEpoch {
   /// Process entries in drain list if possible
   inline uint64_t ProtectAndDrain() {
     uint32_t entry = Thread::id();
-    auto e = current_epoch.load();
-    table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
+    auto e = current_epoch.load(std::memory_order_relaxed);
+    table_[entry].local_current_epoch.store(e, std::memory_order_relaxed);
+
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     if(drain_count_.load() > 0) {
       Drain(e);
     }
@@ -202,8 +206,9 @@ class LightEpoch {
     if(cur_epoch != kUnprotected)
       return cur_epoch;
 
-    auto e = current_epoch.load();
-    table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
+    auto e = current_epoch.load(std::memory_order_relaxed);
+    table_[entry].local_current_epoch.store(e, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_seq_cst);
 
     table_[entry].reentrant++;
     return e;
