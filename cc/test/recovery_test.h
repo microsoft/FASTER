@@ -2948,6 +2948,9 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
+      return sizeof(value_t);
+    }
     /// Non-atomic and atomic Put() methods.
     inline void RmwInitial(Value& value) {
       value.val_ = key_.key_;
@@ -3386,6 +3389,9 @@ TEST(CLASS, Concurrent_Rmw_Large) {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.

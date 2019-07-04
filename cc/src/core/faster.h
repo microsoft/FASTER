@@ -1074,7 +1074,14 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
 
   // Create a record and attempt RCU.
 create_record:
-  uint32_t record_size = record_t::size(key, pending_context.value_size());
+  uint32_t record_size;
+  const record_t* old_record;
+  if (address >= head_address) {
+    old_record = reinterpret_cast<const record_t*>(hlog.Get(address));
+    record_size = record_t::size(key, pending_context.value_size(old_record));
+  } else {
+    record_size = record_t::size(key, pending_context.value_size());
+  }
   Address new_address = BlockAllocate(record_size);
   record_t* new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
 
@@ -1095,7 +1102,6 @@ create_record:
   if(address < hlog.begin_address.load()) {
     pending_context.RmwInitial(new_record);
   } else if(address >= head_address) {
-    const record_t* old_record = reinterpret_cast<const record_t*>(hlog.Get(address));
     pending_context.RmwCopy(old_record, new_record);
   } else {
     // The block we allocated for the new record caused the head address to advance beyond
