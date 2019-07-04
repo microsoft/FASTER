@@ -177,7 +177,7 @@ class LightEpoch {
   inline uint64_t Protect() {
     uint32_t entry = Thread::id();
 
-    auto e = current_epoch.load(std::memory_order_relaxed);
+    auto e = current_epoch.load();
     table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
 
     return e;
@@ -187,7 +187,7 @@ class LightEpoch {
   /// Process entries in drain list if possible
   inline uint64_t ProtectAndDrain() {
     uint32_t entry = Thread::id();
-    auto e = current_epoch.load(std::memory_order_relaxed);
+    auto e = current_epoch.load();
     table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
     if(drain_count_.load() > 0) {
       Drain(e);
@@ -202,7 +202,7 @@ class LightEpoch {
     if(cur_epoch != kUnprotected)
       return cur_epoch;
 
-    auto e = current_epoch.load(std::memory_order_relaxed);
+    auto e = current_epoch.load();
     table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
 
     table_[entry].reentrant++;
