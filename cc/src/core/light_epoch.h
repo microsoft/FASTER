@@ -179,6 +179,7 @@ class LightEpoch {
 
     auto e = current_epoch.load(std::memory_order_relaxed);
     table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
+
     return table_[entry].local_current_epoch;
   }
 
