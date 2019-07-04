@@ -180,7 +180,7 @@ class LightEpoch {
     auto e = current_epoch.load(std::memory_order_relaxed);
     table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
 
-    return table_[entry].local_current_epoch;
+    return e;
   }
 
   /// Enter the thread into the protected code region
@@ -190,24 +190,28 @@ class LightEpoch {
     auto e = current_epoch.load(std::memory_order_relaxed);
     table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
     if(drain_count_.load() > 0) {
-      Drain(table_[entry].local_current_epoch);
+      Drain(e);
     }
-    return table_[entry].local_current_epoch;
+    return e;
   }
 
   uint64_t ReentrantProtect() {
     uint32_t entry = Thread::id();
-    if(table_[entry].local_current_epoch != kUnprotected)
-      return table_[entry].local_current_epoch;
+
+    auto cur_epoch = table_[entry].local_current_epoch.load(std::memory_order_relaxed);
+    if(cur_epoch != kUnprotected)
+      return cur_epoch;
+
     auto e = current_epoch.load(std::memory_order_relaxed);
     table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
+
     table_[entry].reentrant++;
-    return table_[entry].local_current_epoch;
+    return e;
   }
 
   inline bool IsProtected() {
     uint32_t entry = Thread::id();
-    return table_[entry].local_current_epoch != kUnprotected;
+    return table_[entry].local_current_epoch.load(std::memory_order_relaxed) != kUnprotected;
   }
 
   /// Exit the thread from the protected code region.
@@ -278,7 +282,7 @@ class LightEpoch {
   uint64_t ComputeNewSafeToReclaimEpoch(uint64_t current_epoch_) {
     uint64_t oldest_ongoing_call = current_epoch_;
     for(uint32_t index = 1; index <= num_entries_; ++index) {
-      uint64_t entry_epoch = table_[index].local_current_epoch;
+      uint64_t entry_epoch = table_[index].local_current_epoch.load(std::memory_order_relaxed);
       if(entry_epoch != kUnprotected && entry_epoch < oldest_ongoing_call) {
         oldest_ongoing_call = entry_epoch;
       }
@@ -315,7 +319,7 @@ class LightEpoch {
     // Check if other threads have reported complete.
     for(uint32_t idx = 1; idx <= num_entries_; ++idx) {
       Phase entry_phase = table_[idx].phase_finished.load();
-      uint64_t entry_epoch = table_[idx].local_current_epoch;
+      uint64_t entry_epoch = table_[idx].local_current_epoch.load(std::memory_order_relaxed);
       if(entry_epoch != 0 && entry_phase != phase) {
         return false;
       }
