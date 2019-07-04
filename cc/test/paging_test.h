@@ -90,6 +90,9 @@ TEST(CLASS, UpsertRead_Serial) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
       value.gen_ = 0;
@@ -367,6 +370,9 @@ TEST(CLASS, UpsertRead_Concurrent) {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
@@ -665,6 +671,9 @@ TEST(CLASS, Rmw) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     inline void RmwInitial(Value& value) {
       value.counter_ = incr_;
       val_ = value.counter_;
@@ -834,6 +843,9 @@ TEST(CLASS, Rmw_Concurrent) {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
       return sizeof(value_t);
     }
     inline void RmwInitial(Value& value) {
