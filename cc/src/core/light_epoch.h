@@ -31,7 +31,7 @@ class LightEpoch {
       , phase_finished{ Phase::REST } {
     }
 
-    uint64_t local_current_epoch;
+    std::atomic<uint64_t> local_current_epoch;
     uint32_t reentrant;
     std::atomic<Phase> phase_finished;
   };
@@ -176,7 +176,9 @@ class LightEpoch {
   /// Enter the thread into the protected code region
   inline uint64_t Protect() {
     uint32_t entry = Thread::id();
-    table_[entry].local_current_epoch = current_epoch.load();
+
+    auto e = current_epoch.load(std::memory_order_relaxed);
+    table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
     return table_[entry].local_current_epoch;
   }
 
@@ -184,7 +186,8 @@ class LightEpoch {
   /// Process entries in drain list if possible
   inline uint64_t ProtectAndDrain() {
     uint32_t entry = Thread::id();
-    table_[entry].local_current_epoch = current_epoch.load();
+    auto e = current_epoch.load(std::memory_order_relaxed);
+    table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
     if(drain_count_.load() > 0) {
       Drain(table_[entry].local_current_epoch);
     }
@@ -195,7 +198,8 @@ class LightEpoch {
     uint32_t entry = Thread::id();
     if(table_[entry].local_current_epoch != kUnprotected)
       return table_[entry].local_current_epoch;
-    table_[entry].local_current_epoch = current_epoch.load();
+    auto e = current_epoch.load(std::memory_order_relaxed);
+    table_[entry].local_current_epoch.store(e, std::memory_order_acquire);
     table_[entry].reentrant++;
     return table_[entry].local_current_epoch;
   }
@@ -207,13 +211,13 @@ class LightEpoch {
 
   /// Exit the thread from the protected code region.
   void Unprotect() {
-    table_[Thread::id()].local_current_epoch = kUnprotected;
+    table_[Thread::id()].local_current_epoch.store(kUnprotected, std::memory_order_release);
   }
 
   void ReentrantUnprotect() {
     uint32_t entry = Thread::id();
     if(--(table_[entry].reentrant) == 0) {
-      table_[entry].local_current_epoch = kUnprotected;
+      table_[entry].local_current_epoch.store(kUnprotected, std::memory_order_release);
     }
   }
 
