@@ -10,9 +10,13 @@ namespace FASTER.core.Device
     {
         private readonly IList<IDevice> devices;
         private readonly int commitPoint;
+        // TODO(Tianyu): For some retarded reason Interlocked provides no CompareExchange for unsigned primitives.
         // Because it is assumed that tiers are inclusive with one another, we only need to store the starting address of the log portion avialable on each tier.
         // That implies this list is sorted in descending order with the last tier being 0 always.
-        private readonly ulong[] tierStartAddresses;
+        private readonly long[] tierStartAddresses;
+        // Because the device has no access to in-memory log tail information, we need to keep track of that ourselves. Currently this is done by keeping a high-water
+        // mark of the addresses seen in the WriteAsyncMethod.
+        private long logHead;
 
         // TODO(Tianyu): So far, I don't believe sector size is used anywhere in the code. Therefore I am not reasoning about what the
         // sector size of a tiered storage should be when different tiers can have different sector sizes.
@@ -24,13 +28,16 @@ namespace FASTER.core.Device
         /// device with smallest index in the list that has the requested data
         /// </param>
         /// <param name="commitPoint"></param>
+        // TODO(Tianyu): Recovering from a tiered device is potentially difficult, because we also need to recover their respective ranges.
         public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices))
         {
             Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
             this.devices = devices;
             this.commitPoint = commitPoint;
-            tierStartAddresses = (ulong[])Array.CreateInstance(typeof(ulong), devices.Count);
+            tierStartAddresses = (long[])Array.CreateInstance(typeof(long), devices.Count);
             tierStartAddresses.Initialize();
+            // TODO(Tianyu): Change after figuring out how to deal with recovery.
+            logHead = 0;
         }
 
         public TieredStorageDevice(int commitPoint, params IDevice[] devices) : this(commitPoint, (IList<IDevice>)devices)
@@ -48,12 +55,12 @@ namespace FASTER.core.Device
         public override void DeleteAddressRange(long fromAddress, long toAddress)
         {
             // TODO(Tianyu): concurrency
-            int fromStartTier = FindClosestDeviceContaining((ulong)fromAddress);
-            int toStartTier = FindClosestDeviceContaining((ulong)toAddress);
+            int fromStartTier = FindClosestDeviceContaining(fromAddress);
+            int toStartTier = FindClosestDeviceContaining(toAddress);
             for (int i = fromStartTier; i < toStartTier; i++)
             {
                 // Because our tiered storage is inclusive, 
-                devices[i].DeleteAddressRange((long)Math.Max((ulong)fromAddress, tierStartAddresses[i]), toAddress);
+                devices[i].DeleteAddressRange((long)Math.Max(fromAddress, tierStartAddresses[i]), toAddress);
             }
         }
 
@@ -65,7 +72,7 @@ namespace FASTER.core.Device
         public override void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint alignedReadLength, IOCompletionCallback callback, IAsyncResult asyncResulte)
         {
             // TODO(Tianyu): This whole operation needs to be thread-safe with concurrent calls to writes, which may trigger a change in start address.
-            IDevice closestDevice = devices[FindClosestDeviceContaining(alignedSourceAddress)];
+            IDevice closestDevice = devices[FindClosestDeviceContaining((long)alignedSourceAddress)];
             // We can directly forward the address, because assuming an inclusive policy, all devices agree on the same address space. The only difference is that some segments may not
             // be present for certain devices. 
             closestDevice.ReadAsync(alignedSourceAddress, alignedDestinationAddress, alignedReadLength, callback, asyncResulte);
@@ -79,10 +86,16 @@ namespace FASTER.core.Device
 
         public override unsafe void WriteAsync(IntPtr sourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            int startTier = FindClosestDeviceContaining(alignedDestinationAddress);
+            long writeHead = (long)alignedDestinationAddress + numBytesToWrite;
+            // TODO(Tianyu): Think more carefully about how this can interleave.
+            UpdateLogHead(writeHead);
+            for (int i = 0; i < devices.Count; i++)
+            {
+                UpdateDeviceRange(i, writeHead);
+            }
+            int startTier = FindClosestDeviceContaining((long)alignedDestinationAddress);
             // TODO(Tianyu): Can you ever initiate a write that is after the commit point? Given FASTER's model of a read-only region, this will probably never happen.
             Debug.Assert(startTier >= commitPoint, "Write should not elide the commit point");
-            // TODO(Tianyu): This whole operation needs to be thread-safe with concurrent calls to reads.
             for (int i = startTier; i < devices.Count; i++)
             {
                 if (i == commitPoint)
@@ -134,7 +147,7 @@ namespace FASTER.core.Device
             return result.ToString();
         }
 
-        private int FindClosestDeviceContaining(ulong address)
+        private int FindClosestDeviceContaining(long address)
         {
             // TODO(Tianyu): Will linear search be faster for small number of tiers (which would be the common case)?
             // binary search where the array is sorted in reverse order to the default ulong comparator
@@ -142,6 +155,32 @@ namespace FASTER.core.Device
             // Binary search returns either the index or bitwise complement of the index of the first element smaller than start address.
             // We want the first element with start address smaller than given address. 
             return tier >= 0 ? ++tier : ~tier;
+        }
+
+        private void UpdateLogHead(long writeHead)
+        {
+            long logHeadLocal;
+            do
+            {
+                logHeadLocal = logHead;
+                if (logHeadLocal >= writeHead) return;
+            } while (logHeadLocal != Interlocked.CompareExchange(ref logHead, writeHead, logHeadLocal));
+        }
+
+        private void UpdateDeviceRange(int tier, long writeHead)
+        {
+            IDevice device = devices[tier];
+            // Never need to update range if storage is unbounded
+            if (device.Capacity == CAPACITY_UNSPECIFIED) return;
+
+            long oldLogTail = tierStartAddresses[tier];
+            if (writeHead - oldLogTail > device.Capacity)
+            {
+                long newLogTail = writeHead - oldLogTail - device.Capacity;
+                tierStartAddresses[tier] = newLogTail;
+                // TODO(Tianyu): There will be a race here with readers. Epoch protection?
+                device.DeleteAddressRange(oldLogTail, newLogTail);
+            }
         }
     }
 }
