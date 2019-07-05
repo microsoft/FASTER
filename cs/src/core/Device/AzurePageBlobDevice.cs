@@ -37,7 +37,7 @@ namespace FASTER.core
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        public AzurePageBlobDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false, ulong capacity = CAPACITY_UNSPECIFIED)
+        public AzurePageBlobDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED)
             : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);

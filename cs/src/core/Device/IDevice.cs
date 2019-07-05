@@ -25,7 +25,7 @@ namespace FASTER.core
         /// Returns the maximum capacity of the storage device, in number of bytes. 
         /// If returned CAPACITY_UNSPECIFIED, the storage device has no specfied capacity limit. 
         /// </summary>
-        ulong Capacity { get; }
+        long Capacity { get; }
 
         /// <summary>
         /// Initialize device

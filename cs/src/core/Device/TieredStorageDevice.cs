@@ -29,7 +29,7 @@ namespace FASTER.core.Device
             Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
             this.devices = devices;
             this.commitPoint = commitPoint;
-            tierStartAddresses = Array.CreateInstance(typeof(IDevice), devices.Count);
+            tierStartAddresses = (ulong[])Array.CreateInstance(typeof(ulong), devices.Count);
             tierStartAddresses.Initialize();
         }
 
@@ -48,12 +48,12 @@ namespace FASTER.core.Device
         public override void DeleteAddressRange(long fromAddress, long toAddress)
         {
             // TODO(Tianyu): concurrency
-            int fromStartTier = FindClosestDeviceContaining(fromAddress);
-            int toStartTier = FindClosestDeviceContaining(toAddress);
+            int fromStartTier = FindClosestDeviceContaining((ulong)fromAddress);
+            int toStartTier = FindClosestDeviceContaining((ulong)toAddress);
             for (int i = fromStartTier; i < toStartTier; i++)
             {
                 // Because our tiered storage is inclusive, 
-                devices[i].DeleteAddressRange(Math.Max(fromAddress, tierStartAddresses[i]), toAddress);
+                devices[i].DeleteAddressRange((long)Math.Max((ulong)fromAddress, tierStartAddresses[i]), toAddress);
             }
         }
 
@@ -62,10 +62,10 @@ namespace FASTER.core.Device
             throw new NotSupportedException();
         }
 
-        public override void ReadAsync(ulong alignedSourceAddress, IntPtr aligneDestinationAddress, uint alignedReadLength, IOCompletionCallback callback, IAsyncResult asyncResulte)
+        public override void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint alignedReadLength, IOCompletionCallback callback, IAsyncResult asyncResulte)
         {
             // TODO(Tianyu): This whole operation needs to be thread-safe with concurrent calls to writes, which may trigger a change in start address.
-            IDevice closestDevice = devices[FindClosestDeviceContaining(alignedSoourceAddress)];
+            IDevice closestDevice = devices[FindClosestDeviceContaining(alignedSourceAddress)];
             // We can directly forward the address, because assuming an inclusive policy, all devices agree on the same address space. The only difference is that some segments may not
             // be present for certain devices. 
             closestDevice.ReadAsync(alignedSourceAddress, alignedDestinationAddress, alignedReadLength, callback, asyncResulte);
@@ -77,7 +77,7 @@ namespace FASTER.core.Device
             throw new NotSupportedException();
         }
 
-        public override void WriteAsync(IntPtr sourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void WriteAsync(IntPtr sourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             int startTier = FindClosestDeviceContaining(alignedDestinationAddress);
             // TODO(Tianyu): Can you ever initiate a write that is after the commit point? Given FASTER's model of a read-only region, this will probably never happen.
@@ -104,9 +104,9 @@ namespace FASTER.core.Device
             throw new NotSupportedException();
         }
 
-        private static ulong ComputeCapacity(IList<IDevice> devices)
+        private static long ComputeCapacity(IList<IDevice> devices)
         {
-            ulong result = 0;
+            long result = 0;
             // The capacity of a tiered storage device is the sum of the capacity of its tiers
             foreach (IDevice device in devices)
             {
@@ -138,7 +138,7 @@ namespace FASTER.core.Device
         {
             // TODO(Tianyu): Will linear search be faster for small number of tiers (which would be the common case)?
             // binary search where the array is sorted in reverse order to the default ulong comparator
-            int tier = Array.BinarySearch(tierStartAddresses, 0, tierStartAddresses.Length, alignedStartAddress, (x, y) => y.CompareTo(x));
+            int tier = Array.BinarySearch(tierStartAddresses, 0, tierStartAddresses.Length, address, Comparer<ulong>.Create((x, y) => y.CompareTo(x)));
             // Binary search returns either the index or bitwise complement of the index of the first element smaller than start address.
             // We want the first element with start address smaller than given address. 
             return tier >= 0 ? ++tier : ~tier;

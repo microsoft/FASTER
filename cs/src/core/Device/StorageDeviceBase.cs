@@ -22,7 +22,7 @@ namespace FASTER.core
         /// <summary>
         /// This value is supplied for capacity when the device does not have a specified limit.
         /// </summary>
-        public const ulong CAPACITY_UNSPECIFIED = ulong.MaxValue;
+        public const long CAPACITY_UNSPECIFIED = long.MaxValue;
 
         /// <summary>
         /// 
@@ -38,7 +38,7 @@ namespace FASTER.core
         /// Returns the maximum capacity of the storage device, in number of bytes. 
         /// If returned -1, the storage device has no capacity limit. 
         /// </summary>
-        public ulong Capacity { get; }
+        public long Capacity { get; }
 
         /// <summary>
         /// Segment size
@@ -54,7 +54,7 @@ namespace FASTER.core
         /// <param name="filename">Name of the file to use</param>
         /// <param name="sectorSize">The smallest unit of write of the underlying storage device (e.g. 512 bytes for a disk) </param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPAPCITY_UNSPECIFIED if there is no such limit </param>
-        public StorageDeviceBase(string filename, uint sectorSize, ulong capacity)
+        public StorageDeviceBase(string filename, uint sectorSize, long capacity)
         {
             FileName = filename;        
             SectorSize = sectorSize;
@@ -98,7 +98,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public virtual void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             var segment = segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0;
             WriteAsync(
@@ -116,7 +116,7 @@ namespace FASTER.core
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public virtual void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             var segment = segmentSizeBits < 64 ? alignedSourceAddress >> segmentSizeBits : 0;
 
@@ -132,7 +132,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fromAddress"></param>
         /// <param name="toAddress"></param>
-        public void DeleteAddressRange(long fromAddress, long toAddress)
+        public virtual void DeleteAddressRange(long fromAddress, long toAddress)
         {
             var fromSegment = segmentSizeBits < 64 ? fromAddress >> segmentSizeBits : 0;
             var toSegment = segmentSizeBits < 64 ? toAddress >> segmentSizeBits : 0;
