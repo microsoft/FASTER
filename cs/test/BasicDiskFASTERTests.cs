@@ -95,5 +95,15 @@ namespace FASTER.test
         {
             TestDeviceWriteRead(Devices.CreateAzurePageBlobDevice("BasicDiskFASTERTests", deleteOnClose: false));
         }
+
+        [Test]
+        public void TieredWriteRead()
+        {
+            // TODO(Tianyu): Magic constant
+            IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity : 1 << 30);
+            IDevice cloudDevice = Devices.CreateAzurePageBlobDevice("BasicDiskFASTERTests", deleteOnClose: false);
+            var device = new TieredStorageDevice(1, localDevice, cloudDevice);
+            TestDeviceWriteRead(device);
+        }
     }
 }

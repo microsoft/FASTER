@@ -13,6 +13,8 @@ namespace FASTER.core
     /// </summary>
     public static class Devices
     {
+        // TODO(Tianyu): Should I just move the constant from storage device base here?
+        public const long CAPACITY_UNSPECIFIED = StorageDeviceBase.CAPACITY_UNSPECIFIED;
         private const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         private const string TEST_CONTAINER = "test";
 
@@ -22,8 +24,9 @@ namespace FASTER.core
         /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
         /// <param name="preallocateFile">Whether we try to preallocate the file on creation</param>
         /// <param name="deleteOnClose">Delete files on close</param>
+        /// <param name="capacity"></param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = true, bool deleteOnClose = false)
+        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = true, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED)
         {
             
             if (string.IsNullOrWhiteSpace(logPath))
@@ -34,12 +37,12 @@ namespace FASTER.core
 #if DOTNETCORE
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                logDevice = new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose);
+                logDevice = new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, capacity);
             }
             else
 #endif
             {
-                logDevice = new LocalStorageDevice(logPath, preallocateFile, deleteOnClose);
+                logDevice = new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, capacity);
             }
             return logDevice;
         }

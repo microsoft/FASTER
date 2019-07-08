@@ -70,7 +70,7 @@ namespace FASTER.core
         /// Initialize device
         /// </summary>
         /// <param name="segmentSize"></param>
-        public void Initialize(long segmentSize)
+        public virtual void Initialize(long segmentSize)
         {
             // TODO(Tianyu): Alternatively, we can adjust capacity based on the segment size: given a phsyical upper limit of capacity,
             // we only make use of (Capacity / segmentSize * segmentSize) many bytes. 

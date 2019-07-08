@@ -4,7 +4,7 @@ using System.Text;
 using System.Diagnostics;
 using System.Threading;
 
-namespace FASTER.core.Device
+namespace FASTER.core
 {
     class TieredStorageDevice : StorageDeviceBase
     {
@@ -32,6 +32,7 @@ namespace FASTER.core.Device
         public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices))
         {
             Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
+            // TODO(Tianyu): Should assert that passed in devices are not yet initialized. This is more challenging for recovering.
             this.devices = devices;
             this.commitPoint = commitPoint;
             tierStartAddresses = (long[])Array.CreateInstance(typeof(long), devices.Count);
@@ -44,10 +45,19 @@ namespace FASTER.core.Device
         {
         }
 
+        public override void Initialize(long segmentSize)
+        {
+            foreach (IDevice devices in devices)
+            {
+                devices.Initialize(segmentSize);
+            }
+        }
+
         public override void Close()
         {
             foreach (IDevice device in devices)
             {
+                // TODO(Tianyu): All writes need to have succeeded when we call this.
                 device.Close();
             }
         }
@@ -95,7 +105,7 @@ namespace FASTER.core.Device
             }
             int startTier = FindClosestDeviceContaining((long)alignedDestinationAddress);
             // TODO(Tianyu): Can you ever initiate a write that is after the commit point? Given FASTER's model of a read-only region, this will probably never happen.
-            Debug.Assert(startTier >= commitPoint, "Write should not elide the commit point");
+            Debug.Assert(startTier <= commitPoint, "Write should not elide the commit point");
             for (int i = startTier; i < devices.Count; i++)
             {
                 if (i == commitPoint)
@@ -106,6 +116,7 @@ namespace FASTER.core.Device
                 else
                 {
                     // Otherwise, simply issue the write without caring about callbacks
+                    // TODO(Tianyu): We may need some type of count down to verify that all writes are finished before closing a device.
                     devices[i].WriteAsync(sourceAddress, alignedDestinationAddress, numBytesToWrite, (e, n, o) => { }, null);
                 }
             }
@@ -149,12 +160,14 @@ namespace FASTER.core.Device
 
         private int FindClosestDeviceContaining(long address)
         {
-            // TODO(Tianyu): Will linear search be faster for small number of tiers (which would be the common case)?
-            // binary search where the array is sorted in reverse order to the default ulong comparator
-            int tier = Array.BinarySearch(tierStartAddresses, 0, tierStartAddresses.Length, address, Comparer<ulong>.Create((x, y) => y.CompareTo(x)));
-            // Binary search returns either the index or bitwise complement of the index of the first element smaller than start address.
-            // We want the first element with start address smaller than given address. 
-            return tier >= 0 ? ++tier : ~tier;
+            // Can use binary search, but 1) it might not be faster than linear on a array assumed small, and 2) C# built in does not guarantee first element is returned on duplicates.
+            // Therefore we are sticking to the simpler approach at first.
+            for (int i = 0; i < devices.Count; i++)
+            {
+                if (tierStartAddresses[i] <= address) return i;
+            }
+            // TODO(Tianyu): This exception should never be triggered if we enforce that the last tier has unbounded storage.
+            throw new ArgumentException("No such address exists");
         }
 
         private void UpdateLogHead(long writeHead)
