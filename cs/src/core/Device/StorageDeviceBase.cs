@@ -22,7 +22,7 @@ namespace FASTER.core
         /// <summary>
         /// This value is supplied for capacity when the device does not have a specified limit.
         /// </summary>
-        public const long CAPACITY_UNSPECIFIED = long.MaxValue;
+        public const long CAPACITY_UNSPECIFIED = -1;
 
         /// <summary>
         /// 
@@ -74,7 +74,7 @@ namespace FASTER.core
         {
             // TODO(Tianyu): Alternatively, we can adjust capacity based on the segment size: given a phsyical upper limit of capacity,
             // we only make use of (Capacity / segmentSize * segmentSize) many bytes. 
-            Debug.Assert(Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
+            Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
             this.segmentSize = segmentSize;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
