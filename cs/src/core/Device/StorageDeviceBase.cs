@@ -20,11 +20,6 @@ namespace FASTER.core
     {
 
         /// <summary>
-        /// This value is supplied for capacity when the device does not have a specified limit.
-        /// </summary>
-        public const long CAPACITY_UNSPECIFIED = -1;
-
-        /// <summary>
         /// 
         /// </summary>
         public uint SectorSize { get; }

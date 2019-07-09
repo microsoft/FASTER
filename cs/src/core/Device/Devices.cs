@@ -13,8 +13,10 @@ namespace FASTER.core
     /// </summary>
     public static class Devices
     {
-        // TODO(Tianyu): Should I just move the constant from storage device base here?
-        public const long CAPACITY_UNSPECIFIED = StorageDeviceBase.CAPACITY_UNSPECIFIED;
+        /// <summary>
+        /// This value is supplied for capacity when the device does not have a specified limit.
+        /// </summary>
+        public const long CAPACITY_UNSPECIFIED = -1;
         private const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         private const string TEST_CONTAINER = "test";
 
