@@ -28,10 +28,17 @@ namespace FASTER.core
         long Capacity { get; }
 
         /// <summary>
-        /// Initialize device
+        /// Initialize device. This function is used to pass optional information that may only be known after
+        /// FASTER initialization (whose constructor takes in IDevice upfront). Implementation are free to ignore
+        /// information if it does not need the supplied information.
+        /// 
+        /// This is a bit of a hack. 
         /// </summary>
         /// <param name="segmentSize"></param>
-        void Initialize(long segmentSize);
+        /// <param name="epoch">
+        /// The instance of the epoch protection framework to use, if needed
+        /// </param>
+        void Initialize(long segmentSize, LightEpoch epoch = null);
 
         
         /* Segmented addressing API */
@@ -56,6 +63,8 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
         void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult);
+
+        void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult);
 
         /// <summary>
         /// Delete segment range

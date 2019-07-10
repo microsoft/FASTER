@@ -486,8 +486,8 @@ namespace FASTER.core
             else
                 this.epoch = epoch;
 
-            settings.LogDevice.Initialize(1L << settings.SegmentSizeBits);
-            settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits);
+            settings.LogDevice.Initialize(1L << settings.SegmentSizeBits, epoch);
+            settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits, epoch);
 
             // Page size
             LogPageSizeBits = settings.PageSizeBits;

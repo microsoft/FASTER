@@ -70,6 +70,11 @@ namespace FASTER.core
         {
         }
 
+        public override void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
+        {
+            UseSynchronousDeleteSegmentRangeForAsync(fromSegment, toSegment, callback, asyncResult);
+        }
+
         /// <summary>
         /// 
         /// </summary>

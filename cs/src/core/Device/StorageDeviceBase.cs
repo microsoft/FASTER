@@ -43,6 +43,9 @@ namespace FASTER.core
         private int segmentSizeBits;
         private ulong segmentSizeMask;
 
+        // A device may have internal in-memory data structure that requires epoch protection under concurrent access.
+        protected LightEpoch epoch;
+
         /// <summary>
         /// Initializes a new StorageDeviceBase
         /// </summary>
@@ -65,12 +68,13 @@ namespace FASTER.core
         /// Initialize device
         /// </summary>
         /// <param name="segmentSize"></param>
-        public virtual void Initialize(long segmentSize)
+        public virtual void Initialize(long segmentSize, LightEpoch epoch = null)
         {
             // TODO(Tianyu): Alternatively, we can adjust capacity based on the segment size: given a phsyical upper limit of capacity,
             // we only make use of (Capacity / segmentSize * segmentSize) many bytes. 
             Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
             this.segmentSize = segmentSize;
+            this.epoch = epoch;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
@@ -93,7 +97,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public virtual void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             var segment = segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0;
             WriteAsync(
@@ -111,7 +115,7 @@ namespace FASTER.core
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public virtual void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             var segment = segmentSizeBits < 64 ? alignedSourceAddress >> segmentSizeBits : 0;
 
@@ -127,11 +131,16 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fromAddress"></param>
         /// <param name="toAddress"></param>
-        public virtual void DeleteAddressRange(long fromAddress, long toAddress)
+        public void DeleteAddressRange(long fromAddress, long toAddress)
         {
             var fromSegment = segmentSizeBits < 64 ? fromAddress >> segmentSizeBits : 0;
             var toSegment = segmentSizeBits < 64 ? toAddress >> segmentSizeBits : 0;
             DeleteSegmentRange((int)fromSegment, (int)toSegment);
+        }
+
+        private bool AlignedAtSegmentBoundary(long address)
+        {
+            return ((long)segmentSizeMask & address) == 0;
         }
 
         /// <summary>
@@ -161,7 +170,26 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fromSegment"></param>
         /// <param name="toSegment"></param>
-        public abstract void DeleteSegmentRange(int fromSegment, int toSegment);
+        public virtual unsafe void DeleteSegmentRange(int fromSegment, int toSegment)
+        {
+            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
+            DeleteSegmentRangeAsync(fromSegment, toSegment, r =>
+            {
+                completionEvent.Set();
+            }, null);
+            completionEvent.Wait();
+        }
+
+        public abstract void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult);
+
+
+        protected void UseSynchronousDeleteSegmentRangeForAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
+        {
+            DeleteSegmentRange(fromSegment, toSegment);
+            // TODO(Tianyu): There is apparently no setters on IAsyncResult. Should I just pass this or do I need to set some states?
+            // e.g. set CompletedSynchronously to true
+            callback(asyncResult);
+        }
 
         /// <summary>
         /// 

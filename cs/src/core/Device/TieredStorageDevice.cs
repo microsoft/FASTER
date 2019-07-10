@@ -14,10 +14,10 @@ namespace FASTER.core
         // TODO(Tianyu): For some retarded reason Interlocked provides no CompareExchange for unsigned primitives.
         // Because it is assumed that tiers are inclusive with one another, we only need to store the starting address of the log portion avialable on each tier.
         // That implies this list is sorted in descending order with the last tier being 0 always.
-        private readonly long[] tierStartAddresses;
+        private readonly int[] tierStartSegment;
         // Because the device has no access to in-memory log tail information, we need to keep track of that ourselves. Currently this is done by keeping a high-water
-        // mark of the addresses seen in the WriteAsyncMethod.
-        private long logHead;
+        // mark of the segment id seen in the WriteAsyncMethod.
+        private int logTail;
 
         // TODO(Tianyu): Not reasoning about what the sector size of a tiered storage should be when different tiers can have different sector sizes.
         /// <summary>
@@ -39,10 +39,10 @@ namespace FASTER.core
             // TODO(Tianyu): Should assert that passed in devices are not yet initialized. This is more challenging for recovering.
             this.devices = devices;
             this.commitPoint = commitPoint;
-            tierStartAddresses = (long[])Array.CreateInstance(typeof(long), devices.Count);
-            tierStartAddresses.Initialize();
+            tierStartSegment = (int[])Array.CreateInstance(typeof(int), devices.Count);
+            tierStartSegment.Initialize();
             // TODO(Tianyu): Change after figuring out how to deal with recovery.
-            logHead = 0;
+            logTail = 0;
         }
 
         /// <summary>
@@ -50,8 +50,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="commitPoint">
         /// The index of an <see cref="IDevice">IDevice</see> in <see cref="devices">devices</see>. When a write has been completed on the device,
-        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
-        /// will not be called until the write is completed on the commit point device.
+        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// will not be called until the write is completed on commit point device and all previous tiers.
         /// </param>
         /// <param name="devices">
         /// List of devices to be used. The list should be given in order of hot to cold. Read is served from the
@@ -63,11 +63,14 @@ namespace FASTER.core
 
 
         // TODO(Tianyu): Unclear whether this is the right design. Should we allow different tiers different segment sizes?
-        public override void Initialize(long segmentSize)
+        public override void Initialize(long segmentSize, LightEpoch epoch)
         {
+            Debug.Assert(epoch != null, "TieredStorage requires epoch protection to work correctly");
+            base.Initialize(segmentSize, epoch);
+
             foreach (IDevice devices in devices)
             {
-                devices.Initialize(segmentSize);
+                devices.Initialize(segmentSize, epoch);
             }
         }
 
@@ -80,48 +83,44 @@ namespace FASTER.core
             }
         }
 
-        public override void DeleteAddressRange(long fromAddress, long toAddress)
+        public override void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
         {
             // TODO(Tianyu): concurrency
-            int fromStartTier = FindClosestDeviceContaining(fromAddress);
-            int toStartTier = FindClosestDeviceContaining(toAddress);
+            // TODO(Tianyu): It is probably fine to simply forward the call given how this API is being used. There is plenty of room
+            // for erroneous inputs here though. 
+            int fromStartTier = FindClosestDeviceContaining(fromSegment);
+            int toStartTier = FindClosestDeviceContaining(toSegment);
+            var countdown = new CountdownEvent(toStartTier - fromStartTier);  // number of devices to wait on
             for (int i = fromStartTier; i < toStartTier; i++)
             {
                 // Because our tiered storage is inclusive, 
-                devices[i].DeleteAddressRange((long)Math.Max(fromAddress, tierStartAddresses[i]), toAddress);
+                devices[i].DeleteSegmentRangeAsync(Math.Max(fromSegment, tierStartSegment[i]), toSegment, r =>
+                {
+                    if (countdown.Signal()) callback(asyncResult);
+                }, null);
             }
         }
 
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint alignedReadLength, IOCompletionCallback callback, IAsyncResult asyncResulte)
-        {
-            // TODO(Tianyu): This whole operation needs to be thread-safe with concurrent calls to writes, which may trigger a change in start address.
-            IDevice closestDevice = devices[FindClosestDeviceContaining((long)alignedSourceAddress)];
-            // We can directly forward the address, because assuming an inclusive policy, all devices agree on the same address space. The only difference is that some segments may not
-            // be present for certain devices. 
-            closestDevice.ReadAsync(alignedSourceAddress, alignedDestinationAddress, alignedReadLength, callback, asyncResulte);
-        }
 
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            // If it is not guaranteed that all underlying tiers agree on a segment size, this API cannot have a meaningful implementation
-            throw new NotSupportedException();
+            // TODO(Tianyu): This whole operation needs to be thread-safe with concurrent calls to writes, which may trigger a change in start address.
+            IDevice closestDevice = devices[FindClosestDeviceContaining(segmentId)];
+            // TODO(Tianyu): I don't think there is a "grab-lock" step for the epoch protection framework here?
+            // We can directly forward the address, because assuming an inclusive policy, all devices agree on the same address space. The only difference is that some segments may not
+            // be present for certain devices. 
+            closestDevice.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, asyncResult);
         }
 
-        public override unsafe void WriteAsync(IntPtr sourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            long writeHead = (long)alignedDestinationAddress + numBytesToWrite;
             // TODO(Tianyu): Think more carefully about how this can interleave.
-            UpdateLogHead(writeHead);
+            UpdateLogTail(segmentId);
             for (int i = 0; i < devices.Count; i++)
             {
-                UpdateDeviceRange(i, writeHead);
+                UpdateDeviceRange(i, segmentId);
             }
-            int startTier = FindClosestDeviceContaining((long)alignedDestinationAddress);
+            int startTier = FindClosestDeviceContaining(segmentId);
             // TODO(Tianyu): Can you ever initiate a write that is after the commit point? Given FASTER's model of a read-only region, this will probably never happen.
             Debug.Assert(startTier <= commitPoint, "Write should not elide the commit point");
 
@@ -131,14 +130,12 @@ namespace FASTER.core
             {
                 if (i <= commitPoint)
                 {
+                  
                     // All tiers before the commit point (incluisive) need to be persistent before the callback is invoked.
-                    devices[i].WriteAsync(sourceAddress, alignedDestinationAddress, numBytesToWrite, (e, n, o) =>
+                    devices[i].WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, (e, n, o) =>
                     {
                         // The last tier to finish invokes the callback
-                        if (countdown.Signal())
-                        {
-                            callback(e, n, o);
-                        }
+                        if (countdown.Signal()) callback(e, n, o);
                     }, asyncResult);
                 }
                 else
@@ -147,15 +144,9 @@ namespace FASTER.core
                     // Some device may already provide said guarantee, however.
 
                     // Otherwise, simply issue the write without caring about callbacks
-                    devices[i].WriteAsync(sourceAddress, alignedDestinationAddress, numBytesToWrite, (e, n, o) => { }, null);
+                    devices[i].WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, (e, n, o) => { }, null);
                 }
             }
-        }
-
-        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
-        {
-            // If it is not guaranteed that all underlying tiers agree on a segment size, this API cannot have a meaningful implementation
-            throw new NotSupportedException();
         }
 
         private static long ComputeCapacity(IList<IDevice> devices)
@@ -196,36 +187,37 @@ namespace FASTER.core
             // Therefore we are sticking to the simpler approach at first.
             for (int i = 0; i < devices.Count; i++)
             {
-                if (tierStartAddresses[i] <= address) return i;
+                if (tierStartSegment[i] <= address) return i;
             }
             // TODO(Tianyu): This exception should never be triggered if we enforce that the last tier has unbounded storage.
             throw new ArgumentException("No such address exists");
         }
 
-        private void UpdateLogHead(long writeHead)
+        private void UpdateLogTail(int writeTail)
         {
-            long logHeadLocal;
+            int logTailLocal;
             do
             {
-                logHeadLocal = logHead;
-                if (logHeadLocal >= writeHead) return;
-            } while (logHeadLocal != Interlocked.CompareExchange(ref logHead, writeHead, logHeadLocal));
+                logTailLocal = logTail;
+                if (logTailLocal >= writeTail) return;
+            } while (logTailLocal != Interlocked.CompareExchange(ref logTail, writeTail, logTailLocal));
         }
 
-        private void UpdateDeviceRange(int tier, long writeHead)
+        private void UpdateDeviceRange(int tier, int writeTail)
         {
             IDevice device = devices[tier];
             // Never need to update range if storage is unbounded
             if (device.Capacity == Devices.CAPACITY_UNSPECIFIED) return;
 
-            long oldLogTail = tierStartAddresses[tier];
-            if (writeHead - oldLogTail > device.Capacity)
+            int oldStartSegment = tierStartSegment[tier];
+            if ((writeTail - oldStartSegment) * segmentSize > device.Capacity)
             {
-                long newLogTail = writeHead - oldLogTail - device.Capacity;
-                tierStartAddresses[tier] = newLogTail;
-                // TODO(Tianyu): This should also be made async.
-                // TODO(Tianyu): There will be a race here with readers. Epoch protection?
-                device.DeleteAddressRange(oldLogTail, newLogTail);
+                int newStartSegment = writeTail - oldStartSegment - (int)(device.Capacity / segmentSize);
+                tierStartSegment[tier] = newStartSegment;
+                // We are assuming that the capacity given to a storage tier is not the physical capacity of the underlying device --- there will always be enough space to
+                // write extra segments while deletes are underway. If this assumption is not true, we will need to perform any writes in the callback of the delete. 
+                // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete. 
+                epoch.BumpCurrentEpoch(() => device.DeleteSegmentRangeAsync(oldStartSegment, newStartSegment, r => { }, null));
             }
         }
     }
