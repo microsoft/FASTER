@@ -44,7 +44,7 @@ Completed items are included to provide the context and progress of the work.
 * [x] Highly configurable allocator parameters (log and read cache) with respect to memory size, page size, mutable fraction of memory, etc.
 * [x] Support for runtime shifting of address markers (e.g., begin, head, read-only) for dynamic tuning of memory contents of allocators (log and read cache).
 * [x] Log compaction by rolling forward older active keys
-
+* [x] Support for subscribing to the hybrid log (push-based, as record batches become read-only): [PR](https://github.com/Microsoft/FASTER/pull/133)
 
 #### Checkpoint and Recovery
 

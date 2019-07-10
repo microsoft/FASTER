@@ -102,6 +102,9 @@ class RmwContext : public IAsyncContext {
   inline static constexpr uint32_t value_size() {
     return sizeof(value_t);
   }
+  inline static constexpr uint32_t value_size(const NumClicks& old_value) {
+    return sizeof(value_t);
+  }
 
  protected:
   /// The explicit interface requires a DeepCopy_Internal() implementation.

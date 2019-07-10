@@ -260,7 +260,10 @@ class AsyncPendingRmwContext : public PendingContext<K> {
   virtual void RmwCopy(const void* old_rec, void* rec) = 0;
   /// in-place update.
   virtual bool RmwAtomic(void* rec) = 0;
+  /// Get value size for initial value or in-place update
   virtual uint32_t value_size() const = 0;
+  /// Get value size for RCU
+  virtual uint32_t value_size(const void* old_rec) const = 0;
 };
 
 /// A synchronous Rmw() context preserves its type information.
@@ -312,8 +315,14 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
     record_t* record = reinterpret_cast<record_t*>(rec);
     return rmw_context().RmwAtomic(record->value());
   }
+  /// Get value size for initial value or in-place update
   inline constexpr uint32_t value_size() const final {
     return rmw_context().value_size();
+  }
+  /// Get value size for RCU
+  inline constexpr uint32_t value_size(const void* old_rec) const final {
+    const record_t* old_record = reinterpret_cast<const record_t*>(old_rec);
+    return rmw_context().value_size(old_record->value());
   }
 };
 

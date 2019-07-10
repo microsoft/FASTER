@@ -222,6 +222,9 @@ class RmwContext : public IAsyncContext {
   inline static constexpr uint32_t value_size() {
     return sizeof(value_t);
   }
+  inline static constexpr uint32_t value_size(const value_t& old_value) {
+    return sizeof(value_t);
+  }
 
   /// Initial, non-atomic, and atomic RMW methods.
   inline void RmwInitial(value_t& value) {

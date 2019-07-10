@@ -5,10 +5,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using System.IO;
 using System.Diagnostics;
 
 namespace FASTER.core
@@ -121,6 +117,11 @@ namespace FASTER.core
         /// HeadOffset lag (from tail)
         /// </summary>
         protected const int HeadOffsetLagNumPages = 4;
+
+        /// <summary>
+        /// HeadOffset lag (from tail) for ReadCache
+        /// </summary>
+        protected const int ReadCacheHeadOffsetLagNumPages = 1;
         /// <summary>
         /// HeadOffset lag size
         /// </summary>
@@ -219,6 +220,11 @@ namespace FASTER.core
         /// Read cache eviction callback
         /// </summary>
         protected readonly Action<long, long> EvictCallback = null;
+
+        /// <summary>
+        /// Observer for records entering read-only region
+        /// </summary>
+        internal IObserver<IFasterScanIterator<Key, Value>> OnReadOnlyObserver;
 
         #region Abstract methods
         /// <summary>
@@ -457,30 +463,20 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// 
+        /// Instantiate base allocator
         /// </summary>
         /// <param name="settings"></param>
         /// <param name="comparer"></param>
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch)
-            : this(settings, comparer, epoch)
         {
             if (evictCallback != null)
             {
                 ReadCache = true;
                 EvictCallback = evictCallback;
             }
-        }
 
-        /// <summary>
-        /// Instantiate base allocator
-        /// </summary>
-        /// <param name="settings"></param>
-        /// <param name="comparer"></param>
-        /// <param name="epoch"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, LightEpoch epoch)
-        {
             this.comparer = comparer;
             if (epoch == null)
             {
@@ -504,8 +500,8 @@ namespace FASTER.core
             BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
             BufferSizeMask = BufferSize - 1;
 
-            // HeadOffset lag (from tail)
-            HeadOffsetLagSize = BufferSize - HeadOffsetLagNumPages;
+            // HeadOffset lag (from tail).
+            HeadOffsetLagSize = BufferSize - (ReadCache ? ReadCacheHeadOffsetLagNumPages : HeadOffsetLagNumPages);
             HeadOffsetLagAddress = (long)HeadOffsetLagSize << LogPageSizeBits;
 
             // ReadOnlyOffset lag (from tail). This should not exceed HeadOffset lag.
@@ -597,6 +593,8 @@ namespace FASTER.core
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
+
+            OnReadOnlyObserver?.OnCompleted();
         }
 
         /// <summary>
@@ -943,6 +941,9 @@ namespace FASTER.core
                 long startPage = oldSafeReadOnlyAddress >> LogPageSizeBits;
 
                 long endPage = (newSafeReadOnlyAddress >> LogPageSizeBits);
+
+                OnReadOnlyObserver?.OnNext(Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering));
+
                 int numPages = (int)(endPage - startPage);
                 if (numPages > 10)
                 {
@@ -1153,7 +1154,7 @@ namespace FASTER.core
             
             HeadAddress = headAddress;
             SafeHeadAddress = headAddress;
-            FlushedUntilAddress = headAddress;
+            FlushedUntilAddress = tailAddress;
             ReadOnlyAddress = tailAddress;
             SafeReadOnlyAddress = tailAddress;
 

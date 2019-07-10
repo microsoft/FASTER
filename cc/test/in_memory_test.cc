@@ -989,6 +989,9 @@ TEST(InMemFaster, Rmw) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     inline void RmwInitial(Value& value) {
       value.value_ = incr_;
     }
@@ -1176,6 +1179,9 @@ TEST(InMemFaster, Rmw_Concurrent) {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
       return sizeof(value_t);
     }
 
@@ -1472,6 +1478,9 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     inline uint32_t value_size() const {
       return sizeof(value_t) + length_;
     }
+    inline uint32_t value_size(const Value& old_value) const {
+      return sizeof(value_t) + length_;
+    }
 
     inline void RmwInitial(Value& value) {
       value.gen_lock_.store(GenLock{});
@@ -1653,6 +1662,236 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
   store.StopSession();
 }
 
+TEST(InMemFaster, Rmw_GrowString_Concurrent) {
+class Key {
+public:
+    Key(uint64_t key)
+            : key_{ key } {
+    }
+
+    inline static constexpr uint32_t size() {
+      return static_cast<uint32_t>(sizeof(Key));
+    }
+    inline KeyHash GetHash() const {
+      std::hash<uint64_t> hash_fn;
+      return KeyHash{ hash_fn(key_) };
+    }
+
+    /// Comparison operators.
+    inline bool operator==(const Key& other) const {
+      return key_ == other.key_;
+    }
+    inline bool operator!=(const Key& other) const {
+      return key_ != other.key_;
+    }
+
+private:
+    uint64_t key_;
+};
+
+class RmwContext;
+class ReadContext;
+
+class Value {
+public:
+    Value()
+            : length_{ 0 } {
+    }
+
+    inline uint32_t size() const {
+      return length_;
+    }
+
+    friend class RmwContext;
+    friend class ReadContext;
+
+private:
+    uint32_t length_;
+
+    const char* buffer() const {
+      return reinterpret_cast<const char*>(this + 1);
+    }
+    char* buffer() {
+      return reinterpret_cast<char*>(this + 1);
+    }
+};
+
+class RmwContext : public IAsyncContext {
+public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    RmwContext(uint64_t key, char letter)
+            : key_{ key }
+            , letter_{ letter } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    RmwContext(const RmwContext& other)
+            : key_{ other.key_ }
+            , letter_{ other.letter_ } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const Key& key() const {
+      return key_;
+    }
+    inline uint32_t value_size() const {
+      return sizeof(value_t) + sizeof(char);
+    }
+    inline uint32_t value_size(const Value& old_value) const {
+      return sizeof(value_t) + old_value.length_ + sizeof(char);
+    }
+
+    inline void RmwInitial(Value& value) {
+      value.length_ = sizeof(char);
+      value.buffer()[0] = letter_;
+    }
+    inline void RmwCopy(const Value& old_value, Value& value) {
+      value.length_ = old_value.length_ + sizeof(char);
+      std::memcpy(value.buffer(), old_value.buffer(), old_value.length_);
+      value.buffer()[old_value.length_] = letter_;
+    }
+    inline bool RmwAtomic(Value& value) {
+      // All RMW operations use Read-Copy-Update
+      return false;
+    }
+
+protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+private:
+    char letter_;
+    Key key_;
+};
+
+class ReadContext : public IAsyncContext {
+public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    ReadContext(uint64_t key)
+            : key_{ key }
+            , output_length{ 0 } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    ReadContext(const ReadContext& other)
+            : key_{ other.key_ }
+            , output_length{ 0 } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline void Get(const Value& value) {
+      // All reads should be atomic (from the mutable tail).
+      ASSERT_TRUE(false);
+    }
+    inline void GetAtomic(const Value& value) {
+      // There are no concurrent updates
+      output_length = value.length_;
+      output_letters[0] = value.buffer()[0];
+      output_letters[1] = value.buffer()[value.length_ - 1];
+    }
+
+protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+private:
+    Key key_;
+public:
+    uint8_t output_length;
+    // Extract two letters of output.
+    char output_letters[2];
+};
+
+static constexpr int8_t kNumThreads = 2;
+static constexpr size_t kNumRmws = 2048;
+static constexpr size_t kRange = 512;
+
+auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_, char start_letter){
+    store_->StartSession();
+
+    for(size_t idx = 0; idx < kNumRmws; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+          // In-memory test.
+          ASSERT_TRUE(false);
+      };
+      char letter = static_cast<char>(start_letter + idx / kRange);
+      RmwContext context{ idx % kRange, letter };
+      Status result = store_->Rmw(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
+
+    store_->StopSession();
+};
+
+FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+
+// Rmw.
+std::deque<std::thread> threads{};
+for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back(rmw_worker, &store, 'A');
+}
+for(auto& thread : threads) {
+    thread.join();
+}
+
+// Read.
+store.StartSession();
+
+for(size_t idx = 0; idx < kRange; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+    };
+    ReadContext context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result) << idx;
+    ASSERT_EQ(kNumThreads * kNumRmws / kRange, context.output_length);
+    ASSERT_EQ('A', context.output_letters[0]);
+    ASSERT_EQ('D', context.output_letters[1]);
+}
+
+store.StopSession();
+
+// Rmw.
+threads.clear();
+for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back(rmw_worker, &store, 'E');
+}
+for(auto& thread : threads) {
+    thread.join();
+}
+
+// Read again.
+store.StartSession();
+
+for(size_t idx = 0; idx < kRange; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+    };
+    ReadContext context{ static_cast<uint8_t>(idx) };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    ASSERT_EQ(2 * kNumThreads * kNumRmws / kRange, context.output_length);
+    ASSERT_EQ('A', context.output_letters[0]);
+    ASSERT_EQ('H', context.output_letters[1]);
+}
+
+store.StopSession();
+}
+
 TEST(InMemFaster, GrowHashTable) {
   class Key {
    public:
@@ -1727,6 +1966,9 @@ TEST(InMemFaster, GrowHashTable) {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
       return sizeof(value_t);
     }
 

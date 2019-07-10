@@ -73,11 +73,6 @@ namespace FASTER.core
                     throw new Exception("Error reading from log file: " + error);
                 }
             }
-            else
-            {
-                // On synchronous completion, issue callback directly
-                callback(0, bytesRead, ovNative);
-            }
         }
 
         /// <summary>
@@ -119,11 +114,6 @@ namespace FASTER.core
                     throw new Exception("Error writing to log file: " + error);
                 }
             }
-            else
-            {
-                // On synchronous completion, issue callback directly
-                callback(0, bytesWritten, ovNative);
-            }
         }
 
 
@@ -153,10 +143,15 @@ namespace FASTER.core
                 logHandle.Dispose();
         }
 
-
-        private string GetSegmentName(int segmentId)
+        protected string GetSegmentName(int segmentId)
         {
             return FileName + "." + segmentId;
+        }
+
+        // Can be used to pre-load handles, e.g., after a checkpoint
+        protected SafeFileHandle GetOrAddHandle(int _segmentId)
+        {
+            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
         }
 
         private static uint GetSectorSize(string filename)
@@ -182,13 +177,25 @@ namespace FASTER.core
 
             fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
             if (deleteOnClose)
+            {
                 fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
+
+                // FILE_SHARE_DELETE allows multiple FASTER instances to share a single log directory and each can specify deleteOnClose.
+                // This will allow the files to persist until all handles across all instances have been closed.
+                fileShare = fileShare | Native32.FILE_SHARE_DELETE;
+            }
 
             var logHandle = Native32.CreateFileW(
                 GetSegmentName(segmentId),
                 fileAccess, fileShare,
                 IntPtr.Zero, fileCreation,
                 fileFlags, IntPtr.Zero);
+
+            if (logHandle.IsInvalid)
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw new IOException($"Error creating log file for {GetSegmentName(segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
+            }
 
             if (preallocateFile)
                 SetFileSize(FileName, logHandle, segmentSize);
@@ -202,11 +209,6 @@ namespace FASTER.core
                 throw new Exception("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
             }
             return logHandle;
-        }
-
-        private SafeFileHandle GetOrAddHandle(int _segmentId)
-        {
-            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
         }
 
         /// Sets file size to the specified value.
