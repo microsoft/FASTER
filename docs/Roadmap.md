@@ -52,11 +52,13 @@ Completed items are included to provide the context and progress of the work.
 * [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
 * [x] Auto-recover to most recent checkpoint
 
-### Future Work
+### Ongoing and Future Work
 
-* [ ] Better integration with an async/await threading model in C#
+* [ ] Better integration with an async/await threading model in C#: [PR](https://github.com/Microsoft/FASTER/pull/130)
+* [ ] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
+* [ ] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
+* [ ] Support for sharded storage
 * [ ] Scale-out and elasticity support
-* [ ] Easier integration into serverless and actor framework deployments
 * [ ] Checksums for storage pages
 * [ ] Support iteration over all and only live key-value pairs (different from log scan)
 * [ ] Handle log logical addresses greater than 48 bit (up to 64 bit)
