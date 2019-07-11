@@ -197,6 +197,8 @@ namespace FASTER.core
             (*(tableAligned + entry)).threadId = 0;
         }
 
+        internal FastThreadLocal<int> ThreadEntry => threadEntryIndex;
+
         /// <summary>
         /// Increment global current epoch
         /// </summary>

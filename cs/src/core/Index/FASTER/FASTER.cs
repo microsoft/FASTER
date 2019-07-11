@@ -270,6 +270,36 @@ namespace FASTER.core
             InternalRecover(indexCheckpointToken, hybridLogCheckpointToken);
         }
 
+
+        /// <summary>
+        /// Start shared (not thread-specific) session with FASTER
+        /// </summary>
+        /// <returns></returns>
+        public Session<Key, Value, Input, Output, Context, Functions> StartSharedSession()
+        {
+            StartSession();
+            return new Session<Key, Value, Input, Output, Context, Functions>
+                (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
+        }
+
+        /// <summary>
+        /// Continue shared (not thread-specific) session with FASTER
+        /// </summary>
+        /// <returns></returns>
+        public Session<Key, Value, Input, Output, Context, Functions> ContinueSharedSession(Guid guid)
+        {
+            ContinueSession(guid);
+            return new Session<Key, Value, Input, Output, Context, Functions>
+                (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
+        }
+
+        internal void SetContext(FasterExecutionContext prevThreadCtx, FasterExecutionContext threadCtx, int epochEntry)
+        {
+            this.prevThreadCtx.Value = prevThreadCtx;
+            this.threadCtx.Value = threadCtx;
+            epoch.ThreadEntry.Value = epochEntry;
+        }
+
         /// <summary>
         /// Start session with FASTER - call once per thread before using FASTER
         /// </summary>
