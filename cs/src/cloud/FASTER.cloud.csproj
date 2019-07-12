@@ -1,21 +1,20 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net46;netcoreapp2.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net46</TargetFrameworks>
     <Platforms>AnyCPU;x64</Platforms>
-    <HighEntropyVA>true</HighEntropyVA>
   </PropertyGroup>
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>FASTER.test</RootNamespace>
-    <AssemblyName>FASTER.test</AssemblyName>
+    <RootNamespace>FASTER.cloud</RootNamespace>
+    <AssemblyName>FASTER.cloud</AssemblyName>
     <ErrorReport>prompt</ErrorReport>
     <SignAssembly>true</SignAssembly>
     <ApplicationIcon />
     <OutputType>Library</OutputType>
     <StartupObject />
-    <AssemblyOriginatorKeyFile>../FASTER.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
@@ -34,16 +33,16 @@
   <PropertyGroup Condition="'$(TargetFramework)'!='net46'">
     <DefineConstants>$(DefineConstants);DOTNETCORE</DefineConstants>
   </PropertyGroup>
-  <PropertyGroup>
-    <NoWarn>1701;1702;1591</NoWarn>
-  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
-    <PackageReference Include="NUnit" Version="3.11.0" />
-    <PackageReference Include="NUnit3TestAdapter" Version="3.10.0" />
+    <PackageReference Include="Microsoft.Azure.Storage.Blob" Version="10.0.3" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\src\cloud\FASTER.cloud.csproj" />
-    <ProjectReference Include="..\src\core\FASTER.core.csproj" />
+    <EmbeddedResource Include="AzurePageBlobDevice.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\core\FASTER.core.csproj" />
+  </ItemGroup>
+
 </Project>

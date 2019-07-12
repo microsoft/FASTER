@@ -10,9 +10,11 @@ using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
+using FASTER.cloud;
 
 namespace FASTER.test
 {
+
 
     // TODO(Tianyu): Now that we are also testing device with Azure Page Blobs here, should we also rename the test?
     [TestFixture]
@@ -20,6 +22,8 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
         private IDevice log;
+        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+        public const string TEST_CONTAINER = "test";
 
         void TestDeviceWriteRead(IDevice log)
         {
@@ -93,7 +97,7 @@ namespace FASTER.test
         [Test]
         public void PageBlobWriteRead()
         {
-            TestDeviceWriteRead(Devices.CreateAzurePageBlobDevice("BasicDiskFASTERTests", deleteOnClose: false));
+            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
     }
 }
