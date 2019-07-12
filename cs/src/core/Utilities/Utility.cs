@@ -246,13 +246,13 @@ namespace FASTER.core
         /// <param name="variable"> The variable to possibly replace</param>
         /// <param name="newValue">The value that replaces the variable if successful</param>
         /// <param name="oldValue">The orignal value in the variable</param>
-        /// <returns>if oldValue less than newValue</returns>
+        /// <returns>if oldValue less than or equal to newValue</returns>
         public static bool MonotonicUpdate(ref int variable, int newValue, out int oldValue)
         {
             do
             {
                 oldValue = variable;
-                if (oldValue > newValue) return false;
+                if (oldValue >= newValue) return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }

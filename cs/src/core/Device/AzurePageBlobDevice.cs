@@ -66,19 +66,11 @@ namespace FASTER.core
                 }
             }
         }
-
-        public override void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            CountdownEvent countdown = new CountdownEvent(toSegment - fromSegment);
-            for (int i = fromSegment; i < toSegment; i++)
+            if (blobs.TryRemove(segment, out CloudPageBlob blob))
             {
-                if (blobs.TryRemove(i, out CloudPageBlob blob))
-                {
-                    blob.BeginDelete(r =>
-                    {
-                        if (countdown.Signal()) callback(asyncResult); 
-                    }, asyncResult);
-                }
+                blob.BeginDelete(callback, result);
             }
         }
 

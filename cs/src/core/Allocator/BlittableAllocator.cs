@@ -153,11 +153,6 @@ namespace FASTER.core
             return values[pageIndex] != null;
         }
 
-        protected override void DeleteAddressRange(long fromAddress, long toAddress)
-        {
-            base.DeleteAddressRange(fromAddress, toAddress);
-        }
-
         protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],

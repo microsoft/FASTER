@@ -117,27 +117,24 @@ namespace FASTER.core
             }
         }
 
-        public override void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
+        public override void RemoveSegment(int segment)
         {
-            UseSynchronousDeleteSegmentRangeForAsync(fromSegment, toSegment, callback, asyncResult);
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
-        {
-            for (int i=fromSegment; i<toSegment; i++)
+            if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
             {
-                if (logHandles.TryRemove(i, out SafeFileHandle logHandle))
-                {
-                    logHandle.Dispose();
-                    Native32.DeleteFileW(GetSegmentName(i));
-                }
+                logHandle.Dispose();
+                Native32.DeleteFileW(GetSegmentName(segment));
             }
         }
+
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+        {
+            RemoveSegment(segment);
+            callback(result);
+        }
+
+        // TODO(Tianyu): It may be somewhat inefficient to use the default async calls from the base class when the underlying
+        // method is inheritly synchronous. But just for delete (which is called infrequently and off the critical path) such
+        // inefficiency is probably negligible.
 
         /// <summary>
         /// 

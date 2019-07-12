@@ -913,18 +913,13 @@ namespace FASTER.core
                 }
                 if (h) OnPagesClosed(newBeginAddress);
 
-                DeleteAddressRange(oldBeginAddress, newBeginAddress);
+                TruncateUntilAddress(newBeginAddress);
             });
         }
 
-        /// <summary>
-        /// Delete address range
-        /// </summary>
-        /// <param name="fromAddress"></param>
-        /// <param name="toAddress"></param>
-        protected virtual void DeleteAddressRange(long fromAddress, long toAddress)
+        protected virtual void TruncateUntilAddress(long toAddress)
         {
-            device.DeleteAddressRange(fromAddress, toAddress);
+            device.TruncateUntilAddress(toAddress);
         }
 
         /// <summary>

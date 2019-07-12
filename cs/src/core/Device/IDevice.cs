@@ -27,6 +27,12 @@ namespace FASTER.core
         /// </summary>
         long Capacity { get; }
 
+        long SegmentSize { get; }
+
+        int StartSegment { get; }
+
+        int EndSegment { get; }
+
         /// <summary>
         /// Initialize device. This function is used to pass optional information that may only be known after
         /// FASTER initialization (whose constructor takes in IDevice upfront). Implementation are free to ignore
@@ -64,15 +70,6 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult);
 
-        void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult);
-
-        /// <summary>
-        /// Delete segment range
-        /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        void DeleteSegmentRange(int fromSegment, int toSegment);
-
         /* Direct addressing API */
 
         /// <summary>
@@ -95,12 +92,17 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult);
 
-        /// <summary>
-        /// Delete address range
-        /// </summary>
-        /// <param name="fromAddress"></param>
-        /// <param name="toAddress"></param>
-        void DeleteAddressRange(long fromAddress, long toAddress);
+        void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result);
+
+        void TruncateUntilAddress(long toAddress);
+
+        void TruncateUntilSegmentAsync(int toSegment, AsyncCallback callback, IAsyncResult result);
+
+        void TruncateUntilSegment(int toSegment);
+
+        void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result);
+
+        void RemoveSegment(int segment);
 
         /* Close */
 

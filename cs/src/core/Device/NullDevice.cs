@@ -61,19 +61,12 @@ namespace FASTER.core
             callback(0, numBytesToWrite, ov_native);
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
+        public override void RemoveSegment(int segment)
         {
+            // No-op
         }
 
-        public override void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
-        {
-            UseSynchronousDeleteSegmentRangeForAsync(fromSegment, toSegment, callback, asyncResult);
-        }
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result) => callback(result);
 
         /// <summary>
         /// 

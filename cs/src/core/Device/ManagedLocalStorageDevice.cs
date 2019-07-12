@@ -139,26 +139,19 @@ namespace FASTER.core
                 new WriteCallbackWrapper(callback, asyncResult, memory).Callback, null);
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
+        public override void RemoveSegment(int segment)
         {
-            for (int i=fromSegment; i<toSegment; i++)
+            if (logHandles.TryRemove(segment, out Stream logHandle))
             {
-                if (logHandles.TryRemove(i, out Stream logHandle))
-                {
-                    logHandle.Dispose();
-                    File.Delete(GetSegmentName(i));
-                }
+                logHandle.Dispose();
+                File.Delete(GetSegmentName(segment));
             }
         }
 
-        public override void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            UseSynchronousDeleteSegmentRangeForAsync(fromSegment, toSegment, callback, asyncResult);
+            RemoveSegment(segment);
+            callback(result);
         }
 
         /// <summary>

@@ -35,6 +35,12 @@ namespace FASTER.core
         /// </summary>
         public long Capacity { get; }
 
+        public int StartSegment { get { return startSegment; } }
+
+        public int EndSegment { get { return endSegment; } }
+
+        public long SegmentSize { get { return segmentSize; } }
+
         /// <summary>
         /// Segment size
         /// </summary>
@@ -45,6 +51,8 @@ namespace FASTER.core
 
         // A device may have internal in-memory data structure that requires epoch protection under concurrent access.
         protected LightEpoch epoch;
+
+        private int startSegment, endSegment;
 
         /// <summary>
         /// Initializes a new StorageDeviceBase
@@ -99,10 +107,19 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            var segment = segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0;
+            int segment = (int)(segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0);
+
+            // If the device has bounded space, and we are writing a new segment, need to check whether an existing segment needs to be evicted. 
+            if (Capacity != Devices.CAPACITY_UNSPECIFIED && Utility.MonotonicUpdate(ref endSegment, segment, out int oldEnd))
+            {
+                // Attempt to update the stored range until there are enough space on the tier to accomodate the current logTail
+                int newStartSegment = endSegment - (int)(Capacity >> segmentSizeBits);
+                // Assuming that we still have enough physical capacity to write another segment, even if delete does not immediately free up space.
+                TruncateUntilSegmentAsync(newStartSegment, r => { }, null);
+            }
             WriteAsync(
                 alignedSourceAddress,
-                (int)segment,
+                segment,
                 alignedDestinationAddress & segmentSizeMask,
                 numBytesToWrite, callback, asyncResult);
         }
@@ -126,21 +143,57 @@ namespace FASTER.core
                 aligned_read_length, callback, asyncResult);
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="fromAddress"></param>
-        /// <param name="toAddress"></param>
-        public void DeleteAddressRange(long fromAddress, long toAddress)
+        public abstract void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result);
+
+        public virtual void RemoveSegment(int segment)
         {
-            var fromSegment = segmentSizeBits < 64 ? fromAddress >> segmentSizeBits : 0;
-            var toSegment = segmentSizeBits < 64 ? toAddress >> segmentSizeBits : 0;
-            DeleteSegmentRange((int)fromSegment, (int)toSegment);
+            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
+            RemoveSegmentAsync(segment, r => completionEvent.Set(), null);
+            completionEvent.Wait();
         }
 
-        private bool AlignedAtSegmentBoundary(long address)
+        public virtual void TruncateUntilSegmentAsync(int toSegment, AsyncCallback callback, IAsyncResult result)
         {
-            return ((long)segmentSizeMask & address) == 0;
+            // Reset begin range to at least toAddress
+            if (!Utility.MonotonicUpdate(ref startSegment, toSegment, out int oldStart))
+            {
+                // If no-op, invoke callback and return immediately
+                callback(result);
+                return;
+            }
+            CountdownEvent countdown = new CountdownEvent(toSegment - oldStart);
+            // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete.
+            // Because of earlier compare-and-swap, the caller has exclusive access to the range [oldStartSegment, newStartSegment), and there will
+            // be no double deletes.
+            epoch.BumpCurrentEpoch(() =>
+            {
+                for (int i = oldStart; i < toSegment; i++)
+                {
+                    RemoveSegmentAsync(i, r => {
+                        if (countdown.Signal()) callback(r);
+                    }, result);
+                }
+            });
+        }
+
+        public virtual void TruncateUntilSegment(int toSegment)
+        {
+            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
+            TruncateUntilSegmentAsync(toSegment, r => completionEvent.Set(), null);
+            completionEvent.Wait();
+        }
+
+        public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
+        {
+            // Truncate only up to segment boundary if address is not aligned
+            TruncateUntilSegmentAsync((int)toAddress >> segmentSizeBits, callback, result);
+        }
+
+        public virtual void TruncateUntilAddress(long toAddress)
+        {
+            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
+            TruncateUntilAddressAsync(toAddress, r => completionEvent.Set(), null);
+            completionEvent.Wait();
         }
 
         /// <summary>
@@ -164,32 +217,6 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
         public abstract void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult);
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public virtual unsafe void DeleteSegmentRange(int fromSegment, int toSegment)
-        {
-            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
-            DeleteSegmentRangeAsync(fromSegment, toSegment, r =>
-            {
-                completionEvent.Set();
-            }, null);
-            completionEvent.Wait();
-        }
-
-        public abstract void DeleteSegmentRangeAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult);
-
-
-        protected void UseSynchronousDeleteSegmentRangeForAsync(int fromSegment, int toSegment, AsyncCallback callback, IAsyncResult asyncResult)
-        {
-            DeleteSegmentRange(fromSegment, toSegment);
-            // TODO(Tianyu): There is apparently no setters on IAsyncResult. Should I just pass this or do I need to set some states?
-            // e.g. set CompletedSynchronously to true
-            callback(asyncResult);
-        }
 
         /// <summary>
         /// 
