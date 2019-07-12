@@ -6,6 +6,7 @@
 #define CALLOC
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -47,26 +48,15 @@ namespace FASTER.core
 
         private CountdownEvent checkpointEvent;
 
-        private readonly LightEpoch epoch;
-        private readonly bool ownedEpoch;
-
-        private FastThreadLocal<Queue<FreeItem>> freeList;
+        private ConcurrentQueue<long> freeList;
 
         /// <summary>
         /// Create new instance
         /// </summary>
         /// <param name="returnPhysicalAddress"></param>
-        /// <param name="epoch"></param>
-        public MallocFixedPageSize(bool returnPhysicalAddress = false, LightEpoch epoch = null)
+        public MallocFixedPageSize(bool returnPhysicalAddress = false)
         {
-            freeList = new FastThreadLocal<Queue<FreeItem>>();
-            if (epoch == null)
-            {
-                this.epoch = new LightEpoch();
-                ownedEpoch = true;
-            }
-            else
-                this.epoch = epoch;
+            freeList = new ConcurrentQueue<long>();
 
             values[0] = new T[PageSize];
 
@@ -177,20 +167,15 @@ namespace FASTER.core
         /// Free object
         /// </summary>
         /// <param name="pointer"></param>
-        /// <param name="removed_epoch"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void FreeAtEpoch(long pointer, int removed_epoch = -1)
+        public void Free(long pointer)
         {
             if (!ReturnPhysicalAddress)
             {
-                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
+                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default;
             }
 
-            freeList.InitializeThread();
-
-            if (freeList.Value == null)
-                freeList.Value = new Queue<FreeItem>();
-            freeList.Value.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
+            freeList.Enqueue(pointer);
         }
 
         private const int kAllocateChunkSize = 16;
@@ -308,19 +293,8 @@ namespace FASTER.core
         /// <returns></returns>
         public long Allocate()
         {
-            freeList.InitializeThread();
-            if (freeList.Value == null)
-            {
-                freeList.Value = new Queue<FreeItem>();
-            }
-            if (freeList.Value.Count > 0)
-            {
-                if (freeList.Value.Peek().removal_epoch <= epoch.SafeToReclaimEpoch)
-                    return freeList.Value.Dequeue().removed_item;
-
-                //if (freeList.Count % 64 == 0)
-                //    LightEpoch.Instance.BumpCurrentEpoch();
-            }
+            if (freeList.TryDequeue(out long result))
+                return result;
 
             // Determine insertion index.
             // ReSharper disable once CSharpWarnings::CS0420
@@ -424,26 +398,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Acquire thread
-        /// </summary>
-        public void Acquire()
-        {
-            if (ownedEpoch)
-                epoch.Acquire();
-            freeList.InitializeThread();
-        }
-
-        /// <summary>
-        /// Release thread
-        /// </summary>
-        public void Release()
-        {
-            if (ownedEpoch)
-                epoch.Release();
-            freeList.DisposeThread();
-        }
-
-        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -458,9 +412,7 @@ namespace FASTER.core
             values = null;
             values0 = null;
             count = 0;
-            if (ownedEpoch)
-                epoch.Dispose();
-            freeList.Dispose();
+            freeList = null;
         }
 
 
@@ -644,11 +596,5 @@ namespace FASTER.core
             }
         }
         #endregion
-    }
-
-    internal struct FreeItem
-    {
-        public long removed_item;
-        public int removal_epoch;
     }
 }

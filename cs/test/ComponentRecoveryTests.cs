@@ -22,7 +22,6 @@ namespace FASTER.test.recovery
             var rand1 = new Random(seed);
             var device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
             var allocator = new MallocFixedPageSize<HashBucket>();
-            allocator.Acquire();
 
             //do something
             int numBucketsToAdd = 16 * allocator.GetPageSize();
@@ -43,11 +42,9 @@ namespace FASTER.test.recovery
             //wait until complete
             allocator.IsCheckpointCompleted(true);
 
-            allocator.Release();
             allocator.Dispose();
 
             var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
-            recoveredAllocator.Acquire();
 
             //issue call to recover
             recoveredAllocator.BeginRecovery(device, 0, numBucketsToAdd, numBytesWritten, out ulong numBytesRead);
@@ -67,7 +64,6 @@ namespace FASTER.test.recovery
                 }
             }
 
-            recoveredAllocator.Release();
             recoveredAllocator.Dispose();
         }
 

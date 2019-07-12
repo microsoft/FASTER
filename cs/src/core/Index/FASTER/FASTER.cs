@@ -278,12 +278,12 @@ namespace FASTER.core
         public Session<Key, Value, Input, Output, Context, Functions> StartSharedSession()
         {
             StartSession();
-            return new Session<Key, Value, Input, Output, Context, Functions>
+            return Session<Key, Value, Input, Output, Context, Functions>.GetOrCreate
                 (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
         }
 
         /// <summary>
-        /// Continue shared (not thread-specific) session with FASTER
+        /// Recover or continue shared (not thread-specific) session with FASTER
         /// </summary>
         /// <returns></returns>
         public Session<Key, Value, Input, Output, Context, Functions> ContinueSharedSession(Guid guid)
@@ -293,12 +293,55 @@ namespace FASTER.core
                 (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
         }
 
+        /// <summary>
+        /// Return shared (not thread-specific) session with FASTER
+        /// </summary>
+        /// <returns></returns>
+        public Session<Key, Value, Input, Output, Context, Functions> GetSharedSession()
+        {
+            return Session<Key, Value, Input, Output, Context, Functions>.GetOrCreate
+                (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
+        }
+
         internal void SetContext(FasterExecutionContext prevThreadCtx, FasterExecutionContext threadCtx, int epochEntry)
         {
+            if (!this.prevThreadCtx.IsInitializedForThread) this.prevThreadCtx.InitializeThread();
+            if (!this.threadCtx.IsInitializedForThread) this.threadCtx.InitializeThread();
+            if (!epoch.ThreadEntry.IsInitializedForThread) epoch.ThreadEntry.InitializeThread();
+
             this.prevThreadCtx.Value = prevThreadCtx;
             this.threadCtx.Value = threadCtx;
             epoch.ThreadEntry.Value = epochEntry;
         }
+
+        /// <summary>
+        /// Suspend session with FASTER
+        /// </summary>
+        internal void SuspendSession(bool completePending = false)
+        {
+            if (completePending)
+            {
+                while (true)
+                {
+                    bool done = true;
+                    if (threadCtx.Value.retryRequests.Count != 0 || threadCtx.Value.ioPendingRequests.Count != 0)
+                        done = false;
+
+                    if (prevThreadCtx.Value != default(FasterExecutionContext))
+                    {
+                        if (prevThreadCtx.Value.retryRequests.Count != 0 || prevThreadCtx.Value.ioPendingRequests.Count != 0)
+                            done = false;
+                    }
+                    if (threadCtx.Value.phase != Phase.REST)
+                        done = false;
+
+                    if (done) break;
+                    Refresh();
+                }
+            }
+            epoch.Release();
+        }
+
 
         /// <summary>
         /// Start session with FASTER - call once per thread before using FASTER

@@ -275,7 +275,7 @@ namespace FASTER.core
         public FasterBase()
         {
             epoch = new LightEpoch();
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(false, epoch);
+            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(false);
         }
 
         internal Status Free()
@@ -598,7 +598,7 @@ namespace FASTER.core
                         if (compare_word != result_word)
                         {
                             // Install failed, undo allocation; use the winner's entry
-                            overflowBucketsAllocator.FreeAtEpoch(logicalBucketAddress, 0);
+                            overflowBucketsAllocator.Free(logicalBucketAddress);
                             target_entry_word = result_word;
                         }
                         else
