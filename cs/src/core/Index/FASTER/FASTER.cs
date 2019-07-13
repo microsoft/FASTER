@@ -270,16 +270,18 @@ namespace FASTER.core
             InternalRecover(indexCheckpointToken, hybridLogCheckpointToken);
         }
 
+        #region Shared Sessions
+        private Session<Key, Value, Input, Output, Context, Functions>[] _sessions = new Session<Key, Value, Input, Output, Context, Functions>[LightEpoch.kTableSize];
 
         /// <summary>
-        /// Start shared (not thread-specific) session with FASTER
+        /// Start new shared (not thread-specific) session with FASTER
         /// </summary>
         /// <returns></returns>
         public Session<Key, Value, Input, Output, Context, Functions> StartSharedSession()
         {
             StartSession();
-            return Session<Key, Value, Input, Output, Context, Functions>.GetOrCreate
-                (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
+            return Session<Key, Value, Input, Output, Context, Functions>.Create
+                (_sessions, this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
         }
 
         /// <summary>
@@ -289,18 +291,35 @@ namespace FASTER.core
         public Session<Key, Value, Input, Output, Context, Functions> ContinueSharedSession(Guid guid)
         {
             ContinueSession(guid);
-            return new Session<Key, Value, Input, Output, Context, Functions>
-                (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
+            return Session<Key, Value, Input, Output, Context, Functions>.Create
+                (_sessions, this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
         }
 
         /// <summary>
-        /// Return shared (not thread-specific) session with FASTER
+        /// Return existing (or start new) shared session with FASTER
         /// </summary>
         /// <returns></returns>
         public Session<Key, Value, Input, Output, Context, Functions> GetSharedSession()
         {
-            return Session<Key, Value, Input, Output, Context, Functions>.GetOrCreate
-                (this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
+            epoch.Acquire();
+            threadCtx.InitializeThread();
+            prevThreadCtx.InitializeThread();
+            Phase phase = _systemState.phase;
+            if (phase != Phase.REST)
+            {
+                throw new Exception("Can acquire only in REST phase!");
+            }
+
+            var session = _sessions[epoch.ThreadEntry.Value];
+
+            if (session != null)
+                return session;
+
+            Guid guid = Guid.NewGuid();
+            InitLocalContext(guid);
+            prevThreadCtx.Value = null;
+            return Session<Key, Value, Input, Output, Context, Functions>.Create
+                (_sessions, this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
         }
 
         internal void SetContext(FasterExecutionContext prevThreadCtx, FasterExecutionContext threadCtx, int epochEntry)
@@ -341,7 +360,7 @@ namespace FASTER.core
             }
             epoch.Release();
         }
-
+        #endregion
 
         /// <summary>
         /// Start session with FASTER - call once per thread before using FASTER

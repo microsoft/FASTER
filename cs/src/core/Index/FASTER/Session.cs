@@ -21,16 +21,14 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private static Session<Key, Value, Input, Output, Context, Functions>[] _sessions
-            = new Session<Key, Value, Input, Output, Context, Functions>[LightEpoch.kTableSize];
-
         private FasterKV<Key, Value, Input, Output, Context, Functions> fht;
         private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevThreadCtx;
         private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext threadCtx;
         private readonly int epochEntry;
 
-        internal static Session<Key, Value, Input, Output, Context, Functions> GetOrCreate(
-            FasterKV<Key, Value, Input, Output, Context, Functions> fht,
+        internal static Session<Key, Value, Input, Output, Context, Functions> Create(
+            Session<Key, Value, Input, Output, Context, Functions>[] _sessions,
+            FasterKV <Key, Value, Input, Output, Context, Functions> fht,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevThreadCtx,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext threadCtx,
             int epochEntry)
@@ -48,7 +46,7 @@ namespace FASTER.core
             return session;
         }
 
-        internal Session(
+        private Session(
             FasterKV<Key, Value, Input, Output, Context, Functions> fht,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevThreadCtx,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext threadCtx,

@@ -172,7 +172,7 @@ namespace FASTER.core
         {
             if (!ReturnPhysicalAddress)
             {
-                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default;
+                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
             }
 
             freeList.Enqueue(pointer);
