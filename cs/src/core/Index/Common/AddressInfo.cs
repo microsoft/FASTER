@@ -87,7 +87,7 @@ namespace FASTER.core
                 word = (IntPtr)_word;
                 if (value != Address)
                 {
-                    throw new Exception("Overflow in AddressInfo");
+                    throw new Exception("Overflow in AddressInfo" + ((kAddressBits < 64) ? " - consider running the program in x64 mode for larger address space support" : ""));
                 }
             }
         }
