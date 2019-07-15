@@ -102,7 +102,6 @@ namespace FASTER.cloud
                 // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
-                    Overlapped.Free(ovNative);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
                     callback(1, readLength, ovNative);
@@ -128,17 +127,9 @@ namespace FASTER.cloud
                 // It is up to allocator to ensure that no reads happen before the callback of this function is invoked.
                 pageBlob.BeginCreate(size, ar =>
                 {
-                    try
-                    {
-                        pageBlob.EndCreate(ar);
-
-                    }
-                    catch (Exception e)
-                    {
-                        // Ignore, WTF
-                    }
-                    WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+                    pageBlob.EndCreate(ar);
                 }, null);
+                WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
                 blobs.TryAdd(segmentId, pageBlob);
             }
             else
@@ -163,7 +154,6 @@ namespace FASTER.cloud
                 // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
-                    Overlapped.Free(ovNative);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
                     callback(1, numBytesToWrite, ovNative);
