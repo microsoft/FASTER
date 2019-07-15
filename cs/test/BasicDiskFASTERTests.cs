@@ -97,7 +97,11 @@ namespace FASTER.test
         [Test]
         public void PageBlobWriteRead()
         {
-            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+            for (int i = 0; i < 10; i++)
+            {
+                TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+                if (i != 9) TearDown();
+            }
         }
     }
 }
