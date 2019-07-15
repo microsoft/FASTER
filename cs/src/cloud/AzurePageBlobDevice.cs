@@ -66,6 +66,7 @@ namespace FASTER.cloud
                 }
             }
         }
+
         /// <summary>
         /// <see cref="IDevice.Close">Inherited</see>
         /// </summary>
@@ -79,6 +80,7 @@ namespace FASTER.cloud
                 }
             }
         }
+
         /// <summary>
         /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
@@ -106,10 +108,9 @@ namespace FASTER.cloud
                     callback(1, readLength, ovNative);
                 }
                 callback(0, readLength, ovNative);
-
-
             }, asyncResult);
         }
+
         /// <summary>
         /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
@@ -126,24 +127,26 @@ namespace FASTER.cloud
                 // how large it can grow to.
                 var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
                 // It is up to allocator to ensure that no reads happen before the callback of this function is invoked.
-                if (blobs.TryAdd(segmentId, pageBlob))
-                {
-                    pageBlob.BeginCreate(size, ar => {
-                        pageBlob.EndCreate(ar);
-                        WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-                    }, null);
-                }
-                else
-                {
-                    // Some other thread beat us to calling create, should use their handle to invoke write directly instead
-                    WriteToBlobAsync(blobs[segmentId], sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-                }
+                // if (blobs.TryAdd(segmentId, pageBlob))
+                // {
+                //     pageBlob.BeginCreate(size, ar => {
+                //         pageBlob.EndCreate(ar);
+                //         WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+                //     }, null);
+                // }
+                // else
+                // {
+                // Some other thread beat us to calling create, should use their handle to invoke write directly instead
+                //     WriteToBlobAsync(blobs[segmentId], sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+                // }
+                pageBlob.Create(size);
+                blobs.TryAdd(segmentId, pageBlob);
             }
-            else
-            {
-            // Write directly to the existing blob otherwise
+            // else
+            // {
+                // Write directly to the existing blob otherwise
                 WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-            }
+            // }
         }
 
         private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
