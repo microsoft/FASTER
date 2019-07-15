@@ -139,8 +139,8 @@ namespace FASTER.cloud
                 // Some other thread beat us to calling create, should use their handle to invoke write directly instead
                 //     WriteToBlobAsync(blobs[segmentId], sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
                 // }
-                pageBlob.Create(size);
                 blobs.TryAdd(segmentId, pageBlob);
+                pageBlob.Create(size);
             }
             // else
             // {
