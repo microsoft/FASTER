@@ -11,6 +11,7 @@ using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 using FASTER.cloud;
+using System.Diagnostics;
 
 namespace FASTER.test
 {
@@ -25,7 +26,7 @@ namespace FASTER.test
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "test";
 
-        void TestDeviceWriteRead(IDevice log)
+        void TestDeviceWriteRead(IDevice log, bool debug = false)
         {
             this.log = log;
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
@@ -36,11 +37,13 @@ namespace FASTER.test
 
             for (int i = 0; i < 2000; i++)
             {
+                if (debug && i % 500 == 0) Debug.Print("inserted {0} tuples\n", i);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
             fht.CompletePending(true);
+            if (debug) Debug.Print("Write pending cleared");
 
             // Update first 100 using RMW from storage
             for (int i = 0; i < 100; i++)
@@ -50,6 +53,7 @@ namespace FASTER.test
                 var status = fht.RMW(ref key1, ref input, Empty.Default, 0);
                 if (status == Status.PENDING)
                     fht.CompletePending(true);
+                if (debug && i % 10 == 0) Debug.Print("Modified {0} tuples\n", i);
             }
 
 
@@ -97,11 +101,7 @@ namespace FASTER.test
         [Test]
         public void PageBlobWriteRead()
         {
-            for (int i = 0; i < 10; i++)
-            {
-                TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
-                if (i != 9) TearDown();
-            }
+            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false), true);
         }
     }
 }

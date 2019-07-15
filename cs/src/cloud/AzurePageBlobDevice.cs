@@ -92,13 +92,22 @@ namespace FASTER.cloud
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
 
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength, readLength, FileAccess.Write);
-
-            // TODO(Tianyu): This implementation seems to swallow exceptions that would otherwise be thrown from the synchronous version of this
-            // function. I wasn't able to find any good documentaiton on how exceptions are propagated or handled in this scenario. 
             pageBlob.BeginDownloadRangeToStream(stream, (Int64)sourceAddress, readLength, ar => {
-                // Should propagate any exceptions
-                pageBlob.EndDownloadRangeToStream(ar);
+                try
+                {
+                    pageBlob.EndDownloadRangeToStream(ar);
+                }
+                // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
+                catch (Exception e)
+                {
+                    Overlapped.Free(ovNative);
+                    // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
+                    // but does not distinguish between them.
+                    callback(1, readLength, ovNative);
+                }
                 callback(0, readLength, ovNative);
+
+
             }, asyncResult);
         }
         /// <summary>
@@ -145,8 +154,18 @@ namespace FASTER.cloud
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)sourceAddress, numBytesToWrite);
             blob.BeginWritePages(stream, (long)destinationAddress, null, ar =>
             {
-                // Should propagate any exceptions
-                blob.EndWritePages(ar);
+                try
+                {
+                    blob.EndWritePages(ar);
+                }
+                // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
+                catch (Exception e)
+                {
+                    Overlapped.Free(ovNative);
+                    // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
+                    // but does not distinguish between them.
+                    callback(1, numBytesToWrite, ovNative);
+                }
                 callback(0, numBytesToWrite, ovNative);
             }, asyncResult);
         }
