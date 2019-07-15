@@ -118,7 +118,6 @@ namespace FASTER.cloud
         {
             if (!blobs.TryGetValue(segmentId, out CloudPageBlob pageBlob))
             {
-
                 // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
                 pageBlob = container.GetPageBlobReference(blobName + segmentId);
 
@@ -127,26 +126,18 @@ namespace FASTER.cloud
                 // how large it can grow to.
                 var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
                 // It is up to allocator to ensure that no reads happen before the callback of this function is invoked.
-                // if (blobs.TryAdd(segmentId, pageBlob))
-                // {
-                //     pageBlob.BeginCreate(size, ar => {
-                //         pageBlob.EndCreate(ar);
-                //         WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-                //     }, null);
-                // }
-                // else
-                // {
-                // Some other thread beat us to calling create, should use their handle to invoke write directly instead
-                //     WriteToBlobAsync(blobs[segmentId], sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-                // }
+                pageBlob.BeginCreate(size, ar =>
+                {
+                    pageBlob.EndCreate(ar);
+                    WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+                }, null);
                 blobs.TryAdd(segmentId, pageBlob);
-                pageBlob.Create(size);
             }
-            // else
-            // {
+            else
+            {
                 // Write directly to the existing blob otherwise
                 WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-            // }
+            }
         }
 
         private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
