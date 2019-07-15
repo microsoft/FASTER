@@ -22,7 +22,6 @@ namespace FASTER.core
         /// <returns>Device instance</returns>
         public static IDevice CreateLogDevice(string logPath, bool preallocateFile = true, bool deleteOnClose = false)
         {
-            
             if (string.IsNullOrWhiteSpace(logPath))
                 return new NullDevice();
 
@@ -41,6 +40,4 @@ namespace FASTER.core
             return logDevice;
         }
     }
-
-
 }
