@@ -128,7 +128,15 @@ namespace FASTER.cloud
                 // It is up to allocator to ensure that no reads happen before the callback of this function is invoked.
                 pageBlob.BeginCreate(size, ar =>
                 {
-                    pageBlob.EndCreate(ar);
+                    try
+                    {
+                        pageBlob.EndCreate(ar);
+
+                    }
+                    catch (Exception e)
+                    {
+                        // Ignore, WTF
+                    }
                     WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
                 }, null);
                 blobs.TryAdd(segmentId, pageBlob);
