@@ -63,23 +63,64 @@ namespace FASTER.core
             shard = (int)(chunkId % Devices.Count);
             shardStartAddress = startAddress % chunkSize;
             long chunkEndAddress = (chunkId + 1) * chunkSize;
+
             if (endAddress > chunkEndAddress)
             {
-            } 
-
-        }
-
-        public int MapRangeToShard(long startAddress, long endAddress)
-        {
+                shardEndAddress = shardStartAddress + chunkSize;
+                return chunkEndAddress;
+            }
+            else
+            {
+                shardEndAddress = endAddress - startAddress + shardStartAddress;
+                return endAddress;
+            }
         }
     }
+
     class ShardedStorageDevice : StorageDeviceBase
     {
-        private readonly IList<IDevice> devices;
+        private readonly IPartitionScheme partitions;
+
+        // TODO(Tianyu): Fill with actual params to base class
+        public ShardedStorageDevice(IPartitionScheme partitions) : base("", 512, -1)
+        {
+            this.partitions = partitions;
+        }
 
         public override void Close()
         {
-            throw new NotImplementedException();
+            foreach (IDevice device in partitions.Devices)
+            {
+                device.Close();
+            }
+        }
+
+        public unsafe void WriteAsync(IntPtr sourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        {
+            var countdown = new CountdownEvent(1);
+            long currentWriteStart = (long)alignedDestinationAddress;
+            long writeEnd = currentWriteStart + (long)numBytesToWrite;
+            while (currentWriteStart < writeEnd)
+            {
+                long newStart = partitions.MapRange(currentWriteStart, writeEnd, out int shard, out long shardStartAddress, out long shardEndAddress);
+                ulong writeOffset = (ulong)currentWriteStart - alignedDestinationAddress;
+
+                // TODO(Tianyu): Error behavior here is up to debate. Need to collapse the errors here
+                partitions.Devices[shard].WriteAsync(IntPtr.Add(sourceAddress, (int)writeOffset),
+                                                     (ulong)shardStartAddress,
+                                                     (uint)(shardEndAddress - shardStartAddress),
+                                                     (e, n, o) =>
+                                                     {
+                                                         if (countdown.Signal()) callback(e, n, o);
+                                                     },
+                                                     asyncResult);
+
+
+                currentWriteStart = newStart;
+                countdown.AddCount();
+            }
+            // TODO(Tianyu): Need to somehow colla
+            if (countdown.Signal()) callback(0, 0, null);
         }
 
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
