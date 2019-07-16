@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using FASTER.core;
@@ -104,7 +105,7 @@ namespace FASTER.cloud
                 {
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
-                    callback(1, readLength, ovNative);
+                    callback(2, readLength, ovNative);
                 }
                 callback(0, readLength, ovNative);
             }, asyncResult);
