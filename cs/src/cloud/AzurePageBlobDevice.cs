@@ -62,8 +62,15 @@ namespace FASTER.cloud
                 // Asynchronously create the blob
                 pageBlob.BeginCreate(size, ar =>
                 {
-                    // TODO(Tianyu): Need to wrap this for exceptions?
-                    pageBlob.EndCreate(ar);
+                    try
+                    {
+                        pageBlob.EndCreate(ar);
+                    }
+                    catch (Exception e)
+                    {
+                        // TODO(Tianyu): Can't really do better without knowing error behavior
+                        Trace.TraceError(e.Message);
+                    }
                     // At this point the blob is fully created. After this line all consequent writers will write immediately. We just
                     // need to clear the queue of pending writers.
                     this.pageBlob = pageBlob;
@@ -192,6 +199,7 @@ namespace FASTER.cloud
                 // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
+                    Trace.TraceError(e.Message);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
                     callback(2, readLength, ovNative);
@@ -253,7 +261,7 @@ namespace FASTER.cloud
                 // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
-                    Console.WriteLine(e.Message);
+                    Trace.TraceError(e.Message);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
                     callback(1, numBytesToWrite, ovNative);

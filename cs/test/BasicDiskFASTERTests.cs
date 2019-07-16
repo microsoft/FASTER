@@ -37,7 +37,7 @@ namespace FASTER.test
             set { testContextInstance = value; }
         }
 
-        void TestDeviceWriteRead(IDevice log, bool debug = false)
+        void TestDeviceWriteRead(IDevice log)
         {
             this.log = log;
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
@@ -48,13 +48,11 @@ namespace FASTER.test
 
             for (int i = 0; i < 2000; i++)
             {
-                if (debug && i % 500 == 0) TestContext.WriteLine("inserted {0} tuples", i);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 fht.Upsert(ref key1, ref value, Empty.Default, 0);
             }
             fht.CompletePending(true);
-            if (debug) TestContext.WriteLine("Write pending cleared");
 
             // Update first 100 using RMW from storage
             for (int i = 0; i < 100; i++)
@@ -64,7 +62,6 @@ namespace FASTER.test
                 var status = fht.RMW(ref key1, ref input, Empty.Default, 0);
                 if (status == Status.PENDING)
                     fht.CompletePending(true);
-                if (debug && i % 10 == 0) TestContext.WriteLine("Modified {0} tuples\n", i);
             }
 
 
@@ -112,7 +109,7 @@ namespace FASTER.test
         [Test]
         public void PageBlobWriteRead()
         {
-            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false), true);
+            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
     }
 }
