@@ -3,12 +3,14 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using FASTER.core;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 
-namespace FASTER.core
+namespace FASTER.cloud
 {
     /// <summary>
     /// A IDevice Implementation that is backed by<see href="https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview">Azure Page Blob</see>.
@@ -70,7 +72,19 @@ namespace FASTER.core
         {
             if (blobs.TryRemove(segment, out CloudPageBlob blob))
             {
-                blob.BeginDelete(callback, result);
+                blob.BeginDelete(ar =>
+                {
+                    try
+                    {
+                        blob.EndDelete(ar);
+
+                    }
+                    catch (Exception e)
+                    {
+                        // Can I do anything else other than printing out an error message?
+                    }
+                    callback(ar);
+                }, result);
             }
         }
 
@@ -79,52 +93,81 @@ namespace FASTER.core
         /// </summary>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            CloudPageBlob pageBlob = GetOrAddPageBlob(segmentId);
+            // It is up to the allocator to make sure no reads are issued to segments before they are written
+            if (!blobs.TryGetValue(segmentId, out CloudPageBlob pageBlob)) throw new InvalidOperationException("Attempting to read non-existent segments");
 
             // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
 
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength, readLength, FileAccess.Write);
-
-            // TODO(Tianyu): This implementation seems to swallow exceptions that would otherwise be thrown from the synchronous version of this
-            // function. I wasn't able to find any good documentaiton on how exceptions are propagated or handled in this scenario. 
-            pageBlob.BeginDownloadRangeToStream(stream, (Int64)sourceAddress, readLength, ar => callback(0, readLength, ovNative), asyncResult);
+            pageBlob.BeginDownloadRangeToStream(stream, (Int64)sourceAddress, readLength, ar => {
+                try
+                {
+                    pageBlob.EndDownloadRangeToStream(ar);
+                }
+                // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
+                catch (Exception e)
+                {
+                    // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
+                    // but does not distinguish between them.
+                    callback(2, readLength, ovNative);
+                }
+                callback(0, readLength, ovNative);
+            }, asyncResult);
         }
+
         /// <summary>
         /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
-        public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            CloudPageBlob pageBlob = GetOrAddPageBlob(segmentId);
+            if (!blobs.TryGetValue(segmentId, out CloudPageBlob pageBlob))
+            {
+                // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
+                pageBlob = container.GetPageBlobReference(blobName + segmentId);
 
+                // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
+                // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
+                // how large it can grow to.
+                var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
+                // It is up to allocator to ensure that no reads happen before the callback of this function is invoked.
+                pageBlob.BeginCreate(size, ar =>
+                {
+                    pageBlob.EndCreate(ar);
+                }, null);
+                WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+                blobs.TryAdd(segmentId, pageBlob);
+            }
+            else
+            {
+                // Write directly to the existing blob otherwise
+                WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+            }
+        }
+
+        private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        {
             // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)sourceAddress, numBytesToWrite);
-            pageBlob.BeginWritePages(stream, (long)destinationAddress, null, ar => callback(0, numBytesToWrite, ovNative), asyncResult);
-        }
-
-        private CloudPageBlob GetOrAddPageBlob(int segmentId)
-        {
-            return blobs.GetOrAdd(segmentId, id => CreatePageBlob(id));
-        }
-
-        private CloudPageBlob CreatePageBlob(int segmentId)
-        {
-            // TODO(Tianyu): Is this now blocking? How sould this work when multiple apps share the same backing blob store?
-            // TODO(Tianyu): Need a better naming scheme?
-            CloudPageBlob blob = container.GetPageBlobReference(blobName + segmentId);
-
-            // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
-            // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
-            // how large it can grow to.
-            var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
-
-            // TODO(Tianyu): There is a race hidden here if multiple applications are interacting with the same underlying blob store.
-            // How that should be fixed is dependent on our decision on the architecture.
-            blob.Create(size);
-            return blob;
+            blob.BeginWritePages(stream, (long)destinationAddress, null, ar =>
+            {
+                try
+                {
+                    blob.EndWritePages(ar);
+                }
+                // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.Message);
+                    // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
+                    // but does not distinguish between them.
+                    callback(1, numBytesToWrite, ovNative);
+                }
+                callback(0, numBytesToWrite, ovNative);
+            }, asyncResult);
         }
     }
 

@@ -1443,7 +1443,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Console.WriteLine("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)Overlapped.Unpack(overlap).AsyncResult;
@@ -1502,7 +1502,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Console.WriteLine("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
@@ -1545,7 +1545,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Console.WriteLine("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;

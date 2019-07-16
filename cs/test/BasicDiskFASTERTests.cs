@@ -10,16 +10,32 @@ using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
+using FASTER.cloud;
+using System.Diagnostics;
 
 namespace FASTER.test
 {
+
 
     // TODO(Tianyu): Now that we are also testing device with Azure Page Blobs here, should we also rename the test?
     [TestFixture]
     internal class BasicDiskFASTERTests
     {
+        private TestContext testContextInstance;
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
         private IDevice log;
+        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+        public const string TEST_CONTAINER = "test";
+
+        /// <summary>
+        ///  Gets or sets the test context which provides
+        ///  information about and functionality for the current test run.
+        ///</summary>
+        public TestContext TestContext
+        {
+            get { return testContextInstance; }
+            set { testContextInstance = value; }
+        }
 
         void TestDeviceWriteRead(IDevice log)
         {
@@ -93,7 +109,7 @@ namespace FASTER.test
         [Test]
         public void PageBlobWriteRead()
         {
-            TestDeviceWriteRead(Devices.CreateAzurePageBlobDevice("BasicDiskFASTERTests", deleteOnClose: false));
+            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
 
         [Test]
@@ -101,7 +117,7 @@ namespace FASTER.test
         {
             // TODO(Tianyu): Magic constant
             IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity : 1 << 30);
-            IDevice cloudDevice = Devices.CreateAzurePageBlobDevice("BasicDiskFASTERTests", deleteOnClose: false);
+            IDevice cloudDevice = new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
             var device = new TieredStorageDevice(1, localDevice, cloudDevice);
             TestDeviceWriteRead(device);
         }
