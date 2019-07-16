@@ -155,6 +155,7 @@ namespace FASTER.cloud
                 // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
+                    Console.WriteLine(e.Message);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
                     callback(1, numBytesToWrite, ovNative);
