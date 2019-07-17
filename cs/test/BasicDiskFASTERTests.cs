@@ -19,7 +19,6 @@ namespace FASTER.test
     internal class BasicStorageFASTERTests
     {
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
-        private IDevice log;
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "test";
 
@@ -38,7 +37,6 @@ namespace FASTER.test
 
         void TestDeviceWriteRead(IDevice log)
         {
-            this.log = log;
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
                        (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
             fht.StartSession();
