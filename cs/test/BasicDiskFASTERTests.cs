@@ -10,31 +10,30 @@ using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
-using FASTER.cloud;
+using FASTER.devices;
 using System.Diagnostics;
 
 namespace FASTER.test
 {
-
-
-    // TODO(Tianyu): Now that we are also testing device with Azure Page Blobs here, should we also rename the test?
     [TestFixture]
-    internal class BasicDiskFASTERTests
+    internal class BasicStorageFASTERTests
     {
-        private TestContext testContextInstance;
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
         private IDevice log;
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "test";
 
-        /// <summary>
-        ///  Gets or sets the test context which provides
-        ///  information about and functionality for the current test run.
-        ///</summary>
-        public TestContext TestContext
+        [Test]
+        public void LocalStorageWriteRead()
         {
-            get { return testContextInstance; }
-            set { testContextInstance = value; }
+            TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true));
+        }
+
+        [Test]
+        public void PageBlobWriteRead()
+        {
+            if (AzureStorageEmulator.IsProcessStarted())
+                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
 
         void TestDeviceWriteRead(IDevice log)
@@ -89,27 +88,22 @@ namespace FASTER.test
                     }
                 }
             }
-        }
 
-        [TearDown]
-        public void TearDown()
-        {
             fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
         }
+    }
 
-        [Test]
-        public void NativeDiskWriteRead()
-        {
-            TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true));
-        }
+    internal static class AzureStorageEmulator
+    {
+        private const string _win7ProcessName = "WAStorageEmulator";
+        private const string _win8ProcessName = "WASTOR~1";
 
-        [Test]
-        public void PageBlobWriteRead()
+        public static bool IsProcessStarted()
         {
-            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+            return null != (Process.GetProcessesByName(_win7ProcessName).FirstOrDefault() ?? Process.GetProcessesByName(_win8ProcessName).FirstOrDefault());
         }
     }
 }

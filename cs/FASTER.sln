@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27004.2008
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29102.190
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.benchmark", "benchmark\FASTER.benchmark.csproj", "{33A732D1-2B58-4FEE-9696-B9483496229F}"
 EndProject
@@ -38,9 +38,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClassCacheMT", "playground\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VarLenStructSample", "playground\VarLenStructSample\VarLenStructSample.csproj", "{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{A6B14415-D316-4955-BE5F-725BB2DEBEBE}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "devices", "devices", "{A6B14415-D316-4955-BE5F-725BB2DEBEBE}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.cloud", "src\cloud\FASTER.cloud.csproj", "{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.devices.AzureStorageDevice", "src\devices\AzureStorageDevice\FASTER.devices.AzureStorageDevice.csproj", "{E571E686-01A0-44D5-BFF5-B7678284258B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -138,14 +138,14 @@ Global
 		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Release|Any CPU.Build.0 = Release|x64
 		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Release|x64.ActiveCfg = Release|x64
 		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE}.Release|x64.Build.0 = Release|x64
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Debug|x64.Build.0 = Debug|Any CPU
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Release|Any CPU.Build.0 = Release|Any CPU
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Release|x64.ActiveCfg = Release|Any CPU
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029}.Release|x64.Build.0 = Release|Any CPU
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Debug|x64.ActiveCfg = Debug|x64
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Debug|x64.Build.0 = Debug|x64
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Release|x64.ActiveCfg = Release|x64
+		{E571E686-01A0-44D5-BFF5-B7678284258B}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -164,7 +164,7 @@ Global
 		{F989FF23-5DD7-4D8F-9458-BDA22EFC038D} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{37B3C501-A7A1-4E86-B766-22F9BEF31DFE} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{A6B14415-D316-4955-BE5F-725BB2DEBEBE} = {28800357-C8CE-4CD0-A2AD-D4A910ABB496}
-		{ECF8EE9C-0D02-4EB3-8A25-6A318719F029} = {A6B14415-D316-4955-BE5F-725BB2DEBEBE}
+		{E571E686-01A0-44D5-BFF5-B7678284258B} = {A6B14415-D316-4955-BE5F-725BB2DEBEBE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}
