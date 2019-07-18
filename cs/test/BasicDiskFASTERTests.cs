@@ -33,8 +33,6 @@ namespace FASTER.test
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
                 TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
-            else
-                throw new NotImplementedException();
         }
 
         void TestDeviceWriteRead(IDevice log)
