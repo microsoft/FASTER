@@ -31,8 +31,10 @@ namespace FASTER.test
         [Test]
         public void PageBlobWriteRead()
         {
-            if (AzureStorageEmulator.IsProcessStarted())
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
                 TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+            else
+                throw new NotImplementedException();
         }
 
         void TestDeviceWriteRead(IDevice log)
@@ -91,17 +93,6 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Close();
-        }
-    }
-
-    internal static class AzureStorageEmulator
-    {
-        private const string _win7ProcessName = "WAStorageEmulator";
-        private const string _win8ProcessName = "WASTOR~1";
-
-        public static bool IsProcessStarted()
-        {
-            return null != (Process.GetProcessesByName(_win7ProcessName).FirstOrDefault() ?? Process.GetProcessesByName(_win8ProcessName).FirstOrDefault());
         }
     }
 }
