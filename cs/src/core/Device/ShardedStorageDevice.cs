@@ -95,47 +95,90 @@ namespace FASTER.core
             }
         }
 
-        public unsafe void WriteAsync(IntPtr sourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
+            var countdown = new CountdownEvent(partitions.Devices.Count);
+            foreach (IDevice shard in partitions.Devices)
+            {
+                shard.RemoveSegmentAsync(segment, ar =>
+                {
+                    if (countdown.Signal()) callback(ar);
+                    countdown.Dispose();
+                }, result);
+            }
+        }
+
+        public unsafe override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        {
+            // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
-            long currentWriteStart = (long)alignedDestinationAddress;
+            long currentWriteStart = (long)destinationAddress;
             long writeEnd = currentWriteStart + (long)numBytesToWrite;
+            uint aggregateErrorCode = 0;
             while (currentWriteStart < writeEnd)
             {
                 long newStart = partitions.MapRange(currentWriteStart, writeEnd, out int shard, out long shardStartAddress, out long shardEndAddress);
-                ulong writeOffset = (ulong)currentWriteStart - alignedDestinationAddress;
-
-                // TODO(Tianyu): Error behavior here is up to debate. Need to collapse the errors here
+                ulong writeOffset = (ulong)currentWriteStart - destinationAddress;
+                // Indicate that there is one more task to wait for
+                countdown.AddCount();
+                // Because more than one device can return with an error, it is important that we remember the most recent error code we saw. (It is okay to only
+                // report one error out of many. It will be as if we failed on that error and cancelled all other reads, even though we issue reads in parallel and
+                // wait until all of them are complete in the implementation) 
+                // TODO(Tianyu): Can there be races on async result as we issue writes or reads in parallel?
                 partitions.Devices[shard].WriteAsync(IntPtr.Add(sourceAddress, (int)writeOffset),
+                                                     segmentId,
                                                      (ulong)shardStartAddress,
                                                      (uint)(shardEndAddress - shardStartAddress),
                                                      (e, n, o) =>
                                                      {
-                                                         if (countdown.Signal()) callback(e, n, o);
+                                                         // TODO(Tianyu): this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
+                                                         if (e != 0) aggregateErrorCode = e;
+                                                         if (countdown.Signal()) callback(aggregateErrorCode, n, o);
+                                                         countdown.Dispose();
                                                      },
                                                      asyncResult);
 
-
                 currentWriteStart = newStart;
-                countdown.AddCount();
             }
-            // TODO(Tianyu): Need to somehow colla
-            if (countdown.Signal()) callback(0, 0, null);
+
+            // TODO(Tianyu): What do for the dumb overlapped wrapper...
+            if (countdown.Signal()) callback(aggregateErrorCode, 0, null);
         }
 
-        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            throw new NotImplementedException();
-        }
+            // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
+            var countdown = new CountdownEvent(1);
+            long currentReadStart = (long)sourceAddress;
+            long readEnd = currentReadStart + readLength;
+            uint aggregateErrorCode = 0;
+            while (currentReadStart < readEnd)
+            {
+                long newStart = partitions.MapRange(currentReadStart, readEnd, out int shard, out long shardStartAddress, out long shardEndAddress);
+                ulong writeOffset = (ulong)currentReadStart - sourceAddress;
+                // Because more than one device can return with an error, it is important that we remember the most recent error code we saw. (It is okay to only
+                // report one error out of many. It will be as if we failed on that error and cancelled all other reads, even though we issue reads in parallel and
+                // wait until all of them are complete in the implementation) 
+                // TODO(Tianyu): Can there be races on async result as we issue writes or reads in parallel?
+                countdown.AddCount();
+                partitions.Devices[shard].ReadAsync(segmentId,
+                                                    (ulong)currentReadStart,
+                                                    IntPtr.Add(destinationAddress, (int)writeOffset),
+                                                    (uint)(shardEndAddress - shardStartAddress),
+                                                    (e, n, o) =>
+                                                    {
+                                                        // TODO(Tianyu): this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
+                                                        if (e != 0) aggregateErrorCode = e;
+                                                        if (countdown.Signal()) callback(aggregateErrorCode, n, o);
+                                                        countdown.Dispose();
+                                                    },
+                                                    asyncResult);
 
-        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
-        {
-            throw new NotImplementedException();
-        }
+                currentReadStart = newStart;
+            }
 
-        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
-        {
-            throw new NotImplementedException();
+            // TODO(Tianyu): What do for the dumb overlapped wrapper...
+            if (countdown.Signal()) callback(aggregateErrorCode, 0, null);
         }
     }
 }
