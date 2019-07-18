@@ -10,36 +10,46 @@ using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
-using FASTER.cloud;
+using FASTER.devices;
 using System.Diagnostics;
 
 namespace FASTER.test
 {
-
-
-    // TODO(Tianyu): Now that we are also testing device with Azure Page Blobs here, should we also rename the test?
     [TestFixture]
-    internal class BasicDiskFASTERTests
+    internal class BasicStorageFASTERTests
     {
-        private TestContext testContextInstance;
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
-        private IDevice log;
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "test";
 
-        /// <summary>
-        ///  Gets or sets the test context which provides
-        ///  information about and functionality for the current test run.
-        ///</summary>
-        public TestContext TestContext
+        [Test]
+        public void LocalStorageWriteRead()
         {
-            get { return testContextInstance; }
-            set { testContextInstance = value; }
+            TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true));
         }
+
+
+        [Test]
+        public void PageBlobWriteRead()
+        {
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+        }
+        [Test]
+        public void TieredWriteRead()
+        {
+            // TODO(Tianyu): Magic constant
+            // TODO(Tianyu): Test without azure
+            IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
+            IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
+            var device = new TieredStorageDevice(1, localDevice, cloudDevice);
+            TestDeviceWriteRead(device);
+        }
+
+
 
         void TestDeviceWriteRead(IDevice log)
         {
-            this.log = log;
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
                        (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
             fht.StartSession();
@@ -89,37 +99,11 @@ namespace FASTER.test
                     }
                 }
             }
-        }
 
-        [TearDown]
-        public void TearDown()
-        {
             fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
-        }
-
-        [Test]
-        public void NativeDiskWriteRead()
-        {
-            TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true));
-        }
-
-        [Test]
-        public void PageBlobWriteRead()
-        {
-            TestDeviceWriteRead(new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
-        }
-
-        [Test]
-        public void TieredWriteRead()
-        {
-            // TODO(Tianyu): Magic constant
-            IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity : 1 << 30);
-            IDevice cloudDevice = new AzurePageBlobDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
-            var device = new TieredStorageDevice(1, localDevice, cloudDevice);
-            TestDeviceWriteRead(device);
         }
     }
 }
