@@ -40,7 +40,7 @@ namespace FASTER.test.recovery.sumstore
             fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (keySpace, new Functions(), 
                 new LogSettings { LogDevice = log },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot }
+                new CheckpointSettings { CheckpointBasePath = test_path, CheckPointType = CheckpointType.Snapshot }
                 );
         }
 

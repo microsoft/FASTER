@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 
+using System;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -29,7 +31,12 @@ namespace FASTER.core
         /// <summary>
         /// Directory where checkpoints are stored
         /// </summary>
-        public string CheckpointDir = "";
+        public string CheckpointBasePath = "";
+
+        /// <summary>
+        /// Checkpoint device for given path
+        /// </summary>
+        public Func<string, IDevice> CheckpointDeviceFunc;
 
         /// <summary>
         /// Type of checkpoint

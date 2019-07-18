@@ -262,9 +262,9 @@ namespace FASTER.core
                                 ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
 
                                 _hybridLogCheckpoint.snapshotFileDevice = Devices.CreateLogDevice
-                                    (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
+                                    (directoryConfiguration.GetLogSnapshotDevice(_hybridLogCheckpointToken), false);
                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice = Devices.CreateLogDevice
-                                    (directoryConfiguration.GetHybridLogObjectCheckpointFileName(_hybridLogCheckpointToken), false);
+                                    (directoryConfiguration.GetObjectLogSnapshotDevice(_hybridLogCheckpointToken), false);
                                 _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(hlog.GetSegmentSize());
 

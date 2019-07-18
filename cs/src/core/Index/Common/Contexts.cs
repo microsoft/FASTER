@@ -109,9 +109,12 @@ namespace FASTER.core
     internal class DirectoryConfiguration
     {
         private readonly string checkpointDir;
-        public DirectoryConfiguration(string checkpointDir)
+        private readonly Func<string, IDevice> checkpointDeviceFunc;
+
+        public DirectoryConfiguration(CheckpointSettings checkpointSettings)
         {
-            this.checkpointDir = checkpointDir;
+            this.checkpointDir = checkpointSettings.CheckpointBasePath;
+            this.checkpointDeviceFunc = checkpointSettings.CheckpointDeviceFunc;
         }
 
         public const string index_base_folder = "index-checkpoints";
@@ -201,22 +204,14 @@ namespace FASTER.core
                                     ".dat");
         }
 
-        public string GetHybridLogCheckpointFileName(Guid token)
+        public IDevice GetLogSnapshotDevice(Guid token)
         {
-            return GetMergedFolderPath(checkpointDir,
-                                    cpr_base_folder,
-                                    token.ToString(),
-                                    snapshot_file,
-                                    ".dat");
+            return checkpointDeviceFunc(GetMergedFolderPath(checkpointDir, cpr_base_folder, token.ToString(), snapshot_file, ".dat"));
         }
 
-        public string GetHybridLogObjectCheckpointFileName(Guid token)
+        public IDevice GetObjectLogSnapshotDevice(Guid token)
         {
-            return GetMergedFolderPath(checkpointDir,
-                                    cpr_base_folder,
-                                    token.ToString(),
-                                    snapshot_file,
-                                    ".obj.dat");
+            return checkpointDeviceFunc(GetMergedFolderPath(checkpointDir, cpr_base_folder, token.ToString(), snapshot_file, ".obj.dat"));
         }
 
         public static string GetMergedFolderPath(params String[] paths)
@@ -358,11 +353,11 @@ namespace FASTER.core
         /// Recover info from token and checkpoint directory
         /// </summary>
         /// <param name="token"></param>
-        /// <param name="checkpointDir"></param>
+        /// <param name="checkpointSettings"></param>
         /// <returns></returns>
-        public bool Recover(Guid token, string checkpointDir)
+        public bool Recover(Guid token, CheckpointSettings checkpointSettings)
         {
-            return Recover(token, new DirectoryConfiguration(checkpointDir));
+            return Recover(token, new DirectoryConfiguration(checkpointSettings));
         }
 
         /// <summary>

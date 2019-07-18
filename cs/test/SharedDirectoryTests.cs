@@ -108,7 +108,7 @@ namespace FASTER.test.recovery.sumstore
                     keySpace,
                     new Functions(),
                     new LogSettings { LogDevice = this.LogDevice },
-                    new CheckpointSettings { CheckpointDir = this.CheckpointDirectory, CheckPointType = CheckpointType.FoldOver });
+                    new CheckpointSettings { CheckpointBasePath = this.CheckpointDirectory, CheckPointType = CheckpointType.FoldOver });
             }
 
             public void TearDown()

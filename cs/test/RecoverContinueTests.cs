@@ -32,21 +32,21 @@ namespace FASTER.test.recovery.sumstore.recover_continue
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointBasePath = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointBasePath = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht3 = new FasterKV
                 <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointBasePath = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             numOps = 5000;

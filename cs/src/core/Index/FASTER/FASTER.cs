@@ -104,7 +104,7 @@ namespace FASTER.core
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
 
-            directoryConfiguration = new DirectoryConfiguration(checkpointSettings.CheckpointDir);
+            directoryConfiguration = new DirectoryConfiguration(checkpointSettings);
 
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
