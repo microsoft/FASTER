@@ -7,14 +7,14 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>FASTER.cloud</RootNamespace>
-    <AssemblyName>FASTER.cloud</AssemblyName>
+    <RootNamespace>FASTER.devices</RootNamespace>
+    <AssemblyName>FASTER.devices.AzureStorageDevice</AssemblyName>
     <ErrorReport>prompt</ErrorReport>
     <SignAssembly>true</SignAssembly>
     <ApplicationIcon />
     <OutputType>Library</OutputType>
     <StartupObject />
-    <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
@@ -36,13 +36,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Storage.Blob" Version="10.0.3" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.2" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="AzurePageBlobDevice.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\core\FASTER.core.csproj" />
+    <ProjectReference Include="..\..\core\FASTER.core.csproj" />
   </ItemGroup>
 
 </Project>

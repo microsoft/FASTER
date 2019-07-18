@@ -5,21 +5,22 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using FASTER.core;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 
-namespace FASTER.cloud
+namespace FASTER.devices
 {
     /// <summary>
     /// A IDevice Implementation that is backed by<see href="https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview">Azure Page Blob</see>.
-    /// This device is expected to be an order of magnitude slower than local SSD or HDD, but provide scalability and shared access in the cloud.
+    /// This device is slower than a local SSD or HDD, but provides scalability and shared access in the cloud.
     /// </summary>
-    public class AzurePageBlobDevice : StorageDeviceBase
+    public class AzureStorageDevice : StorageDeviceBase
     {
         private CloudBlobContainer container;
-        private readonly ConcurrentDictionary<int, CloudPageBlob> blobs;
+        private readonly ConcurrentDictionary<int, BlobEntry> blobs;
         private readonly string blobName;
         private readonly bool deleteOnClose;
 
@@ -29,7 +30,7 @@ namespace FASTER.cloud
         private const uint PAGE_BLOB_SECTOR_SIZE = 512;
 
         /// <summary>
-        /// Constructs a new AzurePageBlobDevice instance
+        /// Constructs a new AzureStorageDevice instance, backed by Azure Page Blobs
         /// </summary>
         /// <param name="connectionString"> The connection string to use when estblishing connection to Azure Blobs</param>
         /// <param name="containerName">Name of the Azure Blob container to use. If there does not exist a container with the supplied name, one is created</param>
@@ -39,14 +40,14 @@ namespace FASTER.cloud
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        public AzurePageBlobDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
+        public AzureStorageDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
             : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);
             CloudBlobClient client = storageAccount.CreateCloudBlobClient();
             container = client.GetContainerReference(containerName);
             container.CreateIfNotExists();
-            blobs = new ConcurrentDictionary<int, CloudPageBlob>();
+            blobs = new ConcurrentDictionary<int, BlobEntry>();
             this.blobName = blobName;
             this.deleteOnClose = deleteOnClose;
         }
@@ -64,19 +65,20 @@ namespace FASTER.cloud
             {
                 foreach (var entry in blobs)
                 {
-                    entry.Value.Delete();
+                    entry.Value.GetPageBlob().Delete();
                 }
             }
         }
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            if (blobs.TryRemove(segment, out CloudPageBlob blob))
+            if (blobs.TryRemove(segment, out BlobEntry blob))
             {
-                blob.BeginDelete(ar =>
+                CloudPageBlob pageBlob = blob.GetPageBlob();
+                pageBlob.BeginDelete(ar =>
                 {
                     try
                     {
-                        blob.EndDelete(ar);
+                        pageBlob.EndDelete(ar);
 
                     }
                     catch (Exception e)
@@ -94,13 +96,14 @@ namespace FASTER.cloud
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // It is up to the allocator to make sure no reads are issued to segments before they are written
-            if (!blobs.TryGetValue(segmentId, out CloudPageBlob pageBlob)) throw new InvalidOperationException("Attempting to read non-existent segments");
+            if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry)) throw new InvalidOperationException("Attempting to read non-existent segments");
 
             // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
 
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength, readLength, FileAccess.Write);
+            CloudPageBlob pageBlob = blobEntry.GetPageBlob();
             pageBlob.BeginDownloadRangeToStream(stream, (Int64)sourceAddress, readLength, ar => {
                 try
                 {
@@ -109,6 +112,7 @@ namespace FASTER.cloud
                 // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
+                    Trace.TraceError(e.Message);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
                     callback(2, readLength, ovNative);
@@ -122,30 +126,39 @@ namespace FASTER.cloud
         /// </summary>
         public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            if (!blobs.TryGetValue(segmentId, out CloudPageBlob pageBlob))
+            if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
-                // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
-                pageBlob = container.GetPageBlobReference(blobName + segmentId);
-
-                // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
-                // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
-                // how large it can grow to.
-                var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
-                // It is up to allocator to ensure that no reads happen before the callback of this function is invoked.
-                pageBlob.BeginCreate(size, ar =>
+                BlobEntry entry = new BlobEntry();
+                if (blobs.TryAdd(segmentId, entry))
                 {
-                    pageBlob.EndCreate(ar);
-                }, null);
-                WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-                blobs.TryAdd(segmentId, pageBlob);
+                    CloudPageBlob pageBlob = container.GetPageBlobReference(blobName + segmentId);
+                    // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
+                    // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
+                    // how large it can grow to.
+                    var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
+                    // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
+                    // After creation is done, we can call write.
+                    entry.CreateAsync(size, pageBlob);
+                }
+                // Otherwise, some other thread beat us to it. Okay to use their blobs.
+                blobEntry = blobs[segmentId];
             }
-            else
-            {
-                // Write directly to the existing blob otherwise
-                WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
-            }
+            TryWriteAsync(blobEntry, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void TryWriteAsync(BlobEntry blobEntry, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        {
+            CloudPageBlob pageBlob = blobEntry.GetPageBlob();
+            // If pageBlob is null, it is being created. Attempt to queue the write for the creator to complete after it is done
+            if (pageBlob == null
+                && blobEntry.TryQueueAction(p => WriteToBlobAsync(p, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult))) return;
+
+            // Otherwise, invoke directly.
+            WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
@@ -161,7 +174,7 @@ namespace FASTER.cloud
                 // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
-                    Console.WriteLine(e.Message);
+                    Trace.TraceError(e.Message);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
                     callback(1, numBytesToWrite, ovNative);
@@ -170,6 +183,4 @@ namespace FASTER.cloud
             }, asyncResult);
         }
     }
-
-
 }
