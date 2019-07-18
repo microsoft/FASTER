@@ -98,7 +98,12 @@ namespace FASTER.core
                     devices[i].WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, (e, n, o) =>
                     {
                         // The last tier to finish invokes the callback
-                        if (countdown.Signal()) callback(e, n, o);
+                        if (countdown.Signal())
+                        {
+                            callback(e, n, o);
+                            countdown.Dispose();
+                        }
+                        
                     }, asyncResult);
                 }
                 else
@@ -117,7 +122,11 @@ namespace FASTER.core
             {
                 devices[i].RemoveSegmentAsync(segment, r =>
                 {
-                    if (countdown.Signal()) callback(r);
+                    if (countdown.Signal())
+                    {
+                        callback(r);
+                        countdown.Dispose();
+                    }
                 }, result);
             }
         }

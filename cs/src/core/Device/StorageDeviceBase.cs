@@ -170,7 +170,11 @@ namespace FASTER.core
                 for (int i = oldStart; i < toSegment; i++)
                 {
                     RemoveSegmentAsync(i, r => {
-                        if (countdown.Signal()) callback(r);
+                        if (countdown.Signal())
+                        {
+                            callback(r);
+                            countdown.Dispose();
+                        }
                     }, result);
                 }
             });
@@ -178,9 +182,11 @@ namespace FASTER.core
 
         public virtual void TruncateUntilSegment(int toSegment)
         {
-            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
-            TruncateUntilSegmentAsync(toSegment, r => completionEvent.Set(), null);
-            completionEvent.Wait();
+            using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))
+            {
+                TruncateUntilSegmentAsync(toSegment, r => completionEvent.Set(), null);
+                completionEvent.Wait();
+            }
         }
 
         public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
@@ -191,9 +197,11 @@ namespace FASTER.core
 
         public virtual void TruncateUntilAddress(long toAddress)
         {
-            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
-            TruncateUntilAddressAsync(toAddress, r => completionEvent.Set(), null);
-            completionEvent.Wait();
+            using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))
+            {
+                TruncateUntilAddressAsync(toAddress, r => completionEvent.Set(), null);
+                completionEvent.Wait();
+            }
         }
 
         /// <summary>
