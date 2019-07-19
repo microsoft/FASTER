@@ -37,17 +37,20 @@ namespace FASTER.core
         /// covered.
         /// </returns>
         long MapRange(long startAddress, long endAddress, out int shard, out long shardStartAddress, out long shardEndAddress);
+
+        long MapSectorSize(long sectorSize, int shard);
     }
 
-    class RoundRobinPartitionScheme : IPartitionScheme
+    class UniformPartitionScheme : IPartitionScheme
     {
         public IList<IDevice> Devices { get; }
         private readonly long chunkSize;
 
-        public RoundRobinPartitionScheme(long chunkSize, IList<IDevice> devices)
+        public UniformPartitionScheme(long chunkSize, IList<IDevice> devices)
         {
             Debug.Assert(devices.Count != 0, "There cannot be zero shards");
             Debug.Assert(chunkSize > 0, "chunk size should not be negative");
+            Debug.Assert((chunkSize & (chunkSize - 1)) == 0, "Chunk size must be a power of 2");
             this.Devices = devices;
             this.chunkSize = chunkSize;
             foreach (IDevice device in Devices)
@@ -56,14 +59,18 @@ namespace FASTER.core
             }
         }
 
+        public UniformPartitionScheme(long chunkSize, params IDevice[] devices) : this(chunkSize, (IList<IDevice>)devices)
+        {
+        }
+
+
         public long MapRange(long startAddress, long endAddress, out int shard, out long shardStartAddress, out long shardEndAddress)
         {
-            // TODO(Tianyu): Can do bitshift magic for faster translation if we enforce that chunk size is a multiple of 2 (which it definitely should be)
+            // TODO(Tianyu): Can do bitshift magic for faster translation assuming chunk size is a multiple of 2
             long chunkId = startAddress / chunkSize;
             shard = (int)(chunkId % Devices.Count);
-            shardStartAddress = startAddress % chunkSize;
+            shardStartAddress = chunkId / Devices.Count * chunkSize + startAddress % chunkSize;
             long chunkEndAddress = (chunkId + 1) * chunkSize;
-
             if (endAddress > chunkEndAddress)
             {
                 shardEndAddress = shardStartAddress + chunkSize;
@@ -74,6 +81,15 @@ namespace FASTER.core
                 shardEndAddress = endAddress - startAddress + shardStartAddress;
                 return endAddress;
             }
+        }
+
+        public long MapSectorSize(long sectorSize, int shard)
+        {
+            // TODO(Tianyu): Is there an easier way to do this?
+            // TODO(Tianyu): Perform bit-shifting magic
+            var numChunks = sectorSize / chunkSize;
+            // ceiling of (a div b) is (a + b - 1) / b where div is mathematical division and / is integer division 
+            return (numChunks + Devices.Count - 1) / Devices.Count * chunkSize;
         }
     }
 
@@ -95,6 +111,16 @@ namespace FASTER.core
             }
         }
 
+        public override void Initialize(long segmentSize, LightEpoch epoch)
+        {
+            base.Initialize(segmentSize, epoch);
+
+            for (int i = 0; i < partitions.Devices.Count; i++)
+            {
+                partitions.Devices[i].Initialize(partitions.MapSectorSize(segmentSize, 0), epoch);
+            }
+        }
+
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             var countdown = new CountdownEvent(partitions.Devices.Count);
@@ -102,8 +128,11 @@ namespace FASTER.core
             {
                 shard.RemoveSegmentAsync(segment, ar =>
                 {
-                    if (countdown.Signal()) callback(ar);
-                    countdown.Dispose();
+                    if (countdown.Signal())
+                    {
+                        callback(ar);
+                        countdown.Dispose();
+                    }
                 }, result);
             }
         }
@@ -131,10 +160,14 @@ namespace FASTER.core
                                                      (uint)(shardEndAddress - shardStartAddress),
                                                      (e, n, o) =>
                                                      {
+                                                         // TODO(Tianyu): It is incorrect to ignore o, as there might be a memory leak
                                                          // TODO(Tianyu): this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
                                                          if (e != 0) aggregateErrorCode = e;
-                                                         if (countdown.Signal()) callback(aggregateErrorCode, n, o);
-                                                         countdown.Dispose();
+                                                         if (countdown.Signal())
+                                                         {
+                                                             callback(aggregateErrorCode, n, o);
+                                                             countdown.Dispose();
+                                                         }
                                                      },
                                                      asyncResult);
 
@@ -142,7 +175,13 @@ namespace FASTER.core
             }
 
             // TODO(Tianyu): What do for the dumb overlapped wrapper...
-            if (countdown.Signal()) callback(aggregateErrorCode, 0, null);
+            if (countdown.Signal())
+            {
+                Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
+                NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
+                callback(aggregateErrorCode, numBytesToWrite, ovNative);
+                countdown.Dispose();
+            }
         }
 
         public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
@@ -169,8 +208,11 @@ namespace FASTER.core
                                                     {
                                                         // TODO(Tianyu): this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
                                                         if (e != 0) aggregateErrorCode = e;
-                                                        if (countdown.Signal()) callback(aggregateErrorCode, n, o);
-                                                        countdown.Dispose();
+                                                        if (countdown.Signal())
+                                                        {
+                                                            callback(aggregateErrorCode, n, o);
+                                                            countdown.Dispose();
+                                                        }
                                                     },
                                                     asyncResult);
 
@@ -178,7 +220,13 @@ namespace FASTER.core
             }
 
             // TODO(Tianyu): What do for the dumb overlapped wrapper...
-            if (countdown.Signal()) callback(aggregateErrorCode, 0, null);
+            if (countdown.Signal())
+            {
+                Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
+                NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
+                callback(aggregateErrorCode, readLength, ovNative);
+                countdown.Dispose();
+            }
         }
     }
 }
