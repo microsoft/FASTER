@@ -201,7 +201,7 @@ namespace FASTER.core
                 // TODO(Tianyu): Can there be races on async result as we issue writes or reads in parallel?
                 countdown.AddCount();
                 partitions.Devices[shard].ReadAsync(segmentId,
-                                                    (ulong)currentReadStart,
+                                                    (ulong)shardStartAddress,
                                                     IntPtr.Add(destinationAddress, (int)writeOffset),
                                                     (uint)(shardEndAddress - shardStartAddress),
                                                     (e, n, o) =>

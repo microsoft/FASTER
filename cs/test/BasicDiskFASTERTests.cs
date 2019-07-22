@@ -35,6 +35,7 @@ namespace FASTER.test
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
                 TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
+
         [Test]
         public void TieredWriteRead()
         {
@@ -49,9 +50,10 @@ namespace FASTER.test
         [Test]
         public void ShardedWriteRead()
         {
+            // TODO(Tianyu): Magic constant
             IDevice localDevice1 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests1.log", deleteOnClose: true, capacity: 1 << 30);
-            // IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
-            var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1));
+            IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
+            var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
 
