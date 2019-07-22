@@ -76,11 +76,6 @@ namespace FASTER.core
                     throw new Exception("Error reading from log file: " + error);
                 }
             }
-            else
-            {
-                // On synchronous completion, issue callback directly
-                callback(0, bytesRead, ovNative);
-            }
         }
 
         /// <summary>
@@ -121,11 +116,6 @@ namespace FASTER.core
                     Overlapped.Free(ovNative);
                     throw new Exception("Error writing to log file: " + error);
                 }
-            }
-            else
-            {
-                // On synchronous completion, issue callback directly
-                callback(0, bytesWritten, ovNative);
             }
         }
 
