@@ -193,7 +193,7 @@ namespace FASTER.core
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
         /// <param name="index"></param>
-        protected override void AllocatePage(int index)
+        internal override void AllocatePage(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
             byte[] tmp = new byte[adjustedSize];

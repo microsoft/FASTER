@@ -18,7 +18,8 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
-        private readonly ConcurrentDictionary<int, SafeFileHandle> logHandles;
+        private readonly bool disableFileBuffering;
+        private readonly SafeConcurrentDictionary<int, SafeFileHandle> logHandles;
 
         /// <summary>
         /// Constructor
@@ -26,13 +27,15 @@ namespace FASTER.core
         /// <param name="filename"></param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        public LocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false)
+        /// <param name="disableFileBuffering"></param>
+        public LocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true)
             : base(filename, GetSectorSize(filename))
         {
             Native32.EnableProcessPrivileges();
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
-            logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
+            this.disableFileBuffering = disableFileBuffering;
+            logHandles = new SafeConcurrentDictionary<int, SafeFileHandle>();
         }
 
         /// <summary>
@@ -185,7 +188,11 @@ namespace FASTER.core
             uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
             uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
 
-            fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+            if (this.disableFileBuffering)
+            {
+                fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+            }
+
             if (deleteOnClose)
             {
                 fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
