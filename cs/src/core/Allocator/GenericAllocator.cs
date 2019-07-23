@@ -498,7 +498,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+               Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
