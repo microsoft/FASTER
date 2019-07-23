@@ -9,7 +9,7 @@
     <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
     <licenseUrl>https://raw.githubusercontent.com/Microsoft/FASTER/master/LICENSE</licenseUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <description>IDevice FASTER is a fast concurrent key-value store that also supports indexing of larger-than-memory data. This is a FASTER IDevice implementation for Azure Storage.</description>
+    <description>This is a FASTER device implementation for Azure Storage (page blobs). FASTER is a fast concurrent key-value store that also supports indexing of larger-than-memory data.</description>
     <releaseNotes>See the project website at https://github.com/Microsoft/FASTER for more details</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
@@ -17,9 +17,11 @@
     <dependencies>
       <group targetFramework="net46">
         <dependency id="Microsoft.Azure.Storage.Blob" version="10.0.3" />
+        <dependency id="FASTER" version="$version$" />
       </group>
       <group targetFramework="netstandard2.0">
         <dependency id="Microsoft.Azure.Storage.Blob" version="10.0.3" />
+        <dependency id="FASTER" version="$version$" />
       </group>
     </dependencies>
   </metadata>
