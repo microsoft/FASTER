@@ -150,7 +150,7 @@ namespace FASTER.core
                     Debug.Assert(device == devices[devices.Count - 1], "Only the last tier storage of a tiered storage device can have unspecified capacity");
                     return Devices.CAPACITY_UNSPECIFIED;
                 }
-                result += device.Capacity;
+                result = Math.Max(result, device.Capacity);
             }
             return result;
         }
