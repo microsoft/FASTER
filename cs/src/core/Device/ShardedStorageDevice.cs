@@ -38,14 +38,30 @@ namespace FASTER.core
         /// </returns>
         long MapRange(long startAddress, long endAddress, out int shard, out long shardStartAddress, out long shardEndAddress);
 
+        /// <summary>
+        /// Maps the sector size of a composed device into sector sizes for each shard
+        /// </summary>
+        /// <param name="sectorSize">sector size of the composed device</param>
+        /// <param name="shard">the shard</param>
+        /// <returns>sector size on shard</returns>
         long MapSectorSize(long sectorSize, int shard);
     }
 
+    /// <summary>
+    /// Uniformly shards data across given devices.
+    /// </summary>
     class UniformPartitionScheme : IPartitionScheme
     {
         public IList<IDevice> Devices { get; }
         private readonly long chunkSize;
 
+        /// <summary>
+        /// Constructs a UniformPartitionScheme to shard data uniformly across given devices. Suppose we have 3 devices and the following logical write:
+        /// [chunk 1][chunk 2][chunk 3][chunk 4]...
+        /// chunk 1 is written on device 0, 2 on device 1, 3 on device 2, 4 on device 0, etc.
+        /// </summary>
+        /// <param name="chunkSize">size of each chunk</param>
+        /// <param name="devices">the devices to compose from</param>
         public UniformPartitionScheme(long chunkSize, IList<IDevice> devices)
         {
             Debug.Assert(devices.Count != 0, "There cannot be zero shards");
@@ -59,11 +75,24 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// vararg version of <see cref="UniformPartitionScheme(long, IList{IDevice})"/>
+        /// </summary>
+        /// <param name="chunkSize"></param>
+        /// <param name="devices"></param>
         public UniformPartitionScheme(long chunkSize, params IDevice[] devices) : this(chunkSize, (IList<IDevice>)devices)
         {
         }
 
-
+        /// <summary>
+        /// <see cref="IPartitionScheme.MapRange(long, long, out int, out long, out long)"/>
+        /// </summary>
+        /// <param name="startAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <param name="shard"></param>
+        /// <param name="shardStartAddress"></param>
+        /// <param name="shardEndAddress"></param>
+        /// <returns></returns>
         public long MapRange(long startAddress, long endAddress, out int shard, out long shardStartAddress, out long shardEndAddress)
         {
             // TODO(Tianyu): Can do bitshift magic for faster translation assuming chunk size is a multiple of 2
@@ -83,6 +112,12 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// <see cref="IPartitionScheme.MapSectorSize(long, int)"/>
+        /// </summary>
+        /// <param name="sectorSize"></param>
+        /// <param name="shard"></param>
+        /// <returns></returns>
         public long MapSectorSize(long sectorSize, int shard)
         {
             // TODO(Tianyu): Is there an easier way to do this?
@@ -93,16 +128,28 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// A <see cref="ShardedStorageDevice"/> logically composes multiple <see cref="IDevice"/> into a single storage device
+    /// by sharding writes into different devices according to a supplied <see cref="IPartitionScheme"/>. The goal is to be
+    /// able to issue large reads and writes in parallel into multiple devices and improve throughput. Beware that this
+    /// code does not contain error detection or correction mechanism to cope with increased failure from more devices.
+    /// </summary>
     class ShardedStorageDevice : StorageDeviceBase
     {
         private readonly IPartitionScheme partitions;
 
-        // TODO(Tianyu): Fill with actual params to base class
+        /// <summary>
+        /// Constructs a new ShardedStorageDevice with the given partition scheme
+        /// </summary>
+        /// <param name="partitions"> The parition scheme to use </param>
         public ShardedStorageDevice(IPartitionScheme partitions) : base("", 512, -1)
         {
             this.partitions = partitions;
         }
 
+        /// <summary>
+        /// <see cref="IDevice.Close"/>
+        /// </summary>
         public override void Close()
         {
             foreach (IDevice device in partitions.Devices)
@@ -111,6 +158,11 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// <see cref="IDevice.Initialize(long, LightEpoch)"/>
+        /// </summary>
+        /// <param name="segmentSize"></param>
+        /// <param name="epoch"></param>
         public override void Initialize(long segmentSize, LightEpoch epoch)
         {
             base.Initialize(segmentSize, epoch);
@@ -121,6 +173,12 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             var countdown = new CountdownEvent(partitions.Devices.Count);
@@ -137,6 +195,15 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="sourceAddress"></param>
+        /// <param name="segmentId"></param>
+        /// <param name="destinationAddress"></param>
+        /// <param name="numBytesToWrite"></param>
+        /// <param name="callback"></param>
+        /// <param name="asyncResult"></param>
         public unsafe override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
@@ -161,12 +228,15 @@ namespace FASTER.core
                                                      (e, n, o) =>
                                                      {
                                                          // TODO(Tianyu): It is incorrect to ignore o, as there might be a memory leak
-                                                         // TODO(Tianyu): this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
                                                          if (e != 0) aggregateErrorCode = e;
                                                          if (countdown.Signal())
                                                          {
                                                              callback(aggregateErrorCode, n, o);
                                                              countdown.Dispose();
+                                                         }
+                                                         else
+                                                         {
+                                                             Overlapped.Free(o);
                                                          }
                                                      },
                                                      asyncResult);
@@ -184,6 +254,15 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segmentId"></param>
+        /// <param name="sourceAddress"></param>
+        /// <param name="destinationAddress"></param>
+        /// <param name="readLength"></param>
+        /// <param name="callback"></param>
+        /// <param name="asyncResult"></param>
         public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
@@ -212,6 +291,10 @@ namespace FASTER.core
                                                         {
                                                             callback(aggregateErrorCode, n, o);
                                                             countdown.Dispose();
+                                                        }
+                                                        else
+                                                        {
+                                                            Overlapped.Free(o);
                                                         }
                                                     },
                                                     asyncResult);
