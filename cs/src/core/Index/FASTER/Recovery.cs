@@ -184,7 +184,7 @@ namespace FASTER.core
             
 
             // Read appropriate hybrid log pages into memory
-            RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress);
+            RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress);
 
             // Recover session information
             _recoveredSessions = new SafeConcurrentDictionary<Guid, long>();
@@ -195,53 +195,50 @@ namespace FASTER.core
             }
         }
 
-        private void RestoreHybridLog(long untilAddress)
+        private void RestoreHybridLog(long untilAddress, long headAddress)
         {
-
-            var tailPage = hlog.GetPage(untilAddress);
-            var headPage = default(long);
-            if (untilAddress > hlog.GetStartLogicalAddress(tailPage))
+            // Special case: we do not load any records into memory
+            if (headAddress == untilAddress)
             {
-                headPage = (tailPage + 1) - hlog.GetHeadOffsetLagInPages(); ;
+                hlog.AllocatePage(hlog.GetPageIndexForAddress(headAddress));
             }
             else
             {
-                headPage = tailPage - hlog.GetHeadOffsetLagInPages();
-            }
-            headPage = headPage > 0 ? headPage : 0;
+                var tailPage = hlog.GetPage(untilAddress);
+                var headPage = hlog.GetPage(headAddress);
 
-            var recoveryStatus = new RecoveryStatus(hlog.GetCapacityNumPages(), headPage, tailPage, untilAddress);
-            for (int i = 0; i < recoveryStatus.capacity; i++)
-            {
-                recoveryStatus.readStatus[i] = ReadStatus.Done;
-            }
-
-            var numPages = 0;
-            for (var page = headPage; page <= tailPage; page++)
-            {
-                var pageIndex = hlog.GetPageIndexForPage(page);
-                recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                numPages++;
-            }
-
-            hlog.AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
-
-            var done = false;
-            while (!done)
-            {
-                done = true;
-                for (long page = headPage; page <= tailPage; page++)
+                var recoveryStatus = new RecoveryStatus(hlog.GetCapacityNumPages(), headPage, tailPage, untilAddress);
+                for (int i = 0; i < recoveryStatus.capacity; i++)
                 {
-                    int pageIndex = hlog.GetPageIndexForPage(page);
-                    if (recoveryStatus.readStatus[pageIndex] == ReadStatus.Pending)
+                    recoveryStatus.readStatus[i] = ReadStatus.Done;
+                }
+
+                var numPages = 0;
+                for (var page = headPage; page <= tailPage; page++)
+                {
+                    var pageIndex = hlog.GetPageIndexForPage(page);
+                    recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
+                    numPages++;
+                }
+
+                hlog.AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
+
+                var done = false;
+                while (!done)
+                {
+                    done = true;
+                    for (long page = headPage; page <= tailPage; page++)
                     {
-                        done = false;
-                        break;
+                        int pageIndex = hlog.GetPageIndexForPage(page);
+                        if (recoveryStatus.readStatus[pageIndex] == ReadStatus.Pending)
+                        {
+                            done = false;
+                            break;
+                        }
                     }
                 }
             }
 
-            var headAddress = hlog.GetFirstValidLogicalAddress(headPage);
             hlog.RecoveryReset(untilAddress, headAddress);
         }
 
