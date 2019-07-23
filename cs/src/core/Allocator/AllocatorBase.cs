@@ -329,7 +329,7 @@ namespace FASTER.core
         /// Allocate page
         /// </summary>
         /// <param name="index"></param>
-        protected abstract void AllocatePage(int index);
+        internal abstract void AllocatePage(int index);
         /// <summary>
         /// Whether page is allocated
         /// </summary>

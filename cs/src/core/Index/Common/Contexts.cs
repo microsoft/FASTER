@@ -273,6 +273,10 @@ namespace FASTER.core
         /// </summary>
         public long finalLogicalAddress;
         /// <summary>
+        /// Head address
+        /// </summary>
+        public long headAddress;
+        /// <summary>
         /// Guid array
         /// </summary>
         public Guid[] guids;
@@ -299,6 +303,7 @@ namespace FASTER.core
             flushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
+            headAddress = 0;
             guids = new Guid[LightEpoch.kTableSize + 1];
             continueTokens = new Dictionary<Guid, long>();
             objectLogSegmentOffsets = null;
@@ -330,6 +335,9 @@ namespace FASTER.core
 
             value = reader.ReadLine();
             finalLogicalAddress = long.Parse(value);
+
+            value = reader.ReadLine();
+            headAddress = long.Parse(value);
 
             value = reader.ReadLine();
             numThreads = int.Parse(value);
@@ -421,6 +429,7 @@ namespace FASTER.core
             writer.WriteLine(flushedLogicalAddress);
             writer.WriteLine(startLogicalAddress);
             writer.WriteLine(finalLogicalAddress);
+            writer.WriteLine(headAddress);
             writer.WriteLine(numThreads);
             for (int i = 0; i < numThreads; i++)
             {
@@ -449,6 +458,7 @@ namespace FASTER.core
             Debug.WriteLine("Flushed LogicalAddress: {0}", flushedLogicalAddress);
             Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
+            Debug.WriteLine("Head Address: {0}", headAddress);
             Debug.WriteLine("Num sessions recovered: {0}", numThreads);
             Debug.WriteLine("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens)
