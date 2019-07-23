@@ -8,6 +8,12 @@ using System.Collections.Concurrent;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// A <see cref="TieredStorageDevice"/> logically composes multiple <see cref="IDevice"/> into a single storage device. It is assumed
+    /// that some <see cref="IDevice"/> are used as caches while there is one that is considered the commit point, i.e. when a write is completed
+    /// on the device, it is considered persistent. Reads are served from the closest device with available data. Writes are issued in parallel to
+    /// all devices 
+    /// </summary>
     class TieredStorageDevice : StorageDeviceBase
     {
         private readonly IList<IDevice> devices;
@@ -19,7 +25,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="commitPoint">
         /// The index of an <see cref="IDevice">IDevice</see> in <see cref="devices"/>. When a write has been completed on the device,
-        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
         /// will not be called until the write is completed on the commit point device.
         /// </param>
         /// <param name="devices">

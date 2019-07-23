@@ -30,15 +30,23 @@ namespace FASTER.core
         public string FileName { get; }
 
         /// <summary>
-        /// Returns the maximum capacity of the storage device, in number of bytes. 
-        /// If returned -1, the storage device has no capacity limit. 
+        /// <see cref="IDevice.Capacity"/>
         /// </summary>
         public long Capacity { get; }
 
+        /// <summary>
+        /// <see cref="IDevice.StartSegment"/>
+        /// </summary>
         public int StartSegment { get { return startSegment; } }
 
+        /// <summary>
+        /// <see cref="IDevice.EndSegment"/>
+        /// </summary>
         public int EndSegment { get { return endSegment; } }
 
+        /// <summary>
+        /// <see cref="IDevice.SegmentSize"/>
+        /// </summary>
         public long SegmentSize { get { return segmentSize; } }
 
         /// <summary>
@@ -49,10 +57,17 @@ namespace FASTER.core
         private int segmentSizeBits;
         private ulong segmentSizeMask;
 
-        // A device may have internal in-memory data structure that requires epoch protection under concurrent access.
+        /// <summary>
+        /// Instance of the epoch protection framework in the current system.
+        /// A device may have internal in-memory data structure that requires epoch protection under concurrent access.
+        /// </summary>
         protected LightEpoch epoch;
 
-        private int startSegment, endSegment;
+        /// <summary>
+        /// start and end segment corresponding to <see cref="StartSegment"/> and <see cref="EndSegment"/>. Subclasses are
+        /// allowed to modify these as needed.
+        /// </summary>
+        protected int startSegment = 0, endSegment = -1;
 
         /// <summary>
         /// Initializes a new StorageDeviceBase
@@ -76,6 +91,7 @@ namespace FASTER.core
         /// Initialize device
         /// </summary>
         /// <param name="segmentSize"></param>
+        /// <param name="epoch"></param>
         public virtual void Initialize(long segmentSize, LightEpoch epoch = null)
         {
             // TODO(Tianyu): Alternatively, we can adjust capacity based on the segment size: given a phsyical upper limit of capacity,
@@ -143,8 +159,19 @@ namespace FASTER.core
                 aligned_read_length, callback, asyncResult);
         }
 
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
         public abstract void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result);
 
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegment(int)"/>
+        /// By default the implementation calls into <see cref="RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
         public virtual void RemoveSegment(int segment)
         {
             ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
@@ -152,7 +179,13 @@ namespace FASTER.core
             completionEvent.Wait();
         }
 
-        public virtual void TruncateUntilSegmentAsync(int toSegment, AsyncCallback callback, IAsyncResult result)
+        /// <summary>
+        /// <see cref="IDevice.TruncateUntilSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="toSegment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
+        public void TruncateUntilSegmentAsync(int toSegment, AsyncCallback callback, IAsyncResult result)
         {
             // Reset begin range to at least toAddress
             if (!Utility.MonotonicUpdate(ref startSegment, toSegment, out int oldStart))
@@ -180,7 +213,11 @@ namespace FASTER.core
             });
         }
 
-        public virtual void TruncateUntilSegment(int toSegment)
+        /// <summary>
+        /// <see cref="IDevice.TruncateUntilSegment(int)"/>
+        /// </summary>
+        /// <param name="toSegment"></param>
+        public void TruncateUntilSegment(int toSegment)
         {
             using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))
             {
@@ -189,12 +226,22 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// <see cref="IDevice.TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="toAddress"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
         public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
         {
             // Truncate only up to segment boundary if address is not aligned
             TruncateUntilSegmentAsync((int)toAddress >> segmentSizeBits, callback, result);
         }
 
+        /// <summary>
+        /// <see cref="IDevice.TruncateUntilAddress(long)"/>
+        /// </summary>
+        /// <param name="toAddress"></param>
         public virtual void TruncateUntilAddress(long toAddress)
         {
             using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))

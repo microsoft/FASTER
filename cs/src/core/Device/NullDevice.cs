@@ -61,15 +61,25 @@ namespace FASTER.core
             callback(0, numBytesToWrite, ov_native);
         }
 
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegment(int)"/>
+        /// </summary>
+        /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
             // No-op
         }
 
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result) => callback(result);
 
         /// <summary>
-        /// 
+        /// <see cref="IDevice.Close"/>
         /// </summary>
         public override void Close()
         {

@@ -36,7 +36,35 @@ namespace FASTER.core
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             logHandles = new ConcurrentDictionary<int, Stream>();
+            RecoverFiles();
         }
+
+
+        private void RecoverFiles()
+        {
+            string directory = System.IO.Path.GetDirectoryName(FileName);
+            DirectoryInfo di = new DirectoryInfo(directory);
+            int prevSegmentId = -1;
+            foreach (FileInfo item in di.GetFiles(FileName + "*"))
+            {
+                Console.WriteLine(FileName);
+                // TODO(Tianyu): Depending on string parsing is bad. But what can one do when an entire cloud service API has no doc?
+                int segmentId = Int32.Parse(item.Name.Replace(FileName, "").Replace(".", ""));
+                Console.WriteLine(segmentId);
+                if (segmentId != prevSegmentId + 1)
+                {
+                    startSegment = segmentId;
+
+                }
+                else
+                {
+                    endSegment = segmentId;
+                }
+                prevSegmentId = segmentId;
+            }
+            // No need to populate map because logHandles use Open or create on files.
+        }
+
 
 
         class ReadCallbackWrapper
@@ -139,6 +167,10 @@ namespace FASTER.core
                 new WriteCallbackWrapper(callback, asyncResult, memory).Callback, null);
         }
 
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegment(int)"/>
+        /// </summary>
+        /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
             if (logHandles.TryRemove(segment, out Stream logHandle))
@@ -148,6 +180,12 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             RemoveSegment(segment);

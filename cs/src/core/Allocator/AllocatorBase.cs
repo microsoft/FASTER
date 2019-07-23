@@ -917,6 +917,10 @@ namespace FASTER.core
             });
         }
 
+        /// <summary>
+        /// Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices
+        /// </summary>
+        /// <param name="toAddress"></param>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
             device.TruncateUntilAddress(toAddress);
