@@ -50,6 +50,34 @@ namespace FASTER.devices
             blobs = new ConcurrentDictionary<int, BlobEntry>();
             this.blobName = blobName;
             this.deleteOnClose = deleteOnClose;
+            RecoverBlobs();
+        }
+
+        private void RecoverBlobs()
+        {
+            int prevSegmentId = -1;
+            foreach (IListBlobItem item in container.ListBlobs(blobName))
+            {
+                // TODO(Tianyu): Depending on string parsing is bad. But what can one do when an entire cloud service API has no doc?
+                string[] parts = item.Uri.Segments;
+                int segmentId = Int32.Parse(parts[parts.Length - 1].Replace(blobName, ""));
+                if (segmentId != prevSegmentId + 1)
+                {
+                    startSegment = segmentId;
+                    
+                }
+                else
+                {
+                    endSegment = segmentId;
+                }
+                prevSegmentId = segmentId;
+            }
+
+            for (int i = startSegment; i <= endSegment; i++)
+            {
+                bool ret = blobs.TryAdd(i, new BlobEntry(container.GetPageBlobReference(GetSegmentBlobName(i))));
+                Debug.Assert(ret, "Recovery of blobs is single-threaded and should not yield any failure due to concurrency");
+            }
         }
 
         /// <summary>
@@ -69,6 +97,13 @@ namespace FASTER.devices
                 }
             }
         }
+
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             if (blobs.TryRemove(segment, out BlobEntry blob))
@@ -81,7 +116,7 @@ namespace FASTER.devices
                         pageBlob.EndDelete(ar);
 
                     }
-                    catch (Exception e)
+                    catch (Exception)
                     {
                         // Can I do anything else other than printing out an error message?
                     }
@@ -131,7 +166,7 @@ namespace FASTER.devices
                 BlobEntry entry = new BlobEntry();
                 if (blobs.TryAdd(segmentId, entry))
                 {
-                    CloudPageBlob pageBlob = container.GetPageBlobReference(blobName + segmentId);
+                    CloudPageBlob pageBlob = container.GetPageBlobReference(GetSegmentBlobName(segmentId));
                     // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
                     // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
                     // how large it can grow to.
@@ -181,6 +216,11 @@ namespace FASTER.devices
                 }
                 callback(0, numBytesToWrite, ovNative);
             }, asyncResult);
+        }
+
+        private string GetSegmentBlobName(int segmentId)
+        {
+            return blobName + segmentId;
         }
     }
 }

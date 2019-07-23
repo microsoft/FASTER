@@ -22,14 +22,25 @@ namespace FASTER.devices
         private int waitingCount;
 
         /// <summary>
+        /// Creates a new BlobEntry to hold the given pageBlob. The pageBlob must already be created.
+        /// </summary>
+        /// <param name="pageBlob"></param>
+        public BlobEntry(CloudPageBlob pageBlob)
+        {
+            this.pageBlob = pageBlob;
+            if (pageBlob != null)
+            {
+                pendingWrites = new ConcurrentQueue<Action<CloudPageBlob>>();
+                waitingCount = 0;
+            }
+
+        }
+        /// <summary>
         /// Creates a new BlobEntry, does not initialize a page blob. Use <see cref="CreateAsync(long, CloudPageBlob)"/>
         /// for actual creation.
         /// </summary>
-        public BlobEntry()
+        public BlobEntry() : this(null)
         {
-            pageBlob = null;
-            pendingWrites = new ConcurrentQueue<Action<CloudPageBlob>>();
-            waitingCount = 0;
         }
 
         /// <summary>

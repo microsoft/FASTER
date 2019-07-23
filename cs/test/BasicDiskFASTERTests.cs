@@ -32,7 +32,7 @@ namespace FASTER.test
         [Test]
         public void PageBlobWriteRead()
         {
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            // if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
                 TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
 
