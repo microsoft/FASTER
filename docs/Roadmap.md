@@ -58,6 +58,7 @@ Completed items are included to provide the context and progress of the work.
 * [ ] Better integration with an async/await threading model in C#: [PR](https://github.com/Microsoft/FASTER/pull/130)
 * [ ] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
 * [ ] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
+* [ ] Make checkpointing use a pluggable user-specified interface for providing devices and performing metadata commit: [PR](https://github.com/microsoft/FASTER/pull/161)
 * [ ] Support for sharded storage
 * [ ] Scale-out and elasticity support
 * [ ] Checksums for storage pages
