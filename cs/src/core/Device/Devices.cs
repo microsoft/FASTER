@@ -43,7 +43,7 @@ namespace FASTER.core
             else
 #endif
             {
-                logDevice = new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, capacity);
+                logDevice = new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, capacity: capacity);
             }
             return logDevice;
         }
