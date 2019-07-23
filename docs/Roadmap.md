@@ -45,6 +45,7 @@ Completed items are included to provide the context and progress of the work.
 * [x] Support for runtime shifting of address markers (e.g., begin, head, read-only) for dynamic tuning of memory contents of allocators (log and read cache).
 * [x] Log compaction by rolling forward older active keys
 * [x] Support for subscribing to the hybrid log (push-based, as record batches become read-only): [PR](https://github.com/Microsoft/FASTER/pull/133)
+* [x] Support for callback when records in hybrid log become read-only: [PR](https://github.com/microsoft/FASTER/pull/133)
 
 #### Checkpoint and Recovery
 
@@ -57,6 +58,7 @@ Completed items are included to provide the context and progress of the work.
 * [ ] Better integration with an async/await threading model in C#: [PR](https://github.com/Microsoft/FASTER/pull/130)
 * [ ] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
 * [ ] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
+* [ ] Make checkpointing use a pluggable user-specified interface for providing devices and performing metadata commit: [PR](https://github.com/microsoft/FASTER/pull/161)
 * [ ] Support for sharded storage
 * [ ] Scale-out and elasticity support
 * [ ] Checksums for storage pages
@@ -65,6 +67,17 @@ Completed items are included to provide the context and progress of the work.
 * [ ] Expose other data structures, starting with a FIFO FasterQueue
 
 ## Release Notes
+
+#### FASTER v2019.7.23.1
+
+* [x] Object log recovery bug fix: [PR](https://github.com/microsoft/FASTER/pull/158)
+* [x] Option to enable file buffering for local storage device
+* [x] Optimizing what is loaded to hybrid log memory during recovery (prior head address onwards only)
+* [x] Removing direct call of callback when IO completes synchronously: [PR](https://github.com/microsoft/FASTER/pull/155)
+* [x] Fixed checkpoint recovery bug: [PR](https://github.com/microsoft/FASTER/pull/144)
+* [x] Adding FILE_SHARE_DELETE when deleteOnClose is used: [PR](https://github.com/microsoft/FASTER/pull/134)
+* [x] Support for callback when records in hybrid log become read-only: [PR](https://github.com/microsoft/FASTER/pull/133)
+
 
 #### FASTER v2019.4.24.4
 * [x] Added support for variable sized (inline) structs without object log: [PR](https://github.com/Microsoft/FASTER/pull/120)
@@ -111,3 +124,4 @@ guidelines. It supports the following features as of now:
 * [x] Log segments on storage, with truncation from head of log
 * [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [[here](https://microsoft.github.io/FASTER/#recovery-in-faster)]
 * [x] Ability to resize the hash table
+* [x] C++: Added a new `value_size()` method to `RmwContext` for RCU operations: [PR](https://github.com/microsoft/FASTER/pull/145)
