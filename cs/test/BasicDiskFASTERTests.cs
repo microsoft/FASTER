@@ -10,37 +10,37 @@ using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
+using FASTER.devices;
+using System.Diagnostics;
 
 namespace FASTER.test
 {
-
     [TestFixture]
-    internal class BasicDiskFASTERTests
+    internal class BasicStorageFASTERTests
     {
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
-        private IDevice log;
+        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+        public const string TEST_CONTAINER = "test";
 
-        [SetUp]
-        public void Setup()
+        [Test]
+        public void LocalStorageWriteRead()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                (1L<<20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
-            fht.StartSession();
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            fht.StopSession();
-            fht.Dispose();
-            fht = null;
-            log.Close();
+            TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true));
         }
 
         [Test]
-        public void NativeDiskWriteRead()
+        public void PageBlobWriteRead()
         {
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+        }
+
+        void TestDeviceWriteRead(IDevice log)
+        {
+            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
+                       (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+            fht.StartSession();
+
             InputStruct input = default(InputStruct);
 
             for (int i = 0; i < 2000; i++)
@@ -86,6 +86,11 @@ namespace FASTER.test
                     }
                 }
             }
+
+            fht.StopSession();
+            fht.Dispose();
+            fht = null;
+            log.Close();
         }
     }
 }

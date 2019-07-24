@@ -8,8 +8,6 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
-
-
     /// <summary>
     /// Factory to create FASTER objects
     /// </summary>
