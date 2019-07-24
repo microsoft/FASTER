@@ -197,7 +197,7 @@ namespace FASTER.core
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
         /// <param name="index"></param>
-        protected override void AllocatePage(int index)
+        internal override void AllocatePage(int index)
         {
             values[index] = AllocatePage();
             PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
@@ -312,6 +312,8 @@ namespace FASTER.core
                 }
                 fixed (RecordInfo* pin = &src[0].info)
                 {
+                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)buffer.handle.AddrOfPinnedObject() + buffer.buffer.Length);
+
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start, 
                         numBytesToWrite - start, numBytesToWrite - start);
                 }
@@ -320,6 +322,8 @@ namespace FASTER.core
             {
                 fixed (RecordInfo* pin = &src[0].info)
                 {
+                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)buffer.handle.AddrOfPinnedObject() + buffer.buffer.Length);
+
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.aligned_pointer + aligned_start, 
                         numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
                 }
@@ -494,7 +498,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+               Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
@@ -513,26 +517,17 @@ namespace FASTER.core
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
 
-            var src = values[result.page % BufferSize];
+            Record<Key, Value>[] src;
 
             // We are reading into a frame
             if (result.frame != null)
             {
                 var frame = (GenericFrame<Key, Value>)result.frame;
                 src = frame.GetPage(result.page % frame.frameSize);
-
-                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
-                {
-                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, src);
-                }
             }
             else
-            {
-                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
-                {
-                    PopulatePage(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, result.page);
-                }
-            }
+                src = values[result.page % BufferSize];
+
 
             // Deserialize all objects until untilptr
             if (result.resumePtr < result.untilPtr)
@@ -560,9 +555,8 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            // Compute new untilPtr
             // We will now be able to process all records until (but not including) untilPtr
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, src, out long startptr, out long size);
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
@@ -570,9 +564,9 @@ namespace FASTER.core
             if (size > int.MaxValue)
                 throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
 
-            var objBuffer = bufferPool.Get((int)size);
-            result.freeBuffer2 = objBuffer;
             var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
+            var objBuffer = bufferPool.Get((int)alignedLength);
+            result.freeBuffer2 = objBuffer;
 
             // Request objects from objlog
             result.objlogDevice.ReadAsync(
@@ -718,7 +712,10 @@ namespace FASTER.core
 
             while (ptr < untilptr)
             {
-                if (!src[ptr / recordSize].info.Invalid)
+                ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
+                src[ptr / recordSize].info = record.info;
+
+                if (!record.info.Invalid)
                 {
                     if (KeyHasObjects())
                     {
@@ -729,21 +726,32 @@ namespace FASTER.core
                             stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
                         }
 
-                        src[ptr/recordSize].key = new Key();
+                        src[ptr / recordSize].key = new Key();
                         keySerializer.Deserialize(ref src[ptr/recordSize].key);
-                    } 
-
-                    if (ValueHasObjects() && !src[ptr / recordSize].info.Tombstone)
+                    }
+                    else
                     {
-                        var value_addr = GetValueAddressInfo((long)raw + ptr);
-                        if (start_addr == -1) start_addr = value_addr->Address;
-                        if (stream.Position != streamStartPos + value_addr->Address - start_addr)
-                        {
-                            stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
-                        }
+                        src[ptr / recordSize].key = record.key;
+                    }
 
-                        src[ptr / recordSize].value = new Value();
-                        valueSerializer.Deserialize(ref src[ptr/recordSize].value);
+                    if (!record.info.Tombstone)
+                    {
+                        if (ValueHasObjects())
+                        {
+                            var value_addr = GetValueAddressInfo((long)raw + ptr);
+                            if (start_addr == -1) start_addr = value_addr->Address;
+                            if (stream.Position != streamStartPos + value_addr->Address - start_addr)
+                            {
+                                stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
+                            }
+
+                            src[ptr / recordSize].value = new Value();
+                            valueSerializer.Deserialize(ref src[ptr / recordSize].value);
+                        }
+                        else
+                        {
+                            src[ptr / recordSize].value = record.value;
+                        }
                     }
                 }
                 ptr += GetRecordSize(ptr);
@@ -765,17 +773,18 @@ namespace FASTER.core
         /// <param name="ptr"></param>
         /// <param name="untilptr"></param>
         /// <param name="objectBlockSize"></param>
-        /// <param name="src"></param>
         /// <param name="startptr"></param>
         /// <param name="size"></param>
-        public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, Record<Key, Value>[] src, out long startptr, out long size)
+        public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
         {
             long minObjAddress = long.MaxValue;
             long maxObjAddress = long.MinValue;
 
             while (ptr < untilptr)
             {
-                if (!src[ptr/recordSize].info.Invalid)
+                ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
+
+                if (!record.info.Invalid)
                 {
                     if (KeyHasObjects())
                     {
@@ -794,7 +803,7 @@ namespace FASTER.core
                     }
 
 
-                    if (ValueHasObjects() && !src[ptr / recordSize].info.Tombstone)
+                    if (ValueHasObjects() && !record.info.Tombstone)
                     {
                         var value_addr = GetValueAddressInfo((long)raw + ptr);
                         var addr = value_addr->Address;
@@ -941,6 +950,8 @@ namespace FASTER.core
         {
             fixed (RecordInfo* pin = &destinationPage[0].info)
             {
+                Debug.Assert(required_bytes <= recordSize * destinationPage.Length);
+
                 Buffer.MemoryCopy(src, Unsafe.AsPointer(ref destinationPage[0]), required_bytes, required_bytes);
             }
         }

@@ -251,6 +251,8 @@ namespace FASTER.core
                                 WriteIndexCheckpointCompleteFile();
                             }
 
+                            _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
+
                             if (FoldOverSnapshot)
                             {
                                 hlog.ShiftReadOnlyToTail(out long tailAddress);
