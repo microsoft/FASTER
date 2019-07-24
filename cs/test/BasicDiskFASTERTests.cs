@@ -28,23 +28,31 @@ namespace FASTER.test
             TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true));
         }
 
-
         [Test]
         public void PageBlobWriteRead()
         {
-            // if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
                 TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
 
         [Test]
         public void TieredWriteRead()
         {
-            // TODO(Tianyu): Magic constant
-            // TODO(Tianyu): Test without azure
+            IDevice tested;
             IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
-            IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
-            var device = new TieredStorageDevice(1, localDevice, cloudDevice);
-            TestDeviceWriteRead(device);
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            {
+                IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
+                tested = new TieredStorageDevice(1, localDevice, cloudDevice);
+            }
+            else
+            {
+                // If no Azure is enabled, just use another disk
+                IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
+                tested = new TieredStorageDevice(1, localDevice, localDevice2);
+
+            }
+            TestDeviceWriteRead(tested);
         }
 
         [Test]
@@ -56,8 +64,6 @@ namespace FASTER.test
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
-
-
 
         void TestDeviceWriteRead(IDevice log)
         {
