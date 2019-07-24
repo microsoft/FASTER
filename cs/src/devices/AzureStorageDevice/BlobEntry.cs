@@ -28,8 +28,9 @@ namespace FASTER.devices
         public BlobEntry(CloudPageBlob pageBlob)
         {
             this.pageBlob = pageBlob;
-            if (pageBlob != null)
+            if (pageBlob == null)
             {
+                // Only need to allocate a queue when we potentially need to asynchronously create a blob
                 pendingWrites = new ConcurrentQueue<Action<CloudPageBlob>>();
                 waitingCount = 0;
             }
