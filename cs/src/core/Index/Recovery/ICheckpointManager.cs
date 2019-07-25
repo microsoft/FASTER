@@ -43,31 +43,31 @@ namespace FASTER.core
         /// Commit index checkpoint (synchronous)
         /// </summary>
         /// <param name="indexToken"></param>
-        /// <param name="commitInfo"></param>
+        /// <param name="commitMetadata"></param>
         /// <returns></returns>
-        void CommitIndexCheckpoint(Guid indexToken, byte[] commitInfo);
+        void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata);
 
         /// <summary>
         /// Commit log checkpoint (synchronous)
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="commitInfo"></param>
+        /// <param name="commitMetadata"></param>
         /// <returns></returns>
-        void CommitLogCheckpoint(Guid logToken, byte[] commitInfo);
+        void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
         /// Retrieve commit info for previous index checkpoint
         /// </summary>
         /// <param name="indexToken"></param>
         /// <returns>Commit info, if valid checkpoint found, and null otherwise</returns>
-        byte[] GetIndexCommitInfo(Guid indexToken);
+        byte[] GetIndexCommitMetadata(Guid indexToken);
 
         /// <summary>
         /// Retrieve commit info for previous log checkpoint
         /// </summary>
         /// <param name="logToken"></param>
         /// <returns>Commit info, if valid checkpoint found, and null otherwise</returns>
-        byte[] GetLogCommitInfo(Guid logToken);
+        byte[] GetLogCommitMetadata(Guid logToken);
 
         /// <summary>
         /// Get latest valid checkpoint

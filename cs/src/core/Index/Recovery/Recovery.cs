@@ -62,39 +62,7 @@ namespace FASTER.core
 
         private void InternalRecoverFromLatestCheckpoints()
         {
-            var indexCheckpointDir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder());
-            var dirs = indexCheckpointDir.GetDirectories();
-            foreach(var dir in dirs)
-            {
-                // Remove incomplete checkpoints
-                if(!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat")) 
-                {
-                    Directory.Delete(dir.FullName, true);
-                }
-            }
-            var latestICFolder = indexCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
-            if(latestICFolder == null || !Guid.TryParse(latestICFolder.Name, out Guid indexCheckpointGuid))
-            {
-                throw new Exception("No valid index checkpoint to recover from");
-            }
-            
-
-            var hlogCheckpointDir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder());
-            dirs = hlogCheckpointDir.GetDirectories();
-            foreach (var dir in dirs)
-            {
-                // Remove incomplete checkpoints
-                if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
-                {
-                    Directory.Delete(dir.FullName, true);
-                }
-            }
-            var latestHLCFolder = hlogCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
-            if (latestHLCFolder == null || !Guid.TryParse(latestHLCFolder.Name, out Guid hybridLogCheckpointGuid))
-            {
-                throw new Exception("No valid hybrid log checkpoint to recover from");
-            }
-
+            checkpointManager.GetLatestCheckpoint(out Guid indexCheckpointGuid, out Guid hybridLogCheckpointGuid);
             InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid);
         }
 
@@ -104,13 +72,12 @@ namespace FASTER.core
             {
                 case CheckpointType.INDEX_ONLY:
                     {
-                        var dir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(token));
-                        return File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat");
+                        return checkpointManager.GetIndexCommitMetadata(token) != null;
                     }
                 case CheckpointType.HYBRID_LOG_ONLY:
                     {
-                        var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(token));
-                        return File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat");
+                        return checkpointManager.GetLogCommitMetadata(token) != null;
+
                     }
                 case CheckpointType.FULL:
                     {
@@ -144,11 +111,11 @@ namespace FASTER.core
 
             // Recovery appropriate context information
             var recoveredICInfo = new IndexCheckpointInfo();
-            recoveredICInfo.Recover(indexToken, directoryConfiguration);
+            recoveredICInfo.Recover(indexToken, checkpointManager);
             recoveredICInfo.info.DebugPrint();
 
             var recoveredHLCInfo = new HybridLogCheckpointInfo();
-            recoveredHLCInfo.Recover(hybridLogToken, directoryConfiguration);
+            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager);
             recoveredHLCInfo.info.DebugPrint();
 
             // Check if the two checkpoints are compatible for recovery
@@ -187,12 +154,7 @@ namespace FASTER.core
             RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress);
 
             // Recover session information
-            _recoveredSessions = new SafeConcurrentDictionary<Guid, long>();
-            foreach(var sessionInfo in recoveredHLCInfo.info.continueTokens)
-            {
-                
-                _recoveredSessions.GetOrAdd(sessionInfo.Key, sessionInfo.Value);
-            }
+            _recoveredSessions = recoveredHLCInfo.info.continueTokens;
         }
 
         private void RestoreHybridLog(long untilAddress, long headAddress)
@@ -338,8 +300,8 @@ namespace FASTER.core
 
             // By default first page has one extra record
             var capacity = hlog.GetCapacityNumPages();
-            var recoveryDevice = Devices.CreateLogDevice(directoryConfiguration.GetLogSnapshotDevice(recoveryInfo.guid), false);
-            var objectLogRecoveryDevice = Devices.CreateLogDevice(directoryConfiguration.GetObjectLogSnapshotDevice(recoveryInfo.guid), false);
+            var recoveryDevice = checkpointManager.GetSnapshotLogDevice(recoveryInfo.guid);
+            var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(recoveryInfo.guid);
             recoveryDevice.Initialize(hlog.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(hlog.GetSegmentSize());
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress)

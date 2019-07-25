@@ -29,18 +29,19 @@ namespace FASTER.core
     public class CheckpointSettings
     {
         /// <summary>
-        /// Directory where checkpoints are stored
+        /// Checkpoint manager
         /// </summary>
-        public string CheckpointBasePath = "";
-
-        /// <summary>
-        /// Checkpoint device for given path
-        /// </summary>
-        public Func<string, IDevice> CheckpointDeviceFunc;
+        public ICheckpointManager CheckpointManager = null;
 
         /// <summary>
         /// Type of checkpoint
         /// </summary>
         public CheckpointType CheckPointType = CheckpointType.Snapshot;
+
+        /// <summary>
+        /// Directory where checkpoints are stored
+        /// </summary>
+        [Obsolete("Instead, use the CheckpointSettings.CheckpointManager setting. For checkpoints on local storage, use 'new LocalCheckpointManager(CheckpointDir)' as the value for CheckpointSettings.CheckpointManager.")]
+        public string CheckpointDir = "";
     }
 }

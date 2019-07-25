@@ -84,7 +84,7 @@ namespace FASTER.test.largeobjects
             fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointBasePath = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -112,7 +112,7 @@ namespace FASTER.test.largeobjects
             fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
                 (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointBasePath = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 

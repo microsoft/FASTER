@@ -33,7 +33,7 @@ namespace SumStore
                 <AdId, NumClicks, Input, Output, Empty, Functions>
                 (indexSize, new Functions(),
                 new LogSettings { LogDevice = log },
-                new CheckpointSettings { CheckpointBasePath = "logs" });
+                new CheckpointSettings { CheckpointDir = "logs" });
 
             inputArrays = new BlockingCollection<Input[]>();
             Prepare();

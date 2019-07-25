@@ -40,7 +40,7 @@ namespace FASTER.test.recovery.sumstore
             fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
                 (keySpace, new Functions(), 
                 new LogSettings { LogDevice = log },
-                new CheckpointSettings { CheckpointBasePath = test_path, CheckPointType = CheckpointType.Snapshot }
+                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot }
                 );
         }
 
@@ -170,7 +170,7 @@ namespace FASTER.test.recovery.sumstore
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion, new DirectoryConfiguration(test_path));
+            checkpointInfo.Recover(cprVersion, new LocalCheckpointManager(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

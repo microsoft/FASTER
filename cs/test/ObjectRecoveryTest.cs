@@ -47,7 +47,7 @@ namespace FASTER.test.recovery.objectstore
                 (
                     keySpace, new Functions(),
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointBasePath = test_path, CheckPointType = CheckpointType.Snapshot },
+                    new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot },
                     new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
                     );
         }
@@ -189,7 +189,7 @@ namespace FASTER.test.recovery.objectstore
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion, new DirectoryConfiguration(test_path));
+            checkpointInfo.Recover(cprVersion, new LocalCheckpointManager(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
