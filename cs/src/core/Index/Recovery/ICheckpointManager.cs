@@ -21,40 +21,16 @@ namespace FASTER.core
         /// Initialize index checkpoint
         /// </summary>
         /// <param name="indexToken"></param>
-        /// <returns></returns>
         void InitializeIndexCheckpoint(Guid indexToken);
 
         /// <summary>
-        /// Initialize log checkpoint
+        /// Initialize log checkpoint (snapshot and fold-over)
         /// </summary>
         /// <param name="logToken"></param>
-        /// <returns></returns>
         void InitializeLogCheckpoint(Guid logToken);
 
         /// <summary>
-        /// Device to store index checkpoint (including overflow buckets)
-        /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        IDevice GetIndexDevice(Guid token);
-
-        /// <summary>
-        /// Device to store snapshot of log (required only for snapshot checkpoints)
-        /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        IDevice GetSnapshotLogDevice(Guid token);
-
-        /// <summary>
-        /// Device to store snapshot of object log (required only for snapshot checkpoints)
-        /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        IDevice GetSnapshotObjectLogDevice(Guid token);
-
-
-        /// <summary>
-        /// Commit index checkpoint (synchronous)
+        /// Commit index checkpoint
         /// </summary>
         /// <param name="indexToken"></param>
         /// <param name="commitMetadata"></param>
@@ -62,7 +38,7 @@ namespace FASTER.core
         void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata);
 
         /// <summary>
-        /// Commit log checkpoint (synchronous)
+        /// Commit log checkpoint (snapshot and fold-over)
         /// </summary>
         /// <param name="logToken"></param>
         /// <param name="commitMetadata"></param>
@@ -70,21 +46,42 @@ namespace FASTER.core
         void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
-        /// Retrieve commit info for previous index checkpoint
+        /// Retrieve commit metadata for specified index checkpoint
         /// </summary>
-        /// <param name="indexToken"></param>
-        /// <returns>Commit info, if valid checkpoint found, and null otherwise</returns>
+        /// <param name="indexToken">Token</param>
+        /// <returns>Metadata, or null if invalid</returns>
         byte[] GetIndexCommitMetadata(Guid indexToken);
 
         /// <summary>
-        /// Retrieve commit info for previous log checkpoint
+        /// Retrieve commit metadata for specified log checkpoint
         /// </summary>
-        /// <param name="logToken"></param>
-        /// <returns>Commit info, if valid checkpoint found, and null otherwise</returns>
+        /// <param name="logToken">Token</param>
+        /// <returns>Metadata, or null if invalid</returns>
         byte[] GetLogCommitMetadata(Guid logToken);
 
         /// <summary>
-        /// Get latest valid checkpoint
+        /// Provide device to store index checkpoint (including overflow buckets)
+        /// </summary>
+        /// <param name="indexToken"></param>
+        /// <returns></returns>
+        IDevice GetIndexDevice(Guid indexToken);
+
+        /// <summary>
+        /// Provide device to store snapshot of log (required only for snapshot checkpoints)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        IDevice GetSnapshotLogDevice(Guid token);
+
+        /// <summary>
+        /// Provide device to store snapshot of object log (required only for snapshot checkpoints)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        IDevice GetSnapshotObjectLogDevice(Guid token);
+
+        /// <summary>
+        /// Get latest valid checkpoint for recovery
         /// </summary>
         /// <param name="indexToken"></param>
         /// <param name="logToken"></param>

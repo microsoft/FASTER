@@ -105,8 +105,10 @@ namespace FASTER.core
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
 
-            if (checkpointManager == null)
-                checkpointManager = new LocalCheckpointManager(checkpointSettings.CheckpointDir);
+            if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
+                throw new Exception("Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
+
+            checkpointManager = checkpointSettings.CheckpointManager ?? new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
 
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;

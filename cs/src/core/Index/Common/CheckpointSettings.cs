@@ -39,9 +39,10 @@ namespace FASTER.core
         public CheckpointType CheckPointType = CheckpointType.Snapshot;
 
         /// <summary>
-        /// Directory where checkpoints are stored
+        /// Use specified directory for storing and retrieving checkpoints
+        /// This is a shortcut to providing the following:
+        ///   CheckpointSettings.CheckpointManager = new LocalCheckpointManager(CheckpointDir)
         /// </summary>
-        [Obsolete("Instead, use the CheckpointSettings.CheckpointManager setting. For checkpoints on local storage, use 'new LocalCheckpointManager(CheckpointDir)' as the value for CheckpointSettings.CheckpointManager.")]
-        public string CheckpointDir = "";
+        public string CheckpointDir = null;
     }
 }

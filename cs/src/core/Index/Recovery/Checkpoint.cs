@@ -247,7 +247,6 @@ namespace FASTER.core
                             {
                                 _indexCheckpoint.info.num_buckets = overflowBucketsAllocator.GetMaxValidAddress();
                                 ObtainCurrentTailAddress(ref _indexCheckpoint.info.finalLogicalAddress);
-                                WriteIndexMetaFile();
                             }
 
                             _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
@@ -291,6 +290,10 @@ namespace FASTER.core
                     case Phase.PERSISTENCE_CALLBACK:
                         {
                             WriteHybridLogMetaInfo();
+
+                            if (_checkpointType == CheckpointType.FULL)
+                                WriteIndexMetaInfo();
+
                             MakeTransition(intermediateState, nextState);
                             break;
                         }
@@ -342,7 +345,7 @@ namespace FASTER.core
                                     {
                                         _indexCheckpoint.info.num_buckets = overflowBucketsAllocator.GetMaxValidAddress();
                                         ObtainCurrentTailAddress(ref _indexCheckpoint.info.finalLogicalAddress);
-                                        WriteIndexMetaFile();
+                                        WriteIndexMetaInfo();
                                         _indexCheckpoint.Reset();
                                         break;
                                     }
@@ -521,7 +524,7 @@ namespace FASTER.core
 
                                 if (notify)
                                 {
-                                    WriteHybridLogContextInfo();
+                                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(prevThreadCtx.Value.guid, prevThreadCtx.Value.serialNum);
 
                                     if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, prevThreadCtx.Value.version))
                                     {
@@ -656,11 +659,11 @@ namespace FASTER.core
                 case Phase.INDEX_CHECKPOINT:
                     switch(type)
                     {
-                        case CheckpointType.INDEX_ONLY:
-                            nextState.phase = Phase.REST;
-                            break;
                         case CheckpointType.FULL:
                             nextState.phase = Phase.PREPARE;
+                            break;
+                        default:
+                            nextState.phase = Phase.REST;
                             break;
                     }
                     break;
@@ -699,12 +702,7 @@ namespace FASTER.core
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
 
-        private void WriteHybridLogContextInfo()
-        {
-            _hybridLogCheckpoint.info.checkpointTokens.TryAdd(prevThreadCtx.Value.guid, prevThreadCtx.Value.serialNum);
-        }
-
-        private void WriteIndexMetaFile()
+        private void WriteIndexMetaInfo()
         {
             checkpointManager.CommitIndexCheckpoint(_indexCheckpointToken, _indexCheckpoint.info.ToByteArray());
         }
