@@ -722,7 +722,7 @@ namespace FASTER.core
 
         private void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
         {
-            _hybridLogCheckpoint.Initialize(hybridLogToken, version);
+            _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
         }
 
         #endregion

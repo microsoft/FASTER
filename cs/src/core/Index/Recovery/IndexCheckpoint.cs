@@ -41,7 +41,7 @@ namespace FASTER.core
                                            out ulong ofbnumBytesWritten, out int num_ofb_buckets)
         {
             TakeMainIndexCheckpoint(ht_version, device, out numBytesWritten);
-            var sectorSize = _indexCheckpoint.main_ht_device.SectorSize;
+            var sectorSize = device.SectorSize;
             var alignedIndexSize = (uint)((numBytesWritten + (sectorSize - 1)) & ~(sectorSize - 1));
             overflowBucketsAllocator.TakeCheckpoint(ofbdevice, alignedIndexSize, out ofbnumBytesWritten);
             num_ofb_buckets = overflowBucketsAllocator.GetMaxValidAddress();

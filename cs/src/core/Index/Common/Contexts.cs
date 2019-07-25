@@ -327,16 +327,19 @@ namespace FASTER.core
         public CountdownEvent flushed;
         public long started;
 
-        public void Initialize(Guid token, int _version)
+        public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _version);
             started = 0;
+            checkpointManager.InitializeLogCheckpoint(token);
         }
+
         public void Recover(Guid token, ICheckpointManager checkpointManager)
         {
             info.Recover(token, checkpointManager);
             started = 0;
         }
+
         public void Reset()
         {
             started = 0;
@@ -446,6 +449,7 @@ namespace FASTER.core
         public void Initialize(Guid token, long _size, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _size);
+            checkpointManager.InitializeIndexCheckpoint(token);
             main_ht_device = checkpointManager.GetIndexDevice(token);
         }
         public void Recover(Guid token, ICheckpointManager checkpointManager)

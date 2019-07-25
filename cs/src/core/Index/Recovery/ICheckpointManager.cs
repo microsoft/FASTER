@@ -18,6 +18,20 @@ namespace FASTER.core
     public interface ICheckpointManager
     {
         /// <summary>
+        /// Initialize index checkpoint
+        /// </summary>
+        /// <param name="indexToken"></param>
+        /// <returns></returns>
+        void InitializeIndexCheckpoint(Guid indexToken);
+
+        /// <summary>
+        /// Initialize log checkpoint
+        /// </summary>
+        /// <param name="logToken"></param>
+        /// <returns></returns>
+        void InitializeLogCheckpoint(Guid logToken);
+
+        /// <summary>
         /// Device to store index checkpoint (including overflow buckets)
         /// </summary>
         /// <param name="token"></param>

@@ -35,7 +35,7 @@ namespace FASTER.core
                              info.main_ht_device,
                              info.info.num_ht_bytes);
 
-            var sectorSize = _indexCheckpoint.main_ht_device.SectorSize;
+            var sectorSize = info.main_ht_device.SectorSize;
             var alignedIndexSize = (uint)((info.info.num_ht_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
 
             overflowBucketsAllocator.Recover(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes);

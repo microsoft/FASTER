@@ -81,12 +81,16 @@ namespace FASTER.core
         /// <returns></returns>
         public byte[] GetIndexCommitMetadata(Guid indexToken)
         {
-            directoryConfiguration.CreateIndexCheckpointFolder(indexToken);
             var dir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(indexToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 return null;
 
-            throw new NotImplementedException();
+            string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(indexToken);
+            using (var reader = new BinaryReader(new FileStream(filename, FileMode.Open)))
+            {
+                var len = reader.ReadInt32();
+                return reader.ReadBytes(len);
+            }
         }
 
         /// <summary>
@@ -96,9 +100,7 @@ namespace FASTER.core
         /// <returns></returns>
         public IDevice GetIndexDevice(Guid indexToken)
         {
-            directoryConfiguration.CreateIndexCheckpointFolder(indexToken);
             return Devices.CreateLogDevice(directoryConfiguration.GetPrimaryHashTableFileName(indexToken), false);
-            // Devices.CreateLogDevice(directoryConfiguration.GetOverflowBucketsFileName(token), false);
         }
 
         /// <summary>
@@ -151,7 +153,6 @@ namespace FASTER.core
         /// <returns></returns>
         public byte[] GetLogCommitMetadata(Guid logToken)
         {
-            directoryConfiguration.CreateHybridLogCheckpointFolder(logToken);
             var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(logToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 return null;
@@ -171,7 +172,6 @@ namespace FASTER.core
         /// <returns></returns>
         public IDevice GetSnapshotLogDevice(Guid token)
         {
-            directoryConfiguration.CreateHybridLogCheckpointFolder(token);
             return Devices.CreateLogDevice(directoryConfiguration.GetLogSnapshotFileName(token), false);
         }
 
@@ -183,6 +183,24 @@ namespace FASTER.core
         public IDevice GetSnapshotObjectLogDevice(Guid token)
         {
             return Devices.CreateLogDevice(directoryConfiguration.GetObjectLogSnapshotFileName(token), false);
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="indexToken"></param>
+        public void InitializeIndexCheckpoint(Guid indexToken)
+        {
+            directoryConfiguration.CreateIndexCheckpointFolder(indexToken);
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="logToken"></param>
+        public void InitializeLogCheckpoint(Guid logToken)
+        {
+            directoryConfiguration.CreateHybridLogCheckpointFolder(logToken);
         }
     }
 
