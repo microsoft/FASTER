@@ -247,9 +247,9 @@ namespace FASTER.core
                             {
                                 _indexCheckpoint.info.num_buckets = overflowBucketsAllocator.GetMaxValidAddress();
                                 ObtainCurrentTailAddress(ref _indexCheckpoint.info.finalLogicalAddress);
-                                WriteIndexMetaFile();
-                                WriteIndexCheckpointCompleteFile();
                             }
+
+                            _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
 
                             if (FoldOverSnapshot)
                             {
@@ -261,10 +261,8 @@ namespace FASTER.core
                             {
                                 ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
 
-                                _hybridLogCheckpoint.snapshotFileDevice = Devices.CreateLogDevice
-                                    (directoryConfiguration.GetHybridLogCheckpointFileName(_hybridLogCheckpointToken), false);
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = Devices.CreateLogDevice
-                                    (directoryConfiguration.GetHybridLogObjectCheckpointFileName(_hybridLogCheckpointToken), false);
+                                _hybridLogCheckpoint.snapshotFileDevice = checkpointManager.GetSnapshotLogDevice(_hybridLogCheckpointToken);
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = checkpointManager.GetSnapshotObjectLogDevice(_hybridLogCheckpointToken);
                                 _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(hlog.GetSegmentSize());
 
@@ -292,7 +290,10 @@ namespace FASTER.core
                     case Phase.PERSISTENCE_CALLBACK:
                         {
                             WriteHybridLogMetaInfo();
-                            WriteHybridLogCheckpointCompleteFile();
+
+                            if (_checkpointType == CheckpointType.FULL)
+                                WriteIndexMetaInfo();
+
                             MakeTransition(intermediateState, nextState);
                             break;
                         }
@@ -344,8 +345,7 @@ namespace FASTER.core
                                     {
                                         _indexCheckpoint.info.num_buckets = overflowBucketsAllocator.GetMaxValidAddress();
                                         ObtainCurrentTailAddress(ref _indexCheckpoint.info.finalLogicalAddress);
-                                        WriteIndexMetaFile();
-                                        WriteIndexCheckpointCompleteFile();
+                                        WriteIndexMetaInfo();
                                         _indexCheckpoint.Reset();
                                         break;
                                     }
@@ -524,7 +524,7 @@ namespace FASTER.core
 
                                 if (notify)
                                 {
-                                    WriteHybridLogContextInfo();
+                                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(prevThreadCtx.Value.guid, prevThreadCtx.Value.serialNum);
 
                                     if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, prevThreadCtx.Value.version))
                                     {
@@ -659,11 +659,11 @@ namespace FASTER.core
                 case Phase.INDEX_CHECKPOINT:
                     switch(type)
                     {
-                        case CheckpointType.INDEX_ONLY:
-                            nextState.phase = Phase.REST;
-                            break;
                         case CheckpointType.FULL:
                             nextState.phase = Phase.PREPARE;
+                            break;
+                        default:
+                            nextState.phase = Phase.REST;
                             break;
                     }
                     break;
@@ -699,56 +699,14 @@ namespace FASTER.core
 
         private void WriteHybridLogMetaInfo()
         {
-            string filename = directoryConfiguration.GetHybridLogCheckpointMetaFileName(_hybridLogCheckpointToken);
-            using (var file = new StreamWriter(filename, false))
-            {
-                _hybridLogCheckpoint.info.Write(file);
-                file.Flush();
-            }
+            checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
 
-        private void WriteHybridLogCheckpointCompleteFile()
+        private void WriteIndexMetaInfo()
         {
-            string completed_filename = directoryConfiguration.GetHybridLogCheckpointFolder(_hybridLogCheckpointToken);
-            completed_filename += Path.DirectorySeparatorChar + "completed.dat";
-            using (var file = new StreamWriter(completed_filename, false))
-            {
-                file.WriteLine();
-                file.Flush();
-            }
+            checkpointManager.CommitIndexCheckpoint(_indexCheckpointToken, _indexCheckpoint.info.ToByteArray());
         }
 
-        private void WriteHybridLogContextInfo()
-        {
-            string filename = directoryConfiguration.GetHybridLogCheckpointContextFileName(_hybridLogCheckpointToken, prevThreadCtx.Value.guid);
-            using (var file = new StreamWriter(filename, false))
-            {
-                prevThreadCtx.Value.Write(file);
-                file.Flush();
-            }
-
-        }
-
-        private void WriteIndexMetaFile()
-        {
-            string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(_indexCheckpointToken);
-            using (var file = new StreamWriter(filename, false))
-            {
-                _indexCheckpoint.info.Write(file);
-                file.Flush();
-            }
-        }
-
-        private void WriteIndexCheckpointCompleteFile()
-        {
-            string completed_filename = directoryConfiguration.GetIndexCheckpointFolder(_indexCheckpointToken);
-            completed_filename += Path.DirectorySeparatorChar + "completed.dat";
-            using (var file = new StreamWriter(completed_filename, false))
-            {
-                file.WriteLine();
-                file.Flush();
-            }
-        }
         private bool ObtainCurrentTailAddress(ref long location)
         {
             var tailAddress = hlog.GetTailAddress();
@@ -757,14 +715,12 @@ namespace FASTER.core
 
         private void InitializeIndexCheckpoint(Guid indexToken)
         {
-            directoryConfiguration.CreateIndexCheckpointFolder(indexToken);
-            _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, directoryConfiguration);
+            _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, checkpointManager);
         }
 
         private void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
         {
-            directoryConfiguration.CreateHybridLogCheckpointFolder(hybridLogToken);
-            _hybridLogCheckpoint.Initialize(hybridLogToken, version);
+            _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
         }
 
         #endregion

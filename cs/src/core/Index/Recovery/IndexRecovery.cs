@@ -19,7 +19,7 @@ namespace FASTER.core
     /// </summary>
     public unsafe partial class FasterBase
     {
-        internal DirectoryConfiguration directoryConfiguration;
+        internal ICheckpointManager checkpointManager;
 
         // Derived class exposed API
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
@@ -29,24 +29,22 @@ namespace FASTER.core
             Debug.Assert(state[ht_version].size == info.info.table_size);
 
             // Create devices to read from using Async API
-            info.main_ht_device = Devices.CreateLogDevice(directoryConfiguration.GetPrimaryHashTableFileName(token), false);
-            info.ofb_device = Devices.CreateLogDevice(directoryConfiguration.GetOverflowBucketsFileName(token), false);
+            info.main_ht_device = checkpointManager.GetIndexDevice(token);
 
             BeginMainIndexRecovery(ht_version,
                              info.main_ht_device,
                              info.info.num_ht_bytes);
 
-            overflowBucketsAllocator.Recover(
-                             info.ofb_device,
-                             info.info.num_buckets,
-                             info.info.num_ofb_bytes);
+            var sectorSize = info.main_ht_device.SectorSize;
+            var alignedIndexSize = (uint)((info.info.num_ht_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
+
+            overflowBucketsAllocator.Recover(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes);
 
             // Wait until reading is complete
             IsFuzzyIndexRecoveryComplete(true);
 
             // close index checkpoint files appropriately
             info.main_ht_device.Close();
-            info.ofb_device.Close();
 
             // Delete all tentative entries!
             DeleteTentativeEntries();
@@ -55,7 +53,9 @@ namespace FASTER.core
         internal void RecoverFuzzyIndex(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes)
         {
             BeginMainIndexRecovery(ht_version, device, num_ht_bytes);
-            overflowBucketsAllocator.Recover(ofbdevice, num_buckets, num_ofb_bytes);
+            var sectorSize = device.SectorSize;
+            var alignedIndexSize = (uint)((num_ht_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
+            overflowBucketsAllocator.Recover(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes);
         }
 
         internal bool IsFuzzyIndexRecoveryComplete(bool waitUntilComplete = false)

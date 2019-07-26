@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 
+using System;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -27,13 +29,20 @@ namespace FASTER.core
     public class CheckpointSettings
     {
         /// <summary>
-        /// Directory where checkpoints are stored
+        /// Checkpoint manager
         /// </summary>
-        public string CheckpointDir = "";
+        public ICheckpointManager CheckpointManager = null;
 
         /// <summary>
         /// Type of checkpoint
         /// </summary>
         public CheckpointType CheckPointType = CheckpointType.Snapshot;
+
+        /// <summary>
+        /// Use specified directory for storing and retrieving checkpoints
+        /// This is a shortcut to providing the following:
+        ///   CheckpointSettings.CheckpointManager = new LocalCheckpointManager(CheckpointDir)
+        /// </summary>
+        public string CheckpointDir = null;
     }
 }

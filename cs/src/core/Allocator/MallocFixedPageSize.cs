@@ -422,10 +422,11 @@ namespace FASTER.core
         /// Public facing persistence API
         /// </summary>
         /// <param name="device"></param>
+        /// <param name="start_offset"></param>
         /// <param name="numBytes"></param>
-        public void TakeCheckpoint(IDevice device, out ulong numBytes)
+        public void TakeCheckpoint(IDevice device, ulong start_offset, out ulong numBytes)
         {
-            BeginCheckpoint(device, 0UL, out numBytes);
+            BeginCheckpoint(device, start_offset, out numBytes);
         }
 
         /// <summary>
@@ -515,9 +516,10 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="buckets"></param>
         /// <param name="numBytes"></param>
-        public void Recover(IDevice device, int buckets, ulong numBytes)
+        /// <param name="offset"></param>
+        public void Recover(IDevice device, ulong offset, int buckets, ulong numBytes)
         {
-            BeginRecovery(device, 0UL, buckets, numBytes, out ulong numBytesRead);
+            BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead);
         }
 
         /// <summary>
