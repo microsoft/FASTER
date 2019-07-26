@@ -14,6 +14,26 @@ namespace FASTER.core
 {
     /// <summary>
     /// Interface for users to control creation and retrieval of checkpoint-related data
+    /// FASTER calls this interface during checkpoint/recovery in this sequence:
+    /// 
+    /// Checkpoint:
+    ///   InitializeIndexCheckpoint (for index checkpoints) -> 
+    ///   GetIndexDevice (for index checkpoints) ->
+    ///   InitializeLogCheckpoint (for log checkpoints) ->
+    ///   GetSnapshotLogDevice (for log checkpoints in snapshot mode) ->
+    ///   GetSnapshotObjectLogDevice (for log checkpoints in snapshot mode with objects) ->
+    ///   CommitLogCheckpoint (for log checkpoints) ->
+    ///   CommitIndexCheckpoint (for index checkpoints) ->
+    /// 
+    /// Recovery:
+    ///   GetLatestCheckpoint (if request to recover to latest checkpoint) ->
+    ///   GetIndexCommitMetadata ->
+    ///   GetLogCommitMetadata ->
+    ///   GetIndexDevice ->
+    ///   GetSnapshotLogDevice (for recovery in snapshot mode) ->
+    ///   GetSnapshotObjectLogDevice (for recovery in snapshot mode with objects)
+    /// 
+    /// Provided devices will be closed directly by FASTER when done.
     /// </summary>
     public interface ICheckpointManager
     {

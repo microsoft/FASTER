@@ -66,29 +66,6 @@ namespace FASTER.core
             InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid);
         }
 
-        private bool IsCheckpointSafe(Guid token, CheckpointType checkpointType)
-        {
-            switch (checkpointType)
-            {
-                case CheckpointType.INDEX_ONLY:
-                    {
-                        return checkpointManager.GetIndexCommitMetadata(token) != null;
-                    }
-                case CheckpointType.HYBRID_LOG_ONLY:
-                    {
-                        return checkpointManager.GetLogCommitMetadata(token) != null;
-
-                    }
-                case CheckpointType.FULL:
-                    {
-                        return IsCheckpointSafe(token, CheckpointType.INDEX_ONLY)
-                            && IsCheckpointSafe(token, CheckpointType.HYBRID_LOG_ONLY);
-                    }
-                default:
-                    return false;
-            }
-        }
-
         private bool IsCompatible(IndexRecoveryInfo indexInfo, HybridLogRecoveryInfo recoveryInfo)
         {
             var l1 = indexInfo.finalLogicalAddress;
@@ -101,13 +78,6 @@ namespace FASTER.core
             Debug.WriteLine("********* Primary Recovery Information ********");
             Debug.WriteLine("Index Checkpoint: {0}", indexToken);
             Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
-
-            // Assert corresponding checkpoints are safe to recover from
-            Debug.Assert(IsCheckpointSafe(indexToken, CheckpointType.INDEX_ONLY), 
-                "Cannot recover from incomplete index checkpoint " + indexToken.ToString());
-
-            Debug.Assert(IsCheckpointSafe(hybridLogToken, CheckpointType.HYBRID_LOG_ONLY), 
-                "Cannot recover from incomplete hybrid log checkpoint " + hybridLogToken.ToString());
 
             // Recovery appropriate context information
             var recoveredICInfo = new IndexCheckpointInfo();
