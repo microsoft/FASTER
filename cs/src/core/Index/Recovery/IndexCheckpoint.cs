@@ -28,9 +28,10 @@ namespace FASTER.core
             TakeMainIndexCheckpoint(ht_version,
                                     _indexCheckpoint.main_ht_device,
                                     out ulong ht_num_bytes_written);
-            overflowBucketsAllocator.TakeCheckpoint(
-                                    _indexCheckpoint.ofb_device,
-                                    out ulong ofb_num_bytes_written);
+
+            var sectorSize = _indexCheckpoint.main_ht_device.SectorSize;
+            var alignedIndexSize = (uint)((ht_num_bytes_written + (sectorSize - 1)) & ~(sectorSize - 1));
+            overflowBucketsAllocator.TakeCheckpoint(_indexCheckpoint.main_ht_device, alignedIndexSize, out ulong ofb_num_bytes_written);
             _indexCheckpoint.info.num_ht_bytes = ht_num_bytes_written;
             _indexCheckpoint.info.num_ofb_bytes = ofb_num_bytes_written;
         }
@@ -40,7 +41,9 @@ namespace FASTER.core
                                            out ulong ofbnumBytesWritten, out int num_ofb_buckets)
         {
             TakeMainIndexCheckpoint(ht_version, device, out numBytesWritten);
-            overflowBucketsAllocator.TakeCheckpoint(ofbdevice, out ofbnumBytesWritten);
+            var sectorSize = device.SectorSize;
+            var alignedIndexSize = (uint)((numBytesWritten + (sectorSize - 1)) & ~(sectorSize - 1));
+            overflowBucketsAllocator.TakeCheckpoint(ofbdevice, alignedIndexSize, out ofbnumBytesWritten);
             num_ofb_buckets = overflowBucketsAllocator.GetMaxValidAddress();
         }
 

@@ -189,7 +189,7 @@ namespace FASTER.test.recovery.objectstore
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion, new DirectoryConfiguration(test_path));
+            checkpointInfo.Recover(cprVersion, new LocalCheckpointManager(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

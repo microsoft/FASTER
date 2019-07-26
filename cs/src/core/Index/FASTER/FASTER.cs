@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -65,7 +66,7 @@ namespace FASTER.core
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
         
 
-        private SafeConcurrentDictionary<Guid, long> _recoveredSessions;
+        private ConcurrentDictionary<Guid, long> _recoveredSessions;
 
         private FastThreadLocal<FasterExecutionContext> prevThreadCtx;
         private FastThreadLocal<FasterExecutionContext> threadCtx;
@@ -104,7 +105,10 @@ namespace FASTER.core
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
 
-            directoryConfiguration = new DirectoryConfiguration(checkpointSettings.CheckpointDir);
+            if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
+                throw new Exception("Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
+
+            checkpointManager = checkpointSettings.CheckpointManager ?? new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
 
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
