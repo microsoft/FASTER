@@ -27,7 +27,10 @@ namespace FASTER.core
                 throw new Exception("Can acquire only in REST phase!");
             }
             Guid guid = Guid.NewGuid();
-            InitLocalContext(guid);
+            threadCtx.Value = new FasterExecutionContext();
+            InitContext(threadCtx.Value, guid);
+            prevThreadCtx.Value = new FasterExecutionContext();
+            InitContext(prevThreadCtx.Value, guid);
             InternalRefresh();
             return threadCtx.Value.guid;
         }
@@ -54,7 +57,10 @@ namespace FASTER.core
                             {
                                 // We have atomically removed session details. 
                                 // No one else can continue this session
-                                InitLocalContext(guid);
+                                threadCtx.Value = new FasterExecutionContext();
+                                InitContext(threadCtx.Value, guid);
+                                prevThreadCtx.Value = new FasterExecutionContext();
+                                InitContext(prevThreadCtx.Value, guid);
                                 threadCtx.Value.serialNum = serialNum;
                                 InternalRefresh();
                             }
@@ -117,28 +123,30 @@ namespace FASTER.core
             epoch.Release();
         }
 
-        internal void InitLocalContext(Guid token)
+        internal void InitContext(FasterExecutionContext ctx, Guid token)
         {
-            var ctx = 
-                new FasterExecutionContext
-                {
-                    phase = Phase.REST,
-                    version = _systemState.version,
-                    markers = new bool[8],
-                    serialNum = 0,
-                    totalPending = 0,
-                    guid = token,
-                    retryRequests = new Queue<PendingContext>(),
-                    readyResponses = new BlockingCollection<AsyncIOContext<Key, Value>>(),
-                    ioPendingRequests = new Dictionary<long, PendingContext>()
-                };
+            ctx.phase = Phase.REST;
+            ctx.version = _systemState.version;
+            ctx.markers = new bool[8];
+            ctx.serialNum = 0;
+            ctx.totalPending = 0;
+            ctx.guid = token;
+            ctx.retryRequests = new Queue<PendingContext>();
+            ctx.readyResponses = new BlockingCollection<AsyncIOContext<Key, Value>>();
+            ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
+        }
 
-            for(int i = 0; i < 8; i++)
-            {
-                ctx.markers[i] = false;
-            }
-
-            threadCtx.Value = ctx;
+        internal void CopyContext(FasterExecutionContext src, FasterExecutionContext dst)
+        {
+            dst.phase = src.phase;
+            dst.version = src.version;
+            dst.markers = src.markers;
+            dst.serialNum = src.serialNum;
+            dst.totalPending = src.totalPending;
+            dst.guid = src.guid;
+            dst.retryRequests = src.retryRequests;
+            dst.readyResponses = src.readyResponses;
+            dst.ioPendingRequests = src.ioPendingRequests;
         }
 
         internal bool InternalCompletePending(bool wait = false)

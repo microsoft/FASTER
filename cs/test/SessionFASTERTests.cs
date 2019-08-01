@@ -41,7 +41,7 @@ namespace FASTER.test
         [Test]
         public void SessionTest1()
         {
-            using (var session = fht.StartSharedSession())
+            using (var session = fht.StartClientSession())
             {
                 InputStruct input = default(InputStruct);
                 OutputStruct output = default(OutputStruct);
@@ -70,8 +70,8 @@ namespace FASTER.test
         [Test]
         public void SessionTest2()
         {
-            using (var session1 = fht.StartSharedSession())
-            using (var session2 = fht.StartSharedSession())
+            using (var session1 = fht.StartClientSession())
+            using (var session2 = fht.StartClientSession())
             {
                 InputStruct input = default(InputStruct);
                 OutputStruct output = default(OutputStruct);
@@ -117,7 +117,7 @@ namespace FASTER.test
         [Test]
         public void SessionTest3()
         {
-            using (var session = fht.StartSharedSession())
+            using (var session = fht.StartClientSession())
             {
                 Task.CompletedTask.ContinueWith((t) =>
                 {
@@ -148,8 +148,8 @@ namespace FASTER.test
         [Test]
         public void SessionTest4()
         {
-            using (var session1 = fht.StartSharedSession())
-            using (var session2 = fht.StartSharedSession())
+            using (var session1 = fht.StartClientSession())
+            using (var session2 = fht.StartClientSession())
             {
                 var t1 = Task.CompletedTask.ContinueWith((t) =>
                 {
@@ -208,7 +208,7 @@ namespace FASTER.test
         [Test]
         public void SessionTest5()
         {
-            var session = fht.GetSharedSession();
+            var session = fht.StartClientSession();
             var id = session.ID;
 
             InputStruct input = default(InputStruct);
@@ -232,12 +232,9 @@ namespace FASTER.test
             Assert.IsTrue(output.value.vfield1 == value1.vfield1);
             Assert.IsTrue(output.value.vfield2 == value1.vfield2);
 
-            session.Return();
+            session.Dispose();
 
-            session = fht.GetSharedSession();
-
-            // Make sure we get back the older suspended session
-            Assert.IsTrue(id == session.ID);
+            session = fht.StartClientSession();
 
             var key2 = new KeyStruct { kfield1 = 17, kfield2 = 18 };
             var value2 = new ValueStruct { vfield1 = 27, vfield2 = 28 };
@@ -268,6 +265,8 @@ namespace FASTER.test
 
             Assert.IsTrue(output.value.vfield1 == value2.vfield1);
             Assert.IsTrue(output.value.vfield2 == value2.vfield2);
+
+            session.Dispose();
         }
     }
 }

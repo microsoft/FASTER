@@ -16,52 +16,29 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public class Session<Key, Value, Input, Output, Context, Functions> : IDisposable
+    public class ClientSession<Key, Value, Input, Output, Context, Functions> : IDisposable
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private FasterKV<Key, Value, Input, Output, Context, Functions> fht;
-        private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevThreadCtx;
-        private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext threadCtx;
-        private readonly int epochEntry;
+        private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevCtx;
+        private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx;
 
-        internal static Session<Key, Value, Input, Output, Context, Functions> Create(
-            Session<Key, Value, Input, Output, Context, Functions>[] _sessions,
-            FasterKV <Key, Value, Input, Output, Context, Functions> fht,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevThreadCtx,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext threadCtx,
-            int epochEntry)
-        {
-            if (_sessions[epochEntry] == null)
-            {
-                _sessions[epochEntry] = new Session<Key, Value, Input, Output, Context, Functions>(fht, prevThreadCtx, threadCtx, epochEntry);
-                return _sessions[epochEntry];
-            }
-
-            var session = _sessions[epochEntry];
-            session.fht = fht;
-            session.prevThreadCtx = prevThreadCtx;
-            session.threadCtx = threadCtx;
-            return session;
-        }
-
-        private Session(
+        internal ClientSession(
             FasterKV<Key, Value, Input, Output, Context, Functions> fht,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevThreadCtx,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext threadCtx,
-            int epochEntry)
+            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevCtx,
+            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx)
         {
             this.fht = fht;
-            this.prevThreadCtx = prevThreadCtx;
-            this.threadCtx = threadCtx;
-            this.epochEntry = epochEntry;
+            this.prevCtx = prevCtx;
+            this.ctx = ctx;
         }
 
         /// <summary>
         /// Get session Guid
         /// </summary>
-        public Guid ID { get { return threadCtx.guid; } }
+        public Guid ID { get { return ctx.guid; } }
 
         /// <summary>
         /// Dispose session
@@ -69,6 +46,7 @@ namespace FASTER.core
         public void Dispose()
         {
             Resume();
+            fht.CompletePending(true);
             fht.StopSession();
         }
 
@@ -77,16 +55,7 @@ namespace FASTER.core
         /// </summary>
         public void Resume()
         {
-            fht.SetContext(prevThreadCtx, threadCtx, epochEntry);
-        }
-
-        /// <summary>
-        /// Return shared (not thread-specific) session with FASTER
-        /// </summary>
-        /// <returns></returns>
-        public void Return(bool completePending = false)
-        {
-            fht.SuspendSession(completePending);
+            fht.SetContext(prevCtx, ctx);
         }
 
         /// <summary>

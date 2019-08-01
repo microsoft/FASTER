@@ -274,98 +274,6 @@ namespace FASTER.core
             InternalRecover(indexCheckpointToken, hybridLogCheckpointToken);
         }
 
-        #region Shared Sessions
-        private Session<Key, Value, Input, Output, Context, Functions>[] _sessions = new Session<Key, Value, Input, Output, Context, Functions>[LightEpoch.kTableSize];
-
-        /// <summary>
-        /// Start new shared (not thread-specific) session with FASTER
-        /// </summary>
-        /// <returns></returns>
-        public Session<Key, Value, Input, Output, Context, Functions> StartSharedSession()
-        {
-            StartSession();
-            return Session<Key, Value, Input, Output, Context, Functions>.Create
-                (_sessions, this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
-        }
-
-        /// <summary>
-        /// Recover or continue shared (not thread-specific) session with FASTER
-        /// </summary>
-        /// <returns></returns>
-        public Session<Key, Value, Input, Output, Context, Functions> ContinueSharedSession(Guid guid)
-        {
-            ContinueSession(guid);
-            return Session<Key, Value, Input, Output, Context, Functions>.Create
-                (_sessions, this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
-        }
-
-        /// <summary>
-        /// Return existing (or start new) shared session with FASTER
-        /// </summary>
-        /// <returns></returns>
-        public Session<Key, Value, Input, Output, Context, Functions> GetSharedSession()
-        {
-            epoch.Acquire();
-            threadCtx.InitializeThread();
-            prevThreadCtx.InitializeThread();
-            Phase phase = _systemState.phase;
-            if (phase != Phase.REST)
-            {
-                throw new Exception("Can acquire only in REST phase!");
-            }
-
-            var session = _sessions[epoch.ThreadEntry.Value];
-
-            if (session != null)
-                return session;
-
-            Guid guid = Guid.NewGuid();
-            InitLocalContext(guid);
-            prevThreadCtx.Value = null;
-            return Session<Key, Value, Input, Output, Context, Functions>.Create
-                (_sessions, this, prevThreadCtx.Value, threadCtx.Value, epoch.ThreadEntry.Value);
-        }
-
-        internal void SetContext(FasterExecutionContext prevThreadCtx, FasterExecutionContext threadCtx, int epochEntry)
-        {
-            if (!this.prevThreadCtx.IsInitializedForThread) this.prevThreadCtx.InitializeThread();
-            if (!this.threadCtx.IsInitializedForThread) this.threadCtx.InitializeThread();
-            if (!epoch.ThreadEntry.IsInitializedForThread) epoch.ThreadEntry.InitializeThread();
-
-            this.prevThreadCtx.Value = prevThreadCtx;
-            this.threadCtx.Value = threadCtx;
-            epoch.ThreadEntry.Value = epochEntry;
-        }
-
-        /// <summary>
-        /// Suspend session with FASTER
-        /// </summary>
-        internal void SuspendSession(bool completePending = false)
-        {
-            if (completePending)
-            {
-                while (true)
-                {
-                    bool done = true;
-                    if (threadCtx.Value.retryRequests.Count != 0 || threadCtx.Value.ioPendingRequests.Count != 0)
-                        done = false;
-
-                    if (prevThreadCtx.Value != default(FasterExecutionContext))
-                    {
-                        if (prevThreadCtx.Value.retryRequests.Count != 0 || prevThreadCtx.Value.ioPendingRequests.Count != 0)
-                            done = false;
-                    }
-                    if (threadCtx.Value.phase != Phase.REST)
-                        done = false;
-
-                    if (done) break;
-                    Refresh();
-                }
-            }
-            epoch.Release();
-        }
-        #endregion
-
         /// <summary>
         /// Start session with FASTER - call once per thread before using FASTER
         /// </summary>
@@ -463,6 +371,21 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
         {
+            return Read(ref key, ref input, ref output, ref userContext, monotonicSerialNum);
+        }
+
+        /// <summary>
+        /// Read
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="monotonicSerialNum"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Read(ref Key key, ref Input input, ref Output output, ref Context userContext, long monotonicSerialNum)
+        {
             var context = default(PendingContext);
             var internalStatus = InternalRead(ref key, ref input, ref output, ref userContext, ref context);
             var status = default(Status);
@@ -488,6 +411,20 @@ namespace FASTER.core
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
+        {
+            return Upsert(ref key, ref desiredValue, ref userContext, monotonicSerialNum);
+        }
+
+        /// <summary>
+        /// Upsert
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="monotonicSerialNum"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(ref Key key, ref Value desiredValue, ref Context userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
             var internalStatus = InternalUpsert(ref key, ref desiredValue, ref userContext, ref context);

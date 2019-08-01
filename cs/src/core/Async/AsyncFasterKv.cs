@@ -16,9 +16,9 @@ namespace FASTER.core.async
     public class AsyncFasterKV<Key, Value, Input, Output, Functions>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Empty>
+        where Functions : IFunctions<Key, Value, Input, Output, TaskCompletionSource<Output>>
     {
-        private readonly FasterKV<Key, Value, Input, Output, Empty, Functions> fht;
+        private readonly FasterKV<Key, Value, Input, Output, TaskCompletionSource<Output>, Functions> fht;
 
         /// <summary>
         /// 
@@ -32,7 +32,7 @@ namespace FASTER.core.async
         /// <param name="variableLengthStructSettings"></param>
         public AsyncFasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
-            fht = new FasterKV<Key, Value, Input, Output, Empty, Functions>(size, functions, logSettings, checkpointSettings, serializerSettings, comparer, variableLengthStructSettings);
+            fht = new FasterKV<Key, Value, Input, Output, TaskCompletionSource<Output>, Functions>(size, functions, logSettings, checkpointSettings, serializerSettings, comparer, variableLengthStructSettings);
 
         }
 
@@ -44,13 +44,12 @@ namespace FASTER.core.async
         /// <param name="output"></param>
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
-        public async Task<Output> Read(Key key, Input input, Output output, long monotonicSerialNum)
+        public async ValueTask<Output> Read(Key key, Input input, Output output, long monotonicSerialNum)
         {
-            var status = fht.Read(ref key, ref input, ref output, Empty.Default, monotonicSerialNum);
+            TaskCompletionSource<Output> tcs = null;
+            var status = fht.Read(ref key, ref input, ref output, ref tcs, monotonicSerialNum);
             if (status != Status.PENDING)
                 return output;
-            var tcs = new TaskCompletionSource<Output>();
-            
             return await tcs.Task;
         }
 
@@ -61,17 +60,31 @@ namespace FASTER.core.async
         /// <param name="desiredValue"></param>
         /// <param name="monotonicSerialNum"></param>
         /// <returns></returns>
-        public async Task Upsert(Key key, Value desiredValue, long monotonicSerialNum)
+        public async ValueTask Upsert(Key key, Value desiredValue, long monotonicSerialNum)
         {
-            var status = fht.Upsert(ref key, ref desiredValue, Empty.Default, monotonicSerialNum);
+            TaskCompletionSource<Output> tcs = null;
+            var status = fht.Upsert(ref key, ref desiredValue, ref tcs, monotonicSerialNum);
             if (status != Status.PENDING)
                 return;
-            var tcs = new TaskCompletionSource<Output>();
             await tcs.Task;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="wait"></param>
+        /// <returns></returns>
+        public ValueTask<bool> InternalCompletePending(bool wait = false)
+        {
+            return new ValueTask<bool>(fht.CompletePending(wait));
+        }
 
-        public async Task<Guid> TakeCheckpoint(long untilSN = -1)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="untilSN"></param>
+        /// <returns></returns>
+        public ValueTask<Guid> TakeCheckpoint(long untilSN = -1)
         {
             throw new Exception();
         }

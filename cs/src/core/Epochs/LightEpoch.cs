@@ -197,6 +197,19 @@ namespace FASTER.core
             (*(tableAligned + entry)).threadId = 0;
         }
 
+        /// <summary>
+        /// Thread suspends its epoch entry
+        /// </summary>
+        public void Suspend()
+        {
+            int entry = threadEntryIndex.Value;
+            if (kInvalidIndex == entry)
+            {
+                return;
+            }
+            (*(tableAligned + entry)).localCurrentEpoch = int.MaxValue;
+        }
+
         internal FastThreadLocal<int> ThreadEntry => threadEntryIndex;
 
         /// <summary>
