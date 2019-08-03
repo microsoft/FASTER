@@ -102,7 +102,7 @@ namespace FASTER.core
             public long totalPending;
             public Queue<PendingContext> retryRequests;
             public Dictionary<long, PendingContext> ioPendingRequests;
-            public BlockingCollection<AsyncIOContext<Key, Value>> readyResponses;
+            public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
         }
     }
 

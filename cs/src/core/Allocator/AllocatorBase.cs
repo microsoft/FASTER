@@ -1492,7 +1492,7 @@ namespace FASTER.core
                     {
                         // The keys are same, so I/O is complete
                         // ctx.record = result.record;
-                        ctx.callbackQueue.Add(ctx);
+                        ctx.callbackQueue.Enqueue(ctx);
                     }
                     else
                     {
@@ -1508,7 +1508,7 @@ namespace FASTER.core
                         }
                         else
                         {
-                            ctx.callbackQueue.Add(ctx);
+                            ctx.callbackQueue.Enqueue(ctx);
                         }
                     }
                 }

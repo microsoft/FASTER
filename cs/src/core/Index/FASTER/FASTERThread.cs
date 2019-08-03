@@ -8,10 +8,11 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -132,7 +133,7 @@ namespace FASTER.core
             ctx.totalPending = 0;
             ctx.guid = token;
             ctx.retryRequests = new Queue<PendingContext>();
-            ctx.readyResponses = new BlockingCollection<AsyncIOContext<Key, Value>>();
+            ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
             ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
         }
 
@@ -196,6 +197,48 @@ namespace FASTER.core
             return false;
         }
 
+        internal async ValueTask InternalCompletePendingAsync()
+        {
+            do
+            {
+                bool done = true;
+
+                #region Previous pending requests
+                if (threadCtx.Value.phase == Phase.IN_PROGRESS
+                    ||
+                    threadCtx.Value.phase == Phase.WAIT_PENDING)
+                {
+                    await CompleteIOPendingRequestsAsync(prevThreadCtx.Value);
+                    Debug.Assert(prevThreadCtx.Value.ioPendingRequests.Count == 0);
+
+                    InternalRefresh();
+                    CompleteRetryRequests(prevThreadCtx.Value);
+
+                    done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                    done &= (prevThreadCtx.Value.retryRequests.Count == 0);
+                }
+                #endregion
+
+                if (!(threadCtx.Value.phase == Phase.IN_PROGRESS
+                      ||
+                      threadCtx.Value.phase == Phase.WAIT_PENDING))
+                {
+                    await CompleteIOPendingRequestsAsync(threadCtx.Value);
+                    Debug.Assert(threadCtx.Value.ioPendingRequests.Count == 0);
+                }
+                InternalRefresh();
+                CompleteRetryRequests(threadCtx.Value);
+
+                done &= (threadCtx.Value.ioPendingRequests.Count == 0);
+                done &= (threadCtx.Value.retryRequests.Count == 0);
+
+                if (done)
+                {
+                    return;
+                }
+            } while (true);
+        }
+
         internal void CompleteRetryRequests(FasterExecutionContext context)
         {
             int count = context.retryRequests.Count;
@@ -210,8 +253,36 @@ namespace FASTER.core
         {
             if (context.readyResponses.Count == 0) return;
 
-            while (context.readyResponses.TryTake(out AsyncIOContext<Key, Value> request))
+            while (context.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
             {
+                InternalContinuePendingRequestAndCallback(context, request);
+            }
+        }
+
+        internal async ValueTask CompleteIOPendingRequestsAsync(FasterExecutionContext context, CancellationToken token = default(CancellationToken))
+        {
+            while (context.ioPendingRequests.Count > 0)
+            {
+                AsyncIOContext<Key, Value> request;
+
+                if (context.readyResponses.Count > 0)
+                {
+                    context.readyResponses.TryDequeue(out request);
+                }
+                else
+                {
+                    // Save context on continuation stack (from thread local)
+                    var prevThreadCtxCopy = prevThreadCtx.Value;
+                    var threadCtxCopy = threadCtx.Value;
+
+                    // Suspend epoch
+                    epoch.Suspend();
+
+                    request = await context.readyResponses.DequeueAsync(token);
+                    // Restore context
+                    SetContext(prevThreadCtxCopy, threadCtxCopy);
+                }
+
                 InternalContinuePendingRequestAndCallback(context, request);
             }
         }

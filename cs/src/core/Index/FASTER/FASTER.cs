@@ -6,10 +6,11 @@
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -322,6 +323,15 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Complete outstanding pending operations
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask CompletePendingAsync()
+        {
+            await InternalCompletePendingAsync();
+        }
+
+        /// <summary>
         /// Complete the ongoing checkpoint (if any)
         /// </summary>
         /// <param name="wait"></param>
@@ -371,21 +381,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
         {
-            return Read(ref key, ref input, ref output, ref userContext, monotonicSerialNum);
-        }
-
-        /// <summary>
-        /// Read
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref Context userContext, long monotonicSerialNum)
-        {
             var context = default(PendingContext);
             var internalStatus = InternalRead(ref key, ref input, ref output, ref userContext, ref context);
             var status = default(Status);
@@ -411,20 +406,6 @@ namespace FASTER.core
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
-        {
-            return Upsert(ref key, ref desiredValue, ref userContext, monotonicSerialNum);
-        }
-
-        /// <summary>
-        /// Upsert
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Value desiredValue, ref Context userContext, long monotonicSerialNum)
         {
             var context = default(PendingContext);
             var internalStatus = InternalUpsert(ref key, ref desiredValue, ref userContext, ref context);

@@ -114,7 +114,7 @@ namespace FASTER.core
 
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName);
-#endregion
+        #endregion
 
         #region Thread and NUMA functions
         [DllImport("kernel32.dll")]
@@ -241,10 +241,19 @@ namespace FASTER.core
             if (!LookupPrivilegeValue(null, "SeManageVolumePrivilege",
                 ref token_privileges.Privileges.Luid)) return false;
 
-            if (!OpenProcessToken(GetCurrentProcess(), 0x20, out IntPtr token)) return false;
+            if (!OpenProcessToken(GetCurrentProcess(), 0x20, out IntPtr token))
+                return false;
 
-            if (!AdjustTokenPrivileges(token, 0, ref token_privileges, 0, 0, 0)) return false;
-            if (Marshal.GetLastWin32Error() != 0) return false;
+            if (!AdjustTokenPrivileges(token, 0, ref token_privileges, 0, 0, 0))
+            {
+                CloseHandle(token);
+                return false;
+            }
+            if (Marshal.GetLastWin32Error() != 0)
+            {
+                CloseHandle(token);
+                return false;
+            }
             CloseHandle(token);
             return true;
         }
@@ -282,13 +291,8 @@ namespace FASTER.core
                 (void*)&mhi, sizeof(MARK_HANDLE_INFO), IntPtr.Zero,
                 0, ref bytes_returned, IntPtr.Zero);
 
-            if (!result)
-            {
-                return false;
-            }
-
             volume_handle.Close();
-            return true;
+            return result;
         }
 
         /// <summary>
