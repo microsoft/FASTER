@@ -142,6 +142,20 @@ jobs:
   displayName: 'C# (Linux)'
 
   steps:
+  - task: NuGetToolInstaller@0
+    inputs:
+      versionSpec: '4.8.2' 
+    
+  - task: NuGetCommand@2
+    inputs:
+      restoreSolution: '$(solution)'
+
+  - task: DotNetCoreInstaller@0
+    displayName: 'Install'
+    inputs:
+      packageType: 'sdk'
+      version: '2.2.105'
+
   - script: |
       mono --version
       msbuild /version
