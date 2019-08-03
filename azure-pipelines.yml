@@ -154,7 +154,7 @@ jobs:
     displayName: 'Install'
     inputs:
       packageType: 'sdk'
-      version: '2.x'
+      version: '2.2'
 
   - script: |
       mono --version
