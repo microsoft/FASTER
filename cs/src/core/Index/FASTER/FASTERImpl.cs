@@ -204,7 +204,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.Value.version;
-                pendingContext.serialNum = threadCtx.Value.serialNum + 1;
+                pendingContext.serialNum = threadCtx.Value.serialNum;
             }
             #endregion
 
@@ -591,7 +591,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.Value.version;
-                pendingContext.serialNum = threadCtx.Value.serialNum + 1;
+                pendingContext.serialNum = threadCtx.Value.serialNum;
             }
             #endregion
 
@@ -920,7 +920,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.Value.version;
-                pendingContext.serialNum = threadCtx.Value.serialNum + 1;
+                pendingContext.serialNum = threadCtx.Value.serialNum;
             }
             #endregion
 
@@ -1613,7 +1613,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = threadCtx.Value.version;
-                pendingContext.serialNum = threadCtx.Value.serialNum + 1;
+                pendingContext.serialNum = threadCtx.Value.serialNum;
             }
             #endregion
 

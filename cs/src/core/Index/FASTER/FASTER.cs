@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
@@ -69,8 +70,8 @@ namespace FASTER.core
 
         private ConcurrentDictionary<Guid, long> _recoveredSessions;
 
-        private FastThreadLocal<FasterExecutionContext> prevThreadCtx;
-        private FastThreadLocal<FasterExecutionContext> threadCtx;
+        private readonly FastThreadLocal<FasterExecutionContext> prevThreadCtx;
+        private readonly FastThreadLocal<FasterExecutionContext> threadCtx;
 
 
         /// <summary>
@@ -323,6 +324,26 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Get list of pending requests (for local session)
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerable<long> GetPendingRequests()
+        {
+
+            foreach (var kvp in prevThreadCtx.Value.ioPendingRequests)
+                yield return kvp.Value.serialNum;
+
+            foreach (var val in prevThreadCtx.Value.retryRequests)
+                yield return val.serialNum;
+
+            foreach (var kvp in threadCtx.Value.ioPendingRequests)
+                yield return kvp.Value.serialNum;
+
+            foreach (var val in threadCtx.Value.retryRequests)
+                yield return val.serialNum;
+        }
+
+        /// <summary>
         /// Complete outstanding pending operations
         /// </summary>
         /// <returns></returns>
@@ -383,7 +404,7 @@ namespace FASTER.core
         {
             var context = default(PendingContext);
             var internalStatus = InternalRead(ref key, ref input, ref output, ref userContext, ref context);
-            var status = default(Status);
+            Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
@@ -409,7 +430,7 @@ namespace FASTER.core
         {
             var context = default(PendingContext);
             var internalStatus = InternalUpsert(ref key, ref desiredValue, ref userContext, ref context);
-            var status = default(Status);
+            Status status;
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -436,7 +457,7 @@ namespace FASTER.core
         {
             var context = default(PendingContext);
             var internalStatus = InternalRMW(ref key, ref input, ref userContext, ref context);
-            var status = default(Status);
+            Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
@@ -491,6 +512,7 @@ namespace FASTER.core
             threadCtx.Dispose();
             prevThreadCtx.Dispose();
             hlog.Dispose();
+            readcache?.Dispose();
         }
     }
 }

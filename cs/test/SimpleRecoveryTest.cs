@@ -149,6 +149,82 @@ namespace FASTER.test.recovery.sumstore.simple
             fht2.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints5").Delete(true);
         }
+
+        [Test]
+        public void SimpleRecoveryTest3()
+        {
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest3.log", deleteOnClose: true);
+
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
+
+            fht1 = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.Snapshot }
+                );
+
+            fht2 = new FasterKV
+                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.Snapshot }
+                );
+
+
+            int numOps = 5000;
+            var inputArray = new AdId[numOps];
+            for (int i = 0; i < numOps; i++)
+            {
+                inputArray[i].adId = i;
+            }
+
+            NumClicks value;
+            Input inputArg = default(Input);
+            Output output = default(Output);
+
+            var s0 = fht1.StartClientSession(); // leave dormant
+
+            var s1 = fht1.StartClientSession();
+            s1.Resume();
+
+            // fht1.StartSession();
+            for (int key = 0; key < numOps; key++)
+            {
+                value.numClicks = key;
+                fht1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+            }
+            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.CompleteCheckpoint(true);
+
+            s1.Dispose();
+
+            // resume dormant session
+            // should receive persistence callback
+            s0.Resume();
+
+            fht2.Recover(token);
+            var s2 = fht2.StartClientSession();
+            s2.Resume();
+
+            for (int key = 0; key < numOps; key++)
+            {
+                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+
+                if (status == Status.PENDING)
+                    fht2.CompletePending(true);
+                else
+                {
+                    Assert.IsTrue(output.value.numClicks == key);
+                }
+            }
+            s2.Dispose();
+
+            log.Close();
+            fht1.Dispose();
+            fht2.Dispose();
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
+        }
     }
 
     public class SimpleFunctions : IFunctions<AdId, NumClicks, Input, Output, Empty>

@@ -380,6 +380,8 @@ namespace FASTER.core
             }
         }
 
+        private int lastFullCheckpointVersion = 0;
+
         /// <summary>
         /// Corresponding thread-local actions that must be performed when any state machine is active
         /// </summary>
@@ -389,15 +391,36 @@ namespace FASTER.core
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
 
-            // Don't play around when system state is being changed
-            if (finalState.phase == Phase.INTERMEDIATE)
-            {
-                return;
-            }
-
             // We need to move from previousState to finalState one step at a time
             do
             {
+                // Coming back - need to complete older checkpoint first
+                if ((finalState.version > previousState.version + 1) ||
+                    (finalState.version > previousState.version && finalState.phase == Phase.REST))
+                {
+                    if (lastFullCheckpointVersion > previousState.version)
+                    {
+                        functions.CheckpointCompletionCallback(threadCtx.Value.guid, threadCtx.Value.serialNum);
+                    }
+
+                    // Get system out of intermediate phase
+                    while (finalState.phase == Phase.INTERMEDIATE)
+                    {
+                        finalState = SystemState.Copy(ref _systemState);
+                    }
+
+                    // Fast forward to current global state
+                    previousState.version = finalState.version;
+                    previousState.phase = finalState.phase;
+                }
+
+                // Don't play around when system state is being changed
+                if (finalState.phase == Phase.INTERMEDIATE)
+                {
+                    return;
+                }
+
+
                 var currentState = default(SystemState);
                 if (previousState.word == finalState.word)
                 {
@@ -545,6 +568,7 @@ namespace FASTER.core
 
                                 if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.Value.version))
                                 {
+                                    lastFullCheckpointVersion = currentState.version;
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
 

@@ -253,7 +253,8 @@ namespace FASTER.core
             if (metadata == null)
                 throw new Exception("Invalid log commit metadata for ID " + token.ToString());
 
-            Initialize(new StreamReader(new MemoryStream(metadata)));
+            using (var s = new StreamReader(new MemoryStream(metadata)))
+                Initialize(s);
         }
 
         /// <summary>
@@ -402,7 +403,8 @@ namespace FASTER.core
             var metadata = checkpointManager.GetIndexCommitMetadata(guid);
             if (metadata == null)
                 throw new Exception("Invalid index commit metadata for ID " + guid.ToString());
-            Initialize(new StreamReader(new MemoryStream(metadata)));
+            using (var s = new StreamReader(new MemoryStream(metadata)))
+                Initialize(s);
         }
 
         public byte[] ToByteArray()

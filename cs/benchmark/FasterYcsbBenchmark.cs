@@ -42,11 +42,10 @@ namespace FASTER.benchmark
         Input[] input_;
         readonly IDevice device;
 
-        FasterKV<Key, Value, Input, Output, Empty, Functions> store;
+        readonly FasterKV<Key, Value, Input, Output, Empty, Functions> store;
 
         long total_ops_done = 0;
 
-        const string kKeyWorkload = "a";
         readonly int threadCount;
         readonly int numaStyle;
         readonly string distribution;

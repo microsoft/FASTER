@@ -55,7 +55,15 @@ namespace FASTER.core
         /// </summary>
         public void Resume()
         {
-            fht.SetContext(prevCtx, ctx);
+            fht.ResumeSession(prevCtx, ctx);
+        }
+
+        /// <summary>
+        /// Suspend session on current thread
+        /// </summary>
+        public void Suspend()
+        {
+            fht.SuspendSession();
         }
 
         /// <summary>
@@ -70,7 +78,9 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
         {
             Resume();
-            return fht.Read(ref key, ref input, ref output, userContext, monotonicSerialNum);
+            var status = fht.Read(ref key, ref input, ref output, userContext, monotonicSerialNum);
+            Suspend();
+            return status;
         }
 
         /// <summary>
@@ -84,7 +94,9 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
         {
             Resume();
-            return fht.Upsert(ref key, ref desiredValue, userContext, monotonicSerialNum);
+            var status = fht.Upsert(ref key, ref desiredValue, userContext, monotonicSerialNum);
+            Suspend();
+            return status;
         }
 
         /// <summary>
@@ -98,7 +110,9 @@ namespace FASTER.core
         public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
         {
             Resume();
-            return fht.RMW(ref key, ref input, userContext, monotonicSerialNum);
+            var status = fht.RMW(ref key, ref input, userContext, monotonicSerialNum);
+            Suspend();
+            return status;
         }
 
         /// <summary>
@@ -111,7 +125,9 @@ namespace FASTER.core
         public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
         {
             Resume();
-            return fht.Delete(ref key, userContext, monotonicSerialNum);
+            var status = fht.Delete(ref key, userContext, monotonicSerialNum);
+            Suspend();
+            return status;
         }
 
         /// <summary>
@@ -122,7 +138,9 @@ namespace FASTER.core
         public bool CompletePending(bool wait = false)
         {
             Resume();
-            return fht.CompletePending(wait);
+            var result = fht.CompletePending(wait);
+            Suspend();
+            return result;
         }
     }
 }

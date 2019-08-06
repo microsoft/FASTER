@@ -210,6 +210,18 @@ namespace FASTER.core
             (*(tableAligned + entry)).localCurrentEpoch = int.MaxValue;
         }
 
+        /// <summary>
+        /// Thread resumes its epoch entry
+        /// </summary>
+        public void Resume()
+        {
+            if (!threadEntryIndex.IsInitializedForThread || threadEntryIndex.Value == kInvalidIndex)
+            {
+                Acquire();
+            }
+            ProtectAndDrain();
+        }
+
         internal FastThreadLocal<int> ThreadEntry => threadEntryIndex;
 
         /// <summary>

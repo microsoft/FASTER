@@ -94,7 +94,7 @@ namespace FASTER.core
 
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref _systemState);
-            if (threadCtx.Value.phase == Phase.REST && newPhaseInfo.phase == Phase.REST)
+            if (threadCtx.Value.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && threadCtx.Value.version == newPhaseInfo.version)
             {
                 return;
             }
@@ -276,11 +276,12 @@ namespace FASTER.core
                     var threadCtxCopy = threadCtx.Value;
 
                     // Suspend epoch
-                    epoch.Suspend();
+                    SuspendSession();
 
                     request = await context.readyResponses.DequeueAsync(token);
-                    // Restore context
-                    SetContext(prevThreadCtxCopy, threadCtxCopy);
+
+                    // Resume session
+                    ResumeSession(prevThreadCtxCopy, threadCtxCopy);
                 }
 
                 InternalContinuePendingRequestAndCallback(context, request);
