@@ -195,7 +195,8 @@ namespace FASTER.test.recovery.sumstore.simple
                 fht1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpoint(true);
+
+            fht1.CompleteCheckpointAsync().AsTask().Wait();
 
             s1.Dispose();
 

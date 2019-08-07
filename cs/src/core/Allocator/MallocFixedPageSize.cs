@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -18,7 +19,7 @@ namespace FASTER.core
     /// Memory allocator for objects
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public unsafe class MallocFixedPageSize<T> : IDisposable
+    public class MallocFixedPageSize<T> : IDisposable
     {
         private const bool ForceUnpinnedAllocation = false;
 
@@ -47,6 +48,7 @@ namespace FASTER.core
         private readonly bool ReturnPhysicalAddress;
 
         private CountdownEvent checkpointEvent;
+        private SemaphoreSlim checkpointSemaphore;
 
         private ConcurrentQueue<long> freeList;
 
@@ -445,15 +447,24 @@ namespace FASTER.core
             return completed;
         }
 
+        /// <summary>
+        /// Is checkpoint completed
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask IsCheckpointCompletedAsync()
+        {
+            await checkpointSemaphore.WaitAsync();
+            checkpointSemaphore.Release();
+        }
 
-        internal void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
+        internal unsafe void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
         {
             int localCount = count;
             int recordsCountInLastLevel = localCount & PageSizeMask;
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
             checkpointEvent = new CountdownEvent(numLevels);
-
+            checkpointSemaphore = new SemaphoreSlim(0);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
@@ -470,7 +481,7 @@ namespace FASTER.core
             }
         }
 
-        private void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             try
             {
@@ -486,6 +497,8 @@ namespace FASTER.core
             finally
             {
                 checkpointEvent.Signal();
+                if (checkpointEvent.CurrentCount == 0)
+                    checkpointSemaphore.Release();
                 Overlapped.Free(overlap);
             }
         }
@@ -543,7 +556,7 @@ namespace FASTER.core
         // Implementation of asynchronous recovery
         private int numLevelsToBeRecovered;
 
-        internal void BeginRecovery(IDevice device,
+        internal unsafe void BeginRecovery(IDevice device,
                                     ulong offset,
                                     int buckets,
                                     ulong numBytesToRead,
@@ -575,7 +588,7 @@ namespace FASTER.core
             }
         }
 
-        private void AsyncPageReadCallback(
+        private unsafe void AsyncPageReadCallback(
                                     uint errorCode,
                                     uint numBytes,
                                     NativeOverlapped* overlap)

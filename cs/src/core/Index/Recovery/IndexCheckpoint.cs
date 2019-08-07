@@ -16,7 +16,7 @@ namespace FASTER.core
 {
 
 
-    public unsafe partial class FasterBase
+    public partial class FasterBase
     {
         // Derived class facing persistence API
         internal IndexCheckpointInfo _indexCheckpoint;
@@ -54,10 +54,17 @@ namespace FASTER.core
             return completed1 && completed2;
         }
 
+        internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync()
+        {
+            await IsMainIndexCheckpointCompletedAsync();
+            await overflowBucketsAllocator.IsCheckpointCompletedAsync();
+        }
+
 
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of FASTER
         private CountdownEvent mainIndexCheckpointEvent;
+        private SemaphoreSlim mainIndexCheckpointSemaphore;
 
         private void TakeMainIndexCheckpoint(int tableVersion,
                                             IDevice device,
@@ -66,7 +73,7 @@ namespace FASTER.core
             BeginMainIndexCheckpoint(tableVersion, device, out numBytes);
         }
 
-        private void BeginMainIndexCheckpoint(
+        private unsafe void BeginMainIndexCheckpoint(
                                            int version,
                                            IDevice device,
                                            out ulong numBytesWritten)
@@ -77,6 +84,7 @@ namespace FASTER.core
 
             uint chunkSize = (uint)(totalSize / numChunks);
             mainIndexCheckpointEvent = new CountdownEvent(numChunks);
+            mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
             HashBucket* start = state[version].tableAligned;
             
             numBytesWritten = 0;
@@ -102,7 +110,16 @@ namespace FASTER.core
             return completed;
         }
 
-        private void AsyncPageFlushCallback(
+        private async ValueTask IsMainIndexCheckpointCompletedAsync()
+        {
+            if (!mainIndexCheckpointEvent.IsSet)
+            {
+                await mainIndexCheckpointSemaphore.WaitAsync();
+                mainIndexCheckpointSemaphore.Release();
+            }
+        }
+
+        private unsafe void AsyncPageFlushCallback(
                                             uint errorCode,
                                             uint numBytes,
                                             NativeOverlapped* overlap)
@@ -124,6 +141,10 @@ namespace FASTER.core
             finally
             {
                 mainIndexCheckpointEvent.Signal();
+                if (mainIndexCheckpointEvent.CurrentCount == 0)
+                {
+                    mainIndexCheckpointSemaphore.Release();
+                }
                 Overlapped.Free(overlap);
             }
         }

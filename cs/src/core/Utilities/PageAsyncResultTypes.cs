@@ -94,6 +94,7 @@ namespace FASTER.core
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
         internal AutoResetEvent done;
+        internal SemaphoreSlim handleSemaphore;
 
         /// <summary>
         /// 
@@ -130,10 +131,9 @@ namespace FASTER.core
                 freeBuffer2.Return();
                 freeBuffer2 = null;
             }
-            if (handle != null)
-            {
-                handle.Signal();
-            }
+
+            handle?.Signal();
+            handleSemaphore?.Release();
         }
     }
 }

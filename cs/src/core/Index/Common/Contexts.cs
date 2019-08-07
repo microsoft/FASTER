@@ -329,6 +329,7 @@ namespace FASTER.core
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
         public CountdownEvent flushed;
+        public SemaphoreSlim flushedSemaphore;
         public long started;
 
         public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)

@@ -865,13 +865,18 @@ namespace FASTER.core
         /// Used by applications to make the current state of the database immutable quickly
         /// </summary>
         /// <param name="tailAddress"></param>
-        public void ShiftReadOnlyToTail(out long tailAddress)
+        /// <param name="notifyDone"></param>
+        public void ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
         {
+            notifyDone = null;
             tailAddress = GetTailAddress();
             long localTailAddress = tailAddress;
             long currentReadOnlyOffset = ReadOnlyAddress;
             if (MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out long oldReadOnlyOffset))
             {
+                notifyFlushedUntilAddressSemaphore = new SemaphoreSlim(0);
+                notifyDone = notifyFlushedUntilAddressSemaphore;
+                notifyFlushedUntilAddress = localTailAddress;
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress, false));
             }
         }
@@ -1104,11 +1109,18 @@ namespace FASTER.core
 
             if (update)
             {
-                MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress);
+                if (MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
+                {
+                    if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
+                    {
+                        notifyFlushedUntilAddressSemaphore.Release();
+                    }
+                }
             }
         }
 
-
+        public long notifyFlushedUntilAddress;
+        public SemaphoreSlim notifyFlushedUntilAddressSemaphore;
 
         /// <summary>
         /// Used by several functions to update the variable to newValue. Ignores if newValue is smaller or 
@@ -1418,16 +1430,18 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completed"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out CountdownEvent completed, out SemaphoreSlim completedSemaphore)
         {
             int totalNumPages = (int)(endPage - startPage);
             completed = new CountdownEvent(totalNumPages);
+            completedSemaphore = new SemaphoreSlim(0);
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
             {
                 var asyncResult = new PageAsyncFlushResult<Empty>
                 {
                     handle = completed,
+                    handleSemaphore = completedSemaphore,
                     count = 1
                 };
 
