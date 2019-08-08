@@ -3,7 +3,7 @@
   <metadata>
     <id>Microsoft.FASTER.devices.AzureStorageDevice</id>
     <version>$version$</version>
-    <title>AzureStorageDevice for FASTER</title>
+    <title>Azure storage device for FASTER</title>
     <authors>Microsoft</authors>
     <owners>Microsoft</owners>
     <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
@@ -17,11 +17,11 @@
     <dependencies>
       <group targetFramework="net46">
         <dependency id="Microsoft.Azure.Storage.Blob" version="10.0.3" />
-        <dependency id="FASTER" version="$version$" />
+        <dependency id="Microsoft.FASTER" version="$version$" />
       </group>
       <group targetFramework="netstandard2.0">
         <dependency id="Microsoft.Azure.Storage.Blob" version="10.0.3" />
-        <dependency id="FASTER" version="$version$" />
+        <dependency id="Microsoft.FASTER" version="$version$" />
       </group>
     </dependencies>
   </metadata>
