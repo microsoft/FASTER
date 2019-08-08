@@ -109,30 +109,9 @@ namespace FASTER.core
             HandleCheckpointingPhases();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal async ValueTask InternalRefreshAsync()
-        {
-            epoch.ProtectAndDrain();
-
-            // We check if we are in normal mode
-            var newPhaseInfo = SystemState.Copy(ref _systemState);
-            if (threadCtx.Value.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && threadCtx.Value.version == newPhaseInfo.version)
-            {
-                return;
-            }
-
-            // Moving to non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.GC || newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
-            {
-                threadCtx.Value.phase = newPhaseInfo.phase;
-                return;
-            }
-
-            await HandleCheckpointingPhasesAsync();
-        }
-
         internal void InternalRelease()
         {
+            /*
             Debug.Assert(threadCtx.Value.retryRequests.Count == 0 &&
                     threadCtx.Value.ioPendingRequests.Count == 0);
             if (prevThreadCtx.Value != default(FasterExecutionContext))
@@ -140,7 +119,8 @@ namespace FASTER.core
                 Debug.Assert(prevThreadCtx.Value.retryRequests.Count == 0 &&
                     prevThreadCtx.Value.ioPendingRequests.Count == 0);
             }
-            Debug.Assert(threadCtx.Value.phase == Phase.REST);
+            Debug.Assert(threadCtx.Value.phase == Phase.REST);*/
+
             threadCtx.DisposeThread();
             prevThreadCtx.DisposeThread();
             epoch.Release();
@@ -217,48 +197,6 @@ namespace FASTER.core
             } while (wait);
 
             return false;
-        }
-
-        internal async ValueTask InternalCompletePendingAsync()
-        {
-            do
-            {
-                bool done = true;
-
-                #region Previous pending requests
-                if (threadCtx.Value.phase == Phase.IN_PROGRESS
-                    ||
-                    threadCtx.Value.phase == Phase.WAIT_PENDING)
-                {
-                    await CompleteIOPendingRequestsAsync(prevThreadCtx.Value);
-                    Debug.Assert(prevThreadCtx.Value.ioPendingRequests.Count == 0);
-
-                    await InternalRefreshAsync();
-                    CompleteRetryRequests(prevThreadCtx.Value);
-
-                    done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
-                    done &= (prevThreadCtx.Value.retryRequests.Count == 0);
-                }
-                #endregion
-
-                if (!(threadCtx.Value.phase == Phase.IN_PROGRESS
-                      ||
-                      threadCtx.Value.phase == Phase.WAIT_PENDING))
-                {
-                    await CompleteIOPendingRequestsAsync(threadCtx.Value);
-                    Debug.Assert(threadCtx.Value.ioPendingRequests.Count == 0);
-                }
-                await InternalRefreshAsync();
-                CompleteRetryRequests(threadCtx.Value);
-
-                done &= (threadCtx.Value.ioPendingRequests.Count == 0);
-                done &= (threadCtx.Value.retryRequests.Count == 0);
-
-                if (done)
-                {
-                    return;
-                }
-            } while (true);
         }
 
         internal void CompleteRetryRequests(FasterExecutionContext context)

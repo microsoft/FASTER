@@ -344,15 +344,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Complete outstanding pending operations
-        /// </summary>
-        /// <returns></returns>
-        public async ValueTask CompletePendingAsync()
-        {
-            await InternalCompletePendingAsync();
-        }
-
-        /// <summary>
         /// Complete the ongoing checkpoint (if any)
         /// </summary>
         /// <param name="wait"></param>
@@ -388,27 +379,6 @@ namespace FASTER.core
                 } while (wait);
             }
             return false;
-        }
-
-        /// <summary>
-        /// Complete the ongoing checkpoint (if any)
-        /// </summary>
-        /// <returns></returns>
-        public async ValueTask CompleteCheckpointAsync()
-        {
-            // Thread has an active session.
-            // So we need to constantly complete pending 
-            // and refresh (done inside CompletePending)
-            // for the checkpoint to be proceed
-            do
-            {
-                await CompletePendingAsync();
-                if (_systemState.phase == Phase.REST)
-                {
-                    await CompletePendingAsync();
-                    return;
-                }
-            } while (true);
         }
 
         /// <summary>

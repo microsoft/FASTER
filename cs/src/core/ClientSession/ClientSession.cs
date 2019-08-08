@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -45,15 +46,16 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            Resume();
+            ResumeThread();
             fht.CompletePending(true);
             fht.StopSession();
         }
 
         /// <summary>
         /// Resume session on current thread
+        /// Call SuspendThread before any async op
         /// </summary>
-        public void Resume()
+        public void ResumeThread()
         {
             fht.ResumeSession(prevCtx, ctx);
         }
@@ -61,7 +63,7 @@ namespace FASTER.core
         /// <summary>
         /// Suspend session on current thread
         /// </summary>
-        public void Suspend()
+        public void SuspendThread()
         {
             fht.SuspendSession();
         }
@@ -77,9 +79,9 @@ namespace FASTER.core
         /// <returns></returns>
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
         {
-            Resume();
+            ResumeThread();
             var status = fht.Read(ref key, ref input, ref output, userContext, monotonicSerialNum);
-            Suspend();
+            SuspendThread();
             return status;
         }
 
@@ -93,9 +95,9 @@ namespace FASTER.core
         /// <returns></returns>
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
         {
-            Resume();
+            ResumeThread();
             var status = fht.Upsert(ref key, ref desiredValue, userContext, monotonicSerialNum);
-            Suspend();
+            SuspendThread();
             return status;
         }
 
@@ -109,9 +111,9 @@ namespace FASTER.core
         /// <returns></returns>
         public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
         {
-            Resume();
+            ResumeThread();
             var status = fht.RMW(ref key, ref input, userContext, monotonicSerialNum);
-            Suspend();
+            SuspendThread();
             return status;
         }
 
@@ -124,23 +126,59 @@ namespace FASTER.core
         /// <returns></returns>
         public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
         {
-            Resume();
+            ResumeThread();
             var status = fht.Delete(ref key, userContext, monotonicSerialNum);
-            Suspend();
+            SuspendThread();
             return status;
         }
 
+
         /// <summary>
-        /// Complete outstanding pending operations
+        /// Sync complete outstanding pending operations
         /// </summary>
-        /// <param name="wait"></param>
+        /// <param name="spinWait"></param>
         /// <returns></returns>
-        public bool CompletePending(bool wait = false)
+        public bool CompletePending(bool spinWait = false)
         {
-            Resume();
-            var result = fht.CompletePending(wait);
-            Suspend();
+            ResumeThread();
+            var result = fht.CompletePending(spinWait);
+            SuspendThread();
             return result;
+        }
+
+        /// <summary>
+        /// Async complete outstanding pending operations
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask CompletePendingAsync()
+        {
+            ResumeThread();
+            await fht.CompletePendingAsync();
+            SuspendThread();
+        }
+
+        /// <summary>
+        /// Complete the ongoing checkpoint (if any)
+        /// </summary>
+        /// <param name="spinWait"></param>
+        /// <returns></returns>
+        public bool CompleteCheckpoint(bool spinWait = false)
+        {
+            ResumeThread();
+            var result = fht.CompleteCheckpoint(spinWait);
+            SuspendThread();
+            return result;
+        }
+
+        /// <summary>
+        /// Complete the ongoing checkpoint (if any)
+        /// </summary>
+        /// <returns></returns>
+        internal async ValueTask CompleteCheckpointAsync()
+        {
+            ResumeThread();
+            await fht.CompleteCheckpointAsync();
+            SuspendThread();
         }
     }
 }

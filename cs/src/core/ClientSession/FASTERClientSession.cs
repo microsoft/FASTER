@@ -5,7 +5,9 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -14,8 +16,10 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
+        private Dictionary<Guid, ClientSession<Key, Value, Input, Output, Context, Functions>> _activeSessions;
+
         /// <summary>
-        /// Start new shared (not thread-specific) session with FASTER.
+        /// Start new client session (not thread-specific) with FASTER.
         /// Session starts in dormant state.
         /// </summary>
         /// <returns></returns>
@@ -26,9 +30,49 @@ namespace FASTER.core
             InitContext(ctx, guid);
             var prevCtx = new FasterExecutionContext();
             InitContext(prevCtx, guid);
-            return new ClientSession<Key, Value, Input, Output, Context, Functions>(this, prevCtx, ctx);
+            if (_activeSessions == null)
+                Interlocked.CompareExchange(ref _activeSessions, new Dictionary<Guid, ClientSession<Key, Value, Input, Output, Context, Functions>>(), null);
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, prevCtx, ctx);
+            lock (_activeSessions)
+                _activeSessions.Add(guid, session);
+            return session;
         }
 
+        /// <summary>
+        /// Continue session with FASTER
+        /// </summary>
+        /// <param name="guid"></param>
+        /// <param name="lsn"></param>
+        /// <returns></returns>
+        public ClientSession<Key, Value, Input, Output, Context, Functions> ContinueClientSession(Guid guid, out long lsn)
+        {
+            lsn = InternalContinue(guid);
+            if (lsn == -1)
+                throw new Exception($"Unable to find session {guid} to recover");
+
+            var prevCtx = this.prevThreadCtx.Value;
+            var ctx = this.threadCtx.Value;
+            SuspendSession();
+
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, prevCtx, ctx);
+
+            if (_activeSessions == null)
+                Interlocked.CompareExchange(ref _activeSessions, new Dictionary<Guid, ClientSession<Key, Value, Input, Output, Context, Functions>>(), null);
+            lock (_activeSessions)
+                _activeSessions.Add(guid, session);
+            return session;
+        }
+
+        /// <summary>
+        /// Dispose session with FASTER
+        /// </summary>
+        /// <param name="guid"></param>
+        /// <returns></returns>
+        public void DisposeClientSession(Guid guid)
+        {
+            lock (_activeSessions)
+                _activeSessions.Remove(guid);
+        }
 
         /// <summary>
         /// Resume session with FASTER
@@ -45,6 +89,8 @@ namespace FASTER.core
 
             this.prevThreadCtx.Value = prevThreadCtx;
             this.threadCtx.Value = threadCtx;
+
+            InternalRefresh();
         }
 
         /// <summary>

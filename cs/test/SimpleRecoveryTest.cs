@@ -15,7 +15,7 @@ namespace FASTER.test.recovery.sumstore.simple
 {
 
     [TestFixture]
-    internal class SimpleRecoveryTests
+    public class SimpleRecoveryTests
     {
         private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht1;
         private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht2;
@@ -186,27 +186,32 @@ namespace FASTER.test.recovery.sumstore.simple
             var s0 = fht1.StartClientSession(); // leave dormant
 
             var s1 = fht1.StartClientSession();
-            s1.Resume();
 
             // fht1.StartSession();
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                fht1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
             }
+
             fht1.TakeFullCheckpoint(out Guid token);
 
-            fht1.CompleteCheckpointAsync().AsTask().Wait();
+            var s2 = fht1.StartClientSession();
 
-            s1.Dispose();
+            // s1 becomes dormant
+            s2.CompleteCheckpointAsync().AsTask().Wait();
 
-            // resume dormant session
-            // should receive persistence callback
-            s0.Resume();
+            s2.Dispose();
+            s1.Dispose(); // should receive persistence callback
+            s0.ResumeThread(); // should receive persistence callback
+            s0.Dispose();
 
             fht2.Recover(token);
-            var s2 = fht2.StartClientSession();
-            s2.Resume();
+
+            var s3 = fht2.StartClientSession();
+            // var guid = s1.ID;
+            // var s2 = fht2.ContinueClientSession(guid, out long lsn);
+            s3.ResumeThread();
 
             for (int key = 0; key < numOps; key++)
             {
@@ -219,7 +224,7 @@ namespace FASTER.test.recovery.sumstore.simple
                     Assert.IsTrue(output.value.numClicks == key);
                 }
             }
-            s2.Dispose();
+            s3.Dispose();
 
             log.Close();
             fht1.Dispose();

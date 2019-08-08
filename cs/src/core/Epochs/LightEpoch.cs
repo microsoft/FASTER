@@ -431,7 +431,7 @@ namespace FASTER.core
                 int fc_version = (*(tableAligned + index)).markers[markerIdx];
                 if (0 != entry_epoch)
                 {
-                    if (fc_version != version)
+                    if (fc_version != version && entry_epoch < int.MaxValue)
                     {
                         return false;
                     }
