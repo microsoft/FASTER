@@ -106,6 +106,21 @@ namespace FASTER.core
             await HandleCheckpointingPhasesAsync();
         }
 
+
+        private bool AtomicSwitch(FasterExecutionContext fromCtx, FasterExecutionContext toCtx, int version)
+        {
+            lock (toCtx)
+            {
+                if (toCtx.version < version)
+                {
+                    CopyContext(fromCtx, toCtx);
+                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid, toCtx.serialNum);
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private async ValueTask HandleCheckpointingPhasesAsync()
         {
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
@@ -225,7 +240,7 @@ namespace FASTER.core
 
                             if (!ctx.markers[EpochPhaseIdx.InProgress])
                             {
-                                CopyContext(threadCtx.Value, prevThreadCtx.Value);
+                                AtomicSwitch(threadCtx.Value, prevThreadCtx.Value, ctx.version);
                                 InitContext(threadCtx.Value, prevThreadCtx.Value.guid);
 
                                 if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.InProgress, ctx.version))
@@ -311,8 +326,6 @@ namespace FASTER.core
 
                                 if (notify)
                                 {
-                                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(prevThreadCtx.Value.guid, prevThreadCtx.Value.serialNum);
-
                                     if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, prevThreadCtx.Value.version))
                                     {
                                         GlobalMoveToNextCheckpointState(currentState);

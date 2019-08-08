@@ -289,6 +289,14 @@ namespace FASTER.core
                         }
                     case Phase.PERSISTENCE_CALLBACK:
                         {
+                            if (_activeSessions != null)
+                            {
+                                // write dormant sessions to checkpoint
+                                foreach (var kvp in _activeSessions)
+                                {
+                                    AtomicSwitch(kvp.Value.ctx, kvp.Value.prevCtx, currentState.version - 1);
+                                }
+                            }
                             WriteHybridLogMetaInfo();
 
                             if (_checkpointType == CheckpointType.FULL)
@@ -495,7 +503,7 @@ namespace FASTER.core
 
                             if (!ctx.markers[EpochPhaseIdx.InProgress])
                             {
-                                CopyContext(threadCtx.Value, prevThreadCtx.Value);
+                                AtomicSwitch(threadCtx.Value, prevThreadCtx.Value, ctx.version);
                                 InitContext(threadCtx.Value, prevThreadCtx.Value.guid);
 
                                 if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.InProgress, ctx.version))
@@ -546,8 +554,6 @@ namespace FASTER.core
 
                                 if (notify)
                                 {
-                                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(prevThreadCtx.Value.guid, prevThreadCtx.Value.serialNum);
-
                                     if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, prevThreadCtx.Value.version))
                                     {
                                         GlobalMoveToNextCheckpointState(currentState);

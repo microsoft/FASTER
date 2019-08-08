@@ -30,6 +30,7 @@ namespace FASTER.core
             InitContext(ctx, guid);
             var prevCtx = new FasterExecutionContext();
             InitContext(prevCtx, guid);
+            prevCtx.version--;
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<Guid, ClientSession<Key, Value, Input, Output, Context, Functions>>(), null);
             var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, prevCtx, ctx);

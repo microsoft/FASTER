@@ -281,11 +281,12 @@ namespace FASTER.core
                     writer.WriteLine(startLogicalAddress);
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(headAddress);
-                    writer.WriteLine(numThreads);
-                    for (int i = 0; i < numThreads; i++)
+                    writer.WriteLine(checkpointTokens.Count);
+
+                    foreach (var kvp in checkpointTokens)
                     {
-                        writer.WriteLine(guids[i]);
-                        writer.WriteLine(checkpointTokens[guids[i]]);
+                        writer.WriteLine(kvp.Key);
+                        writer.WriteLine(kvp.Value);
                     }
 
                     // Write object log segment offsets

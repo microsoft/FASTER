@@ -32,6 +32,7 @@ namespace FASTER.core
             InitContext(threadCtx.Value, guid);
             prevThreadCtx.Value = new FasterExecutionContext();
             InitContext(prevThreadCtx.Value, guid);
+            prevThreadCtx.Value.version--;
             InternalRefresh();
             return threadCtx.Value.guid;
         }
@@ -62,6 +63,7 @@ namespace FASTER.core
                                 InitContext(threadCtx.Value, guid);
                                 prevThreadCtx.Value = new FasterExecutionContext();
                                 InitContext(prevThreadCtx.Value, guid);
+                                prevThreadCtx.Value.version--;
                                 threadCtx.Value.serialNum = serialNum;
                                 InternalRefresh();
                             }

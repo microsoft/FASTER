@@ -23,8 +23,8 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private FasterKV<Key, Value, Input, Output, Context, Functions> fht;
-        private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevCtx;
-        private FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx;
+        internal FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevCtx;
+        internal FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx;
 
         internal ClientSession(
             FasterKV<Key, Value, Input, Output, Context, Functions> fht,
