@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>FASTER.devices.AzureStorageDevice</id>
+    <id>Microsoft.FASTER.devices.AzureStorageDevice</id>
     <version>$version$</version>
-    <title>FASTER.devices.AzureStorageDevice</title>
+    <title>AzureStorageDevice for FASTER</title>
     <authors>Microsoft</authors>
     <owners>Microsoft</owners>
     <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
