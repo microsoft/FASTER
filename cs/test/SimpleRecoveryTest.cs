@@ -208,9 +208,8 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht2.Recover(token);
 
-            var s3 = fht2.StartClientSession();
-            // var guid = s1.ID;
-            // var s2 = fht2.ContinueClientSession(guid, out long lsn);
+            var guid = s1.ID;
+            var s3 = fht2.ContinueClientSession(guid, out long lsn);
             s3.ResumeThread();
 
             for (int key = 0; key < numOps; key++)
