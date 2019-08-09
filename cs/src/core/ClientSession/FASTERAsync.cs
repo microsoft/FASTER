@@ -21,7 +21,7 @@ namespace FASTER.core
         /// Complete outstanding pending operations
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync()
+        internal async ValueTask CompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             do
             {
@@ -32,10 +32,14 @@ namespace FASTER.core
                     ||
                     threadCtx.Value.phase == Phase.WAIT_PENDING)
                 {
-                    await CompleteIOPendingRequestsAsync(prevThreadCtx.Value);
-                    Debug.Assert(prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                    await CompleteIOPendingRequestsAsync(prevThreadCtx.Value, clientSession);
+                    clientSession.ResumeThread();
 
-                    await InternalRefreshAsync();
+                    Debug.Assert(prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                    
+                    await InternalRefreshAsync(clientSession);
+                    clientSession.ResumeThread();
+
                     CompleteRetryRequests(prevThreadCtx.Value);
 
                     done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
@@ -47,10 +51,14 @@ namespace FASTER.core
                       ||
                       threadCtx.Value.phase == Phase.WAIT_PENDING))
                 {
-                    await CompleteIOPendingRequestsAsync(threadCtx.Value);
+                    await CompleteIOPendingRequestsAsync(threadCtx.Value, clientSession);
+                    clientSession.ResumeThread();
+
                     Debug.Assert(threadCtx.Value.ioPendingRequests.Count == 0);
                 }
-                await InternalRefreshAsync();
+                await InternalRefreshAsync(clientSession);
+                clientSession.ResumeThread();
+
                 CompleteRetryRequests(threadCtx.Value);
 
                 done &= (threadCtx.Value.ioPendingRequests.Count == 0);
@@ -67,7 +75,7 @@ namespace FASTER.core
         /// Complete the ongoing checkpoint (if any)
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompleteCheckpointAsync()
+        internal async ValueTask CompleteCheckpointAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             // Thread has an active session.
             // So we need to constantly complete pending 
@@ -75,17 +83,20 @@ namespace FASTER.core
             // for the checkpoint to be proceed
             do
             {
-                await CompletePendingAsync();
+                await CompletePendingAsync(clientSession);
+                clientSession.ResumeThread();
+
                 if (_systemState.phase == Phase.REST)
                 {
-                    await CompletePendingAsync();
+                    await CompletePendingAsync(clientSession);
+                    clientSession.ResumeThread();
                     return;
                 }
             } while (true);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal async ValueTask InternalRefreshAsync()
+        internal async ValueTask InternalRefreshAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             epoch.ProtectAndDrain();
 
@@ -103,7 +114,8 @@ namespace FASTER.core
                 return;
             }
 
-            await HandleCheckpointingPhasesAsync();
+            await HandleCheckpointingPhasesAsync(clientSession);
+            clientSession.ResumeThread();
         }
 
 
@@ -121,7 +133,7 @@ namespace FASTER.core
             return false;
         }
 
-        private async ValueTask HandleCheckpointingPhasesAsync()
+        private async ValueTask HandleCheckpointingPhasesAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
@@ -190,15 +202,9 @@ namespace FASTER.core
 
                             if (!IsIndexFuzzyCheckpointCompleted())
                             {
-                                // Suspend
-                                var prevThreadCtxCopy = prevThreadCtx.Value;
-                                var threadCtxCopy = threadCtx.Value;
-                                SuspendSession();
-
+                                clientSession.SuspendThread();
                                 await IsIndexFuzzyCheckpointCompletedAsync();
-
-                                // Resume session
-                                ResumeSession(prevThreadCtxCopy, threadCtxCopy);
+                                clientSession.ResumeThread();
                             }
                             GlobalMoveToNextCheckpointState(currentState);
 
@@ -289,15 +295,9 @@ namespace FASTER.core
                                 {
                                     Debug.Assert(_hybridLogCheckpoint.flushedSemaphore != null);
 
-                                    // Suspend
-                                    var prevThreadCtxCopy = prevThreadCtx.Value;
-                                    var threadCtxCopy = threadCtx.Value;
-                                    SuspendSession();
-
+                                    clientSession.SuspendThread();
                                     await _hybridLogCheckpoint.flushedSemaphore.WaitAsync();
-
-                                    // Resume session
-                                    ResumeSession(prevThreadCtxCopy, threadCtxCopy);
+                                    clientSession.ResumeThread();
 
                                     _hybridLogCheckpoint.flushedSemaphore.Release();
 
@@ -310,15 +310,9 @@ namespace FASTER.core
 
                                     if (!notify)
                                     {
-                                        // Suspend
-                                        var prevThreadCtxCopy = prevThreadCtx.Value;
-                                        var threadCtxCopy = threadCtx.Value;
-                                        SuspendSession();
-
+                                        clientSession.SuspendThread();
                                         await IsIndexFuzzyCheckpointCompletedAsync();
-
-                                        // Resume session
-                                        ResumeSession(prevThreadCtxCopy, threadCtxCopy);
+                                        clientSession.ResumeThread();
 
                                         notify = true;
                                     }

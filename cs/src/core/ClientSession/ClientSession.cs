@@ -153,7 +153,9 @@ namespace FASTER.core
         public async ValueTask CompletePendingAsync()
         {
             ResumeThread();
-            await fht.CompletePendingAsync();
+            await fht.CompletePendingAsync(this);
+            ResumeThread();
+
             SuspendThread();
         }
 
@@ -177,7 +179,9 @@ namespace FASTER.core
         internal async ValueTask CompleteCheckpointAsync()
         {
             ResumeThread();
-            await fht.CompleteCheckpointAsync();
+            await fht.CompleteCheckpointAsync(this);
+            ResumeThread();
+
             SuspendThread();
         }
     }

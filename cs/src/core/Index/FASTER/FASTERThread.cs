@@ -221,7 +221,7 @@ namespace FASTER.core
             }
         }
 
-        internal async ValueTask CompleteIOPendingRequestsAsync(FasterExecutionContext context, CancellationToken token = default(CancellationToken))
+        internal async ValueTask CompleteIOPendingRequestsAsync(FasterExecutionContext context, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default(CancellationToken))
         {
             while (context.ioPendingRequests.Count > 0)
             {
@@ -233,17 +233,9 @@ namespace FASTER.core
                 }
                 else
                 {
-                    // Save context on continuation stack (from thread local)
-                    var prevThreadCtxCopy = prevThreadCtx.Value;
-                    var threadCtxCopy = threadCtx.Value;
-
-                    // Suspend epoch
-                    SuspendSession();
-
+                    clientSession.SuspendThread();
                     request = await context.readyResponses.DequeueAsync(token);
-
-                    // Resume session
-                    ResumeSession(prevThreadCtxCopy, threadCtxCopy);
+                    clientSession.ResumeThread();
                 }
 
                 InternalContinuePendingRequestAndCallback(context, request);
