@@ -207,7 +207,7 @@ namespace FASTER.test.recovery.sumstore.simple
             s0.Dispose();
             fht1.Dispose();
 
-
+            /*
             fht2.Recover(token);
 
             // var guid = s1.ID;
@@ -226,10 +226,11 @@ namespace FASTER.test.recovery.sumstore.simple
                 }
             }
             s3.Dispose();
+            fht2.Dispose();
+            */
             
 
             log.Close();
-            fht2.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
     }
@@ -298,3 +299,4 @@ namespace FASTER.test.recovery.sumstore.simple
         }
     }
 }
+ 
