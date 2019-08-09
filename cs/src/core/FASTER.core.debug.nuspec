@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>FASTER.Debug</id>
+    <id>Microsoft.FASTER.Debug</id>
     <version>$version$</version>
-    <title>FASTER.Debug</title>
+    <title>FASTER (Debug)</title>
     <authors>Microsoft</authors>
     <owners>Microsoft</owners>
     <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
