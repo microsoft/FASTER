@@ -10,21 +10,19 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public class GenericScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
+    public class VariableLengthBlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
         where Key : new()
         where Value : new()
     {
         private readonly int frameSize;
-        private readonly GenericAllocator<Key, Value> hlog;
+        private readonly VariableLengthBlittableAllocator<Key, Value> hlog;
         private readonly long beginAddress, endAddress;
-        private readonly GenericFrame<Key, Value> frame;
+        private readonly BlittableFrame frame;
         private readonly CountdownEvent[] loaded;
-        private readonly int recordSize;
 
         private bool first = true;
         private long currentAddress, nextAddress;
-        private Key currentKey;
-        private Value currentValue;
+        private long currentPhysicalAddress;
 
         /// <summary>
         /// Current address
@@ -38,7 +36,7 @@ namespace FASTER.core
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        public unsafe GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        public unsafe VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             this.hlog = hlog;
 
@@ -47,8 +45,6 @@ namespace FASTER.core
 
             this.beginAddress = beginAddress;
             this.endAddress = endAddress;
-
-            recordSize = hlog.GetRecordSize(0);
             currentAddress = -1;
             nextAddress = beginAddress;
 
@@ -62,7 +58,7 @@ namespace FASTER.core
                 return;
             }
 
-            frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
+            frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
             loaded = new CountdownEvent[frameSize];
 
             // Only load addresses flushed to disk
@@ -82,7 +78,7 @@ namespace FASTER.core
         /// <returns></returns>
         public ref Key GetKey()
         {
-            return ref currentKey;
+            return ref hlog.GetKey(currentPhysicalAddress);
         }
 
         /// <summary>
@@ -91,7 +87,7 @@ namespace FASTER.core
         /// <returns></returns>
         public ref Value GetValue()
         {
-            return ref currentValue;
+            return ref hlog.GetValue(currentPhysicalAddress);
         }
 
         /// <summary>
@@ -102,8 +98,6 @@ namespace FASTER.core
         public bool GetNext(out RecordInfo recordInfo)
         {
             recordInfo = default(RecordInfo);
-            currentKey = default(Key);
-            currentValue = default(Value);
 
             currentAddress = nextAddress;
             while (true)
@@ -125,12 +119,12 @@ namespace FASTER.core
                 }
 
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
-
-                var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
+                var offset = currentAddress & hlog.PageSizeMask;
 
                 if (currentAddress < hlog.HeadAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
+                var recordSize = hlog.GetRecordSize(hlog.GetPhysicalAddress(currentAddress));
                 // Check if record fits on page, if not skip to next page
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
@@ -141,35 +135,37 @@ namespace FASTER.core
                 if (currentAddress >= hlog.HeadAddress)
                 {
                     // Read record from cached page memory
-                    nextAddress = currentAddress + recordSize;
+                    var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
 
-                    var page = currentPage % hlog.BufferSize;
-
-                    if (hlog.values[page][offset].info.Invalid)
+                    if (hlog.GetInfo(_physicalAddress).Invalid)
+                    {
+                        currentAddress += hlog.GetRecordSize(_physicalAddress);
                         continue;
+                    }
 
-                    recordInfo = hlog.values[page][offset].info;
-                    currentKey = hlog.values[page][offset].key;
-                    currentValue = hlog.values[page][offset].value;
+                    currentPhysicalAddress = _physicalAddress;
+                    recordInfo = hlog.GetInfo(_physicalAddress);
+                    nextAddress = currentAddress + hlog.GetRecordSize(_physicalAddress);
                     return true;
                 }
 
-                nextAddress = currentAddress + recordSize;
+                var physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
 
-                var currentFrame = currentPage % frameSize;
-
-                if (frame.GetInfo(currentFrame, offset).Invalid)
+                if (hlog.GetInfo(physicalAddress).Invalid)
+                {
+                    currentAddress += hlog.GetRecordSize(physicalAddress);
                     continue;
+                }
 
-                recordInfo = frame.GetInfo(currentFrame, offset);
-                currentKey = frame.GetKey(currentFrame, offset);
-                currentValue = frame.GetValue(currentFrame, offset);
+                currentPhysicalAddress = physicalAddress;
+                recordInfo = hlog.GetInfo(physicalAddress);
+                nextAddress = currentAddress + hlog.GetRecordSize(physicalAddress);
                 return true;
             }
         }
 
         /// <summary>
-        /// Get next record using iterator
+        /// Get next record in iterator
         /// </summary>
         /// <param name="recordInfo"></param>
         /// <param name="key"></param>
@@ -177,17 +173,15 @@ namespace FASTER.core
         /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
-            key = default(Key);
-            value = default(Value);
+            throw new NotSupportedException("Use GetNext(out RecordInfo) to retrieve references to key/value");
+        }
 
-            if (GetNext(out recordInfo))
-            {
-                key = currentKey;
-                value = currentValue;
-                return true;
-            }
-
-            return false;
+        /// <summary>
+        /// Dispose the iterator
+        /// </summary>
+        public void Dispose()
+        {
+            frame?.Dispose();
         }
 
         private unsafe void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)
@@ -216,18 +210,6 @@ namespace FASTER.core
             loaded[currentFrame].Wait();
         }
 
-        /// <summary>
-        /// Dispose iterator
-        /// </summary>
-        public void Dispose()
-        {
-            if (loaded != null)
-                for (int i = 0; i < frameSize; i++)
-                    loaded[i]?.Wait();
-
-            frame?.Dispose();
-        }
-
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             if (errorCode != 0)
@@ -239,8 +221,9 @@ namespace FASTER.core
 
             if (result.freeBuffer1 != null)
             {
-                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, ref frame.GetPage(result.page % frame.frameSize));
+                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();
+                result.freeBuffer1 = null;
             }
 
             if (result.handle != null)
@@ -253,3 +236,5 @@ namespace FASTER.core
         }
     }
 }
+
+
