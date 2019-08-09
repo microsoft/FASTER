@@ -206,6 +206,7 @@ namespace FASTER.test.recovery.sumstore.simple
             s0.ResumeThread(); // should receive persistence callback
             s0.Dispose();
 
+            /*
             fht2.Recover(token);
 
             var guid = s1.ID;
@@ -224,10 +225,11 @@ namespace FASTER.test.recovery.sumstore.simple
                 }
             }
             s3.Dispose();
+            */
 
             log.Close();
             fht1.Dispose();
-            fht2.Dispose();
+            // fht2.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
     }
