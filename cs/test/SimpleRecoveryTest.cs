@@ -207,11 +207,14 @@ namespace FASTER.test.recovery.sumstore.simple
             s0.Dispose();
             fht1.Dispose();
 
-            /*
             fht2.Recover(token);
 
-            // var guid = s1.ID;
-            var s3 = fht2.StartClientSession(); // guid, out long lsn);
+            var guid = s1.ID;
+            var s3 = fht2.ContinueClientSession(guid, out long lsn);
+            Console.WriteLine($"Resuming {guid} persisted until offset {lsn}");
+
+            // var s3 = fht2.StartClientSession(); // guid, out long lsn);
+
             s3.ResumeThread();
 
             for (int key = 0; key < numOps; key++)
@@ -227,8 +230,6 @@ namespace FASTER.test.recovery.sumstore.simple
             }
             s3.Dispose();
             fht2.Dispose();
-            */
-            
 
             log.Close();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);

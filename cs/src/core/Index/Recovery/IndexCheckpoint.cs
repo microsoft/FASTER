@@ -47,10 +47,10 @@ namespace FASTER.core
             num_ofb_buckets = overflowBucketsAllocator.GetMaxValidAddress();
         }
 
-        internal bool IsIndexFuzzyCheckpointCompleted(bool waitUntilComplete = false)
+        internal bool IsIndexFuzzyCheckpointCompleted()
         {
-            bool completed1 = IsMainIndexCheckpointCompleted(waitUntilComplete);
-            bool completed2 = overflowBucketsAllocator.IsCheckpointCompleted(waitUntilComplete);
+            bool completed1 = IsMainIndexCheckpointCompleted();
+            bool completed2 = overflowBucketsAllocator.IsCheckpointCompleted();
             return completed1 && completed2;
         }
 
@@ -63,7 +63,7 @@ namespace FASTER.core
 
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of FASTER
-        private CountdownEvent mainIndexCheckpointEvent;
+        private int mainIndexCheckpointCallbackCount;
         private SemaphoreSlim mainIndexCheckpointSemaphore;
 
         private void TakeMainIndexCheckpoint(int tableVersion,
@@ -83,7 +83,7 @@ namespace FASTER.core
             Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
 
             uint chunkSize = (uint)(totalSize / numChunks);
-            mainIndexCheckpointEvent = new CountdownEvent(numChunks);
+            mainIndexCheckpointCallbackCount = numChunks;
             mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
             HashBucket* start = state[version].tableAligned;
             
@@ -99,20 +99,14 @@ namespace FASTER.core
         }
 
 
-        private bool IsMainIndexCheckpointCompleted(bool waitUntilComplete = false)
+        private bool IsMainIndexCheckpointCompleted()
         {
-            bool completed = mainIndexCheckpointEvent.IsSet;
-            if (!completed && waitUntilComplete)
-            {
-                mainIndexCheckpointEvent.Wait();
-                return true;
-            }
-            return completed;
+            return mainIndexCheckpointCallbackCount == 0;
         }
 
         private async ValueTask IsMainIndexCheckpointCompletedAsync()
         {
-            if (!mainIndexCheckpointEvent.IsSet)
+            if (mainIndexCheckpointCallbackCount > 0)
             {
                 await mainIndexCheckpointSemaphore.WaitAsync();
                 mainIndexCheckpointSemaphore.Release();
@@ -140,8 +134,7 @@ namespace FASTER.core
             }
             finally
             {
-                mainIndexCheckpointEvent.Signal();
-                if (mainIndexCheckpointEvent.CurrentCount == 0)
+                if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
                 {
                     mainIndexCheckpointSemaphore.Release();
                 }

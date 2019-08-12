@@ -877,7 +877,7 @@ namespace FASTER.core
                 notifyFlushedUntilAddressSemaphore = new SemaphoreSlim(0);
                 notifyDone = notifyFlushedUntilAddressSemaphore;
                 notifyFlushedUntilAddress = localTailAddress;
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress, false));
+                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress));
             }
         }
 
@@ -889,7 +889,7 @@ namespace FASTER.core
         {
             if (MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
             {
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress, false));
+                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress));
                 return true;
             }
             return false;
@@ -937,8 +937,7 @@ namespace FASTER.core
         /// Flush: send page to secondary store
         /// </summary>
         /// <param name="newSafeReadOnlyAddress"></param>
-        /// <param name="waitForPendingFlushComplete"></param>
-        public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool waitForPendingFlushComplete = false)
+        public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress)
         {
             if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
@@ -1119,7 +1118,13 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Address for notification of flushed-until
+        /// </summary>
         public long notifyFlushedUntilAddress;
+        /// <summary>
+        /// Semaphore for notification of flushed-until
+        /// </summary>
         public SemaphoreSlim notifyFlushedUntilAddressSemaphore;
 
         /// <summary>
@@ -1429,21 +1434,19 @@ namespace FASTER.core
         /// <param name="endLogicalAddress"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
-        /// <param name="completed"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out CountdownEvent completed, out SemaphoreSlim completedSemaphore)
+        /// <param name="completedSemaphore"></param>
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
         {
             int totalNumPages = (int)(endPage - startPage);
-            completed = new CountdownEvent(totalNumPages);
             completedSemaphore = new SemaphoreSlim(0);
+            var asyncResult = new PageAsyncFlushResult<Empty>
+            {
+                completedSemaphore = completedSemaphore,
+                count = totalNumPages
+            };
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
             {
-                var asyncResult = new PageAsyncFlushResult<Empty>
-                {
-                    handle = completed,
-                    handleSemaphore = completedSemaphore,
-                    count = 1
-                };
 
                 var pageSize = PageSize;
 

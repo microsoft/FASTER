@@ -68,6 +68,10 @@ namespace FASTER.core
                 {
                     return;
                 }
+                else
+                {
+                    throw new Exception("CompletePending loops");
+                }
             } while (true);
         }
 
@@ -83,6 +87,9 @@ namespace FASTER.core
             // for the checkpoint to be proceed
             do
             {
+                await InternalRefreshAsync(clientSession);
+                clientSession.ResumeThread();
+
                 await CompletePendingAsync(clientSession);
                 clientSession.ResumeThread();
 
@@ -133,45 +140,29 @@ namespace FASTER.core
             return false;
         }
 
-        private async ValueTask HandleCheckpointingPhasesAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        private async ValueTask HandleCheckpointingPhasesAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true)
         {
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
 
+            while (finalState.phase == Phase.INTERMEDIATE)
+                finalState = SystemState.Copy(ref _systemState);
+
             // We need to move from previousState to finalState one step at a time
             do
             {
-                // Coming back - need to complete older checkpoint first
-                if ((finalState.version > previousState.version + 1) ||
-                    (finalState.version > previousState.version && finalState.phase == Phase.REST))
-                {
-                    if (lastFullCheckpointVersion > previousState.version)
-                    {
-                        functions.CheckpointCompletionCallback(threadCtx.Value.guid, threadCtx.Value.serialNum);
-                    }
-
-                    // Get system out of intermediate phase
-                    while (finalState.phase == Phase.INTERMEDIATE)
-                    {
-                        finalState = SystemState.Copy(ref _systemState);
-                    }
-
-                    // Fast forward to current global state
-                    previousState.version = finalState.version;
-                    previousState.phase = finalState.phase;
-                }
-
-                // Don't play around when system state is being changed
-                if (finalState.phase == Phase.INTERMEDIATE)
-                {
-                    return;
-                }
-
-
                 var currentState = default(SystemState);
                 if (previousState.word == finalState.word)
                 {
                     currentState.word = previousState.word;
+                }
+                else if (previousState.version < finalState.version)
+                {
+                    if (finalState.phase <= Phase.PREPARE)
+                        previousState.version = finalState.version;
+                    else
+                        previousState.version = finalState.version - 1;
+                    currentState = GetNextState(previousState, CheckpointType.FULL);
                 }
                 else
                 {
@@ -200,7 +191,7 @@ namespace FASTER.core
                                 threadCtx.Value.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = false;
                             }
 
-                            if (!IsIndexFuzzyCheckpointCompleted())
+                            if (async && !IsIndexFuzzyCheckpointCompleted())
                             {
                                 clientSession.SuspendThread();
                                 await IsIndexFuzzyCheckpointCompletedAsync();
@@ -235,13 +226,13 @@ namespace FASTER.core
                         {
                             // Need to be very careful here as threadCtx is changing
                             FasterExecutionContext ctx;
-                            if (previousState.phase == Phase.PREPARE)
+                            if (previousState.phase == Phase.IN_PROGRESS)
                             {
-                                ctx = threadCtx.Value;
+                                ctx = prevThreadCtx.Value;
                             }
                             else
                             {
-                                ctx = prevThreadCtx.Value;
+                                ctx = threadCtx.Value;
                             }
 
                             if (!ctx.markers[EpochPhaseIdx.InProgress])
@@ -288,13 +279,12 @@ namespace FASTER.core
                                 }
                                 else
                                 {
-                                    notify = (_hybridLogCheckpoint.flushed != null) && _hybridLogCheckpoint.flushed.IsSet;
+                                    notify = (_hybridLogCheckpoint.flushedSemaphore != null) && _hybridLogCheckpoint.flushedSemaphore.CurrentCount > 0;
                                 }
 
-                                if (!notify)
+                                if (async && !notify)
                                 {
                                     Debug.Assert(_hybridLogCheckpoint.flushedSemaphore != null);
-
                                     clientSession.SuspendThread();
                                     await _hybridLogCheckpoint.flushedSemaphore.WaitAsync();
                                     clientSession.ResumeThread();
@@ -308,7 +298,7 @@ namespace FASTER.core
                                 {
                                     notify = notify && IsIndexFuzzyCheckpointCompleted();
 
-                                    if (!notify)
+                                    if (async && !notify)
                                     {
                                         clientSession.SuspendThread();
                                         await IsIndexFuzzyCheckpointCompletedAsync();
@@ -340,7 +330,6 @@ namespace FASTER.core
 
                                 if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.Value.version))
                                 {
-                                    lastFullCheckpointVersion = currentState.version;
                                     GlobalMoveToNextCheckpointState(currentState);
                                 }
 

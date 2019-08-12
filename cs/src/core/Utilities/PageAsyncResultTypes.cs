@@ -89,12 +89,11 @@ namespace FASTER.core
         internal bool partial;
         internal long fromAddress;
         internal long untilAddress;
-        internal CountdownEvent handle;
         internal IDevice objlogDevice;
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
         internal AutoResetEvent done;
-        internal SemaphoreSlim handleSemaphore;
+        internal SemaphoreSlim completedSemaphore;
 
         /// <summary>
         /// 
@@ -132,8 +131,7 @@ namespace FASTER.core
                 freeBuffer2 = null;
             }
 
-            handle?.Signal();
-            handleSemaphore?.Release();
+            completedSemaphore?.Release();
         }
     }
 }

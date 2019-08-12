@@ -65,7 +65,6 @@ namespace FASTER.core
                                 InitContext(prevThreadCtx.Value, guid);
                                 prevThreadCtx.Value.version--;
                                 threadCtx.Value.serialNum = serialNum;
-                                InternalRefresh();
                             }
                             else
                             {
@@ -75,6 +74,7 @@ namespace FASTER.core
                             }
 
                             MakeTransition(intermediateState, currentState);
+                            InternalRefresh();
                             return serialNum;
                         }
                     }

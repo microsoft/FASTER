@@ -47,7 +47,7 @@ namespace FASTER.core
         private readonly bool IsPinned;
         private readonly bool ReturnPhysicalAddress;
 
-        private CountdownEvent checkpointEvent;
+        private int checkpointCallbackCount;
         private SemaphoreSlim checkpointSemaphore;
 
         private ConcurrentQueue<long> freeList;
@@ -434,17 +434,10 @@ namespace FASTER.core
         /// <summary>
         /// Is checkpoint complete
         /// </summary>
-        /// <param name="waitUntilComplete"></param>
         /// <returns></returns>
-        public bool IsCheckpointCompleted(bool waitUntilComplete = false)
+        public bool IsCheckpointCompleted()
         {
-            bool completed = checkpointEvent.IsSet;
-            if (!completed && waitUntilComplete)
-            {
-                checkpointEvent.Wait();
-                return true;
-            }
-            return completed;
+            return checkpointCallbackCount == 0;
         }
 
         /// <summary>
@@ -463,7 +456,7 @@ namespace FASTER.core
             int recordsCountInLastLevel = localCount & PageSizeMask;
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
-            checkpointEvent = new CountdownEvent(numLevels);
+            checkpointCallbackCount = numLevels;
             checkpointSemaphore = new SemaphoreSlim(0);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
@@ -496,9 +489,10 @@ namespace FASTER.core
             }
             finally
             {
-                checkpointEvent.Signal();
-                if (checkpointEvent.CurrentCount == 0)
+                if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
+                {
                     checkpointSemaphore.Release();
+                }
                 Overlapped.Free(overlap);
             }
         }

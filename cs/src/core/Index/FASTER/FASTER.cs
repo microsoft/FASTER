@@ -56,8 +56,7 @@ namespace FASTER.core
         {
             INDEX_ONLY,
             HYBRID_LOG_ONLY,
-            FULL,
-            NONE
+            FULL
         }
 
         private CheckpointType _checkpointType;

@@ -40,7 +40,7 @@ namespace FASTER.test.recovery
             //issue call to checkpoint
             allocator.BeginCheckpoint(device, 0, out ulong numBytesWritten);
             //wait until complete
-            allocator.IsCheckpointCompleted(true);
+            allocator.IsCheckpointCompletedAsync().AsTask().Wait();
 
             allocator.Dispose();
 
@@ -103,7 +103,7 @@ namespace FASTER.test.recovery
                 ofb_device, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
 
             //wait until complete
-            hash_table1.IsIndexFuzzyCheckpointCompleted(true);
+            hash_table1.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
 
             var hash_table2 = new FasterBase();
             hash_table2.Initialize(size, 512);

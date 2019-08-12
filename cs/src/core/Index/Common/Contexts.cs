@@ -329,7 +329,6 @@ namespace FASTER.core
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
-        public CountdownEvent flushed;
         public SemaphoreSlim flushedSemaphore;
         public long started;
 
@@ -349,7 +348,7 @@ namespace FASTER.core
         public void Reset()
         {
             started = 0;
-            flushed = null;
+            flushedSemaphore = null;
             info.Reset();
             if (snapshotFileDevice != null) snapshotFileDevice.Close();
             if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Close();
