@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
-using FASTER.test.recovery.sumstore.simple;
 using System;
 
 namespace FixedLenStructSample
@@ -12,10 +11,6 @@ namespace FixedLenStructSample
         // This sample uses fixed length structs for keys and values
         static void Main()
         {
-            while (true)
-                new SimpleRecoveryTests().SimpleRecoveryTest3();
-            return;
-
             var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
             var fht = new FasterKV<FixedLenKey, FixedLenValue, string, string, Empty, FixedLenFunctions>
                 (128, new FixedLenFunctions(),

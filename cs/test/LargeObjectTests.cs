@@ -60,20 +60,9 @@ namespace FASTER.test.largeobjects
             }
         }
 
-
-        [Test]
-        public void LargeObjectTest1()
-        {
-            LargeObjectTest(CheckpointType.Snapshot);
-        }
-
-        [Test]
-        public void LargeObjectTest2()
-        {
-            LargeObjectTest(CheckpointType.FoldOver);
-        }
-
-        private void LargeObjectTest(CheckpointType checkpointType)
+        [TestCase(CheckpointType.FoldOver)]
+        [TestCase(CheckpointType.Snapshot)]
+        public void LargeObjectTest(CheckpointType checkpointType)
         {
             MyInput input = default(MyInput);
             MyLargeOutput output = new MyLargeOutput();

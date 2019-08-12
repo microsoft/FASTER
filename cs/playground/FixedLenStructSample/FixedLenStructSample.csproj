@@ -34,6 +34,5 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
-    <ProjectReference Include="..\..\test\FASTER.test.csproj" />
   </ItemGroup>
 </Project>
