@@ -23,6 +23,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            ThreadPool.SetMaxThreads(4, 4);
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
                 (128, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 29 });

@@ -90,7 +90,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
-        public void SimpleRecoveryTest2(CheckpointType checkpointType)
+        public async Task SimpleRecoveryTest2Async(CheckpointType checkpointType)
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
 
@@ -131,6 +131,7 @@ namespace FASTER.test.recovery.sumstore.simple
             {
                 value.numClicks = key;
                 s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
+                // await Task.Delay(1);
             }
 
             fht1.TakeFullCheckpoint(out Guid token);
@@ -146,6 +147,7 @@ namespace FASTER.test.recovery.sumstore.simple
             s0.Dispose();
             fht1.Dispose();
 
+            /*
             fht2.Recover(token); // sync, does not require session
 
             var guid = s1.ID;
@@ -165,6 +167,7 @@ namespace FASTER.test.recovery.sumstore.simple
                     }
                 }
             }
+            */
 
             fht2.Dispose();
             log.Close();
