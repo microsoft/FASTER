@@ -28,6 +28,7 @@ namespace FASTER.core
                 if (0 == Interlocked.CompareExchange(ref instances[i], 1, 0))
                 {
                     id = i;
+                    values[id] = default(T);
                     return;
                 }
             }
@@ -60,6 +61,7 @@ namespace FASTER.core
         public void Dispose()
         {
             instances[id] = 0;
+            values[id] = default(T);
         }
 
         public T Value
