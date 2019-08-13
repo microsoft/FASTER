@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading;
 
 namespace FASTER.core
@@ -17,15 +18,22 @@ namespace FASTER.core
 
         [ThreadStatic]
         private static T[] values;
+        [ThreadStatic]
+        private static int t_iid;
 
         private readonly int id;
+        private readonly int iid;
+
         private static readonly int[] instances = new int[kMaxInstances];
+        private static int instanceId = 0;
 
         public FastThreadLocal()
         {
+            iid = Interlocked.Increment(ref instanceId);
+
             for (int i = 0; i < kMaxInstances; i++)
             {
-                if (0 == Interlocked.CompareExchange(ref instances[i], 1, 0))
+                if (0 == Interlocked.CompareExchange(ref instances[i], iid, 0))
                 {
                     id = i;
                     return;
@@ -37,21 +45,19 @@ namespace FASTER.core
         public void InitializeThread()
         {
             if (values == null)
+            {
                 values = new T[kMaxInstances];
+            }
+            if (t_iid != iid)
+            {
+                t_iid = iid;
+                values[id] = default(T);
+            }
         }
 
         public void DisposeThread()
         {
-            Value = default(T);
-
-            // Dispose values only if there are no other
-            // instances active for this thread
-            for (int i = 0; i < kMaxInstances; i++)
-            {
-                if ((instances[i] == 1) && (i != id))
-                    return;
-            }
-            values = null;
+            values[id] = default(T);
         }
 
         /// <summary>
@@ -68,6 +74,6 @@ namespace FASTER.core
             set => values[id] = value;
         }
 
-        public bool IsInitializedForThread => values != null;
+        public bool IsInitializedForThread => (values != null) && (iid == t_iid);
     }
 }
