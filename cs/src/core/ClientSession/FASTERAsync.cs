@@ -101,7 +101,7 @@ namespace FASTER.core
                     return;
                 }
 
-                if (count++ == 10000) throw new Exception("CompleteCheckpointAsync loop too long");
+                if (count++ == 10000) throw new Exception("CompleteCheckpointAsync loop too long " + threadCtx.Value.phase + threadCtx.Value.version + ":" + _systemState.phase + _systemState.version);
             } while (true);
         }
 
