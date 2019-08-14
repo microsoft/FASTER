@@ -49,7 +49,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0 /Tests:"SessionTest,SimpleRecoveryTest"'
+      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
 
   - task: VSTest@2
     inputs:
@@ -61,4 +61,4 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0 /Tests:"SimpleRecoveryTest"'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
