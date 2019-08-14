@@ -1,6 +1,6 @@
 variables:
   solution: 'cs/FASTER.sln'
-  RunAzureTests: 'yes'
+  RunAzureTests: 'no'
 
 jobs:
 - job: 'csharpWindows'  
