@@ -49,7 +49,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0 /Tests:"SimpleRecoveryTest"'
+      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0 /Tests:"SessionTest,SimpleRecoveryTest"'
 
   - task: VSTest@2
     inputs:
