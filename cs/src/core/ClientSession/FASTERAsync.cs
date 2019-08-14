@@ -85,6 +85,7 @@ namespace FASTER.core
             // So we need to constantly complete pending 
             // and refresh (done inside CompletePending)
             // for the checkpoint to be proceed
+            int count = 0;
             do
             {
                 await InternalRefreshAsync(clientSession);
@@ -99,6 +100,8 @@ namespace FASTER.core
                     clientSession.ResumeThread();
                     return;
                 }
+
+                if (count++ == 10000) throw new Exception("CompleteCheckpointAsync loop too long");
             } while (true);
         }
 
@@ -145,8 +148,14 @@ namespace FASTER.core
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
 
+            int count = 0;
             while (finalState.phase == Phase.INTERMEDIATE)
+            {
                 finalState = SystemState.Copy(ref _systemState);
+                if (count++ == 10000) throw new Exception("Intermediate too long");
+            }
+
+            count = 0;
 
             // We need to move from previousState to finalState one step at a time
             do
@@ -351,6 +360,7 @@ namespace FASTER.core
                 threadCtx.Value.version = currentState.version;
 
                 previousState.word = currentState.word;
+                if (count++ == 10000) throw new Exception("HandleCheckpointingPhases do loop too long " + previousState + ":" + finalState);
             } while (previousState.word != finalState.word);
         }
     }
