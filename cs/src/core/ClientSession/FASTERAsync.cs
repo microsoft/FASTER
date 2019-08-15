@@ -109,6 +109,7 @@ namespace FASTER.core
         internal async ValueTask InternalRefreshAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             epoch.ProtectAndDrain();
+            epoch.Check();
 
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref _systemState);

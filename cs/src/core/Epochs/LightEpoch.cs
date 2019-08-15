@@ -321,6 +321,22 @@ namespace FASTER.core
             return SafeToReclaimEpoch;
         }
 
+        public void Check()
+        {
+            int count = 0;
+            for (int index = 1; index <= numEntries; ++index)
+            {
+                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                if (0 != entry_epoch && entry_epoch < int.MaxValue)
+                {
+                    count++;
+                }
+            }
+
+            if (count > 1)
+                throw new Exception("Unexpected epoch entries");
+        }
+
         /// <summary>
         /// Reserve entry for thread. This method relies on the fact that no
         /// thread will ever have ID 0.
