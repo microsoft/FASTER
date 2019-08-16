@@ -320,10 +320,10 @@ namespace FASTER.core
             {
                 BlockAllocateReadCache(recordSize, out newLogicalAddress);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, ctx.version,
-                                     true, false, false,
-                                     entry.Address);
+                readcache.WriteInfo(physicalAddress, ctx.version,
+                                    true, false, false,
+                                    entry.Address,
+                                    recordSize);
                 readcache.ShallowCopy(ref pendingContext.key.Get(), ref readcache.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
@@ -333,10 +333,10 @@ namespace FASTER.core
             {
                 BlockAllocate(recordSize, out newLogicalAddress);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, ctx.version,
-                                     true, false, false,
-                                     latestLogicalAddress);
+                hlog.WriteInfo(newPhysicalAddress, ctx.version,
+                               true, false, false,
+                               latestLogicalAddress,
+                               recordSize);
                 hlog.ShallowCopy(ref pendingContext.key.Get(), ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
@@ -444,7 +444,7 @@ namespace FASTER.core
             #endregion
 
             // Optimization for most common case
-            if (threadCtx.Value.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
+            if (threadCtx.Value.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone && hlog.CanWriteInPlace(ref key, ref value, physicalAddress))
             {
                 functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
                 return OperationStatus.SUCCESS;
@@ -531,7 +531,7 @@ namespace FASTER.core
             #region Normal processing
 
             // Mutable Region: Update the record in-place
-            if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
+            if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone && hlog.CanWriteInPlace(ref key, ref value, physicalAddress))
             {
                 functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
                 status = OperationStatus.SUCCESS;
@@ -548,13 +548,14 @@ namespace FASTER.core
                 var recordSize = hlog.GetRecordSize(ref key, ref value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                                        threadCtx.Value.version,
-                                        true, false, false,
-                                        latestLogicalAddress);
+                hlog.WriteInfo(newPhysicalAddress,
+                               threadCtx.Value.version,
+                               true, false, false,
+                               latestLogicalAddress,
+                               recordSize);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref key, ref value,
-                                        ref hlog.GetValue(newPhysicalAddress));
+                                       ref hlog.GetValue(newPhysicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -852,10 +853,10 @@ namespace FASTER.core
                                 hlog.GetRecordSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, threadCtx.Value.version,
-                                        true, false, false,
-                                        latestLogicalAddress);
+                hlog.WriteInfo(newPhysicalAddress, threadCtx.Value.version,
+                               true, false, false,
+                               latestLogicalAddress,
+                               recordSize);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
@@ -1133,10 +1134,10 @@ namespace FASTER.core
                                 hlog.GetRecordSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, pendingContext.version,
-                                        true, false, false,
-                                        latestLogicalAddress);
+                hlog.WriteInfo(newPhysicalAddress, pendingContext.version,
+                               true, false, false,
+                               latestLogicalAddress,
+                               recordSize);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
@@ -1306,10 +1307,10 @@ namespace FASTER.core
             }
             BlockAllocate(recordSize, out long newLogicalAddress);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-            RecordInfo.WriteInfo(ref recordInfo, ctx.version,
-                                true, false, false,
-                                latestLogicalAddress);
+            hlog.WriteInfo(newPhysicalAddress, ctx.version,
+                           true, false, false,
+                           latestLogicalAddress,
+                           recordSize);
             hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
             if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
@@ -1573,10 +1574,11 @@ namespace FASTER.core
                 var recordSize = hlog.GetRecordSize(ref key, ref value); 
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                                        threadCtx.Value.version,
-                                        true, true, false,
-                                        latestLogicalAddress);
+                hlog.WriteInfo(newPhysicalAddress,
+                               threadCtx.Value.version,
+                               true, true, false,
+                               latestLogicalAddress,
+                               recordSize);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);
