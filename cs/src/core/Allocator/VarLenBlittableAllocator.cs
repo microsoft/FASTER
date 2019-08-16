@@ -111,6 +111,12 @@ namespace FASTER.core
         public override int GetRecordSize(long physicalAddress)
         {
             ref var capacity = ref GetCapacity(physicalAddress);
+            if (capacity == 0)
+            {
+                var size = RecordInfo.GetLength() + kCapacityLength + KeySize(physicalAddress) + ValueSize(physicalAddress);
+                size = (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
+                return size;
+            }
             return capacity;
         }
 
