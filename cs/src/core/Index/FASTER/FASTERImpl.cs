@@ -320,7 +320,7 @@ namespace FASTER.core
             {
                 BlockAllocateReadCache(recordSize, out newLogicalAddress);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                readcache.WriteInfo(physicalAddress, ctx.version,
+                readcache.WriteInfo(newPhysicalAddress, ctx.version,
                                     true, false, false,
                                     entry.Address,
                                     recordSize);
