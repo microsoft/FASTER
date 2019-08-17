@@ -152,11 +152,7 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask CompletePendingAsync()
         {
-            ResumeThread();
             await fht.CompletePendingAsync(this);
-            ResumeThread();
-
-            SuspendThread();
         }
 
         /// <summary>
@@ -178,11 +174,7 @@ namespace FASTER.core
         /// <returns></returns>
         internal async ValueTask CompleteCheckpointAsync()
         {
-            ResumeThread();
             await fht.CompleteCheckpointAsync(this);
-            ResumeThread();
-
-            SuspendThread();
         }
     }
 }

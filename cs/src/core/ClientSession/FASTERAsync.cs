@@ -23,56 +23,41 @@ namespace FASTER.core
         /// <returns></returns>
         internal async ValueTask CompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
-            do
+            bool done = true;
+
+            #region Previous pending requests
+            if (threadCtx.Value.phase == Phase.IN_PROGRESS
+                ||
+                threadCtx.Value.phase == Phase.WAIT_PENDING)
             {
-                bool done = true;
 
-                #region Previous pending requests
-                if (threadCtx.Value.phase == Phase.IN_PROGRESS
-                    ||
-                    threadCtx.Value.phase == Phase.WAIT_PENDING)
-                {
-                    await CompleteIOPendingRequestsAsync(prevThreadCtx.Value, clientSession);
-                    clientSession.ResumeThread();
+                await CompleteIOPendingRequestsAsync(prevThreadCtx.Value, clientSession);
+                Debug.Assert(prevThreadCtx.Value.ioPendingRequests.Count == 0);
 
-                    Debug.Assert(prevThreadCtx.Value.ioPendingRequests.Count == 0);
-                    
-                    await InternalRefreshAsync(clientSession);
-                    clientSession.ResumeThread();
+                CompleteRetryRequests(prevThreadCtx.Value);
 
-                    CompleteRetryRequests(prevThreadCtx.Value);
+                done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                done &= (prevThreadCtx.Value.retryRequests.Count == 0);
+            }
+            #endregion
 
-                    done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
-                    done &= (prevThreadCtx.Value.retryRequests.Count == 0);
-                }
-                #endregion
+            if (!(threadCtx.Value.phase == Phase.IN_PROGRESS
+                  ||
+                  threadCtx.Value.phase == Phase.WAIT_PENDING))
+            {
+                await CompleteIOPendingRequestsAsync(threadCtx.Value, clientSession);
+                Debug.Assert(threadCtx.Value.ioPendingRequests.Count == 0);
+            }
 
-                if (!(threadCtx.Value.phase == Phase.IN_PROGRESS
-                      ||
-                      threadCtx.Value.phase == Phase.WAIT_PENDING))
-                {
-                    await CompleteIOPendingRequestsAsync(threadCtx.Value, clientSession);
-                    clientSession.ResumeThread();
+            CompleteRetryRequests(threadCtx.Value);
 
-                    Debug.Assert(threadCtx.Value.ioPendingRequests.Count == 0);
-                }
-                await InternalRefreshAsync(clientSession);
-                clientSession.ResumeThread();
+            done &= (threadCtx.Value.ioPendingRequests.Count == 0);
+            done &= (threadCtx.Value.retryRequests.Count == 0);
 
-                CompleteRetryRequests(threadCtx.Value);
-
-                done &= (threadCtx.Value.ioPendingRequests.Count == 0);
-                done &= (threadCtx.Value.retryRequests.Count == 0);
-
-                if (done)
-                {
-                    return;
-                }
-                else
-                {
-                    throw new Exception("CompletePending loops");
-                }
-            } while (true);
+            if (!done)
+            {
+                throw new Exception("CompletePendingAsync did not complete");
+            }
         }
 
         /// <summary>
@@ -89,15 +74,11 @@ namespace FASTER.core
             do
             {
                 await InternalRefreshAsync(clientSession);
-                clientSession.ResumeThread();
-
                 await CompletePendingAsync(clientSession);
-                clientSession.ResumeThread();
 
                 if (_systemState.phase == Phase.REST)
                 {
                     await CompletePendingAsync(clientSession);
-                    clientSession.ResumeThread();
                     return;
                 }
 

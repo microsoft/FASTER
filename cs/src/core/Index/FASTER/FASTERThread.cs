@@ -229,16 +229,23 @@ namespace FASTER.core
 
                 if (context.readyResponses.Count > 0)
                 {
-                    context.readyResponses.TryDequeue(out request);
+                    clientSession.ResumeThread();
+                    while (context.readyResponses.Count > 0)
+                    {
+                        context.readyResponses.TryDequeue(out request);
+                        InternalContinuePendingRequestAndCallback(context, request);
+                    }
+                    clientSession.SuspendThread();
                 }
                 else
                 {
-                    clientSession.SuspendThread();
                     request = await context.readyResponses.DequeueAsync(token);
+
                     clientSession.ResumeThread();
+                    InternalContinuePendingRequestAndCallback(context, request);
+                    clientSession.SuspendThread();
                 }
 
-                InternalContinuePendingRequestAndCallback(context, request);
             }
         }
 
