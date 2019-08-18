@@ -1112,7 +1112,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="tailAddress"></param>
         /// <param name="headAddress"></param>
-        public void RecoveryReset(long tailAddress, long headAddress)
+        /// <param name="beginAddress"></param>
+        public void RecoveryReset(long tailAddress, long headAddress, long beginAddress)
         {
             long tailPage = GetPage(tailAddress);
             long offsetInPage = GetOffsetInPage(tailAddress);
@@ -1125,7 +1126,8 @@ namespace FASTER.core
             var nextPageIndex = (pageIndex + 1) % BufferSize;
             if (tailAddress > 0)
                 AllocatePage(nextPageIndex);
-            
+
+            BeginAddress = beginAddress;
             HeadAddress = headAddress;
             SafeHeadAddress = headAddress;
             FlushedUntilAddress = tailAddress;
