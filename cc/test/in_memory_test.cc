@@ -680,7 +680,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
       return false;
     }
     inline void unlock(bool replaced) {
-      if(replaced) {
+      if(!replaced) {
         // Just turn off "locked" bit and increase gen number.
         uint64_t sub_delta = ((uint64_t)1 << 62) - 1;
         control_.fetch_sub(sub_delta);
@@ -1409,7 +1409,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
       return false;
     }
     inline void unlock(bool replaced) {
-      if(replaced) {
+      if(!replaced) {
         // Just turn off "locked" bit and increase gen number.
         uint64_t sub_delta = ((uint64_t)1 << 62) - 1;
         control_.fetch_sub(sub_delta);
