@@ -121,16 +121,22 @@ namespace FASTER.core
             
 
             // Read appropriate hybrid log pages into memory
-            RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress);
+            RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress, recoveredHLCInfo.info.beginAddress);
 
             // Recover session information
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
         }
 
-        private void RestoreHybridLog(long untilAddress, long headAddress)
+        private void RestoreHybridLog(long untilAddress, long headAddress, long beginAddress)
         {
-            // Special case: we do not load any records into memory
-            if (headAddress == untilAddress)
+            Debug.Assert(beginAddress <= headAddress);
+            Debug.Assert(headAddress <= untilAddress);
+
+            // Special cases: we do not load any records into memory
+            if (
+                (beginAddress == untilAddress) || // Empty log
+                ((headAddress == untilAddress) && (hlog.GetOffsetInPage(headAddress) == 0)) // Empty in-memory page
+                )
             {
                 hlog.AllocatePage(hlog.GetPageIndexForAddress(headAddress));
             }
@@ -171,7 +177,7 @@ namespace FASTER.core
                 }
             }
 
-            hlog.RecoveryReset(untilAddress, headAddress);
+            hlog.RecoveryReset(untilAddress, headAddress, beginAddress);
         }
 
 
