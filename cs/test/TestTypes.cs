@@ -96,9 +96,10 @@ namespace FASTER.test
             dst = src;
         }
 
-        public void ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
             dst = src;
+            return true;
         }
 
         // RMW functions
@@ -108,10 +109,11 @@ namespace FASTER.test
             value.vfield2 = input.ifield2;
         }
 
-        public void InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
+            return true;
         }
 
         public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
@@ -172,9 +174,10 @@ namespace FASTER.test
             dst = src;
         }
 
-        public void ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
         {
             dst = src;
+            return true;
         }
 
         // RMW functions
@@ -184,10 +187,11 @@ namespace FASTER.test
             value.vfield2 = input.ifield2;
         }
 
-        public void InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
+            return true;
         }
 
         public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)

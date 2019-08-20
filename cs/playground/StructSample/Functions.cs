@@ -19,12 +19,12 @@ namespace StructSample
 
         // Write functions
         public void SingleWriter(ref long key, ref long src, ref long dst) => dst = src;
-        public void ConcurrentWriter(ref long key, ref long src, ref long dst) => dst = src;
+        public bool ConcurrentWriter(ref long key, ref long src, ref long dst) { dst = src; return true; }
 
         // RMW functions
         public void InitialUpdater(ref long key, ref long input, ref long value) => value = input;
         public void CopyUpdater(ref long key, ref long input, ref long oldv, ref long newv) => newv = oldv + input;
-        public void InPlaceUpdater(ref long key, ref long input, ref long value) => value += input;
+        public bool InPlaceUpdater(ref long key, ref long input, ref long value) { value += input; return true; }
 
         // Completion callbacks
         public void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status s) { }
@@ -46,7 +46,7 @@ namespace StructSample
 
         // Write functions
         public void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
-        public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
 
         // RMW functions
         public void InitialUpdater(ref Key key, ref Input input, ref Value value)
@@ -59,10 +59,11 @@ namespace StructSample
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
         }
-        public void InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
+            return true;
         }
 
         // Completion callbacks

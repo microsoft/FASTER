@@ -444,7 +444,7 @@ namespace FASTER.core
             // Optimization for most common case
             if (threadCtx.Value.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                if (variableLengthFunctions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
+                if (functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
                 {
                     return OperationStatus.SUCCESS;
                 }
@@ -533,7 +533,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                if (variableLengthFunctions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
+                if (functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
                 {
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease; // Release shared latch (if acquired)
@@ -712,7 +712,7 @@ namespace FASTER.core
             // Optimization for the most common case
             if (threadCtx.Value.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                if (variableLengthFunctions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
+                if (functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
                 {
                     return OperationStatus.SUCCESS;
                 }
@@ -806,7 +806,7 @@ namespace FASTER.core
                     Debug.Assert(hlog.GetInfo(physicalAddress).Version == threadCtx.Value.version);
                 }
 
-                if (variableLengthFunctions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
+                if (functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
                 {
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease; // Release shared latch (if acquired)
@@ -1099,7 +1099,7 @@ namespace FASTER.core
                     Debug.Assert(hlog.GetInfo(physicalAddress).Version == threadCtx.Value.version);
                 }
 
-                if (variableLengthFunctions.InPlaceUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(physicalAddress)))
+                if (functions.InPlaceUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(physicalAddress)))
                 {
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease;
@@ -1553,7 +1553,7 @@ namespace FASTER.core
                             // Write default value
                             // Ignore return value, the record is already marked
                             Value v = default(Value);
-                            variableLengthFunctions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                            functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
                         }
 
                         status = OperationStatus.SUCCESS;
@@ -1572,7 +1572,7 @@ namespace FASTER.core
                     // Write default value
                     // Ignore return value, the record is already marked
                     Value v = default(Value);
-                    variableLengthFunctions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                    functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
                 }
 
                 status = OperationStatus.SUCCESS;

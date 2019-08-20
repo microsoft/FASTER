@@ -15,7 +15,6 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
-        private readonly IVariableLengthFunctions<Key, Value, Input> variableLengthFunctions;
         private readonly AllocatorBase<Key, Value> hlog;
         private readonly AllocatorBase<Key, Value> readcache;
         private readonly IFasterEqualityComparer<Key> comparer;
@@ -84,7 +83,7 @@ namespace FASTER.core
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
-        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value, Input> variableLengthStructSettings = null)
+        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
             threadCtx = new FastThreadLocal<FasterExecutionContext>();
             prevThreadCtx = new FastThreadLocal<FasterExecutionContext>();
@@ -126,13 +125,11 @@ namespace FASTER.core
             {
                 if (variableLengthStructSettings != null)
                 {
-                    variableLengthFunctions = variableLengthStructSettings.functions;
-
-                    hlog = new VariableLengthBlittableAllocator<Key, Value, Input>(logSettings, variableLengthStructSettings, this.comparer, null, epoch);
+                    hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings, this.comparer, null, epoch);
                     Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                     if (UseReadCache)
                     {
-                        readcache = new VariableLengthBlittableAllocator<Key, Value, Input>(
+                        readcache = new VariableLengthBlittableAllocator<Key, Value>(
                             new LogSettings
                             {
                                 PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
@@ -183,12 +180,6 @@ namespace FASTER.core
                     ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }
             }
-
-            if (variableLengthFunctions == null)
-                variableLengthFunctions = functions as IVariableLengthFunctions<Key, Value, Input>;
-
-            if (variableLengthFunctions == null)
-                variableLengthFunctions = new FixedLengthFunctions<Key, Value, Input, Output, Context, Functions>(functions);
 
             hlog.Initialize();
 

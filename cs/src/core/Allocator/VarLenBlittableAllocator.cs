@@ -15,7 +15,7 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
-    public unsafe sealed class VariableLengthBlittableAllocator<Key, Value, Input> : AllocatorBase<Key, Value>
+    public unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -33,7 +33,7 @@ namespace FASTER.core
         internal readonly IVariableLengthStruct<Key> KeyLength;
         internal readonly IVariableLengthStruct<Value> ValueLength;
 
-        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value, Input> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
+        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
             : base(settings, comparer, evictCallback, epoch)
         {
             values = new byte[BufferSize][];
@@ -426,7 +426,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new VariableLengthBlittableScanIterator<Key, Value, Input>(this, beginAddress, endAddress, scanBufferingMode);
+            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode);
         }
 
 

@@ -36,7 +36,7 @@ namespace VarLenStructSample
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null,
                 new VarLenTypeComparer(),
-                new VariableLengthStructSettings<VarLenType, VarLenType, int[]>
+                new VariableLengthStructSettings<VarLenType, VarLenType>
                   { keyLength = new VarLenLength(), valueLength = new VarLenLength() }
                 );
             fht.StartSession();

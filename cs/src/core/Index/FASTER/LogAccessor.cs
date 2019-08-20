@@ -182,15 +182,14 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         public void Compact(long untilAddress)
         {
-            var variableLengthStructSettings = default(VariableLengthStructSettings<Key, Value, Input>);
-            if (allocator is VariableLengthBlittableAllocator<Key, Value, Input> varLen)
+            var variableLengthStructSettings = default(VariableLengthStructSettings<Key, Value>);
+            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
                 var functions = new LogVariableCompactFunctions(varLen);
-                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value, Input>
+                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
                     keyLength = varLen.KeyLength,
                     valueLength = varLen.ValueLength,
-                    functions = functions,
                 };
 
                 Compact(functions, untilAddress, variableLengthStructSettings);
@@ -201,7 +200,7 @@ namespace FASTER.core
             }
         }
 
-        private void Compact<T>(T functions, long untilAddress, VariableLengthStructSettings<Key, Value, Input> variableLengthStructSettings)
+        private void Compact<T>(T functions, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
             where T : IFunctions<Key, Value, Input, Output, Context>
         {
             var originalUntilAddress = untilAddress;
@@ -296,11 +295,11 @@ namespace FASTER.core
             }
         }
 
-        private class LogVariableCompactFunctions : IFunctions<Key, Value, Input, Output, Context>, IVariableLengthFunctions<Key, Value, Input>
+        private class LogVariableCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
-            private VariableLengthBlittableAllocator<Key, Value, Input> allocator;
+            private VariableLengthBlittableAllocator<Key, Value> allocator;
 
-            public LogVariableCompactFunctions(VariableLengthBlittableAllocator<Key, Value, Input> allocator)
+            public LogVariableCompactFunctions(VariableLengthBlittableAllocator<Key, Value> allocator)
             {
                 this.allocator = allocator;
             }
@@ -327,26 +326,16 @@ namespace FASTER.core
             public void SingleWriter(ref Key key, ref Value src, ref Value dst) { allocator.ShallowCopy(ref src, ref dst); }
             public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
             public void DeleteCompletionCallback(ref Key key, Context ctx) { }
-
-            void IFunctions<Key, Value, Input, Output, Context>.InPlaceUpdater(ref Key key, ref Input input, ref Value value)
-            {
-                throw new NotImplementedException();
-            }
-
-            void IFunctions<Key, Value, Input, Output, Context>.ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
-            {
-                throw new NotImplementedException();
-            }
         }
 
         private class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
             public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
-            public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; }
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
             public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
-            public void InPlaceUpdater(ref Key key, ref Input input, ref Value value) { }
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) { return true; }
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
             public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
             public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }

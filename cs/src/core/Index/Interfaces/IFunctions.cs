@@ -76,7 +76,7 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="value"></param>
-        void InPlaceUpdater(ref Key key, ref Input input, ref Value value);
+        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value);
 
         /// <summary>
         /// Single reader
@@ -110,39 +110,6 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="src"></param>
         /// <param name="dst"></param>
-        void ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
-    }
-
-    /// <summary>
-    /// Callback functions to FASTER, should be used with variable length structs
-    /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Input"></typeparam>
-    public interface IVariableLengthFunctions<Key, Value, Input>
-    {
-        /// <summary>
-        /// Concurrent writer
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="src"></param>
-        /// <param name="dst"></param>
-        /// <returns>
-        /// <code>true</code> - if it is possible to perform in place edit
-        /// <code>false</code> - if a new record has to be created
-        /// </returns>
         bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
-
-        /// <summary>
-        /// In-place update for RMW
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <returns>
-        /// <code>true</code> - if it is possible to perform in place edit
-        /// <code>false</code> - if a new record has to be created
-        /// </returns>
-        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value);
     }
 }
