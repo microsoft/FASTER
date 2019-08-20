@@ -145,6 +145,10 @@ namespace FASTER.core
         /// </summary>
         public long headAddress;
         /// <summary>
+        /// Begin address
+        /// </summary>
+        public long beginAddress;
+        /// <summary>
         /// Guid array
         /// </summary>
         public Guid[] guids;
@@ -216,6 +220,9 @@ namespace FASTER.core
             headAddress = long.Parse(value);
 
             value = reader.ReadLine();
+            beginAddress = long.Parse(value);
+
+            value = reader.ReadLine();
             numThreads = int.Parse(value);
 
             for (int i = 0; i < numThreads; i++)
@@ -281,8 +288,9 @@ namespace FASTER.core
                     writer.WriteLine(startLogicalAddress);
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(headAddress);
-                    writer.WriteLine(checkpointTokens.Count);
+                    writer.WriteLine(beginAddress);
 
+                    writer.WriteLine(checkpointTokens.Count);
                     foreach (var kvp in checkpointTokens)
                     {
                         writer.WriteLine(kvp.Key);
@@ -315,6 +323,7 @@ namespace FASTER.core
             Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
             Debug.WriteLine("Head Address: {0}", headAddress);
+            Debug.WriteLine("Begin Address: {0}", beginAddress);
             Debug.WriteLine("Num sessions recovered: {0}", numThreads);
             Debug.WriteLine("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens)

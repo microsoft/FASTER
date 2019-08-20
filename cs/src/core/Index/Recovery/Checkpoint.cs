@@ -250,6 +250,7 @@ namespace FASTER.core
                             }
 
                             _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
+                            _hybridLogCheckpoint.info.beginAddress = hlog.BeginAddress;
 
                             if (FoldOverSnapshot)
                             {
