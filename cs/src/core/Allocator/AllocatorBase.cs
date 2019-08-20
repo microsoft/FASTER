@@ -264,21 +264,6 @@ namespace FASTER.core
         public abstract ref RecordInfo GetInfoFromBytePointer(byte* ptr);
 
         /// <summary>
-        /// Writes record info to specified physical address
-        /// </summary>
-        /// <param name="physicalAddress"></param>
-        /// <param name="checkpointVersion"></param>
-        /// <param name="final"></param>
-        /// <param name="tombstone"></param>
-        /// <param name="invalidBit"></param>
-        /// <param name="previousAddress"></param>
-        /// <param name="recordSize"></param>
-        public virtual void WriteInfo(long physicalAddress, int checkpointVersion, bool final, bool tombstone, bool invalidBit, long previousAddress, int recordSize)
-        {
-            RecordInfo.WriteInfo(ref GetInfo(physicalAddress), checkpointVersion, final, tombstone, invalidBit, previousAddress);
-        }
-
-        /// <summary>
         /// Get key
         /// </summary>
         /// <param name="physicalAddress"></param>
@@ -339,16 +324,6 @@ namespace FASTER.core
         /// <param name="value"></param>
         /// <returns></returns>
         public abstract int GetRecordSize(ref Key key, ref Value value);
-
-        /// <summary>
-        /// Checks if provided key/value pair can be written at the specified physical address.
-        /// This is used to check is the target record has enough room to accomodate key/value
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="physicalAddress"></param>
-        /// <returns></returns>
-        public virtual bool CanWriteInPlace(ref Key key, ref Value value, long physicalAddress) => true;
 
         /// <summary>
         /// Allocate page

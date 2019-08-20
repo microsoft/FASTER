@@ -15,6 +15,7 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly Functions functions;
+        private readonly IVariableLengthFunctions<Key, Value, Input> variableLengthFunctions;
         private readonly AllocatorBase<Key, Value> hlog;
         private readonly AllocatorBase<Key, Value> readcache;
         private readonly IFasterEqualityComparer<Key> comparer;
@@ -23,6 +24,8 @@ namespace FASTER.core
         private readonly bool CopyReadsToTail = false;
         private readonly bool FoldOverSnapshot = false;
         private readonly int sectorSize;
+
+        private readonly bool WriteDefaultOnDelete = false;
 
         /// <summary>
         /// Number of used entries in hash index
@@ -49,7 +52,6 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
 
-
         private enum CheckpointType
         {
             INDEX_ONLY,
@@ -64,7 +66,7 @@ namespace FASTER.core
         private SystemState _systemState;
 
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        
+
 
         private ConcurrentDictionary<Guid, long> _recoveredSessions;
 
@@ -82,7 +84,7 @@ namespace FASTER.core
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
-        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
+        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value, Input> variableLengthStructSettings = null)
         {
             threadCtx = new FastThreadLocal<FasterExecutionContext>();
             prevThreadCtx = new FastThreadLocal<FasterExecutionContext>();
@@ -124,12 +126,13 @@ namespace FASTER.core
             {
                 if (variableLengthStructSettings != null)
                 {
-                    hlog = new VariableLengthBlittableAllocator<Key, Value>
-                        (logSettings, variableLengthStructSettings, this.comparer, null, epoch);
+                    variableLengthFunctions = variableLengthStructSettings.functions;
+
+                    hlog = new VariableLengthBlittableAllocator<Key, Value, Input>(logSettings, variableLengthStructSettings, this.comparer, null, epoch);
                     Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                     if (UseReadCache)
                     {
-                        readcache = new VariableLengthBlittableAllocator<Key, Value>(
+                        readcache = new VariableLengthBlittableAllocator<Key, Value, Input>(
                             new LogSettings
                             {
                                 PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
@@ -162,6 +165,8 @@ namespace FASTER.core
             }
             else
             {
+                WriteDefaultOnDelete = true;
+
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
@@ -178,6 +183,12 @@ namespace FASTER.core
                     ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
                 }
             }
+
+            if (variableLengthFunctions == null)
+                variableLengthFunctions = functions as IVariableLengthFunctions<Key, Value, Input>;
+
+            if (variableLengthFunctions == null)
+                variableLengthFunctions = new FixedLengthFunctions<Key, Value, Input, Output, Context, Functions>(functions);
 
             hlog.Initialize();
 
@@ -328,13 +339,13 @@ namespace FASTER.core
         /// <returns></returns>
         public bool CompleteCheckpoint(bool wait = false)
         {
-            if(threadCtx == null)
+            if (threadCtx == null)
             {
                 // the thread does not have an active session
                 // we can wait until system state becomes REST
                 do
                 {
-                    if(_systemState.phase == Phase.REST)
+                    if (_systemState.phase == Phase.REST)
                     {
                         return true;
                     }
