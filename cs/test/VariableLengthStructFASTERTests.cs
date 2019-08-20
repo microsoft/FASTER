@@ -26,7 +26,7 @@ namespace FASTER.test
             fht = new FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions>
                 (128, new VLFunctions(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
-                null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = new VLValue() }
+                null, null, null, new VariableLengthStructSettings<Key, VLValue, Input> { valueLength = new VLValue() }
                 );
             fht.StartSession();
 
@@ -86,7 +86,7 @@ namespace FASTER.test
             fht = new FasterKV<VLValue, VLValue, Input, int[], Empty, VLFunctions2>
                 (128, new VLFunctions2(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
-                null, null, null, new VariableLengthStructSettings<VLValue, VLValue> { keyLength = new VLValue(), valueLength = new VLValue() }
+                null, null, null, new VariableLengthStructSettings<VLValue, VLValue, Input> { keyLength = new VLValue(), valueLength = new VLValue() }
                 );
             fht.StartSession();
 

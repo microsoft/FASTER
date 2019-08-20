@@ -10,12 +10,12 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public class VariableLengthBlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
+    public class VariableLengthBlittableScanIterator<Key, Value, Input> : IFasterScanIterator<Key, Value>
         where Key : new()
         where Value : new()
     {
         private readonly int frameSize;
-        private readonly VariableLengthBlittableAllocator<Key, Value> hlog;
+        private readonly VariableLengthBlittableAllocator<Key, Value, Input> hlog;
         private readonly long beginAddress, endAddress;
         private readonly BlittableFrame frame;
         private readonly CountdownEvent[] loaded;
@@ -36,7 +36,7 @@ namespace FASTER.core
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        public unsafe VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        public unsafe VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value, Input> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             this.hlog = hlog;
 
@@ -137,28 +137,30 @@ namespace FASTER.core
                     // Read record from cached page memory
                     var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
 
-                    if (hlog.GetInfo(_physicalAddress).Invalid)
+                    ref var cachedInfo = ref hlog.GetInfo(_physicalAddress);
+                    if (cachedInfo.Invalid || cachedInfo.IsNull())
                     {
                         currentAddress += hlog.GetRecordSize(_physicalAddress);
                         continue;
                     }
 
                     currentPhysicalAddress = _physicalAddress;
-                    recordInfo = hlog.GetInfo(_physicalAddress);
+                    recordInfo = cachedInfo;
                     nextAddress = currentAddress + hlog.GetRecordSize(_physicalAddress);
                     return true;
                 }
 
                 var physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
 
-                if (hlog.GetInfo(physicalAddress).Invalid)
+                ref var frameInfo = ref hlog.GetInfo(physicalAddress);
+                if (frameInfo.Invalid || frameInfo.IsNull())
                 {
                     currentAddress += hlog.GetRecordSize(physicalAddress);
                     continue;
                 }
 
                 currentPhysicalAddress = physicalAddress;
-                recordInfo = hlog.GetInfo(physicalAddress);
+                recordInfo = frameInfo;
                 nextAddress = currentAddress + hlog.GetRecordSize(physicalAddress);
                 return true;
             }
