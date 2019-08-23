@@ -124,42 +124,30 @@ namespace FASTER.core
                 if (currentAddress < hlog.HeadAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
-                var recordSize = hlog.GetRecordSize(hlog.GetPhysicalAddress(currentAddress));
+                var physicalAddress = default(long);
+                if (currentAddress >= hlog.HeadAddress)
+                    physicalAddress = hlog.GetPhysicalAddress(currentAddress);
+                else
+                    physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+
                 // Check if record fits on page, if not skip to next page
+                var recordSize = hlog.GetRecordSize(physicalAddress);
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     currentAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
                     continue;
                 }
 
-                if (currentAddress >= hlog.HeadAddress)
+                ref var info = ref hlog.GetInfo(physicalAddress);
+                if (info.Invalid || info.IsNull())
                 {
-                    // Read record from cached page memory
-                    var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
-
-                    if (hlog.GetInfo(_physicalAddress).Invalid)
-                    {
-                        currentAddress += hlog.GetRecordSize(_physicalAddress);
-                        continue;
-                    }
-
-                    currentPhysicalAddress = _physicalAddress;
-                    recordInfo = hlog.GetInfo(_physicalAddress);
-                    nextAddress = currentAddress + hlog.GetRecordSize(_physicalAddress);
-                    return true;
-                }
-
-                var physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
-
-                if (hlog.GetInfo(physicalAddress).Invalid)
-                {
-                    currentAddress += hlog.GetRecordSize(physicalAddress);
+                    currentAddress += recordSize;
                     continue;
                 }
 
                 currentPhysicalAddress = physicalAddress;
-                recordInfo = hlog.GetInfo(physicalAddress);
-                nextAddress = currentAddress + hlog.GetRecordSize(physicalAddress);
+                recordInfo = info;
+                nextAddress = currentAddress + recordSize;
                 return true;
             }
         }
