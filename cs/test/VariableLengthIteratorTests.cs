@@ -26,24 +26,15 @@ namespace FASTER.test
 
             try
             {
-                var key = new Key() { key = 1L };
-                ref var value = ref GetValue(200, 1);
-                fht.Upsert(ref key, ref value, Empty.Default, 0); // page#0
-
-                key = new Key() { key = 2L };
-                value = ref GetValue(200, 2);
-                fht.Upsert(ref key, ref value, Empty.Default, 0); // page#1 because there is not enough space in page#0
+                Set(1L, 200, 1);// page#0
+                Set(2L, 200, 2);// page#1 because there is not enough space in page#0
 
                 var len = 1024; // fill page#1 exactly
-                len = len - 2 * RecordInfo.GetLength() - 2 * 8 - vlLength.GetLength(ref value);
+                len = len - 2 * RecordInfo.GetLength() - 2 * 8 - vlLength.GetLength(ref GetValue(200, 2));
 
-                key = new Key() { key = 3 };
-                value = ref GetValue(len / 4, 3); // should be in page#1
-                fht.Upsert(ref key, ref value, Empty.Default, 0);
+                Set(3, len / 4, 3); // should be in page#1
 
-                key = new Key() { key = 4 };
-                value = ref GetValue(64, 4);
-                fht.Upsert(ref key, ref value, Empty.Default, 0);
+                Set(4, 64, 4);
 
                 fht.CompletePending(true);
 
@@ -77,6 +68,13 @@ namespace FASTER.test
                 fht.Dispose();
                 fht = null;
                 log.Close();
+            }
+
+            void Set(long keyValue, int length, int tag)
+            {
+                var key = new Key() { key = keyValue };
+                ref var value = ref GetValue(length, tag);
+                fht.Upsert(ref key, ref value, Empty.Default, 0);
             }
         }
 
