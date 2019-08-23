@@ -200,4 +200,80 @@ namespace FASTER.test
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
         }
     }
+
+    public class FunctionsCopyOnWrite : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
+    {
+        private int _concurrentWriterCallCount;
+        private int _inPlaceUpdaterCallCount;
+
+        public int ConcurrentWriterCallCount => _concurrentWriterCallCount;
+        public int InPlaceUpdaterCallCount => _inPlaceUpdaterCallCount;
+
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, Empty ctx, Status status)
+        {
+            Assert.IsTrue(status == Status.OK);
+        }
+
+        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status)
+        {
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output.value.vfield1 == key.kfield1);
+            Assert.IsTrue(output.value.vfield2 == key.kfield2);
+        }
+
+        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, Empty ctx)
+        {
+        }
+
+        public void DeleteCompletionCallback(ref KeyStruct key, Empty ctx)
+        {
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+        }
+
+        // Read functions
+        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        {
+            dst.value = value;
+        }
+
+        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        {
+            dst.value = value;
+        }
+
+        // Upsert functions
+        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        {
+            dst = src;
+        }
+
+        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        {
+            Interlocked.Increment(ref _concurrentWriterCallCount);
+            return false;
+        }
+
+        // RMW functions
+        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        {
+            value.vfield1 = input.ifield1;
+            value.vfield2 = input.ifield2;
+        }
+
+        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        {
+            Interlocked.Increment(ref _inPlaceUpdaterCallCount);
+            return false;
+        }
+
+        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
+        {
+            newValue.vfield1 = oldValue.vfield1 + input.ifield1;
+            newValue.vfield2 = oldValue.vfield2 + input.ifield2;
+        }
+    }
 }

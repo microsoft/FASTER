@@ -103,5 +103,53 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
         }
+
+        [Test]
+        public void ShouldCreateNewRecordIfConcurrentWriterReturnsFalse()
+        {
+            var copyOnWrite = new FunctionsCopyOnWrite();
+
+            // FunctionsCopyOnWrite
+            var log = default(IDevice);
+            try
+            {
+                log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
+                using (var fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>
+                    (128, copyOnWrite, new LogSettings { LogDevice = log, MemorySizeBits = 29 }))
+                {
+                    fht.StartSession();
+
+                    var key = default(KeyStruct);
+                    var value = default(ValueStruct);
+
+                    key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
+                    value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
+
+                    fht.Upsert(ref key, ref value, Empty.Default, 0);
+
+                    value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
+                    fht.Upsert(ref key, ref value, Empty.Default, 0);
+
+                    var recordCount = 0;
+                    using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
+                    {
+                        while (iterator.GetNext(out var info))
+                        {
+                            recordCount++;
+                        }
+                    }
+
+                    Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount, 2);
+                    Assert.AreEqual(2, recordCount);
+
+                    fht.StopSession();
+                }
+            }
+            finally
+            {
+                if (log != null)
+                    log.Close();
+            }
+        }
     }
 }
