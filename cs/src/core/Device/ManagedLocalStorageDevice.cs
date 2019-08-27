@@ -27,15 +27,44 @@ namespace FASTER.core
         /// <param name="filename"></param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false)
-            : base(filename, GetSectorSize(filename))
+        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
+            : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new SectorAlignedBufferPool(1, 1);
 
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             logHandles = new ConcurrentDictionary<int, Stream>();
+            RecoverFiles();
         }
+
+
+        private void RecoverFiles()
+        {
+            string directory = System.IO.Path.GetDirectoryName(FileName);
+            DirectoryInfo di = new DirectoryInfo(directory);
+            int prevSegmentId = -1;
+            foreach (FileInfo item in di.GetFiles(FileName + "*"))
+            {
+                Console.WriteLine(FileName);
+                // TODO(Tianyu): Depending on string parsing is bad. But what can one do when an entire cloud service API has no doc?
+                int segmentId = Int32.Parse(item.Name.Replace(FileName, "").Replace(".", ""));
+                Console.WriteLine(segmentId);
+                if (segmentId != prevSegmentId + 1)
+                {
+                    startSegment = segmentId;
+
+                }
+                else
+                {
+                    endSegment = segmentId;
+                }
+                prevSegmentId = segmentId;
+            }
+            // No need to populate map because logHandles use Open or create on files.
+        }
+
 
 
         class ReadCallbackWrapper
@@ -139,20 +168,28 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// 
+        /// <see cref="IDevice.RemoveSegment(int)"/>
         /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
+        /// <param name="segment"></param>
+        public override void RemoveSegment(int segment)
         {
-            for (int i=fromSegment; i<toSegment; i++)
+            if (logHandles.TryRemove(segment, out Stream logHandle))
             {
-                if (logHandles.TryRemove(i, out Stream logHandle))
-                {
-                    logHandle.Dispose();
-                    File.Delete(GetSegmentName(i));
-                }
+                logHandle.Dispose();
+                File.Delete(GetSegmentName(segment));
             }
+        }
+
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+        {
+            RemoveSegment(segment);
+            callback(result);
         }
 
         /// <summary>
