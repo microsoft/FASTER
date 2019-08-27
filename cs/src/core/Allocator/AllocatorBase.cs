@@ -486,8 +486,8 @@ namespace FASTER.core
             else
                 this.epoch = epoch;
 
-            settings.LogDevice.Initialize(1L << settings.SegmentSizeBits);
-            settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits);
+            settings.LogDevice.Initialize(1L << settings.SegmentSizeBits, epoch);
+            settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits, epoch);
 
             // Page size
             LogPageSizeBits = settings.PageSizeBits;
@@ -870,7 +870,7 @@ namespace FASTER.core
             tailAddress = GetTailAddress();
             long localTailAddress = tailAddress;
             long currentReadOnlyOffset = ReadOnlyAddress;
-            if (MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out long oldReadOnlyOffset))
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out long oldReadOnlyOffset))
             {
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress, false));
             }
@@ -882,7 +882,7 @@ namespace FASTER.core
         /// <param name="newReadOnlyAddress"></param>
         public bool ShiftReadOnlyAddress(long newReadOnlyAddress)
         {
-            if (MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
             {
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress, false));
                 return true;
@@ -897,34 +897,33 @@ namespace FASTER.core
         public void ShiftBeginAddress(long newBeginAddress)
         {
             // First update the begin address
-            MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
+            Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
             // Then the head address
-            var h = MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
+            var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
             // Finally the read-only address
-            var r = MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
+            var r = Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
 
             // Clean up until begin address
             epoch.BumpCurrentEpoch(() =>
             {
                 if (r)
                 {
-                    MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
-                    MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
+                    Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
+                    Utility.MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
                 }
                 if (h) OnPagesClosed(newBeginAddress);
 
-                DeleteAddressRange(oldBeginAddress, newBeginAddress);
+                TruncateUntilAddress(newBeginAddress);
             });
         }
 
         /// <summary>
-        /// Delete address range
+        /// Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices
         /// </summary>
-        /// <param name="fromAddress"></param>
         /// <param name="toAddress"></param>
-        protected virtual void DeleteAddressRange(long fromAddress, long toAddress)
+        protected virtual void TruncateUntilAddress(long toAddress)
         {
-            device.DeleteAddressRange(fromAddress, toAddress);
+            device.TruncateUntilAddress(toAddress);
         }
 
         /// <summary>
@@ -935,7 +934,7 @@ namespace FASTER.core
         /// <param name="waitForPendingFlushComplete"></param>
         public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool waitForPendingFlushComplete = false)
         {
-            if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
+            if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
                 Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 long startPage = oldSafeReadOnlyAddress >> LogPageSizeBits;
@@ -964,7 +963,7 @@ namespace FASTER.core
         /// <param name="newSafeHeadAddress"></param>
         public void OnPagesClosed(long newSafeHeadAddress)
         {
-            if (MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
+            if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
             {
                 Debug.WriteLine("SafeHeadOffset shifted from {0:X} to {1:X}", oldSafeHeadAddress, newSafeHeadAddress);
 
@@ -1020,7 +1019,7 @@ namespace FASTER.core
             long currentReadOnlyAddress = ReadOnlyAddress;
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
             long desiredReadOnlyAddress = (pageAlignedTailAddress - ReadOnlyLagAddress);
-            if (MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
             {
                 Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(desiredReadOnlyAddress));
@@ -1050,7 +1049,7 @@ namespace FASTER.core
             if (ReadCache && (newHeadAddress > HeadAddress))
                 EvictCallback(HeadAddress, newHeadAddress);
 
-            if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
+            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
                 Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
@@ -1075,7 +1074,7 @@ namespace FASTER.core
             if (ReadCache && (newHeadAddress > HeadAddress))
                 EvictCallback(HeadAddress, newHeadAddress);
 
-            if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
+            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
                 Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
@@ -1104,33 +1103,8 @@ namespace FASTER.core
 
             if (update)
             {
-                MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress);
+                Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress);
             }
-        }
-
-
-
-        /// <summary>
-        /// Used by several functions to update the variable to newValue. Ignores if newValue is smaller or 
-        /// than the current value.
-        /// </summary>
-        /// <param name="variable"></param>
-        /// <param name="newValue"></param>
-        /// <param name="oldValue"></param>
-        /// <returns></returns>
-        private bool MonotonicUpdate(ref long variable, long newValue, out long oldValue)
-        {
-            oldValue = variable;
-            while (oldValue < newValue)
-            {
-                var foundValue = Interlocked.CompareExchange(ref variable, newValue, oldValue);
-                if (foundValue == oldValue)
-                {
-                    return true;
-                }
-                oldValue = foundValue;
-            }
-            return false;
         }
 
         /// <summary>
