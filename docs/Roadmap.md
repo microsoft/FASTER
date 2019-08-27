@@ -71,6 +71,7 @@ Completed items are included to provide the context and progress of the work.
 #### FASTER v2019.8.27.1
 
 * [x] Improved support for varlen blittable allocator (iteration, compaction): [PR](https://github.com/microsoft/FASTER/pull/164)
+* [x] *BREAKING CHANGE*: change return type for InPlaceUpdater and ConcurrentWriter functions to bool. User has to return true for usual in-place-update (IPU) behavior, and return false to force retry as read-copy-update (RCU).
 * [x] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
 * [x] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
 * [x] Make checkpointing use a pluggable user-specified interface for providing devices and performing metadata commit: [PR](https://github.com/microsoft/FASTER/pull/161)
