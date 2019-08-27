@@ -10,12 +10,12 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public class BlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
+    public class VariableLengthBlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
         where Key : new()
         where Value : new()
     {
         private readonly int frameSize;
-        private readonly BlittableAllocator<Key, Value> hlog;
+        private readonly VariableLengthBlittableAllocator<Key, Value> hlog;
         private readonly long beginAddress, endAddress;
         private readonly BlittableFrame frame;
         private readonly CountdownEvent[] loaded;
@@ -36,7 +36,7 @@ namespace FASTER.core
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        public unsafe BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        public unsafe VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             this.hlog = hlog;
 
@@ -91,10 +91,10 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Get next record
+        /// Get next record in iterator
         /// </summary>
         /// <param name="recordInfo"></param>
-        /// <returns>True if record found, false if end of scan</returns>
+        /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo)
         {
             recordInfo = default(RecordInfo);
@@ -161,17 +161,7 @@ namespace FASTER.core
         /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
-            key = default(Key);
-            value = default(Value);
-
-            if (GetNext(out recordInfo))
-            {
-                key = GetKey();
-                value = GetValue();
-                return true;
-            }
-
-            return false;
+            throw new NotSupportedException("Use GetNext(out RecordInfo) to retrieve references to key/value");
         }
 
         /// <summary>

@@ -320,10 +320,9 @@ namespace FASTER.core
             {
                 BlockAllocateReadCache(recordSize, out newLogicalAddress);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, ctx.version,
-                                     true, false, false,
-                                     entry.Address);
+                RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), ctx.version,
+                                    true, false, false,
+                                    entry.Address);
                 readcache.ShallowCopy(ref pendingContext.key.Get(), ref readcache.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
@@ -333,10 +332,9 @@ namespace FASTER.core
             {
                 BlockAllocate(recordSize, out newLogicalAddress);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, ctx.version,
-                                     true, false, false,
-                                     latestLogicalAddress);
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), ctx.version,
+                               true, false, false,
+                               latestLogicalAddress);
                 hlog.ShallowCopy(ref pendingContext.key.Get(), ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
@@ -446,8 +444,10 @@ namespace FASTER.core
             // Optimization for most common case
             if (threadCtx.Value.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
-                return OperationStatus.SUCCESS;
+                if (functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
+                {
+                    return OperationStatus.SUCCESS;
+                }
             }
 
             #region Entry latch operation
@@ -533,9 +533,11 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress));
-                status = OperationStatus.SUCCESS;
-                goto LatchRelease; // Release shared latch (if acquired)
+                if (functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
+                {
+                    status = OperationStatus.SUCCESS;
+                    goto LatchRelease; // Release shared latch (if acquired)
+                }
             }
 
             // All other regions: Create a record in the mutable region
@@ -549,12 +551,12 @@ namespace FASTER.core
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                                        threadCtx.Value.version,
-                                        true, false, false,
-                                        latestLogicalAddress);
+                               threadCtx.Value.version,
+                               true, false, false,
+                               latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref key, ref value,
-                                        ref hlog.GetValue(newPhysicalAddress));
+                                       ref hlog.GetValue(newPhysicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -710,8 +712,10 @@ namespace FASTER.core
             // Optimization for the most common case
             if (threadCtx.Value.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress));
-                return OperationStatus.SUCCESS;
+                if (functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
+                {
+                    return OperationStatus.SUCCESS;
+                }
             }
 
             #region Entry latch operation
@@ -801,9 +805,12 @@ namespace FASTER.core
                 {
                     Debug.Assert(hlog.GetInfo(physicalAddress).Version == threadCtx.Value.version);
                 }
-                functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress));
-                status = OperationStatus.SUCCESS;
-                goto LatchRelease; // Release shared latch (if acquired)
+
+                if (functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
+                {
+                    status = OperationStatus.SUCCESS;
+                    goto LatchRelease; // Release shared latch (if acquired)
+                }
             }
 
             // Fuzzy Region: Must go pending due to lost-update anomaly
@@ -852,10 +859,9 @@ namespace FASTER.core
                                 hlog.GetRecordSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, threadCtx.Value.version,
-                                        true, false, false,
-                                        latestLogicalAddress);
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), threadCtx.Value.version,
+                               true, false, false,
+                               latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
@@ -1092,9 +1098,12 @@ namespace FASTER.core
                 {
                     Debug.Assert(hlog.GetInfo(physicalAddress).Version == threadCtx.Value.version);
                 }
-                functions.InPlaceUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(physicalAddress));
-                status = OperationStatus.SUCCESS;
-                goto LatchRelease;
+
+                if (functions.InPlaceUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(physicalAddress)))
+                {
+                    status = OperationStatus.SUCCESS;
+                    goto LatchRelease;
+                }
             }
 
             // Fuzzy Region: Must go pending due to lost-update anomaly
@@ -1133,10 +1142,9 @@ namespace FASTER.core
                                 hlog.GetRecordSize(physicalAddress);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo, pendingContext.version,
-                                        true, false, false,
-                                        latestLogicalAddress);
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), pendingContext.version,
+                               true, false, false,
+                               latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
@@ -1306,10 +1314,9 @@ namespace FASTER.core
             }
             BlockAllocate(recordSize, out long newLogicalAddress);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-            RecordInfo.WriteInfo(ref recordInfo, ctx.version,
-                                true, false, false,
-                                latestLogicalAddress);
+            RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), ctx.version,
+                           true, false, false,
+                           latestLogicalAddress);
             hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
             if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
@@ -1541,9 +1548,13 @@ namespace FASTER.core
                         // Apply tombstone bit to the record
                         hlog.GetInfo(physicalAddress).Tombstone = true;
 
-                        // Write default value
-                        Value v = default(Value);
-                        functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                        if (WriteDefaultOnDelete)
+                        {
+                            // Write default value
+                            // Ignore return value, the record is already marked
+                            Value v = default(Value);
+                            functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                        }
 
                         status = OperationStatus.SUCCESS;
                         goto LatchRelease; // Release shared latch (if acquired)
@@ -1555,8 +1566,15 @@ namespace FASTER.core
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
                 hlog.GetInfo(physicalAddress).Tombstone = true;
-                Value v = default(Value);
-                functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+
+                if (WriteDefaultOnDelete)
+                {
+                    // Write default value
+                    // Ignore return value, the record is already marked
+                    Value v = default(Value);
+                    functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                }
+
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
@@ -1570,13 +1588,13 @@ namespace FASTER.core
                 var value = default(Value);
                 // Immutable region or new record
                 // Allocate default record size for tombstone
-                var recordSize = hlog.GetRecordSize(ref key, ref value); 
+                var recordSize = hlog.GetRecordSize(ref key, ref value);
                 BlockAllocate(recordSize, out long newLogicalAddress);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                                        threadCtx.Value.version,
-                                        true, true, false,
-                                        latestLogicalAddress);
+                               threadCtx.Value.version,
+                               true, true, false,
+                               latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
 
                 var updatedEntry = default(HashBucketEntry);

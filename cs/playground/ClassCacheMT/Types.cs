@@ -92,9 +92,10 @@ namespace ClassCacheMT
             dst.value = value;
         }
 
-        public void ConcurrentWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
+        public bool ConcurrentWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
         {
             dst = src;
+            return true;
         }
 
         public void CopyUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue oldValue, ref CacheValue newValue)
@@ -107,7 +108,7 @@ namespace ClassCacheMT
             throw new NotImplementedException();
         }
 
-        public void InPlaceUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue value)
+        public bool InPlaceUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue value)
         {
             throw new NotImplementedException();
         }

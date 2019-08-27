@@ -19,16 +19,19 @@ namespace FASTER.core
         where Key : new()
         where Value : new()
     {
+        public const int kRecordAlignment = 8; // RecordInfo has a long field, so it should be aligned to 8-bytes
+
         // Circular buffer definition
         private byte[][] values;
         private GCHandle[] handles;
         private long[] pointers;
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
-        private readonly IVariableLengthStruct<Key> KeyLength;
-        private readonly IVariableLengthStruct<Value> ValueLength;
         private readonly bool fixedSizeKey;
         private readonly bool fixedSizeValue;
+
+        internal readonly IVariableLengthStruct<Key> KeyLength;
+        internal readonly IVariableLengthStruct<Value> ValueLength;
 
         public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
             : base(settings, comparer, evictCallback, epoch)
@@ -93,8 +96,13 @@ namespace FASTER.core
 
         public override int GetRecordSize(long physicalAddress)
         {
-            return RecordInfo.GetLength() +
-                 KeySize(physicalAddress) + ValueSize(physicalAddress);
+            ref var recordInfo = ref GetInfo(physicalAddress);
+            if (recordInfo.IsNull())
+                return RecordInfo.GetLength();
+
+            var size = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            size = (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
+            return size;
         }
 
         public override int GetRequiredRecordSize(long physicalAddress, int availableBytes)
@@ -115,34 +123,40 @@ namespace FASTER.core
 
             // We need at least [record size] + [actual key size] + [actual value size]
             reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            reqBytes = (reqBytes + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
             return reqBytes;
         }
 
         public override int GetAverageRecordSize()
         {
             return RecordInfo.GetLength() +
+                kRecordAlignment +
                 KeyLength.GetAverageLength() +
                 ValueLength.GetAverageLength();
         }
 
-        public override int GetInitialRecordSize<Input>(ref Key key, ref Input input)
+        public override int GetInitialRecordSize<TInput>(ref Key key, ref TInput input)
         {
-            return RecordInfo.GetLength() +
-                 KeyLength.GetLength(ref key) +
-                 ValueLength.GetInitialLength(ref input);
+            var actualSize = RecordInfo.GetLength() +
+                KeyLength.GetLength(ref key) +
+                ValueLength.GetInitialLength(ref input);
+
+            return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
 
         public override int GetRecordSize(ref Key key, ref Value value)
         {
-            return RecordInfo.GetLength() +
+            var actualSize = RecordInfo.GetLength() +
                 KeyLength.GetLength(ref key) +
                 ValueLength.GetLength(ref value);
+
+            return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
 
         public override void ShallowCopy(ref Key src, ref Key dst)
         {
             Buffer.MemoryCopy(
-                Unsafe.AsPointer(ref src), 
+                Unsafe.AsPointer(ref src),
                 Unsafe.AsPointer(ref dst),
                 KeyLength.GetLength(ref src),
                 KeyLength.GetLength(ref src));
@@ -179,14 +193,12 @@ namespace FASTER.core
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
+            throw new NotSupportedException();
         }
 
         public override AddressInfo* GetValueAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + 
-                RecordInfo.GetLength() + 
-                KeySize(physicalAddress));
+            throw new NotSupportedException();
         }
 
         /// <summary>
@@ -409,7 +421,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            throw new NotImplementedException();
+            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode);
         }
 
 

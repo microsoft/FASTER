@@ -24,6 +24,8 @@ namespace FASTER.core
         private readonly bool FoldOverSnapshot = false;
         private readonly int sectorSize;
 
+        private readonly bool WriteDefaultOnDelete = false;
+
         /// <summary>
         /// Number of used entries in hash index
         /// </summary>
@@ -49,7 +51,6 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
 
-
         private enum CheckpointType
         {
             INDEX_ONLY,
@@ -64,7 +65,7 @@ namespace FASTER.core
         private SystemState _systemState;
 
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        
+
 
         private ConcurrentDictionary<Guid, long> _recoveredSessions;
 
@@ -124,8 +125,7 @@ namespace FASTER.core
             {
                 if (variableLengthStructSettings != null)
                 {
-                    hlog = new VariableLengthBlittableAllocator<Key, Value>
-                        (logSettings, variableLengthStructSettings, this.comparer, null, epoch);
+                    hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings, this.comparer, null, epoch);
                     Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                     if (UseReadCache)
                     {
@@ -162,6 +162,8 @@ namespace FASTER.core
             }
             else
             {
+                WriteDefaultOnDelete = true;
+
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
@@ -328,13 +330,13 @@ namespace FASTER.core
         /// <returns></returns>
         public bool CompleteCheckpoint(bool wait = false)
         {
-            if(threadCtx == null)
+            if (threadCtx == null)
             {
                 // the thread does not have an active session
                 // we can wait until system state becomes REST
                 do
                 {
-                    if(_systemState.phase == Phase.REST)
+                    if (_systemState.phase == Phase.REST)
                     {
                         return true;
                     }
