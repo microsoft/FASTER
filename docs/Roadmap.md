@@ -46,20 +46,20 @@ Completed items are included to provide the context and progress of the work.
 * [x] Log compaction by rolling forward older active keys
 * [x] Support for subscribing to the hybrid log (push-based, as record batches become read-only): [PR](https://github.com/Microsoft/FASTER/pull/133)
 * [x] Support for callback when records in hybrid log become read-only: [PR](https://github.com/microsoft/FASTER/pull/133)
+* [x] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
+* [x] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
+* [x] Support for sharded storage: [PR](https://github.com/microsoft/FASTER/pull/162)
 
 #### Checkpoint and Recovery
 
 * [x] CPR-based checkpointing and recovery (snapshot and fold-over modes), see [[here](https://microsoft.github.io/FASTER/#recovery-in-faster)] for details
 * [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
 * [x] Auto-recover to most recent checkpoint
+* [x] Make checkpointing use a pluggable user-specified interface for providing devices and performing metadata commit: [PR](https://github.com/microsoft/FASTER/pull/161)
 
 ### Ongoing and Future Work
 
 * [ ] Better integration with an async/await threading model in C#: [PR](https://github.com/Microsoft/FASTER/pull/130)
-* [ ] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
-* [ ] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
-* [ ] Make checkpointing use a pluggable user-specified interface for providing devices and performing metadata commit: [PR](https://github.com/microsoft/FASTER/pull/161)
-* [ ] Support for sharded storage
 * [ ] Scale-out and elasticity support
 * [ ] Checksums for storage pages
 * [ ] Support iteration over all and only live key-value pairs (different from log scan)
@@ -67,6 +67,14 @@ Completed items are included to provide the context and progress of the work.
 * [ ] Expose other data structures, starting with a FIFO FasterQueue
 
 ## Release Notes
+
+#### FASTER v2019.8.27.1
+
+* [x] Improved support for varlen blittable allocator (iteration, compaction): [PR](https://github.com/microsoft/FASTER/pull/164)
+* [x] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
+* [x] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
+* [x] Make checkpointing use a pluggable user-specified interface for providing devices and performing metadata commit: [PR](https://github.com/microsoft/FASTER/pull/161)
+* [x] Support for sharded storage: [PR](https://github.com/microsoft/FASTER/pull/162)
 
 #### FASTER v2019.7.23.1
 
