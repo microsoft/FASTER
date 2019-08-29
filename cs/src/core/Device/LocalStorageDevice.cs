@@ -28,14 +28,47 @@ namespace FASTER.core
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
         /// <param name="disableFileBuffering"></param>
-        public LocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true)
-            : base(filename, GetSectorSize(filename))
+        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        public LocalStorageDevice(string filename,
+                                  bool preallocateFile = false,
+                                  bool deleteOnClose = false,
+                                  bool disableFileBuffering = true,
+                                  long capacity = Devices.CAPACITY_UNSPECIFIED)
+            : base(filename, GetSectorSize(filename), capacity)
+        
         {
             Native32.EnableProcessPrivileges();
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             logHandles = new SafeConcurrentDictionary<int, SafeFileHandle>();
+            RecoverFiles();
+        }
+
+        private void RecoverFiles()
+        {
+            string[] comps = FileName.Split(Path.DirectorySeparatorChar);
+            string bareName = comps[comps.Length - 1];
+            string directory = System.IO.Path.GetDirectoryName(FileName);
+            DirectoryInfo di = new DirectoryInfo(directory);
+            if (!di.Exists) return;
+            int prevSegmentId = -1;
+            foreach (FileInfo item in di.GetFiles(bareName + "*"))
+            {
+                // TODO(Tianyu): Depending on string parsing is bad. But what can one do when an entire cloud service API has no doc?
+                int segmentId = Int32.Parse(item.Name.Replace(bareName, "").Replace(".", ""));
+                if (segmentId != prevSegmentId + 1)
+                {
+                    startSegment = segmentId;
+
+                }
+                else
+                {
+                    endSegment = segmentId;
+                }
+                prevSegmentId = segmentId;
+            }
+            // No need to populate map because logHandles use Open or create on files.
         }
 
         /// <summary>
@@ -119,23 +152,34 @@ namespace FASTER.core
             }
         }
 
-
         /// <summary>
-        /// 
+        /// <see cref="IDevice.RemoveSegment(int)"/>
         /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
+        /// <param name="segment"></param>
+        public override void RemoveSegment(int segment)
         {
-            for (int i=fromSegment; i<toSegment; i++)
+            if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
             {
-                if (logHandles.TryRemove(i, out SafeFileHandle logHandle))
-                {
-                    logHandle.Dispose();
-                    Native32.DeleteFileW(GetSegmentName(i));
-                }
+                logHandle.Dispose();
+                Native32.DeleteFileW(GetSegmentName(segment));
             }
         }
+
+        /// <summary>
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+        {
+            RemoveSegment(segment);
+            callback(result);
+        }
+
+        // TODO(Tianyu): It may be somewhat inefficient to use the default async calls from the base class when the underlying
+        // method is inheritly synchronous. But just for delete (which is called infrequently and off the critical path) such
+        // inefficiency is probably negligible.
 
         /// <summary>
         /// 

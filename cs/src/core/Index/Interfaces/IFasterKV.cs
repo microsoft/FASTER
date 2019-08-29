@@ -85,6 +85,18 @@ namespace FASTER.core
         Status RMW(ref Key key, ref Input input, Context context, long lsn);
 
         /// <summary>
+        /// Delete entry (use tombstone if necessary)
+        /// Hash entry is removed as a best effort (if key is in memory and at 
+        /// the head of hash chain.
+        /// Value is set to null (using ConcurrentWrite) if it is in mutable region
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="monotonicSerialNum"></param>
+        /// <returns></returns>
+        Status Delete(ref Key key, Context userContext, long monotonicSerialNum);
+
+        /// <summary>
         /// Complete all pending operations issued by this session
         /// </summary>
         /// <param name="wait">Whether we spin-wait for pending operations to complete</param>
