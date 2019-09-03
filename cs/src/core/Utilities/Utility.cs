@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -231,6 +232,7 @@ namespace FASTER.core
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }
+
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.
         /// </summary>
