@@ -80,24 +80,16 @@ namespace FASTER.core
         /// <returns></returns>
         internal async ValueTask CompleteCheckpointAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
-            // Thread has an active session.
-            // So we need to constantly complete pending 
-            // and refresh (done inside CompletePending)
-            // for the checkpoint to be proceed
-            int count = 0;
-            do
+            // Called outside active session
+            while (true)
             {
+                var systemState = _systemState;
                 await InternalRefreshAsync(clientSession);
                 await CompletePendingAsync(clientSession);
 
-                if (_systemState.phase == Phase.REST)
-                {
-                    await CompletePendingAsync(clientSession);
+                if (systemState.phase == Phase.REST)
                     return;
-                }
-
-                if (count++ == 10000) throw new Exception("CompleteCheckpointAsync loop too long " + threadCtx.Value.phase + threadCtx.Value.version + ":" + _systemState.phase + _systemState.version);
-            } while (true);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -142,14 +134,10 @@ namespace FASTER.core
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
 
-            int count = 0;
             while (finalState.phase == Phase.INTERMEDIATE)
             {
                 finalState = SystemState.Copy(ref _systemState);
-                if (count++ == 10000) throw new Exception("Intermediate too long");
             }
-
-            count = 0;
 
             // We need to move from previousState to finalState one step at a time
             do
@@ -371,7 +359,6 @@ namespace FASTER.core
                 threadCtx.Value.version = currentState.version;
 
                 previousState.word = currentState.word;
-                if (count++ == 10000) throw new Exception("HandleCheckpointingPhases do loop too long " + previousState + ":" + finalState);
             } while (previousState.word != finalState.word);
 
             if (async)
