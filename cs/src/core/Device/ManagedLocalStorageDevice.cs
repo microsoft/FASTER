@@ -42,15 +42,16 @@ namespace FASTER.core
 
         private void RecoverFiles()
         {
-            string directory = System.IO.Path.GetDirectoryName(FileName);
-            DirectoryInfo di = new DirectoryInfo(directory);
+            FileInfo fi = new FileInfo(FileName); // may not exist
+            DirectoryInfo di = fi.Directory;
+            if (!di.Exists) return;
+
+            string bareName = fi.Name;
+
             int prevSegmentId = -1;
-            foreach (FileInfo item in di.GetFiles(FileName + "*"))
+            foreach (FileInfo item in di.GetFiles(bareName + "*"))
             {
-                Console.WriteLine(FileName);
-                // TODO(Tianyu): Depending on string parsing is bad. But what can one do when an entire cloud service API has no doc?
-                int segmentId = Int32.Parse(item.Name.Replace(FileName, "").Replace(".", ""));
-                Console.WriteLine(segmentId);
+                int segmentId = Int32.Parse(item.Name.Replace(bareName, "").Replace(".", ""));
                 if (segmentId != prevSegmentId + 1)
                 {
                     startSegment = segmentId;

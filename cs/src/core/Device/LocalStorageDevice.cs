@@ -47,15 +47,15 @@ namespace FASTER.core
 
         private void RecoverFiles()
         {
-            string[] comps = FileName.Split(Path.DirectorySeparatorChar);
-            string bareName = comps[comps.Length - 1];
-            string directory = System.IO.Path.GetDirectoryName(FileName);
-            DirectoryInfo di = new DirectoryInfo(directory);
+            FileInfo fi = new FileInfo(FileName); // may not exist
+            DirectoryInfo di = fi.Directory;
             if (!di.Exists) return;
+
+            string bareName = fi.Name;
+
             int prevSegmentId = -1;
             foreach (FileInfo item in di.GetFiles(bareName + "*"))
             {
-                // TODO(Tianyu): Depending on string parsing is bad. But what can one do when an entire cloud service API has no doc?
                 int segmentId = Int32.Parse(item.Name.Replace(bareName, "").Replace(".", ""));
                 if (segmentId != prevSegmentId + 1)
                 {
@@ -177,12 +177,12 @@ namespace FASTER.core
             callback(result);
         }
 
-        // TODO(Tianyu): It may be somewhat inefficient to use the default async calls from the base class when the underlying
-        // method is inheritly synchronous. But just for delete (which is called infrequently and off the critical path) such
-        // inefficiency is probably negligible.
+        // It may be somewhat inefficient to use the default async calls from the base class when the underlying
+        // method is inherently synchronous. But just for delete (which is called infrequently and off the 
+        // critical path) such inefficiency is probably negligible.
 
         /// <summary>
-        /// 
+        /// Close device
         /// </summary>
         public override void Close()
         {
