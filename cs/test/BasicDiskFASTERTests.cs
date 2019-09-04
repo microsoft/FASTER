@@ -35,6 +35,36 @@ namespace FASTER.test
                 TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
         }
 
+        [Test]
+        public void TieredWriteRead()
+        {
+            IDevice tested;
+            IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            {
+                IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
+                tested = new TieredStorageDevice(1, localDevice, cloudDevice);
+            }
+            else
+            {
+                // If no Azure is enabled, just use another disk
+                IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
+                tested = new TieredStorageDevice(1, localDevice, localDevice2);
+
+            }
+            TestDeviceWriteRead(tested);
+        }
+
+        [Test]
+        public void ShardedWriteRead()
+        {
+            // TODO(Tianyu): Magic constant
+            IDevice localDevice1 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests1.log", deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
+            var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
+            TestDeviceWriteRead(device);
+        }
+
         void TestDeviceWriteRead(IDevice log)
         {
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>

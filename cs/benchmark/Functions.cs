@@ -54,9 +54,10 @@ namespace FASTER.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
         {
             dst = src;
+            return true;
         }
 
         // RMW functions
@@ -67,9 +68,10 @@ namespace FASTER.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
         {
             value.value += input.value;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
