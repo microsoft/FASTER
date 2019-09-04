@@ -103,27 +103,20 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal async ValueTask InternalRefreshAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
-            clientSession.ResumeThread();
-
-            epoch.ProtectAndDrain();
-            epoch.Check();
-
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref _systemState);
-            if (threadCtx.Value.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && threadCtx.Value.version == newPhaseInfo.version)
+            if (clientSession.ctx.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && clientSession.ctx.version == newPhaseInfo.version)
             {
                 return;
             }
 
-            // Moving to non-checkpointing phases
+            // In non-checkpointing phases
             if (newPhaseInfo.phase == Phase.GC || newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
             {
-                threadCtx.Value.phase = newPhaseInfo.phase;
                 return;
             }
 
             await HandleCheckpointingPhasesAsync(clientSession);
-            clientSession.SuspendThread();
         }
 
 
@@ -143,6 +136,9 @@ namespace FASTER.core
 
         private async ValueTask HandleCheckpointingPhasesAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true)
         {
+            if (async)
+                clientSession.ResumeThread();
+
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
 
@@ -377,6 +373,9 @@ namespace FASTER.core
                 previousState.word = currentState.word;
                 if (count++ == 10000) throw new Exception("HandleCheckpointingPhases do loop too long " + previousState + ":" + finalState);
             } while (previousState.word != finalState.word);
+
+            if (async)
+                clientSession.SuspendThread();
         }
     }
 }
