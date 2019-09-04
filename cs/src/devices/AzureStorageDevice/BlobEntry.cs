@@ -70,7 +70,6 @@ namespace FASTER.devices
                 }
                 catch (Exception e)
                 {
-                    // TODO(Tianyu): Can't really do better without knowing error behavior
                     Trace.TraceError(e.Message);
                 }
                 // At this point the blob is fully created. After this line all consequent writers will write immediately. We just

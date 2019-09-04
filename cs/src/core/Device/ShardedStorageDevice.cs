@@ -18,6 +18,7 @@ namespace FASTER.core
         /// used as unique identifiers for the shards.
         /// </summary>
         IList<IDevice> Devices { get; }
+
         /// <summary>
         /// Maps a range in the unified logical address space into a contiguous physical chunk on a shard's address space.
         /// Because the given range may be sharded across multiple devices, only the largest contiguous chunk starting from
@@ -25,7 +26,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="startAddress">start address of the range to map in the logical address space</param>
         /// <param name="endAddress">end address of the range to map in the logical address space</param>
-        /// <param name="shard"> the shard (potentially part of) the given range resides in, given as index into <see cref="devices"/></param>
+        /// <param name="shard"> the shard (potentially part of) the given range resides in, given as index into <see cref="Devices"/></param>
         /// <param name="shardStartAddress"> start address translated into physical start address on the returned shard </param>
         /// <param name="shardEndAddress">
         /// physical address of the end of the part of the range on the returned shard. This is not necessarily a translation of the end address
@@ -95,7 +96,6 @@ namespace FASTER.core
         /// <returns></returns>
         public long MapRange(long startAddress, long endAddress, out int shard, out long shardStartAddress, out long shardEndAddress)
         {
-            // TODO(Tianyu): Can do bitshift magic for faster translation assuming chunk size is a multiple of 2
             long chunkId = startAddress / chunkSize;
             shard = (int)(chunkId % Devices.Count);
             shardStartAddress = chunkId / Devices.Count * chunkSize + startAddress % chunkSize;
@@ -120,8 +120,6 @@ namespace FASTER.core
         /// <returns></returns>
         public long MapSectorSize(long sectorSize, int shard)
         {
-            // TODO(Tianyu): Is there an easier way to do this?
-            // TODO(Tianyu): Perform bit-shifting magic
             var numChunks = sectorSize / chunkSize;
             // ceiling of (a div b) is (a + b - 1) / b where div is mathematical division and / is integer division 
             return (numChunks + Devices.Count - 1) / Devices.Count * chunkSize;
@@ -220,14 +218,14 @@ namespace FASTER.core
                 // Because more than one device can return with an error, it is important that we remember the most recent error code we saw. (It is okay to only
                 // report one error out of many. It will be as if we failed on that error and cancelled all other reads, even though we issue reads in parallel and
                 // wait until all of them are complete in the implementation) 
-                // TODO(Tianyu): Can there be races on async result as we issue writes or reads in parallel?
+                // Can there be races on async result as we issue writes or reads in parallel?
                 partitions.Devices[shard].WriteAsync(IntPtr.Add(sourceAddress, (int)writeOffset),
                                                      segmentId,
                                                      (ulong)shardStartAddress,
                                                      (uint)(shardEndAddress - shardStartAddress),
                                                      (e, n, o) =>
                                                      {
-                                                         // TODO(Tianyu): It is incorrect to ignore o, as there might be a memory leak
+                                                         // TODO: Check if it is incorrect to ignore o
                                                          if (e != 0) aggregateErrorCode = e;
                                                          if (countdown.Signal())
                                                          {
@@ -244,7 +242,7 @@ namespace FASTER.core
                 currentWriteStart = newStart;
             }
 
-            // TODO(Tianyu): What do for the dumb overlapped wrapper...
+            // TODO: Check if overlapped wrapper is handled correctly
             if (countdown.Signal())
             {
                 Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
@@ -277,7 +275,6 @@ namespace FASTER.core
                 // Because more than one device can return with an error, it is important that we remember the most recent error code we saw. (It is okay to only
                 // report one error out of many. It will be as if we failed on that error and cancelled all other reads, even though we issue reads in parallel and
                 // wait until all of them are complete in the implementation) 
-                // TODO(Tianyu): Can there be races on async result as we issue writes or reads in parallel?
                 countdown.AddCount();
                 partitions.Devices[shard].ReadAsync(segmentId,
                                                     (ulong)shardStartAddress,
@@ -285,7 +282,7 @@ namespace FASTER.core
                                                     (uint)(shardEndAddress - shardStartAddress),
                                                     (e, n, o) =>
                                                     {
-                                                        // TODO(Tianyu): this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
+                                                        // TODO: this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
                                                         if (e != 0) aggregateErrorCode = e;
                                                         if (countdown.Signal())
                                                         {
@@ -302,7 +299,7 @@ namespace FASTER.core
                 currentReadStart = newStart;
             }
 
-            // TODO(Tianyu): What do for the dumb overlapped wrapper...
+            // TODO: Check handling of overlapped wrapper
             if (countdown.Signal())
             {
                 Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);

@@ -58,7 +58,6 @@ namespace FASTER.devices
             int prevSegmentId = -1;
             foreach (IListBlobItem item in container.ListBlobs(blobName))
             {
-                // TODO(Tianyu): Depending on string parsing is bad. But what can one do when an entire cloud service API has no doc?
                 string[] parts = item.Uri.Segments;
                 int segmentId = Int32.Parse(parts[parts.Length - 1].Replace(blobName, ""));
                 if (segmentId != prevSegmentId + 1)
