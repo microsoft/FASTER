@@ -579,9 +579,6 @@ namespace FASTER.core
         /// </summary>
         public virtual void Dispose()
         {
-            for (int i=0; i<PageStatusIndicator.Length; i++)
-                PageStatusIndicator[i].PageFlushCloseStatus = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.Flushed, PageCloseStatus = PMMCloseStatus.Closed };
-
             TailPageOffset.Page = 0;
             TailPageOffset.Offset = 0;
             SafeReadOnlyAddress = 0;
