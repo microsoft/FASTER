@@ -18,6 +18,12 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         /// <summary>
+        /// Whether we are in relaxed CPR mode, where IO pending ops are not
+        /// part of the CPR checkpoint
+        /// </summary>
+        public bool RelaxedCPR = false;
+
+        /// <summary>
         /// Complete outstanding pending operations
         /// </summary>
         /// <returns></returns>
@@ -25,34 +31,42 @@ namespace FASTER.core
         {
             bool done = true;
 
-            #region Previous pending requests
-            if (threadCtx.Value.phase == Phase.IN_PROGRESS
-                ||
-                threadCtx.Value.phase == Phase.WAIT_PENDING)
+            if (!RelaxedCPR)
             {
+                #region Previous pending requests
+                if (clientSession.ctx.phase == Phase.IN_PROGRESS
+                    ||
+                    clientSession.ctx.phase == Phase.WAIT_PENDING)
+                {
 
-                await CompleteIOPendingRequestsAsync(prevThreadCtx.Value, clientSession);
-                Debug.Assert(prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                    await CompleteIOPendingRequestsAsync(clientSession.prevCtx, clientSession);
+                    Debug.Assert(clientSession.prevCtx.ioPendingRequests.Count == 0);
 
-                CompleteRetryRequests(prevThreadCtx.Value);
+                    if (clientSession.prevCtx.retryRequests.Count > 0)
+                    {
+                        clientSession.ResumeThread();
+                        CompleteRetryRequests(clientSession.prevCtx, clientSession);
+                        clientSession.SuspendThread();
+                    }
 
-                done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
-                done &= (prevThreadCtx.Value.retryRequests.Count == 0);
+                    done &= (clientSession.prevCtx.ioPendingRequests.Count == 0);
+                    done &= (clientSession.prevCtx.retryRequests.Count == 0);
+                }
+                #endregion
             }
-            #endregion
 
-            if (!(threadCtx.Value.phase == Phase.IN_PROGRESS
+            if (RelaxedCPR || (!(clientSession.ctx.phase == Phase.IN_PROGRESS
                   ||
-                  threadCtx.Value.phase == Phase.WAIT_PENDING))
+                  clientSession.ctx.phase == Phase.WAIT_PENDING)))
             {
-                await CompleteIOPendingRequestsAsync(threadCtx.Value, clientSession);
-                Debug.Assert(threadCtx.Value.ioPendingRequests.Count == 0);
+                await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession);
+                Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
             }
 
-            CompleteRetryRequests(threadCtx.Value);
+            CompleteRetryRequests(clientSession.ctx, clientSession);
 
-            done &= (threadCtx.Value.ioPendingRequests.Count == 0);
-            done &= (threadCtx.Value.retryRequests.Count == 0);
+            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
+            done &= (clientSession.ctx.retryRequests.Count == 0);
 
             if (!done)
             {
@@ -89,6 +103,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal async ValueTask InternalRefreshAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
+            clientSession.ResumeThread();
+
             epoch.ProtectAndDrain();
             epoch.Check();
 
@@ -107,7 +123,7 @@ namespace FASTER.core
             }
 
             await HandleCheckpointingPhasesAsync(clientSession);
-            clientSession.ResumeThread();
+            clientSession.SuspendThread();
         }
 
 
@@ -166,11 +182,11 @@ namespace FASTER.core
                         {
                             if (!threadCtx.Value.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
                             {
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, threadCtx.Value.version))
-                                {
-                                    GlobalMoveToNextCheckpointState(currentState);
-                                }
                                 threadCtx.Value.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
+                            }
+                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, threadCtx.Value.version))
+                            {
+                                GlobalMoveToNextCheckpointState(currentState);
                             }
                             break;
                         }
@@ -196,21 +212,24 @@ namespace FASTER.core
                         {
                             if (!threadCtx.Value.markers[EpochPhaseIdx.Prepare])
                             {
-                                // Thread local action
-                                AcquireSharedLatchesForAllPendingRequests();
+                                if (!RelaxedCPR)
+                                {
+                                    AcquireSharedLatchesForAllPendingRequests();
+                                }
 
                                 var idx = Interlocked.Increment(ref _hybridLogCheckpoint.info.numThreads);
                                 idx -= 1;
 
                                 _hybridLogCheckpoint.info.guids[idx] = threadCtx.Value.guid;
 
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.Prepare, threadCtx.Value.version))
-                                {
-                                    GlobalMoveToNextCheckpointState(currentState);
-                                }
-
                                 threadCtx.Value.markers[EpochPhaseIdx.Prepare] = true;
                             }
+
+                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.Prepare, threadCtx.Value.version))
+                            {
+                                GlobalMoveToNextCheckpointState(currentState);
+                            }
+
                             break;
                         }
                     case Phase.IN_PROGRESS:
@@ -231,11 +250,14 @@ namespace FASTER.core
                                 AtomicSwitch(threadCtx.Value, prevThreadCtx.Value, ctx.version);
                                 InitContext(threadCtx.Value, prevThreadCtx.Value.guid);
 
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.InProgress, ctx.version))
-                                {
-                                    GlobalMoveToNextCheckpointState(currentState);
-                                }
+                                // Has to be prevThreadCtx, not ctx
                                 prevThreadCtx.Value.markers[EpochPhaseIdx.InProgress] = true;
+                            }
+
+                            // Has to be prevThreadCtx, not ctx
+                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.InProgress, prevThreadCtx.Value.version))
+                            {
+                                GlobalMoveToNextCheckpointState(currentState);
                             }
                             break;
                         }
@@ -254,7 +276,13 @@ namespace FASTER.core
                                     }
                                     prevThreadCtx.Value.markers[EpochPhaseIdx.WaitPending] = true;
                                 }
-
+                            }
+                            else
+                            {
+                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitPending, threadCtx.Value.version))
+                                {
+                                    GlobalMoveToNextCheckpointState(currentState);
+                                }
                             }
                             break;
                         }
@@ -309,6 +337,13 @@ namespace FASTER.core
                                     prevThreadCtx.Value.markers[EpochPhaseIdx.WaitFlush] = true;
                                 }
                             }
+                            else
+                            {
+                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, prevThreadCtx.Value.version))
+                                {
+                                    GlobalMoveToNextCheckpointState(currentState);
+                                }
+                            }
                             break;
                         }
 
@@ -318,13 +353,11 @@ namespace FASTER.core
                             {
                                 // Thread local action
                                 functions.CheckpointCompletionCallback(threadCtx.Value.guid, prevThreadCtx.Value.serialNum);
-
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.Value.version))
-                                {
-                                    GlobalMoveToNextCheckpointState(currentState);
-                                }
-
                                 prevThreadCtx.Value.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
+                            }
+                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.Value.version))
+                            {
+                                GlobalMoveToNextCheckpointState(currentState);
                             }
                             break;
                         }

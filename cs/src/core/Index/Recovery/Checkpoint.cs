@@ -448,7 +448,7 @@ namespace FASTER.core
          * 
          * GC: 
          * REST -> GC -> REST
-         */ 
+         */
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState GetNextState(SystemState start, CheckpointType type = CheckpointType.FULL)
         {
@@ -496,7 +496,7 @@ namespace FASTER.core
                     nextState.version = start.version + 1;
                     break;
                 case Phase.IN_PROGRESS:
-                    nextState.phase = Phase.WAIT_PENDING;
+                    nextState.phase = RelaxedCPR ? Phase.WAIT_FLUSH : Phase.WAIT_PENDING;
                     break;
                 case Phase.WAIT_PENDING:
                     nextState.phase = Phase.WAIT_FLUSH;

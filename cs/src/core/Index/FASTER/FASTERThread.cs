@@ -134,11 +134,24 @@ namespace FASTER.core
             ctx.version = _systemState.version;
             ctx.markers = new bool[8];
             ctx.serialNum = 0;
-            ctx.totalPending = 0;
             ctx.guid = token;
-            ctx.retryRequests = new Queue<PendingContext>();
-            ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
-            ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
+
+            if (RelaxedCPR)
+            {
+                if (ctx.retryRequests == null)
+                {
+                    ctx.retryRequests = new Queue<PendingContext>();
+                    ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
+                    ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
+                }
+            }
+            else
+            {
+                ctx.totalPending = 0;
+                ctx.retryRequests = new Queue<PendingContext>();
+                ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
+                ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
+            }
         }
 
         internal void CopyContext(FasterExecutionContext src, FasterExecutionContext dst)
@@ -147,11 +160,14 @@ namespace FASTER.core
             dst.version = src.version;
             dst.markers = src.markers;
             dst.serialNum = src.serialNum;
-            dst.totalPending = src.totalPending;
             dst.guid = src.guid;
-            dst.retryRequests = src.retryRequests;
-            dst.readyResponses = src.readyResponses;
-            dst.ioPendingRequests = src.ioPendingRequests;
+            if (!RelaxedCPR)
+            {
+                dst.totalPending = src.totalPending;
+                dst.retryRequests = src.retryRequests;
+                dst.readyResponses = src.readyResponses;
+                dst.ioPendingRequests = src.ioPendingRequests;
+            }
         }
 
         internal bool InternalCompletePending(bool wait = false)
@@ -160,19 +176,22 @@ namespace FASTER.core
             {
                 bool done = true;
 
-                #region Previous pending requests
-                if (threadCtx.Value.phase == Phase.IN_PROGRESS
-                    ||
-                    threadCtx.Value.phase == Phase.WAIT_PENDING)
+                if (!RelaxedCPR)
                 {
-                    CompleteIOPendingRequests(prevThreadCtx.Value);
-                    Refresh();
-                    CompleteRetryRequests(prevThreadCtx.Value);
+                    #region Previous pending requests
+                    if (threadCtx.Value.phase == Phase.IN_PROGRESS
+                        ||
+                        threadCtx.Value.phase == Phase.WAIT_PENDING)
+                    {
+                        CompleteIOPendingRequests(prevThreadCtx.Value);
+                        Refresh();
+                        CompleteRetryRequests(prevThreadCtx.Value);
 
-                    done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
-                    done &= (prevThreadCtx.Value.retryRequests.Count == 0);
+                        done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                        done &= (prevThreadCtx.Value.retryRequests.Count == 0);
+                    }
+                    #endregion
                 }
-                #endregion
 
                 if (!(threadCtx.Value.phase == Phase.IN_PROGRESS
                       || 
@@ -204,11 +223,29 @@ namespace FASTER.core
         internal void CompleteRetryRequests(FasterExecutionContext context)
         {
             int count = context.retryRequests.Count;
+
+            if (count == 0) return;
+
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = context.retryRequests.Dequeue();
                 InternalRetryRequestAndCallback(context, pendingContext);
             }
+        }
+
+        internal void CompleteRetryRequests(FasterExecutionContext context, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default(CancellationToken))
+        {
+            int count = context.retryRequests.Count;
+
+            if (count == 0) return;
+
+            clientSession.ResumeThread();
+            for (int i = 0; i < count; i++)
+            {
+                var pendingContext = context.retryRequests.Dequeue();
+                InternalRetryRequestAndCallback(context, pendingContext);
+            }
+            clientSession.SuspendThread();
         }
 
         internal void CompleteIOPendingRequests(FasterExecutionContext context)
@@ -258,15 +295,20 @@ namespace FASTER.core
             ref Key key = ref pendingContext.key.Get();
             ref Value value = ref pendingContext.value.Get();
 
-            #region Entry latch operation
-            var handleLatches = false;
-            if ((ctx.version < threadCtx.Value.version) // Thread has already shifted to (v+1)
-                ||
-                (threadCtx.Value.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+            bool handleLatches = false;
+
+            if (!RelaxedCPR)
             {
-                handleLatches = true;
+                #region Entry latch operation
+                
+                if ((ctx.version < threadCtx.Value.version) // Thread has already shifted to (v+1)
+                    ||
+                    (threadCtx.Value.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+                {
+                    handleLatches = true;
+                }
+                #endregion
             }
-            #endregion
 
             // Issue retry command
             switch(pendingContext.type)
@@ -333,12 +375,16 @@ namespace FASTER.core
                                     FasterExecutionContext ctx,
                                     AsyncIOContext<Key, Value> request)
         {
-            var handleLatches = false;
-            if ((ctx.version < threadCtx.Value.version) // Thread has already shifted to (v+1)
-                ||
-                (threadCtx.Value.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+            bool handleLatches = false;
+
+            if (!RelaxedCPR)
             {
-                handleLatches = true;
+                if ((ctx.version < threadCtx.Value.version) // Thread has already shifted to (v+1)
+                    ||
+                    (threadCtx.Value.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+                {
+                    handleLatches = true;
+                }
             }
 
             if (ctx.ioPendingRequests.TryGetValue(request.id, out PendingContext pendingContext))
