@@ -91,8 +91,11 @@ namespace FASTER.core
             epoch.Resume();
 
             // Copy contexts to thread-local
-            this.prevThreadCtx.InitializeThread();
-            this.threadCtx.InitializeThread();
+            if (!this.prevThreadCtx.IsInitializedForThread)
+                this.prevThreadCtx.InitializeThread();
+
+            if (!this.threadCtx.IsInitializedForThread)
+                this.threadCtx.InitializeThread();
 
             this.prevThreadCtx.Value = prevThreadCtx;
             this.threadCtx.Value = threadCtx;

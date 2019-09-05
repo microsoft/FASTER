@@ -17,11 +17,11 @@ namespace FASTER.core
         private const int kMaxInstances = 128;
 
         [ThreadStatic]
-        private static T[] values;
+        private static T[] tl_values;
         [ThreadStatic]
-        private static int t_iid;
+        private static int[] tl_iid;
 
-        private readonly int id;
+        private readonly int offset;
         private readonly int iid;
 
         private static readonly int[] instances = new int[kMaxInstances];
@@ -35,7 +35,7 @@ namespace FASTER.core
             {
                 if (0 == Interlocked.CompareExchange(ref instances[i], iid, 0))
                 {
-                    id = i;
+                    offset = i;
                     return;
                 }
             }
@@ -44,20 +44,22 @@ namespace FASTER.core
 
         public void InitializeThread()
         {
-            if (values == null)
+            if (tl_values == null)
             {
-                values = new T[kMaxInstances];
+                tl_values = new T[kMaxInstances];
+                tl_iid = new int[kMaxInstances];
             }
-            if (t_iid != iid)
+            if (tl_iid[offset] != iid)
             {
-                t_iid = iid;
-                values[id] = default(T);
+                tl_iid[offset] = iid;
+                tl_values[offset] = default(T);
             }
         }
 
         public void DisposeThread()
         {
-            values[id] = default(T);
+            tl_values[offset] = default(T);
+            tl_iid[offset] = 0;
         }
 
         /// <summary>
@@ -65,15 +67,15 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            instances[id] = 0;
+            instances[offset] = 0;
         }
 
         public T Value
         {
-            get => values[id];
-            set => values[id] = value;
+            get => tl_values[offset];
+            set => tl_values[offset] = value;
         }
 
-        public bool IsInitializedForThread => (values != null) && (iid == t_iid);
+        public bool IsInitializedForThread => (tl_values != null) && (iid == tl_iid[offset]);
     }
 }

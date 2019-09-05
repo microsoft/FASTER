@@ -252,13 +252,13 @@ namespace FASTER.core
 
             if (count == 0) return;
 
-            clientSession.ResumeThread();
+            clientSession.UnsafeResumeThread();
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = context.retryRequests.Dequeue();
                 InternalRetryRequestAndCallback(context, pendingContext);
             }
-            clientSession.SuspendThread();
+            clientSession.UnsafeSuspendThread();
         }
 
         internal void CompleteIOPendingRequests(FasterExecutionContext context)
@@ -279,21 +279,21 @@ namespace FASTER.core
 
                 if (context.readyResponses.Count > 0)
                 {
-                    clientSession.ResumeThread();
+                    clientSession.UnsafeResumeThread();
                     while (context.readyResponses.Count > 0)
                     {
                         context.readyResponses.TryDequeue(out request);
                         InternalContinuePendingRequestAndCallback(context, request);
                     }
-                    clientSession.SuspendThread();
+                    clientSession.UnsafeSuspendThread();
                 }
                 else
                 {
                     request = await context.readyResponses.DequeueAsync(token);
 
-                    clientSession.ResumeThread();
+                    clientSession.UnsafeResumeThread();
                     InternalContinuePendingRequestAndCallback(context, request);
-                    clientSession.SuspendThread();
+                    clientSession.UnsafeSuspendThread();
                 }
 
             }

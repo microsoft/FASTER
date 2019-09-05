@@ -46,16 +46,15 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            ResumeThread();
-            fht.CompletePending(true);
-            fht.StopSession();
+            TryCompletePending(true);
+            fht.DisposeClientSession(ID);
         }
 
         /// <summary>
         /// Resume session on current thread
         /// Call SuspendThread before any async op
         /// </summary>
-        public void ResumeThread()
+        public void UnsafeResumeThread()
         {
             fht.ResumeSession(prevCtx, ctx);
         }
@@ -63,7 +62,7 @@ namespace FASTER.core
         /// <summary>
         /// Suspend session on current thread
         /// </summary>
-        public void SuspendThread()
+        public void UnsafeSuspendThread()
         {
             fht.SuspendSession();
         }
@@ -79,9 +78,9 @@ namespace FASTER.core
         /// <returns></returns>
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
         {
-            ResumeThread();
+            UnsafeResumeThread();
             var status = fht.Read(ref key, ref input, ref output, userContext, monotonicSerialNum);
-            SuspendThread();
+            UnsafeSuspendThread();
             return status;
         }
 
@@ -95,9 +94,9 @@ namespace FASTER.core
         /// <returns></returns>
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
         {
-            ResumeThread();
+            UnsafeResumeThread();
             var status = fht.Upsert(ref key, ref desiredValue, userContext, monotonicSerialNum);
-            SuspendThread();
+            UnsafeSuspendThread();
             return status;
         }
 
@@ -111,9 +110,9 @@ namespace FASTER.core
         /// <returns></returns>
         public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
         {
-            ResumeThread();
+            UnsafeResumeThread();
             var status = fht.RMW(ref key, ref input, userContext, monotonicSerialNum);
-            SuspendThread();
+            UnsafeSuspendThread();
             return status;
         }
 
@@ -126,9 +125,9 @@ namespace FASTER.core
         /// <returns></returns>
         public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
         {
-            ResumeThread();
+            UnsafeResumeThread();
             var status = fht.Delete(ref key, userContext, monotonicSerialNum);
-            SuspendThread();
+            UnsafeSuspendThread();
             return status;
         }
 
@@ -138,11 +137,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="spinWait"></param>
         /// <returns></returns>
-        public bool CompletePending(bool spinWait = false)
+        public bool TryCompletePending(bool spinWait = false)
         {
-            ResumeThread();
+            UnsafeResumeThread();
             var result = fht.CompletePending(spinWait);
-            SuspendThread();
+            UnsafeSuspendThread();
             return result;
         }
 
@@ -160,11 +159,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="spinWait"></param>
         /// <returns></returns>
-        public bool CompleteCheckpoint(bool spinWait = false)
+        public bool TryCompleteCheckpoint(bool spinWait = false)
         {
-            ResumeThread();
+            UnsafeResumeThread();
             var result = fht.CompleteCheckpoint(spinWait);
-            SuspendThread();
+            UnsafeSuspendThread();
             return result;
         }
 

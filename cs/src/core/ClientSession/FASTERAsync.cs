@@ -38,9 +38,9 @@ namespace FASTER.core
 
                     if (clientSession.prevCtx.retryRequests.Count > 0)
                     {
-                        clientSession.ResumeThread();
+                        clientSession.UnsafeResumeThread();
                         CompleteRetryRequests(clientSession.prevCtx, clientSession);
-                        clientSession.SuspendThread();
+                        clientSession.UnsafeSuspendThread();
                     }
 
                     done &= (clientSession.prevCtx.ioPendingRequests.Count == 0);
@@ -128,7 +128,7 @@ namespace FASTER.core
         private async ValueTask HandleCheckpointingPhasesAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true)
         {
             if (async)
-                clientSession.ResumeThread();
+                clientSession.UnsafeResumeThread();
 
             var previousState = SystemState.Make(threadCtx.Value.phase, threadCtx.Value.version);
             var finalState = SystemState.Copy(ref _systemState);
@@ -183,9 +183,9 @@ namespace FASTER.core
 
                             if (async && !IsIndexFuzzyCheckpointCompleted())
                             {
-                                clientSession.SuspendThread();
+                                clientSession.UnsafeSuspendThread();
                                 await IsIndexFuzzyCheckpointCompletedAsync();
-                                clientSession.ResumeThread();
+                                clientSession.UnsafeResumeThread();
                             }
                             GlobalMoveToNextCheckpointState(currentState);
 
@@ -287,9 +287,9 @@ namespace FASTER.core
                                 if (async && !notify)
                                 {
                                     Debug.Assert(_hybridLogCheckpoint.flushedSemaphore != null);
-                                    clientSession.SuspendThread();
+                                    clientSession.UnsafeSuspendThread();
                                     await _hybridLogCheckpoint.flushedSemaphore.WaitAsync();
-                                    clientSession.ResumeThread();
+                                    clientSession.UnsafeResumeThread();
 
                                     _hybridLogCheckpoint.flushedSemaphore.Release();
 
@@ -302,9 +302,9 @@ namespace FASTER.core
 
                                     if (async && !notify)
                                     {
-                                        clientSession.SuspendThread();
+                                        clientSession.UnsafeSuspendThread();
                                         await IsIndexFuzzyCheckpointCompletedAsync();
-                                        clientSession.ResumeThread();
+                                        clientSession.UnsafeResumeThread();
 
                                         notify = true;
                                     }
@@ -366,7 +366,7 @@ namespace FASTER.core
             } while (previousState.word != finalState.word);
 
             if (async)
-                clientSession.SuspendThread();
+                clientSession.UnsafeSuspendThread();
         }
     }
 }

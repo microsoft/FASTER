@@ -77,7 +77,7 @@ namespace FASTER.test.async
 
             s2.Dispose();
             s1.Dispose(); // should receive persistence callback
-            s0.ResumeThread(); // should receive persistence callback
+            s0.UnsafeResumeThread(); // should receive persistence callback
             s0.Dispose();
             fht1.Dispose();
 
@@ -93,7 +93,7 @@ namespace FASTER.test.async
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
                     if (status == Status.PENDING)
-                        s3.CompletePending(true);
+                        s3.TryCompletePending(true);
                     else
                     {
                         Assert.IsTrue(output.value.numClicks == key);
