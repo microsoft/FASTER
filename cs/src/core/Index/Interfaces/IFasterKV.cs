@@ -2,28 +2,17 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Interface to FASTER key-value store
-    /// (customized for sample types Key, Value, Input, Output, Context)
-    /// Since there are pointers in the API, we cannot automatically create a
-    /// generic version covering arbitrary blittable types. Instead, the
-    /// user defines the customized interface and provides it to FASTER
-    /// so it can return a (generated) instance for that interface.
     /// </summary>
     public interface IFasterKV<Key, Value, Input, Output, Context> : IDisposable
         where Key : new()
         where Value : new()
     {
-        /* Thread-related operations */
+        #region Session Operations
 
         /// <summary>
         /// Start a session with FASTER. FASTER sessions correspond to threads issuing
@@ -51,7 +40,9 @@ namespace FASTER.core
         /// </summary>
         void Refresh();
 
-        /* Store Interface */
+        #endregion
+
+        #region Core Index Operations
 
         /// <summary>
         /// Read operation
@@ -60,9 +51,9 @@ namespace FASTER.core
         /// <param name="input">Input argument used by Reader to select what part of value to read</param>
         /// <param name="output">Reader stores the read result in output</param>
         /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status Read(ref Key key, ref Input input, ref Output output, Context context, long lsn);
+        Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo);
 
         /// <summary>
         /// (Blind) upsert operation
@@ -70,9 +61,9 @@ namespace FASTER.core
         /// <param name="key">Key of read</param>
         /// <param name="value">Value being upserted</param>
         /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status Upsert(ref Key key, ref Value value, Context context, long lsn);
+        Status Upsert(ref Key key, ref Value value, Context context, long serialNo);
 
         /// <summary>
         /// Atomic read-modify-write operation
@@ -80,9 +71,9 @@ namespace FASTER.core
         /// <param name="key">Key of read</param>
         /// <param name="input">Input argument used by RMW callback to perform operation</param>
         /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status RMW(ref Key key, ref Input input, Context context, long lsn);
+        Status RMW(ref Key key, ref Input input, Context context, long serialNo);
 
         /// <summary>
         /// Delete entry (use tombstone if necessary)
@@ -90,11 +81,11 @@ namespace FASTER.core
         /// the head of hash chain.
         /// Value is set to null (using ConcurrentWrite) if it is in mutable region
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
-        Status Delete(ref Key key, Context userContext, long monotonicSerialNum);
+        /// <param name="key">Key of delete</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
+        Status Delete(ref Key key, Context context, long serialNo);
 
         /// <summary>
         /// Complete all pending operations issued by this session
@@ -103,8 +94,15 @@ namespace FASTER.core
         /// <returns>Whether all pending operations have completed</returns>
         bool CompletePending(bool wait);
 
+        /// <summary>
+        /// Grow the hash index
+        /// </summary>
+        /// <returns></returns>
+        bool GrowIndex();
 
-        /* Recovery */
+        #endregion
+
+        #region Recovery
 
         /// <summary>
         /// Take full checkpoint of FASTER
@@ -152,11 +150,9 @@ namespace FASTER.core
         /// <returns>Whether checkpoint has completed</returns>
         bool CompleteCheckpoint(bool wait);
 
-        /// <summary>
-        /// Grow the hash index
-        /// </summary>
-        /// <returns></returns>
-        bool GrowIndex();
+        #endregion
+
+        #region Other Operations
 
         /// <summary>
         /// Get number of (non-zero) hash entries in FASTER
@@ -198,5 +194,7 @@ namespace FASTER.core
         /// Get accessor for FASTER read cache
         /// </summary>
         LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+
+        #endregion
     }
 }

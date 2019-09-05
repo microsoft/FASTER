@@ -28,7 +28,7 @@ namespace FASTER.test.recovery.sumstore
         }
     }
 
-    public struct Input
+    public struct AdInput
     {
         public AdId adId;
         public NumClicks numClicks;
@@ -44,13 +44,13 @@ namespace FASTER.test.recovery.sumstore
         public NumClicks value;
     }
 
-    public class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>
+    public class Functions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
         }
 
@@ -68,12 +68,12 @@ namespace FASTER.test.recovery.sumstore
         }
 
         // Read functions
-        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
@@ -91,18 +91,18 @@ namespace FASTER.test.recovery.sumstore
         }
 
         // RMW functions
-        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             value = input.numClicks;
         }
 
-        public bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

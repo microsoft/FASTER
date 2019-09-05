@@ -20,7 +20,7 @@ namespace FASTER.test.recovery.sumstore
         const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fht;
         private string test_path;
         private Guid token;
         private IDevice log;
@@ -37,7 +37,7 @@ namespace FASTER.test.recovery.sumstore
 
             log = Devices.CreateLogDevice(test_path + "\\FullRecoveryTests.log");
 
-            fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
+            fht = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>
                 (keySpace, new Functions(), 
                 new LogSettings { LogDevice = log },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot }
@@ -88,7 +88,7 @@ namespace FASTER.test.recovery.sumstore
         public void Populate()
         {
             // Prepare the dataset
-            var inputArray = new Input[numOps];
+            var inputArray = new AdInput[numOps];
             for (int i = 0; i < numOps; i++)
             {
                 inputArray[i].adId.adId = i % numUniqueKeys;
@@ -141,7 +141,7 @@ namespace FASTER.test.recovery.sumstore
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            var inputArray = new Input[numUniqueKeys];
+            var inputArray = new AdInput[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
                 inputArray[i].adId.adId = i;
@@ -151,7 +151,7 @@ namespace FASTER.test.recovery.sumstore
             // Register with thread
             fht.StartSession();
 
-            Input input = default(Input);
+            AdInput input = default(AdInput);
             Output output = default(Output);
 
             // Issue read requests

@@ -11,7 +11,7 @@ using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 
-namespace FASTER.test
+namespace FASTER.test.async
 {
 
     [TestFixture]

@@ -95,7 +95,7 @@ namespace FASTER.test.recovery.sumstore
         {
             public string CheckpointDirectory { get; private set; }
             public string LogDirectory { get; private set; }
-            public FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> Faster { get; private set; }
+            public FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> Faster { get; private set; }
             public IDevice LogDevice { get; private set; }
 
             public void Initialize(string checkpointDirectory, string logDirectory)
@@ -104,7 +104,7 @@ namespace FASTER.test.recovery.sumstore
                 this.LogDirectory = logDirectory;
 
                 this.LogDevice = Devices.CreateLogDevice($"{this.LogDirectory}\\log", deleteOnClose: true);
-                this.Faster = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>(
+                this.Faster = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>(
                     keySpace,
                     new Functions(),
                     new LogSettings { LogDevice = this.LogDevice },
@@ -121,10 +121,10 @@ namespace FASTER.test.recovery.sumstore
             }
         }
 
-        private void Populate(FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fasterInstance)
+        private void Populate(FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fasterInstance)
         {
             // Prepare the dataset
-            var inputArray = new Input[numOps];
+            var inputArray = new AdInput[numOps];
             for (int i = 0; i < numOps; i++)
             {
                 inputArray[i].adId.adId = i % numUniqueKeys;
@@ -156,14 +156,14 @@ namespace FASTER.test.recovery.sumstore
             checkpointInfo.Recover(checkpointToken, new LocalCheckpointManager(fasterInstance.CheckpointDirectory));
 
             // Create array for reading
-            var inputArray = new Input[numUniqueKeys];
+            var inputArray = new AdInput[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
                 inputArray[i].adId.adId = i;
                 inputArray[i].numClicks.numClicks = 0;
             }
 
-            var input = default(Input);
+            var input = default(AdInput);
             var output = default(Output);
 
             // Issue read requests

@@ -323,10 +323,10 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// Complete outstanding pending operations
+        /// Complete all pending operations issued by this session
         /// </summary>
-        /// <param name="wait"></param>
-        /// <returns></returns>
+        /// <param name="wait">Whether we spin-wait for pending operations to complete</param>
+        /// <returns>Whether all pending operations have completed</returns>
         public bool CompletePending(bool wait = false)
         {
             return InternalCompletePending(wait);
@@ -391,19 +391,19 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Read
+        /// Read operation
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of read</param>
+        /// <param name="input">Input argument used by Reader to select what part of value to read</param>
+        /// <param name="output">Reader stores the read result in output</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
+        public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -411,25 +411,25 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
         /// <summary>
-        /// Upsert
+        /// (Blind) upsert operation
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of read</param>
+        /// <param name="value">Value being upserted</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
+        public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, ref desiredValue, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext);
             Status status;
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -438,25 +438,25 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
         /// <summary>
-        /// Read-modify-write
+        /// Atomic read-modify-write operation
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of read</param>
+        /// <param name="input">Input argument used by RMW callback to perform operation</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
+        public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalRMW(ref key, ref input, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -464,9 +464,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
@@ -476,28 +476,28 @@ namespace FASTER.core
         /// the head of hash chain.
         /// Value is set to null (using ConcurrentWrite) if it is in mutable region
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of delete</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
+        public Status Delete(ref Key key, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalDelete(ref key, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalDelete(ref key, ref context, ref pcontext);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
         /// <summary>
         /// Grow the hash index
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Whether the request succeeded</returns>
         public bool GrowIndex()
         {
             return InternalGrowIndex();
