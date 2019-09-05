@@ -92,9 +92,9 @@ namespace FASTER.test.recovery.objectstore
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions

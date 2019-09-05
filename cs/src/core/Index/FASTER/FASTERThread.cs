@@ -37,14 +37,14 @@ namespace FASTER.core
             return threadCtx.Value.guid;
         }
 
-        internal long InternalContinue(Guid guid)
+        internal CommitPoint InternalContinue(Guid guid)
         {
             epoch.Acquire();
             threadCtx.InitializeThread();
             prevThreadCtx.InitializeThread();
             if (_recoveredSessions != null)
             {
-                if (_recoveredSessions.TryGetValue(guid, out long serialNum))
+                if (_recoveredSessions.TryGetValue(guid, out CommitPoint cp))
                 {
                     // We have recovered the corresponding session. 
                     // Now obtain the session by first locking the rest phase
@@ -55,7 +55,7 @@ namespace FASTER.core
                         if(MakeTransition(currentState,intermediateState))
                         {
                             // No one can change from REST phase
-                            if(_recoveredSessions.TryRemove(guid, out serialNum))
+                            if(_recoveredSessions.TryRemove(guid, out cp))
                             {
                                 // We have atomically removed session details. 
                                 // No one else can continue this session
@@ -64,29 +64,29 @@ namespace FASTER.core
                                 prevThreadCtx.Value = new FasterExecutionContext();
                                 InitContext(prevThreadCtx.Value, guid);
                                 prevThreadCtx.Value.version--;
-                                threadCtx.Value.serialNum = serialNum;
+                                threadCtx.Value.serialNum = cp.UntilSerialNo;
                             }
                             else
                             {
                                 // Someone else continued this session
-                                serialNum = -1;
+                                cp = new CommitPoint { UntilSerialNo = -1 };
                                 Debug.WriteLine("Session already continued by another thread!");
                             }
 
                             MakeTransition(intermediateState, currentState);
                             InternalRefresh();
-                            return serialNum;
+                            return cp;
                         }
                     }
 
                     // Need to try again when in REST
                     Debug.WriteLine("Can continue only in REST phase");
-                    return -1;
+                    return new CommitPoint { UntilSerialNo = -1 };
                 }
             }
 
             Debug.WriteLine("No recovered sessions!");
-            return -1;
+            return new CommitPoint { UntilSerialNo = -1 };
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -161,12 +161,25 @@ namespace FASTER.core
             dst.markers = src.markers;
             dst.serialNum = src.serialNum;
             dst.guid = src.guid;
+            dst.excludedSerialNos = new List<long>();
+
             if (!RelaxedCPR)
             {
                 dst.totalPending = src.totalPending;
                 dst.retryRequests = src.retryRequests;
                 dst.readyResponses = src.readyResponses;
                 dst.ioPendingRequests = src.ioPendingRequests;
+            }
+            else
+            {
+                foreach (var v in src.ioPendingRequests.Values)
+                {
+                    dst.excludedSerialNos.Add(v.serialNum);
+                }
+                foreach (var v in src.retryRequests)
+                {
+                    dst.excludedSerialNos.Add(v.serialNum);
+                }
             }
         }
 

@@ -38,7 +38,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns>Sequence number for resuming operations</returns>
-        long ContinueSession(Guid guid);
+        CommitPoint ContinueSession(Guid guid);
 
         /// <summary>
         /// Stop a session and de-register the thread from FASTER.

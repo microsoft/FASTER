@@ -134,9 +134,9 @@ namespace FASTER.test
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
@@ -204,9 +204,9 @@ namespace FASTER.test
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions

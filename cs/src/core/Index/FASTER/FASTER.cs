@@ -25,8 +25,16 @@ namespace FASTER.core
         private readonly bool CopyReadsToTail = false;
         private readonly bool FoldOverSnapshot = false;
         private readonly int sectorSize;
-
         private readonly bool WriteDefaultOnDelete = false;
+        private bool RelaxedCPR = false;
+
+        /// <summary>
+        /// Use relaxed version of CPR, where ops pending I/O
+        /// are not part of CPR checkpoint. This mode allows
+        /// us to eliminate the WAIT_PENDING phase, and allows
+        /// sessions to be suspended. Do not modify during checkpointing.
+        /// </summary>
+        public void UseRelaxedCPR() => RelaxedCPR = true;
 
         /// <summary>
         /// Number of used entries in hash index
@@ -68,7 +76,7 @@ namespace FASTER.core
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
 
 
-        private ConcurrentDictionary<Guid, long> _recoveredSessions;
+        private ConcurrentDictionary<Guid, CommitPoint> _recoveredSessions;
 
         private readonly FastThreadLocal<FasterExecutionContext> prevThreadCtx;
         private readonly FastThreadLocal<FasterExecutionContext> threadCtx;
@@ -292,7 +300,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns></returns>
-        public long ContinueSession(Guid guid)
+        public CommitPoint ContinueSession(Guid guid)
         {
             return InternalContinue(guid);
         }

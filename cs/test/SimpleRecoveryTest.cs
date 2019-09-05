@@ -131,7 +131,6 @@ namespace FASTER.test.recovery.sumstore.simple
             {
                 value.numClicks = key;
                 s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
-                // await Task.Delay(1);
             }
 
             fht1.TakeFullCheckpoint(out Guid token);
@@ -139,7 +138,7 @@ namespace FASTER.test.recovery.sumstore.simple
             var s2 = fht1.StartClientSession();
 
             // s1 becomes dormant
-            s2.CompleteCheckpointAsync().AsTask().Wait();
+            await s2.CompleteCheckpointAsync();
 
             s2.Dispose();
             s1.Dispose(); // should receive persistence callback
@@ -147,13 +146,12 @@ namespace FASTER.test.recovery.sumstore.simple
             s0.Dispose();
             fht1.Dispose();
 
-            /*
             fht2.Recover(token); // sync, does not require session
 
             var guid = s1.ID;
-            using (var s3 = fht2.ContinueClientSession(guid, out long lsn))
+            using (var s3 = fht2.ContinueClientSession(guid, out CommitPoint lsn))
             {
-                Assert.IsTrue(lsn == numOps - 1);
+                Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
 
                 for (int key = 0; key < numOps; key++)
                 {
@@ -167,7 +165,6 @@ namespace FASTER.test.recovery.sumstore.simple
                     }
                 }
             }
-            */
 
             fht2.Dispose();
             log.Close();
@@ -253,9 +250,9 @@ namespace FASTER.test.recovery.sumstore.simple
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions

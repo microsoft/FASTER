@@ -182,7 +182,7 @@ namespace FASTER.test.recovery.sumstore
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var sno = checkpointInfo.continueTokens[guid];
+                var sno = checkpointInfo.continueTokens[guid].UntilSerialNo;
                 for (long i = 0; i <= sno; i++)
                 {
                     var id = i % numUniqueKeys;

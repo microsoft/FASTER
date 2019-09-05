@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using System;
+using System.Collections.Generic;
 
 namespace FixedLenStructSample
 {
@@ -11,7 +12,7 @@ namespace FixedLenStructSample
     /// </summary>
     public class FixedLenFunctions : IFunctions<FixedLenKey, FixedLenValue, string, string, Empty>
     {
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
         }
 

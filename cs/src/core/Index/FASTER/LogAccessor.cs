@@ -5,6 +5,7 @@
 
 
 using System;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -304,7 +305,7 @@ namespace FASTER.core
                 this.allocator = allocator;
             }
 
-            public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+            public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
             {
@@ -330,7 +331,7 @@ namespace FASTER.core
 
         private class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
-            public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+            public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }

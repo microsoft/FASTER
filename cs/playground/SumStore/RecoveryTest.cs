@@ -121,7 +121,7 @@ namespace SumStore
                 // Register with thread
                 do
                 {
-                    sno = fht.ContinueSession(sessionGuid);
+                    sno = fht.ContinueSession(sessionGuid).UntilSerialNo;
                 } while (sno == -1);
                 Console.WriteLine("Session {0} recovered until {1}", sessionGuid, sno);
                 sno++;
@@ -195,7 +195,7 @@ namespace SumStore
                 // Register with thread
                 long _sno = -1;
                 do {
-                    _sno = fht.ContinueSession(sessionGuid);
+                    _sno = fht.ContinueSession(sessionGuid).UntilSerialNo;
                 } while (_sno == -1);
                 sno.Add(_sno);
 

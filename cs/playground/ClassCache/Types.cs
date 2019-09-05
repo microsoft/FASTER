@@ -113,7 +113,7 @@ namespace ClassCache
             throw new NotImplementedException();
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
             throw new NotImplementedException();
         }

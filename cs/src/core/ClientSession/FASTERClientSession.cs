@@ -26,7 +26,7 @@ namespace FASTER.core
         public ClientSession<Key, Value, Input, Output, Context, Functions> StartClientSession()
         {
             // We have to use relaxed CPR with async client sessions
-            this.RelaxedCPR = true;
+            UseRelaxedCPR();
 
             Guid guid = Guid.NewGuid();
             var ctx = new FasterExecutionContext();
@@ -46,15 +46,15 @@ namespace FASTER.core
         /// Continue session with FASTER
         /// </summary>
         /// <param name="guid"></param>
-        /// <param name="lsn"></param>
+        /// <param name="cp"></param>
         /// <returns></returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> ContinueClientSession(Guid guid, out long lsn)
+        public ClientSession<Key, Value, Input, Output, Context, Functions> ContinueClientSession(Guid guid, out CommitPoint cp)
         {
             // We have to use relaxed CPR with async client sessions
-            this.RelaxedCPR = true;
+            UseRelaxedCPR();
 
-            lsn = InternalContinue(guid);
-            if (lsn == -1)
+            cp = InternalContinue(guid);
+            if (cp.UntilSerialNo == -1)
                 throw new Exception($"Unable to find session {guid} to recover");
 
             var prevCtx = this.prevThreadCtx.Value;

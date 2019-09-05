@@ -110,7 +110,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             fht2.StopSession();
 
             // Continue and increment values
-            long newSno = fht2.ContinueSession(sessionToken);
+            long newSno = fht2.ContinueSession(sessionToken).UntilSerialNo;
             Assert.IsTrue(newSno == sno - 1);
             IncrementAllValues(ref fht2, ref sno);
             fht2.TakeFullCheckpoint(out token);
@@ -125,7 +125,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
             // Recover and check if recovered values are correct
             fht3.Recover();
-            long newSno2 = fht3.ContinueSession(sessionToken);
+            long newSno2 = fht3.ContinueSession(sessionToken).UntilSerialNo;
             Assert.IsTrue(newSno2 == sno - 1);
             CheckAllValues(ref fht3, 2);
             fht3.StopSession();
@@ -190,9 +190,9 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions

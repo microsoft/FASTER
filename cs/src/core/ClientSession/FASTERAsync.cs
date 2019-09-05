@@ -18,12 +18,6 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         /// <summary>
-        /// Whether we are in relaxed CPR mode, where IO pending ops are not
-        /// part of the CPR checkpoint
-        /// </summary>
-        public bool RelaxedCPR = false;
-
-        /// <summary>
         /// Complete outstanding pending operations
         /// </summary>
         /// <returns></returns>
@@ -119,7 +113,12 @@ namespace FASTER.core
                 if (toCtx.version < version)
                 {
                     CopyContext(fromCtx, toCtx);
-                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid, toCtx.serialNum);
+                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid,
+                        new CommitPoint
+                        {
+                            UntilSerialNo = toCtx.serialNum,
+                            ExcludedSerialNos = toCtx.excludedSerialNos
+                        });
                     return true;
                 }
             }
@@ -336,7 +335,12 @@ namespace FASTER.core
                             if (!prevThreadCtx.Value.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                             {
                                 // Thread local action
-                                functions.CheckpointCompletionCallback(threadCtx.Value.guid, prevThreadCtx.Value.serialNum);
+                                functions.CheckpointCompletionCallback(threadCtx.Value.guid,
+                                    new CommitPoint
+                                    {
+                                        UntilSerialNo = prevThreadCtx.Value.serialNum,
+                                        ExcludedSerialNos = prevThreadCtx.Value.excludedSerialNos
+                                    });
                                 prevThreadCtx.Value.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                             }
                             if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, prevThreadCtx.Value.version))
