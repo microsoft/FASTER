@@ -25,6 +25,16 @@ namespace FASTER.core
         private readonly bool CopyReadsToTail = false;
         private readonly bool FoldOverSnapshot = false;
         private readonly int sectorSize;
+        private readonly bool WriteDefaultOnDelete = false;
+        private bool RelaxedCPR = false;
+
+        /// <summary>
+        /// Use relaxed version of CPR, where ops pending I/O
+        /// are not part of CPR checkpoint. This mode allows
+        /// us to eliminate the WAIT_PENDING phase, and allows
+        /// sessions to be suspended. Do not modify during checkpointing.
+        /// </summary>
+        public void UseRelaxedCPR() => RelaxedCPR = true;
 
         /// <summary>
         /// Number of used entries in hash index
@@ -51,7 +61,6 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
 
-
         private enum CheckpointType
         {
             INDEX_ONLY,
@@ -65,9 +74,9 @@ namespace FASTER.core
         private SystemState _systemState;
 
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        
 
-        private ConcurrentDictionary<Guid, long> _recoveredSessions;
+
+        private ConcurrentDictionary<Guid, CommitPoint> _recoveredSessions;
 
         private readonly FastThreadLocal<FasterExecutionContext> prevThreadCtx;
         private readonly FastThreadLocal<FasterExecutionContext> threadCtx;
@@ -125,8 +134,7 @@ namespace FASTER.core
             {
                 if (variableLengthStructSettings != null)
                 {
-                    hlog = new VariableLengthBlittableAllocator<Key, Value>
-                        (logSettings, variableLengthStructSettings, this.comparer, null, epoch);
+                    hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings, this.comparer, null, epoch);
                     Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                     if (UseReadCache)
                     {
@@ -163,6 +171,8 @@ namespace FASTER.core
             }
             else
             {
+                WriteDefaultOnDelete = true;
+
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
                 if (UseReadCache)
@@ -290,7 +300,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns></returns>
-        public long ContinueSession(Guid guid)
+        public CommitPoint ContinueSession(Guid guid)
         {
             return InternalContinue(guid);
         }
@@ -313,10 +323,10 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// Complete outstanding pending operations
+        /// Complete all pending operations issued by this session
         /// </summary>
-        /// <param name="wait"></param>
-        /// <returns></returns>
+        /// <param name="wait">Whether we spin-wait for pending operations to complete</param>
+        /// <returns>Whether all pending operations have completed</returns>
         public bool CompletePending(bool wait = false)
         {
             return InternalCompletePending(wait);
@@ -349,13 +359,13 @@ namespace FASTER.core
         /// <returns></returns>
         public bool CompleteCheckpoint(bool wait = false)
         {
-            if(threadCtx == null)
+            if (threadCtx == null)
             {
                 // the thread does not have an active session
                 // we can wait until system state becomes REST
                 do
                 {
-                    if(_systemState.phase == Phase.REST)
+                    if (_systemState.phase == Phase.REST)
                     {
                         return true;
                     }
@@ -381,19 +391,19 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Read
+        /// Read operation
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of read</param>
+        /// <param name="input">Input argument used by Reader to select what part of value to read</param>
+        /// <param name="output">Reader stores the read result in output</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
+        public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -401,25 +411,25 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
         /// <summary>
-        /// Upsert
+        /// (Blind) upsert operation
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of read</param>
+        /// <param name="value">Value being upserted</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
+        public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, ref desiredValue, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext);
             Status status;
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -428,25 +438,25 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
         /// <summary>
-        /// Read-modify-write
+        /// Atomic read-modify-write operation
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of read</param>
+        /// <param name="input">Input argument used by RMW callback to perform operation</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
+        public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalRMW(ref key, ref input, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -454,9 +464,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
+                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
@@ -466,28 +476,28 @@ namespace FASTER.core
         /// the head of hash chain.
         /// Value is set to null (using ConcurrentWrite) if it is in mutable region
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
-        /// <returns></returns>
+        /// <param name="key">Key of delete</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
+        public Status Delete(ref Key key, Context context, long serialNo)
         {
-            var context = default(PendingContext);
-            var internalStatus = InternalDelete(ref key, ref userContext, ref context);
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalDelete(ref key, ref context, ref pcontext);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
             }
-            threadCtx.Value.serialNum = monotonicSerialNum;
+            threadCtx.Value.serialNum = serialNo;
             return status;
         }
 
         /// <summary>
         /// Grow the hash index
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Whether the request succeeded</returns>
         public bool GrowIndex()
         {
             return InternalGrowIndex();

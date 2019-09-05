@@ -28,7 +28,7 @@ namespace FASTER.test.recovery.sumstore
         }
     }
 
-    public struct Input
+    public struct AdInput
     {
         public AdId adId;
         public NumClicks numClicks;
@@ -44,13 +44,13 @@ namespace FASTER.test.recovery.sumstore
         public NumClicks value;
     }
 
-    public class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>
+    public class Functions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
         }
 
@@ -62,18 +62,18 @@ namespace FASTER.test.recovery.sumstore
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
-        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
@@ -84,23 +84,25 @@ namespace FASTER.test.recovery.sumstore
             dst = src;
         }
 
-        public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
             dst = src;
+            return true;
         }
 
         // RMW functions
-        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             value = input.numClicks;
         }
 
-        public void InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+            return true;
         }
 
-        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

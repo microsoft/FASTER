@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -214,5 +215,40 @@ namespace FASTER.core
             a ^= a >> 16;
             return (int)a;
         }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="variable"> The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns> if oldValue less than newValue </returns>
+        public static bool MonotonicUpdate(ref long variable, long newValue, out long oldValue)
+        {
+            do
+            {
+                oldValue = variable;
+                if (oldValue > newValue) return false;
+            } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="variable"> The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns>if oldValue less than or equal to newValue</returns>
+        public static bool MonotonicUpdate(ref int variable, int newValue, out int oldValue)
+        {
+            do
+            {
+                oldValue = variable;
+                if (oldValue >= newValue) return false;
+            } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
     }
 }

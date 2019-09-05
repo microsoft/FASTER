@@ -22,14 +22,26 @@ namespace FASTER.devices
         private int waitingCount;
 
         /// <summary>
+        /// Creates a new BlobEntry to hold the given pageBlob. The pageBlob must already be created.
+        /// </summary>
+        /// <param name="pageBlob"></param>
+        public BlobEntry(CloudPageBlob pageBlob)
+        {
+            this.pageBlob = pageBlob;
+            if (pageBlob == null)
+            {
+                // Only need to allocate a queue when we potentially need to asynchronously create a blob
+                pendingWrites = new ConcurrentQueue<Action<CloudPageBlob>>();
+                waitingCount = 0;
+            }
+
+        }
+        /// <summary>
         /// Creates a new BlobEntry, does not initialize a page blob. Use <see cref="CreateAsync(long, CloudPageBlob)"/>
         /// for actual creation.
         /// </summary>
-        public BlobEntry()
+        public BlobEntry() : this(null)
         {
-            pageBlob = null;
-            pendingWrites = new ConcurrentQueue<Action<CloudPageBlob>>();
-            waitingCount = 0;
         }
 
         /// <summary>
@@ -58,7 +70,6 @@ namespace FASTER.devices
                 }
                 catch (Exception e)
                 {
-                    // TODO(Tianyu): Can't really do better without knowing error behavior
                     Trace.TraceError(e.Message);
                 }
                 // At this point the blob is fully created. After this line all consequent writers will write immediately. We just

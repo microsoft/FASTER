@@ -332,8 +332,8 @@ namespace FASTER.test
                 {
                     Assert.IsTrue(status == Status.OK);
                 }
-                Assert.IsTrue(output.value.vfield1 == 2*value.vfield1, "found " + output.value.vfield1 + ", expected " + 2 * value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == 2*value.vfield2);
+                Assert.IsTrue(output.value.vfield1 == 2 * value.vfield1, "found " + output.value.vfield1 + ", expected " + 2 * value.vfield1);
+                Assert.IsTrue(output.value.vfield2 == 2 * value.vfield2);
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
@@ -348,6 +348,5 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
         }
-
     }
 }

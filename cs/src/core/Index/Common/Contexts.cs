@@ -103,10 +103,27 @@ namespace FASTER.core
             public Queue<PendingContext> retryRequests;
             public Dictionary<long, PendingContext> ioPendingRequests;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
+            public List<long> excludedSerialNos;
         }
     }
 
  
+    /// <summary>
+    /// Descriptor for a CPR commit point
+    /// </summary>
+    public struct CommitPoint
+    {
+        /// <summary>
+        /// Serial number until which we have committed
+        /// </summary>
+        public long UntilSerialNo;
+
+        /// <summary>
+        /// List of operation serial nos excluded from commit
+        /// </summary>
+        public List<long> ExcludedSerialNos;
+    }
+
     /// <summary>
     /// Recovery info for hybrid log
     /// </summary>
@@ -154,14 +171,14 @@ namespace FASTER.core
         public Guid[] guids;
 
         /// <summary>
-        /// Tokens per guid restored during Continue
+        /// Commit tokens per guid restored during Continue
         /// </summary>
-        public ConcurrentDictionary<Guid, long> continueTokens;
+        public ConcurrentDictionary<Guid, CommitPoint> continueTokens;
 
         /// <summary>
-        /// Tokens per guid created during Checkpoint
+        /// Commit tokens per guid created during Checkpoint
         /// </summary>
-        public ConcurrentDictionary<Guid, long> checkpointTokens;
+        public ConcurrentDictionary<Guid, CommitPoint> checkpointTokens;
 
         /// <summary>
         /// Object log segment offsets
@@ -184,8 +201,10 @@ namespace FASTER.core
             finalLogicalAddress = 0;
             headAddress = 0;
             guids = new Guid[LightEpoch.kTableSize + 1];
-            continueTokens = new ConcurrentDictionary<Guid, long>();
-            checkpointTokens = new ConcurrentDictionary<Guid, long>();
+
+            continueTokens = new ConcurrentDictionary<Guid, CommitPoint>();
+            checkpointTokens = new ConcurrentDictionary<Guid, CommitPoint>();
+
             objectLogSegmentOffsets = null;
         }
 
@@ -196,7 +215,7 @@ namespace FASTER.core
         public void Initialize(StreamReader reader)
         {
             guids = new Guid[LightEpoch.kTableSize + 1];
-            continueTokens = new ConcurrentDictionary<Guid, long>();
+            continueTokens = new ConcurrentDictionary<Guid, CommitPoint>();
 
             string value = reader.ReadLine();
             guid = Guid.Parse(value);
@@ -231,7 +250,17 @@ namespace FASTER.core
                 guids[i] = Guid.Parse(value);
                 value = reader.ReadLine();
                 var serialno = long.Parse(value);
-                continueTokens.TryAdd(guids[i], serialno);
+
+                var exclusions = new List<long>();
+                var exclusionCount = int.Parse(reader.ReadLine());
+                for (int j = 0; j < exclusionCount; j++)
+                    exclusions.Add(long.Parse(reader.ReadLine()));
+
+                continueTokens.TryAdd(guids[i], new CommitPoint
+                    {
+                        UntilSerialNo = serialno,
+                        ExcludedSerialNos = exclusions
+                    });
             }
 
             // Read object log segment offsets
@@ -289,12 +318,16 @@ namespace FASTER.core
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
+                    writer.WriteLine(checkpointTokens.Count);
 
                     writer.WriteLine(checkpointTokens.Count);
                     foreach (var kvp in checkpointTokens)
                     {
                         writer.WriteLine(kvp.Key);
-                        writer.WriteLine(kvp.Value);
+                        writer.WriteLine(kvp.Value.UntilSerialNo);
+                        writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
+                        foreach (long item in kvp.Value.ExcludedSerialNos)
+                            writer.WriteLine(item);
                     }
 
                     // Write object log segment offsets

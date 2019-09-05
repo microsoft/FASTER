@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using System;
+using System.Collections.Generic;
 
 namespace FixedLenStructSample
 {
@@ -11,7 +12,7 @@ namespace FixedLenStructSample
     /// </summary>
     public class FixedLenFunctions : IFunctions<FixedLenKey, FixedLenValue, string, string, Empty>
     {
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -20,9 +21,10 @@ namespace FixedLenStructSample
             dst = value.ToString();
         }
 
-        public void ConcurrentWriter(ref FixedLenKey key, ref FixedLenValue src, ref FixedLenValue dst)
+        public bool ConcurrentWriter(ref FixedLenKey key, ref FixedLenValue src, ref FixedLenValue dst)
         {
             src.CopyTo(ref dst);
+            return true;
         }
 
         public void CopyUpdater(ref FixedLenKey key, ref string input, ref FixedLenValue oldValue, ref FixedLenValue newValue)
@@ -37,8 +39,9 @@ namespace FixedLenStructSample
         {
         }
 
-        public void InPlaceUpdater(ref FixedLenKey key, ref string input, ref FixedLenValue value)
+        public bool InPlaceUpdater(ref FixedLenKey key, ref string input, ref FixedLenValue value)
         {
+            return true;
         }
 
         public void ReadCompletionCallback(ref FixedLenKey key, ref string input, ref string output, Empty ctx, Status status)

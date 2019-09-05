@@ -219,7 +219,6 @@ namespace FASTER.core
             {
                 Acquire();
             }
-            ProtectAndDrain();
         }
 
         internal FastThreadLocal<int> ThreadEntry => threadEntryIndex;

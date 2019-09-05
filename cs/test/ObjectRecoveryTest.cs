@@ -195,8 +195,8 @@ namespace FASTER.test.recovery.objectstore
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var sno = checkpointInfo.continueTokens[guid];
-                for (long i = 0; i <= sno; i++)
+                var cp = checkpointInfo.continueTokens[guid];
+                for (long i = 0; i <= cp.UntilSerialNo; i++)
                 {
                     var id = i % numUniqueKeys;
                     expected[id]++;

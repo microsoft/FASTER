@@ -11,7 +11,7 @@ using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 
-namespace FASTER.test
+namespace FASTER.test.async
 {
 
     [TestFixture]
@@ -54,7 +54,7 @@ namespace FASTER.test
 
                 if (status == Status.PENDING)
                 {
-                    session.CompletePending(true);
+                    session.TryCompletePending(true);
                 }
                 else
                 {
@@ -88,7 +88,7 @@ namespace FASTER.test
 
                 if (status == Status.PENDING)
                 {
-                    session1.CompletePending(true);
+                    session1.TryCompletePending(true);
                 }
                 else
                 {
@@ -102,7 +102,7 @@ namespace FASTER.test
 
                 if (status == Status.PENDING)
                 {
-                    session2.CompletePending(true);
+                    session2.TryCompletePending(true);
                 }
                 else
                 {
@@ -132,7 +132,7 @@ namespace FASTER.test
 
                     if (status == Status.PENDING)
                     {
-                        session.CompletePending(true);
+                        session.TryCompletePending(true);
                     }
                     else
                     {
@@ -164,7 +164,7 @@ namespace FASTER.test
 
                     if (status == Status.PENDING)
                     {
-                        session1.CompletePending(true);
+                        session1.TryCompletePending(true);
                     }
                     else
                     {
@@ -189,7 +189,7 @@ namespace FASTER.test
 
                     if (status == Status.PENDING)
                     {
-                        session2.CompletePending(true);
+                        session2.TryCompletePending(true);
                     }
                     else
                     {
@@ -222,7 +222,7 @@ namespace FASTER.test
 
             if (status == Status.PENDING)
             {
-                session.CompletePending(true);
+                session.TryCompletePending(true);
             }
             else
             {
@@ -245,7 +245,7 @@ namespace FASTER.test
 
             if (status == Status.PENDING)
             {
-                session.CompletePending(true);
+                session.TryCompletePending(true);
             }
             else
             {
@@ -256,7 +256,7 @@ namespace FASTER.test
 
             if (status == Status.PENDING)
             {
-                session.CompletePending(true);
+                session.TryCompletePending(true);
             }
             else
             {
