@@ -318,7 +318,6 @@ namespace FASTER.core
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
-                    writer.WriteLine(checkpointTokens.Count);
 
                     writer.WriteLine(checkpointTokens.Count);
                     foreach (var kvp in checkpointTokens)
