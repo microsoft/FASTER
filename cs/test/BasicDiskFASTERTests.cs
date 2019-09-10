@@ -58,7 +58,6 @@ namespace FASTER.test
         [Test]
         public void ShardedWriteRead()
         {
-            // TODO(Tianyu): Magic constant
             IDevice localDevice1 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests1.log", deleteOnClose: true, capacity: 1 << 30);
             IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));

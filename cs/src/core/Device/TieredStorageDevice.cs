@@ -19,7 +19,6 @@ namespace FASTER.core
         private readonly IList<IDevice> devices;
         private readonly int commitPoint;
 
-        // TODO(Tianyu): Not reasoning about what the sector size of a tiered storage should be when different tiers can have different sector sizes.
         /// <summary>
         /// Constructs a new TieredStorageDevice composed of the given devices.
         /// </summary>
@@ -32,11 +31,10 @@ namespace FASTER.core
         /// List of devices to be used. The list should be given in order of hot to cold. Read is served from the
         /// device with smallest index in the list that has the requested data
         /// </param>
-        // TODO(Tianyu): Recovering from a tiered device is potentially difficult, because we also need to recover their respective ranges.
         public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices))
         {
             Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
-            // TODO(Tianyu): Should assert that passed in devices are not yet initialized. This is more challenging for recovering.
+
             this.devices = devices;
             this.commitPoint = commitPoint;
         }
@@ -57,8 +55,6 @@ namespace FASTER.core
         {
         }
 
-
-        // TODO(Tianyu): Unclear whether this is the right design. Should we allow different tiers different segment sizes?
         public override void Initialize(long segmentSize, LightEpoch epoch)
         {
             base.Initialize(segmentSize, epoch);
@@ -90,7 +86,6 @@ namespace FASTER.core
         {
 
             int startTier = FindClosestDeviceContaining(segmentId);
-            // TODO(Tianyu): Can you ever initiate a write that is after the commit point? Given FASTER's model of a read-only region, this will probably never happen.
             Debug.Assert(startTier <= commitPoint, "Write should not elide the commit point");
 
             var countdown = new CountdownEvent(commitPoint + 1);  // number of devices to wait on
@@ -146,7 +141,6 @@ namespace FASTER.core
                 // Unless the last tier device has unspecified storage capacity, in which case the tiered storage also has unspecified capacity
                 if (device.Capacity == Devices.CAPACITY_UNSPECIFIED)
                 {
-                    // TODO(Tianyu): Is this assumption too strong?
                     Debug.Assert(device == devices[devices.Count - 1], "Only the last tier storage of a tiered storage device can have unspecified capacity");
                     return Devices.CAPACITY_UNSPECIFIED;
                 }
@@ -155,7 +149,6 @@ namespace FASTER.core
             return result;
         }
 
-        // TODO(Tianyu): Is the notion of file name still relevant in a tiered storage device?
         private static string ComputeFileString(IList<IDevice> devices, int commitPoint)
         {
             StringBuilder result = new StringBuilder();
@@ -177,7 +170,6 @@ namespace FASTER.core
             {
                 if (devices[i].StartSegment <= segment) return i;
             }
-            // TODO(Tianyu): This exception should never be triggered if we enforce that the last tier has unbounded storage.
             throw new ArgumentException("No such address exists");
         }
     }

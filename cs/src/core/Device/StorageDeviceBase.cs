@@ -94,8 +94,6 @@ namespace FASTER.core
         /// <param name="epoch"></param>
         public virtual void Initialize(long segmentSize, LightEpoch epoch = null)
         {
-            // TODO(Tianyu): Alternatively, we can adjust capacity based on the segment size: given a phsyical upper limit of capacity,
-            // we only make use of (Capacity / segmentSize * segmentSize) many bytes. 
             Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
             this.segmentSize = segmentSize;
             this.epoch = epoch;
