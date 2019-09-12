@@ -25,9 +25,9 @@ namespace FASTER.core
         {
             bool done = true;
 
+            #region Previous pending requests
             if (!RelaxedCPR)
             {
-                #region Previous pending requests
                 if (clientSession.ctx.phase == Phase.IN_PROGRESS
                     ||
                     clientSession.ctx.phase == Phase.WAIT_PENDING)
@@ -46,18 +46,13 @@ namespace FASTER.core
                     done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
                     done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
                 }
-                #endregion
             }
+            #endregion
 
-            if (RelaxedCPR || (!(clientSession.ctx.phase == Phase.IN_PROGRESS
-                  ||
-                  clientSession.ctx.phase == Phase.WAIT_PENDING)))
-            {
-                await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession);
-                Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
-            }
-
+            await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession);
             CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
+
+            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
 
             done &= (clientSession.ctx.ioPendingRequests.Count == 0);
             done &= (clientSession.ctx.retryRequests.Count == 0);
@@ -233,11 +228,11 @@ namespace FASTER.core
                                 AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
                                 InitContext(ctx, ctx.prevCtx.guid);
 
-                                // Has to be prevThreadCtx, not ctx
+                                // Has to be prevCtx, not ctx
                                 ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
                             }
 
-                            // Has to be prevThreadCtx, not ctx
+                            // Has to be prevCtx, not ctx
                             if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.InProgress, ctx.prevCtx.version))
                             {
                                 GlobalMoveToNextCheckpointState(currentState);

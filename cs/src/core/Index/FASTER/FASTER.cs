@@ -78,7 +78,6 @@ namespace FASTER.core
 
         private ConcurrentDictionary<Guid, CommitPoint> _recoveredSessions;
 
-        private readonly FastThreadLocal<FasterExecutionContext> prevThreadCtx;
         private readonly FastThreadLocal<FasterExecutionContext> threadCtx;
 
 
@@ -95,7 +94,6 @@ namespace FASTER.core
         public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
             threadCtx = new FastThreadLocal<FasterExecutionContext>();
-            prevThreadCtx = new FastThreadLocal<FasterExecutionContext>();
 
             if (comparer != null)
                 this.comparer = comparer;
@@ -294,7 +292,6 @@ namespace FASTER.core
             return InternalAcquire();
         }
 
-
         /// <summary>
         /// Continue session with FASTER
         /// </summary>
@@ -344,10 +341,10 @@ namespace FASTER.core
         public IEnumerable<long> GetPendingRequests()
         {
 
-            foreach (var kvp in prevThreadCtx.Value.ioPendingRequests)
+            foreach (var kvp in threadCtx.Value.prevCtx?.ioPendingRequests)
                 yield return kvp.Value.serialNum;
 
-            foreach (var val in prevThreadCtx.Value.retryRequests)
+            foreach (var val in threadCtx.Value.prevCtx?.retryRequests)
                 yield return val.serialNum;
 
             foreach (var kvp in threadCtx.Value.ioPendingRequests)
@@ -548,8 +545,7 @@ namespace FASTER.core
         public void Dispose()
         {
             base.Free();
-            threadCtx.Dispose();
-            prevThreadCtx.Dispose();
+            threadCtx?.Dispose();
             hlog.Dispose();
             readcache?.Dispose();
         }

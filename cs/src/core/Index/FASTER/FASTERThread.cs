@@ -21,7 +21,6 @@ namespace FASTER.core
         {
             epoch.Acquire();
             threadCtx.InitializeThread();
-            prevThreadCtx.InitializeThread();
             Phase phase = _systemState.phase;
             if (phase != Phase.REST)
             {
@@ -30,10 +29,10 @@ namespace FASTER.core
             Guid guid = Guid.NewGuid();
             threadCtx.Value = new FasterExecutionContext();
             InitContext(threadCtx.Value, guid);
-            prevThreadCtx.Value = new FasterExecutionContext();
-            InitContext(prevThreadCtx.Value, guid);
-            prevThreadCtx.Value.version--;
-            threadCtx.Value.prevCtx = prevThreadCtx.Value;
+
+            threadCtx.Value.prevCtx = new FasterExecutionContext();
+            InitContext(threadCtx.Value.prevCtx, guid);
+            threadCtx.Value.prevCtx.version--;
             InternalRefresh(threadCtx.Value);
             return threadCtx.Value.guid;
         }
@@ -183,33 +182,24 @@ namespace FASTER.core
             {
                 bool done = true;
 
+                #region Previous pending requests
                 if (!RelaxedCPR)
                 {
-                    #region Previous pending requests
-                    if (ctx.phase == Phase.IN_PROGRESS
-                        ||
-                        ctx.phase == Phase.WAIT_PENDING)
+                    if (ctx.phase == Phase.IN_PROGRESS || ctx.phase == Phase.WAIT_PENDING)
                     {
                         CompleteIOPendingRequests(ctx.prevCtx, ctx);
-                        epoch.ProtectAndDrain(); // incorrect?
-                        // InternalRefresh();
                         CompleteRetryRequests(ctx.prevCtx, ctx);
+                        InternalRefresh(ctx);
 
                         done &= (ctx.prevCtx.ioPendingRequests.Count == 0);
                         done &= (ctx.prevCtx.retryRequests.Count == 0);
                     }
-                    #endregion
                 }
+                #endregion
 
-                if (!(ctx.phase == Phase.IN_PROGRESS
-                      || 
-                      ctx.phase == Phase.WAIT_PENDING))
-                {
-                    CompleteIOPendingRequests(ctx, ctx);
-                }
-                epoch.ProtectAndDrain(); // incorrect?
-                // InternalRefresh();
+                CompleteIOPendingRequests(ctx, ctx);
                 CompleteRetryRequests(ctx, ctx);
+                InternalRefresh(ctx);
 
                 done &= (ctx.ioPendingRequests.Count == 0);
                 done &= (ctx.retryRequests.Count == 0);
