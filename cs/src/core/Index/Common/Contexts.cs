@@ -104,6 +104,8 @@ namespace FASTER.core
             public Dictionary<long, PendingContext> ioPendingRequests;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
+
+            public FasterExecutionContext prevCtx;
         }
     }
 

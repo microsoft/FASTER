@@ -110,7 +110,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            store.StartSession();
+            var session = store.StartClientSession(false);
 
             while (!done)
             {
@@ -135,11 +135,11 @@ namespace FASTER.benchmark
 
                     if (idx % 256 == 0)
                     {
-                        store.Refresh();
+                        session.Refresh();
 
                         if (idx % 65536 == 0)
                         {
-                            store.CompletePending(false);
+                            session.CompletePending(false);
                         }
                     }
 
@@ -147,13 +147,13 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                                session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                Status result = store.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                                Status result = session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++reads_done;
@@ -162,7 +162,7 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = store.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                                Status result = session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++writes_done;
@@ -191,8 +191,9 @@ namespace FASTER.benchmark
 #endif
             }
 
-            store.CompletePending(true);
-            store.StopSession();
+            session.CompletePending(true);
+            session.Dispose();
+
             sw.Stop();
 
             Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
@@ -311,7 +312,7 @@ namespace FASTER.benchmark
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            store.StartSession();
+            var session = store.StartClientSession(false);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -330,15 +331,15 @@ namespace FASTER.benchmark
                 {
                     if (idx % 256 == 0)
                     {
-                        store.Refresh();
+                        session.Refresh();
 
                         if (idx % 65536 == 0)
                         {
-                            store.CompletePending(false);
+                            session.CompletePending(false);
                         }
                     }
 
-                    store.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
+                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -356,9 +357,8 @@ namespace FASTER.benchmark
 #endif
             }
 
-
-            store.CompletePending(true);
-            store.StopSession();
+            session.CompletePending(true);
+            session.Dispose();
         }
 
 #if DASHBOARD

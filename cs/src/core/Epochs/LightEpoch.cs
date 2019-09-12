@@ -203,10 +203,6 @@ namespace FASTER.core
         public void Suspend()
         {
             int entry = threadEntryIndex.Value;
-            if (kInvalidIndex == entry)
-            {
-                return;
-            }
             (*(tableAligned + entry)).localCurrentEpoch = int.MaxValue;
         }
 

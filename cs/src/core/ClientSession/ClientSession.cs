@@ -17,23 +17,31 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public class ClientSession<Key, Value, Input, Output, Context, Functions> : IDisposable
+    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IDisposable
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private FasterKV<Key, Value, Input, Output, Context, Functions> fht;
-        internal FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevCtx;
-        internal FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx;
+        private readonly bool supportAsync = false;
+        private readonly FasterKV<Key, Value, Input, Output, Context, Functions> fht;
+        internal readonly FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx;
 
         internal ClientSession(
             FasterKV<Key, Value, Input, Output, Context, Functions> fht,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext prevCtx,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx)
+            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx, 
+            bool supportAsync)
         {
             this.fht = fht;
-            this.prevCtx = prevCtx;
             this.ctx = ctx;
+            this.supportAsync = supportAsync;
+            if (supportAsync)
+            {
+                fht.UseRelaxedCPR();
+            }
+            else
+            {
+                UnsafeResumeThread();
+            }
         }
 
         /// <summary>
@@ -46,7 +54,7 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            TryCompletePending(true);
+            CompletePending(true);
             fht.DisposeClientSession(ID);
         }
 
@@ -54,15 +62,15 @@ namespace FASTER.core
         /// Resume session on current thread
         /// Call SuspendThread before any async op
         /// </summary>
-        public void UnsafeResumeThread()
+        internal void UnsafeResumeThread()
         {
-            fht.ResumeSession(prevCtx, ctx);
+            fht.ResumeSession(ctx);
         }
 
         /// <summary>
         /// Suspend session on current thread
         /// </summary>
-        public void UnsafeSuspendThread()
+        internal void UnsafeSuspendThread()
         {
             fht.SuspendSession();
         }
@@ -74,13 +82,13 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
+        /// <param name="serialNo"></param>
         /// <returns></returns>
-        public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long monotonicSerialNum)
+        public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long serialNo)
         {
-            UnsafeResumeThread();
-            var status = fht.Read(ref key, ref input, ref output, userContext, monotonicSerialNum);
-            UnsafeSuspendThread();
+            if (supportAsync) UnsafeResumeThread();
+            var status = fht.Read(ref key, ref input, ref output, userContext, serialNo, ctx);
+            if (supportAsync) UnsafeSuspendThread();
             return status;
         }
 
@@ -90,13 +98,13 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
         /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
+        /// <param name="serialNo"></param>
         /// <returns></returns>
-        public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long monotonicSerialNum)
+        public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long serialNo)
         {
-            UnsafeResumeThread();
-            var status = fht.Upsert(ref key, ref desiredValue, userContext, monotonicSerialNum);
-            UnsafeSuspendThread();
+            if (supportAsync) UnsafeResumeThread();
+            var status = fht.Upsert(ref key, ref desiredValue, userContext, serialNo, ctx);
+            if (supportAsync) UnsafeSuspendThread();
             return status;
         }
 
@@ -106,13 +114,13 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
+        /// <param name="serialNo"></param>
         /// <returns></returns>
-        public Status RMW(ref Key key, ref Input input, Context userContext, long monotonicSerialNum)
+        public Status RMW(ref Key key, ref Input input, Context userContext, long serialNo)
         {
-            UnsafeResumeThread();
-            var status = fht.RMW(ref key, ref input, userContext, monotonicSerialNum);
-            UnsafeSuspendThread();
+            if (supportAsync) UnsafeResumeThread();
+            var status = fht.RMW(ref key, ref input, userContext, serialNo, ctx);
+            if (supportAsync) UnsafeSuspendThread();
             return status;
         }
 
@@ -121,27 +129,36 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="userContext"></param>
-        /// <param name="monotonicSerialNum"></param>
+        /// <param name="serialNo"></param>
         /// <returns></returns>
-        public Status Delete(ref Key key, Context userContext, long monotonicSerialNum)
+        public Status Delete(ref Key key, Context userContext, long serialNo)
         {
-            UnsafeResumeThread();
-            var status = fht.Delete(ref key, userContext, monotonicSerialNum);
-            UnsafeSuspendThread();
+            if (supportAsync) UnsafeResumeThread();
+            var status = fht.Delete(ref key, userContext, serialNo);
+            if (supportAsync) UnsafeSuspendThread();
             return status;
         }
 
+        /// <summary>
+        /// Refresh session, handling checkpointing if needed
+        /// </summary>
+        public void Refresh()
+        {
+            if (supportAsync) UnsafeResumeThread();
+            fht.InternalRefresh(ctx);
+            if (supportAsync) UnsafeSuspendThread();
+        }
 
         /// <summary>
         /// Sync complete outstanding pending operations
         /// </summary>
         /// <param name="spinWait"></param>
         /// <returns></returns>
-        public bool TryCompletePending(bool spinWait = false)
+        public bool CompletePending(bool spinWait = false)
         {
-            UnsafeResumeThread();
-            var result = fht.CompletePending(spinWait);
-            UnsafeSuspendThread();
+            if (supportAsync) UnsafeResumeThread();
+            var result = fht.InternalCompletePending(ctx, spinWait);
+            if (supportAsync) UnsafeSuspendThread();
             return result;
         }
 
@@ -151,6 +168,7 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask CompletePendingAsync()
         {
+            if (!supportAsync) throw new NotSupportedException();
             await fht.CompletePendingAsync(this);
         }
 
@@ -159,11 +177,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="spinWait"></param>
         /// <returns></returns>
-        public bool TryCompleteCheckpoint(bool spinWait = false)
+        public bool CompleteCheckpoint(bool spinWait = false)
         {
-            UnsafeResumeThread();
+            if (supportAsync) UnsafeResumeThread();
             var result = fht.CompleteCheckpoint(spinWait);
-            UnsafeSuspendThread();
+            if (supportAsync) UnsafeSuspendThread();
             return result;
         }
 
@@ -173,7 +191,8 @@ namespace FASTER.core
         /// <returns></returns>
         internal async ValueTask CompleteCheckpointAsync()
         {
-            await fht.CompleteCheckpointAsync(this);
+            if (!supportAsync) throw new NotSupportedException();
+            await fht.CompleteCheckpointAsync(ctx, this);
         }
     }
 }

@@ -23,20 +23,21 @@ namespace FASTER.core
         /// Session starts in dormant state.
         /// </summary>
         /// <returns></returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> StartClientSession()
+        public ClientSession<Key, Value, Input, Output, Context, Functions> StartClientSession(bool supportAsync = true)
         {
-            // We have to use relaxed CPR with async client sessions
-            UseRelaxedCPR();
-
             Guid guid = Guid.NewGuid();
             var ctx = new FasterExecutionContext();
             InitContext(ctx, guid);
             var prevCtx = new FasterExecutionContext();
             InitContext(prevCtx, guid);
             prevCtx.version--;
+
+            ctx.prevCtx = prevCtx;
+
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<Guid, ClientSession<Key, Value, Input, Output, Context, Functions>>(), null);
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, prevCtx, ctx);
+
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, supportAsync);
             lock (_activeSessions)
                 _activeSessions.Add(guid, session);
             return session;
@@ -47,21 +48,15 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <param name="cp"></param>
+        /// <param name="supportAsync"></param>
         /// <returns></returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> ContinueClientSession(Guid guid, out CommitPoint cp)
+        public ClientSession<Key, Value, Input, Output, Context, Functions> ContinueClientSession(Guid guid, out CommitPoint cp, bool supportAsync = true)
         {
-            // We have to use relaxed CPR with async client sessions
-            UseRelaxedCPR();
-
-            cp = InternalContinue(guid);
+            cp = InternalContinue(guid, out FasterExecutionContext ctx);
             if (cp.UntilSerialNo == -1)
                 throw new Exception($"Unable to find session {guid} to recover");
 
-            var prevCtx = this.prevThreadCtx.Value;
-            var ctx = this.threadCtx.Value;
-            SuspendSession();
-
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, prevCtx, ctx);
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, supportAsync);
 
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<Guid, ClientSession<Key, Value, Input, Output, Context, Functions>>(), null);
@@ -75,10 +70,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns></returns>
-        public void DisposeClientSession(Guid guid)
+        internal void DisposeClientSession(Guid guid)
         {
             lock (_activeSessions)
                 _activeSessions.Remove(guid);
+            epoch.Release();
         }
 
         /// <summary>
@@ -86,21 +82,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="prevThreadCtx"></param>
         /// <param name="threadCtx"></param>
-        internal void ResumeSession(FasterExecutionContext prevThreadCtx, FasterExecutionContext threadCtx)
+        internal void ResumeSession(FasterExecutionContext threadCtx)
         {
             epoch.Resume();
-
-            // Copy contexts to thread-local
-            if (!this.prevThreadCtx.IsInitializedForThread)
-                this.prevThreadCtx.InitializeThread();
-
-            if (!this.threadCtx.IsInitializedForThread)
-                this.threadCtx.InitializeThread();
-
-            this.prevThreadCtx.Value = prevThreadCtx;
-            this.threadCtx.Value = threadCtx;
-
-            InternalRefresh();
+            InternalRefresh(threadCtx);
         }
 
         /// <summary>
