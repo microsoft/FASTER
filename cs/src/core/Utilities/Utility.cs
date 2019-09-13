@@ -219,7 +219,7 @@ namespace FASTER.core
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.
         /// </summary>
-        /// <param name="variable"> The variable to possibly replace</param>
+        /// <param name="variable">The variable to possibly replace</param>
         /// <param name="newValue">The value that replaces the variable if successful</param>
         /// <param name="oldValue">The orignal value in the variable</param>
         /// <returns> if oldValue less than newValue </returns>
@@ -228,7 +228,7 @@ namespace FASTER.core
             do
             {
                 oldValue = variable;
-                if (oldValue > newValue) return false;
+                if (oldValue >= newValue) return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }
@@ -236,7 +236,7 @@ namespace FASTER.core
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.
         /// </summary>
-        /// <param name="variable"> The variable to possibly replace</param>
+        /// <param name="variable">The variable to possibly replace</param>
         /// <param name="newValue">The value that replaces the variable if successful</param>
         /// <param name="oldValue">The orignal value in the variable</param>
         /// <returns>if oldValue less than or equal to newValue</returns>
