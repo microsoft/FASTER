@@ -1405,22 +1405,33 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   assert(address < hlog.begin_address.load() || address == pending_context->entry.address());
 
   // We have to do copy-on-write/RCU and write the updated value to the tail of the log.
-  uint32_t record_size = record_t::size(key, pending_context->value_size());
-  Address new_address = BlockAllocate(record_size);
-  record_t* new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
-
-  new(new_record) record_t{
-    RecordInfo{
-      static_cast<uint16_t>(context.version), true, false, false,
-      expected_entry.address() },
-    key };
+  Address new_address;
+  record_t* new_record;
   if(io_context.address < hlog.begin_address.load()) {
     // The on-disk trace back failed to find a key match.
+    uint32_t record_size = record_t::size(key, pending_context->value_size());
+    new_address = BlockAllocate(record_size);
+    new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+
+    new(new_record) record_t{
+      RecordInfo{
+        static_cast<uint16_t>(context.version), true, false, false,
+        expected_entry.address() },
+      key };
     pending_context->RmwInitial(new_record);
   } else {
     // The record we read from disk.
     const record_t* disk_record = reinterpret_cast<const record_t*>(
                                     io_context.record.GetValidPointer());
+    uint32_t record_size = record_t::size(key, pending_context->value_size(disk_record));
+    new_address = BlockAllocate(record_size);
+    new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+
+    new(new_record) record_t{
+      RecordInfo{
+        static_cast<uint16_t>(context.version), true, false, false,
+        expected_entry.address() },
+      key };
     pending_context->RmwCopy(disk_record, new_record);
   }
 
