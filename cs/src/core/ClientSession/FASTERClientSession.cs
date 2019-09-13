@@ -80,12 +80,11 @@ namespace FASTER.core
         /// <summary>
         /// Resume session with FASTER
         /// </summary>
-        /// <param name="prevThreadCtx"></param>
-        /// <param name="threadCtx"></param>
-        internal void ResumeSession(FasterExecutionContext threadCtx)
+        /// <param name="ctx">Context</param>
+        internal void ResumeSession(FasterExecutionContext ctx)
         {
             epoch.Resume();
-            InternalRefresh(threadCtx);
+            InternalRefresh(ctx);
         }
 
         /// <summary>

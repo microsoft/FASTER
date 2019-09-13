@@ -357,7 +357,7 @@ namespace FASTER.core
         /// <summary>
         /// Complete the ongoing checkpoint (if any)
         /// </summary>
-        /// <param name="wait"></param>
+        /// <param name="wait">Spin-wait for completion</param>
         /// <returns></returns>
         public bool CompleteCheckpoint(bool wait = false)
         {
@@ -392,11 +392,6 @@ namespace FASTER.core
             return false;
         }
 
-        public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
-        {
-            return Read(ref key, ref input, ref output, context, serialNo, threadCtx.Value);
-        }
-
         /// <summary>
         /// Read operation
         /// </summary>
@@ -406,6 +401,11 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
+        {
+            return Read(ref key, ref input, ref output, context, serialNo, threadCtx.Value);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
@@ -424,11 +424,6 @@ namespace FASTER.core
             return status;
         }
 
-        public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
-        {
-            return Upsert(ref key, ref value, context, serialNo, threadCtx.Value);
-        }
-
         /// <summary>
         /// (Blind) upsert operation
         /// </summary>
@@ -437,6 +432,11 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
+        {
+            return Upsert(ref key, ref value, context, serialNo, threadCtx.Value);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status Upsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
@@ -456,10 +456,6 @@ namespace FASTER.core
             return status;
         }
 
-        public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
-        {
-            return RMW(ref key, ref input, context, serialNo, threadCtx.Value);
-        }
 
         /// <summary>
         /// Atomic read-modify-write operation
@@ -469,6 +465,11 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
+        {
+            return RMW(ref key, ref input, context, serialNo, threadCtx.Value);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status RMW(ref Key key, ref Input input, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
@@ -487,11 +488,6 @@ namespace FASTER.core
             return status;
         }
 
-        public Status Delete(ref Key key, Context context, long serialNo)
-        {
-            return Delete(ref key, context, serialNo, threadCtx.Value);
-        }
-
         /// <summary>
         /// Delete entry (use tombstone if necessary)
         /// Hash entry is removed as a best effort (if key is in memory and at 
@@ -502,6 +498,11 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        public Status Delete(ref Key key, Context context, long serialNo)
+        {
+            return Delete(ref key, context, serialNo, threadCtx.Value);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status Delete(ref Key key, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {

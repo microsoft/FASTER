@@ -38,6 +38,7 @@ namespace FASTER.core
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <param name="sessionCtx">Session context</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -376,6 +377,7 @@ namespace FASTER.core
         /// <param name="value">value to be updated to (or inserted if key does not exist).</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <param name="sessionCtx">Session context</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -639,6 +641,7 @@ namespace FASTER.core
         /// <param name="input">input used to update the value.</param>
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
+        /// <param name="sessionCtx">Session context</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -964,6 +967,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="opCtx">Thread (or session) context under which operation must be executed.</param>
         /// <param name="pendingContext">Internal context of the RMW operation.</param>
+        /// <param name="sessionCtx">Session context</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -1236,6 +1240,7 @@ namespace FASTER.core
         /// <param name="opCtx">thread (or session) context under which operation must be executed.</param>
         /// <param name="request">record read from the disk.</param>
         /// <param name="pendingContext">internal context for the pending RMW operation</param>
+        /// <param name="sessionCtx">Session context</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -1373,6 +1378,7 @@ namespace FASTER.core
         /// <param name="key">Key of the record to be deleted.</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <param name="sessionCtx">Session context</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -1668,15 +1674,6 @@ namespace FASTER.core
 
         #region ContainsKeyInMemory
 
-        /// <summary>
-        /// Experimental feature
-        /// Checks whether specified record is present in memory
-        /// (between HeadAddress and tail, or between fromAddress
-        /// and tail)
-        /// </summary>
-        /// <param name="key">Key of the record.</param>
-        /// <param name="fromAddress">Look until this address</param>
-        /// <returns>Status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status InternalContainsKeyInMemory(ref Key key, FasterExecutionContext sessionCtx, long fromAddress = -1)
         {
@@ -1745,6 +1742,7 @@ namespace FASTER.core
         /// Performs appropriate handling based on the internal failure status of the trial.
         /// </summary>
         /// <param name="opCtx">Thread (or session) context under which operation was tried to execute.</param>
+        /// <param name="currentCtx">Current context</param>
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="status">Internal status of the trial.</param>
         /// <returns>
