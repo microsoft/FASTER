@@ -92,10 +92,10 @@ class FasterKv {
   typedef AsyncPendingRmwContext<key_t> async_pending_rmw_context_t;
 
   FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
-           double log_mutable_fraction = 0.9)
+           double log_mutable_fraction = 0.9, bool pre_allocate_log = false)
     : min_table_size_{ table_size }
     , disk{ filename, epoch_ }
-    , hlog{ log_size, epoch_, disk, disk.log(), log_mutable_fraction }
+    , hlog{ log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , num_pending_ios{ 0 } {
     if(!Utility::IsPowerOfTwo(table_size)) {
