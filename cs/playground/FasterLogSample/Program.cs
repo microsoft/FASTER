@@ -26,7 +26,7 @@ namespace FasterLogSample
 
             while (true)
             {
-                Thread.Sleep(10000);
+                Thread.Sleep(5000);
                 var nowTime = sw.ElapsedMilliseconds;
                 var nowValue = log.TailAddress;
 
@@ -51,6 +51,8 @@ namespace FasterLogSample
 
         static void ScanThread()
         {
+            Random r = new Random();
+
             Thread.Sleep(5000);
 
             byte[] entry = new byte[entryLength];
@@ -72,6 +74,9 @@ namespace FasterLogSample
                         throw new Exception("Invalid entry found");
                     }
 
+                    if (r.Next(100) < 10)
+                        log.Append(result);
+
                     if (iter.CurrentAddress - lastAddress > 500000000)
                     {
                         log.TruncateUntil(iter.CurrentAddress);
@@ -83,14 +88,11 @@ namespace FasterLogSample
 
         static void Main(string[] args)
         {
-            var device = Devices.CreateLogDevice("E:\\logs\\hlog.log");
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 26 });
+            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 29, PageSizeBits = 25 });
 
             new Thread(new ThreadStart(AppendThread)).Start();
-            //new Thread(new ThreadStart(AppendThread)).Start();
-            //new Thread(new ThreadStart(AppendThread)).Start();
-            //new Thread(new ThreadStart(AppendThread)).Start();
-            // new Thread(new ThreadStart(ScanThread)).Start();
+            new Thread(new ThreadStart(ScanThread)).Start();
             new Thread(new ThreadStart(ReportThread)).Start();
 
             Thread.Sleep(500*1000);

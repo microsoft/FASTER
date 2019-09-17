@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -56,7 +57,7 @@ namespace FASTER.core.log
     public class FasterLog
     {
         private readonly BlittableAllocator<Empty, byte> allocator;
-        private readonly LightEpoch epoch;
+        public readonly LightEpoch epoch;
 
         /// <summary>
         /// Beginning address of log
@@ -109,7 +110,6 @@ namespace FASTER.core.log
         /// <returns>Logical address of added entry</returns>
         public unsafe long Append(byte[] entry)
         {
-
             epoch.Resume();
             var length = entry.Length;
             BlockAllocate(4 + length, out long logicalAddress);
@@ -117,6 +117,28 @@ namespace FASTER.core.log
             *(int*)physicalAddress = length;
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+            epoch.Suspend();
+            return logicalAddress;
+        }
+
+        /// <summary>
+        /// Append batch of entries to log
+        /// </summary>
+        /// <param name="entries"></param>
+        /// <returns>Logical address of last added entry</returns>
+        public unsafe long Append(List<byte[]> entries)
+        {
+            long logicalAddress = 0;
+            epoch.Resume();
+            foreach (var entry in entries)
+            {
+                var length = entry.Length;
+                BlockAllocate(4 + length, out logicalAddress);
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                *(int*)physicalAddress = length;
+                fixed (byte* bp = entry)
+                    Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+            }
             epoch.Suspend();
             return logicalAddress;
         }
