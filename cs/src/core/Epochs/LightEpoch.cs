@@ -52,7 +52,14 @@ namespace FASTER.core
         /// <summary>
         /// A thread's entry in the epoch table.
         /// </summary>
-        private FastThreadLocal<int> threadEntryIndex;
+        [ThreadStatic]
+        private static int threadEntryIndex;
+
+        /// <summary>
+        /// Number of instances using this entry
+        /// </summary>
+        [ThreadStatic]
+        private static int threadEntryIndexCount;
 
         /// <summary>
         /// Global current epoch value
@@ -79,7 +86,7 @@ namespace FASTER.core
         /// <param name="size"></param>
         unsafe void Initialize(int size)
         {
-            threadEntryIndex = new FastThreadLocal<int>();
+            // threadEntryIndex = new FastThreadLocal<int>();
             numEntries = size;
 
             // Over-allocate to do cache-line alignment
@@ -112,7 +119,7 @@ namespace FASTER.core
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
 
-            threadEntryIndex.Dispose();
+            // threadEntryIndex.Dispose();
         }
 
         /// <summary>
@@ -121,7 +128,7 @@ namespace FASTER.core
         /// <returns>Result of the check</returns>
         public bool IsProtected()
         {
-            return threadEntryIndex.IsInitializedForThread && kInvalidIndex != threadEntryIndex.Value;
+            return kInvalidIndex != threadEntryIndex;
         }
 
         /// <summary>
@@ -131,7 +138,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int ProtectAndDrain()
         {
-            int entry = threadEntryIndex.Value;
+            int entry = threadEntryIndex;
 
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
@@ -175,8 +182,9 @@ namespace FASTER.core
         /// </summary>
         public void Acquire()
         {
-            threadEntryIndex.InitializeThread();
-            threadEntryIndex.Value = ReserveEntryForThread();
+            if (threadEntryIndex == kInvalidIndex)
+                threadEntryIndex = ReserveEntryForThread();
+            threadEntryIndexCount++;
         }
 
 
@@ -185,16 +193,39 @@ namespace FASTER.core
         /// </summary>
         public void Release()
         {
-            int entry = threadEntryIndex.Value;
+            int entry = threadEntryIndex;
             if (kInvalidIndex == entry)
             {
                 return;
             }
 
-            threadEntryIndex.Value = kInvalidIndex;
-            threadEntryIndex.DisposeThread();
-            (*(tableAligned + entry)).localCurrentEpoch = 0;
-            (*(tableAligned + entry)).threadId = 0;
+            threadEntryIndexCount--;
+            if (threadEntryIndexCount == 0)
+            {
+                threadEntryIndex = kInvalidIndex;
+                (*(tableAligned + entry)).localCurrentEpoch = 0;
+                (*(tableAligned + entry)).threadId = 0;
+            }
+        }
+
+        /// <summary>
+        /// Thread suspends its epoch entry
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Suspend()
+        {
+            (*(tableAligned + threadEntryIndex)).localCurrentEpoch = int.MaxValue;
+        }
+
+        /// <summary>
+        /// Thread resumes its epoch entry
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Resume()
+        {
+            if (threadEntryIndex == kInvalidIndex)
+                Acquire();
+            ProtectAndDrain();
         }
 
         /// <summary>
@@ -388,7 +419,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MarkAndCheckIsComplete(int markerIdx, int version)
         {
-            int entry = threadEntryIndex.Value;
+            int entry = threadEntryIndex;
             if (kInvalidIndex == entry)
             {
                 Debug.WriteLine("New Thread entered during CPR");
@@ -404,7 +435,7 @@ namespace FASTER.core
                 int fc_version = (*(tableAligned + index)).markers[markerIdx];
                 if (0 != entry_epoch)
                 {
-                    if (fc_version != version)
+                    if (fc_version != version && entry_epoch < int.MaxValue)
                     {
                         return false;
                     }

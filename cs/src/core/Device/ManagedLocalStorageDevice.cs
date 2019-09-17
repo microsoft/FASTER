@@ -4,6 +4,7 @@
 using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -24,11 +25,12 @@ namespace FASTER.core
         /// <summary>
         /// 
         /// </summary>
-        /// <param name="filename"></param>
+        /// <param name="filename">File name (or prefix) with path</param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
+        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
+        /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new SectorAlignedBufferPool(1, 1);
@@ -36,7 +38,8 @@ namespace FASTER.core
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             logHandles = new ConcurrentDictionary<int, Stream>();
-            RecoverFiles();
+            if (recoverDevice)
+                RecoverFiles();
         }
 
 
@@ -48,14 +51,19 @@ namespace FASTER.core
 
             string bareName = fi.Name;
 
-            int prevSegmentId = -1;
+            List<int> segids = new List<int>();
             foreach (FileInfo item in di.GetFiles(bareName + "*"))
             {
-                int segmentId = Int32.Parse(item.Name.Replace(bareName, "").Replace(".", ""));
+                segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
+            }
+            segids.Sort();
+
+            int prevSegmentId = -1;
+            foreach (int segmentId in segids)
+            {
                 if (segmentId != prevSegmentId + 1)
                 {
                     startSegment = segmentId;
-
                 }
                 else
                 {
@@ -65,6 +73,7 @@ namespace FASTER.core
             }
             // No need to populate map because logHandles use Open or create on files.
         }
+
 
 
 
