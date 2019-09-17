@@ -89,7 +89,7 @@ namespace FasterLogSample
         static void Main(string[] args)
         {
             var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 29, PageSizeBits = 25 });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             new Thread(new ThreadStart(AppendThread)).Start();
             new Thread(new ThreadStart(ScanThread)).Start();

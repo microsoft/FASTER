@@ -13,43 +13,6 @@ using FASTER.core;
 
 namespace FASTER.core.log
 {
-    public class FasterLogSettings
-    {
-        /// <summary>
-        /// Device used for log
-        /// </summary>
-        public IDevice LogDevice = new NullDevice();
-
-        /// <summary>
-        /// Size of a segment (group of pages), in bits
-        /// </summary>
-        public int PageSizeBits = 22;
-
-        /// <summary>
-        /// Size of a segment (group of pages), in bits
-        /// </summary>
-        public int SegmentSizeBits = 30;
-
-        /// <summary>
-        /// Total size of in-memory part of log, in bits
-        /// </summary>
-        public int MemorySizeBits = 34;
-
-        internal LogSettings GetLogSettings()
-        {
-            return new LogSettings
-            {
-                LogDevice = LogDevice,
-                PageSizeBits = PageSizeBits,
-                SegmentSizeBits = SegmentSizeBits,
-                MemorySizeBits = MemorySizeBits,
-                CopyReadsToTail = false,
-                MutableFraction = 0,
-                ObjectLogDevice = null,
-                ReadCacheSettings = null
-            };
-        }
-    }
 
     /// <summary>
     /// FASTER log
@@ -57,7 +20,7 @@ namespace FASTER.core.log
     public class FasterLog
     {
         private readonly BlittableAllocator<Empty, byte> allocator;
-        public readonly LightEpoch epoch;
+        private readonly LightEpoch epoch;
 
         /// <summary>
         /// Beginning address of log

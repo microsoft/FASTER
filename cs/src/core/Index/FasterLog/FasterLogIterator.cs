@@ -14,14 +14,14 @@ namespace FASTER.core.log
     {
         private readonly int frameSize;
         private readonly BlittableAllocator<Empty, byte> allocator;
-        private readonly long beginAddress, endAddress;
+        private readonly long endAddress;
         private readonly BlittableFrame frame;
         private readonly CountdownEvent[] loaded;
+        private readonly long[] loadedPage;
+        private readonly LightEpoch epoch;
 
-        private bool first = true;
         private long currentAddress, nextAddress;
-        private long currentPhysicalAddress;
-        private LightEpoch epoch;
+        
 
         /// <summary>
         /// Current address
@@ -35,6 +35,7 @@ namespace FASTER.core.log
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
+        /// <param name="epoch"></param>
         public unsafe FasterLogScanIterator(BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
         {
             this.allocator = hlog;
@@ -43,7 +44,6 @@ namespace FASTER.core.log
             if (beginAddress == 0)
                 beginAddress = hlog.GetFirstValidLogicalAddress(0);
 
-            this.beginAddress = beginAddress;
             this.endAddress = endAddress;
             currentAddress = -1;
             nextAddress = beginAddress;
@@ -60,16 +60,10 @@ namespace FASTER.core.log
 
             frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
             loaded = new CountdownEvent[frameSize];
+            loadedPage = new long[frameSize];
+            for (int i = 0; i < frameSize; i++)
+                loadedPage[i] = -1;
 
-            // Only load addresses flushed to disk
-            if (nextAddress < hlog.HeadAddress)
-            {
-                var frameNumber = (nextAddress >> hlog.LogPageSizeBits) % frameSize;
-                hlog.AsyncReadPagesFromDeviceToFrame
-                    (nextAddress >> hlog.LogPageSizeBits,
-                    1, endAddress, AsyncReadPagesCallback, Empty.Default,
-                    frame, out loaded[frameNumber]);
-            }
         }
 
         /// <summary>
@@ -83,16 +77,18 @@ namespace FASTER.core.log
             while (true)
             {
                 // Check for boundary conditions
+                if (currentAddress < allocator.BeginAddress)
+                {
+                    Debug.WriteLine("Iterator address is less than log BeginAddress " + allocator.BeginAddress + ", adjusting iterator address");
+                    currentAddress = allocator.BeginAddress;
+                }
+
                 if ((currentAddress >= endAddress) || (currentAddress >= allocator.ReadOnlyAddress))
                 {
                     entry = default(Span<byte>);
                     return false;
                 }
 
-                if (currentAddress < allocator.BeginAddress)
-                {
-                    throw new Exception("Iterator address is less than log BeginAddress " + allocator.BeginAddress);
-                }
 
                 if (frameSize == 0 && currentAddress < allocator.HeadAddress)
                 {
@@ -154,7 +150,6 @@ namespace FASTER.core.log
                     entry = _entry;
                     epoch.Suspend();
                 }
-                currentPhysicalAddress = physicalAddress;
                 nextAddress = currentAddress + recordSize;
                 return true;
             }
@@ -170,26 +165,26 @@ namespace FASTER.core.log
 
         private unsafe void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)
         {
-            if (first || (currentAddress & allocator.PageSizeMask) == 0)
+            if (loadedPage[currentFrame] != currentPage)
             {
-                // Prefetch pages based on buffering mode
-                if (frameSize == 1)
+                if (loadedPage[currentFrame] != -1)
+                    loaded[currentFrame].Wait(); // Ensure we have completed ongoing load
+                allocator.AsyncReadPagesFromDeviceToFrame(currentAddress >> allocator.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
+                loadedPage[currentFrame] = currentAddress >> allocator.LogPageSizeBits;
+            }
+
+            if (frameSize == 2)
+            {
+                currentPage++;
+                currentFrame = (currentFrame + 1) % frameSize;
+
+                if (loadedPage[currentFrame] != currentPage)
                 {
-                    if (!first)
-                    {
-                        allocator.AsyncReadPagesFromDeviceToFrame(currentAddress >> allocator.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
-                    }
+                    if (loadedPage[currentFrame] != -1)
+                        loaded[currentFrame].Wait(); // Ensure we have completed ongoing load
+                    allocator.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> allocator.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
+                    loadedPage[currentFrame] = 1 + (currentAddress >> allocator.LogPageSizeBits);
                 }
-                else
-                {
-                    var endPage = endAddress >> allocator.LogPageSizeBits;
-                    if ((endPage > currentPage) &&
-                        ((endPage > currentPage + 1) || ((endAddress & allocator.PageSizeMask) != 0)))
-                    {
-                        allocator.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> allocator.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[(currentPage + 1) % frameSize]);
-                    }
-                }
-                first = false;
             }
             loaded[currentFrame].Wait();
         }
