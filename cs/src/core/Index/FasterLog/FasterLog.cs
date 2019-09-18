@@ -9,15 +9,14 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using FASTER.core;
 
-namespace FASTER.core.log
+namespace FASTER.core
 {
 
     /// <summary>
     /// FASTER log
     /// </summary>
-    public class FasterLog
+    public class FasterLog : IDisposable
     {
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
@@ -43,9 +42,18 @@ namespace FASTER.core.log
         /// <param name="logSettings"></param>
         public FasterLog(FasterLogSettings logSettings)
         {
-            this.epoch = new LightEpoch();
+            epoch = new LightEpoch();
             allocator = new BlittableAllocator<Empty, byte>(logSettings.GetLogSettings(), null, null, epoch);
             allocator.Initialize();
+        }
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            allocator.Dispose();
+            epoch.Dispose();
         }
 
         /// <summary>
@@ -146,10 +154,21 @@ namespace FASTER.core.log
         }
 
         /// <summary>
-        /// Dispose this thread's epoch entry. Use when you manage your own
-        /// threads and want to recycle a thread-local epoch entry.
+        /// Create and pin epoch entry for this thread - use with ReleaseThread
+        /// if you manage the thread.
+        /// DO NOT USE WITH ASYNC CODE
         /// </summary>
-        public void DisposeThread()
+        public void AcquireThread()
+        {
+            epoch.Acquire();
+        }
+
+        /// <summary>
+        /// Dispose epoch entry for this thread. Use with AcquireThread
+        /// if you manage the thread.
+        /// DO NOT USE WITH ASYNC CODE
+        /// </summary>
+        public void ReleaseThread()
         {
             epoch.Release();
         }

@@ -3,7 +3,7 @@
 
 #pragma warning disable 0162
 
-namespace FASTER.core.log
+namespace FASTER.core
 {
     /// <summary>
     /// FASTER Log Settings

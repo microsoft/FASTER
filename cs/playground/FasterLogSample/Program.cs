@@ -1,20 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using FASTER.core;
-using FASTER.core.log;
 using System;
 using System.Diagnostics;
-using System.Diagnostics.Eventing.Reader;
-using System.IO;
-using System.Runtime.CompilerServices;
 using System.Threading;
+using FASTER.core;
 
 namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 100;
+        const int entryLength = 96;
         static FasterLog log;
 
         static void ReportThread()

@@ -5,7 +5,7 @@ using System;
 using System.Threading;
 using System.Diagnostics;
 
-namespace FASTER.core.log
+namespace FASTER.core
 {
     /// <summary>
     /// Scan iterator for hybrid log
@@ -36,7 +36,7 @@ namespace FASTER.core.log
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
-        public unsafe FasterLogScanIterator(BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
+        internal unsafe FasterLogScanIterator(BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
         {
             this.allocator = hlog;
             this.epoch = epoch;
