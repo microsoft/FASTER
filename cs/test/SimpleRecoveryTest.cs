@@ -63,13 +63,10 @@ namespace FASTER.test.recovery.sumstore.simple
             }
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpoint(true);
-
-            fht2.StartSession();
-
             fht1.StopSession();
 
             fht2.Recover(token);
-            
+            fht2.StartSession();
             for (int key = 0; key < numOps; key++)
             {
                 var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
