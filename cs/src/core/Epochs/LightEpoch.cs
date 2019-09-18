@@ -228,28 +228,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Thread suspends its epoch entry
-        /// </summary>
-        public void Suspend()
-        {
-            int entry = threadEntryIndex.Value;
-            (*(tableAligned + entry)).localCurrentEpoch = int.MaxValue;
-        }
-
-        /// <summary>
-        /// Thread resumes its epoch entry
-        /// </summary>
-        public void Resume()
-        {
-            if (!threadEntryIndex.IsInitializedForThread || threadEntryIndex.Value == kInvalidIndex)
-            {
-                Acquire();
-            }
-        }
-
-        internal FastThreadLocal<int> ThreadEntry => threadEntryIndex;
-
-        /// <summary>
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>

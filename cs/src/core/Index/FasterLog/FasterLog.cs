@@ -120,7 +120,7 @@ namespace FASTER.core
         public long Flush(bool spinWait = false)
         {
             epoch.Resume();
-            allocator.ShiftReadOnlyToTail(out long tailAddress);
+            allocator.ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim _);
             epoch.Suspend();
             if (spinWait)
             {
