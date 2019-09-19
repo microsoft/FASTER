@@ -51,6 +51,14 @@ namespace FasterLogSample
             while (true)
             {
                 log.Append(entry);
+                
+                // We also support a Span-based version of Append
+
+                // We also support TryAppend to allow throttling/back-off:
+                // while (!log.TryAppend(entry, out long logicalAddress))
+                // {
+                //    Thread.Sleep(10);
+                // }
             }
         }
 
@@ -97,6 +105,10 @@ namespace FasterLogSample
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             new Thread(new ThreadStart(AppendThread)).Start();
+            
+            // Can have multiple append threads if needed
+            // new Thread(new ThreadStart(AppendThread)).Start();
+            
             new Thread(new ThreadStart(ScanThread)).Start();
             new Thread(new ThreadStart(ReportThread)).Start();
             new Thread(new ThreadStart(CommitThread)).Start();

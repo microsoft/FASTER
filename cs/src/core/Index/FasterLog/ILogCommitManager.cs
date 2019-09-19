@@ -13,8 +13,9 @@ namespace FASTER.core
         /// <summary>
         /// Perform (synchronous) commit with specified metadata
         /// </summary>
-        /// <param name="commitMetadata"></param>
-        void Commit(byte[] commitMetadata);
+        /// <param name="address">Address committed until (for information only, not necessary to persist)</param>
+        /// <param name="commitMetadata">Commit metadata</param>
+        void Commit(long address, byte[] commitMetadata);
 
         /// <summary>
         /// Return prior commit metadata during recovery

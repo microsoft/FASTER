@@ -21,6 +21,7 @@ namespace FASTER.core
     {
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
+        private ILogCommitManager logCommitManager;
 
         /// <summary>
         /// Beginning address of log
@@ -40,9 +41,7 @@ namespace FASTER.core
         /// <summary>
         /// Log commit until address
         /// </summary>
-        public long CommitUntilAddress;
-
-        private ILogCommitManager logCommitManager;
+        public long CommittedUntilAddress;
 
         /// <summary>
         /// Create new log instance
@@ -60,49 +59,6 @@ namespace FASTER.core
                 null, epoch, e => Commit(e));
             allocator.Initialize();
             Restore();
-        }
-
-        /// <summary>
-        /// Commit log
-        /// </summary>
-        private void Commit(long flushAddress)
-        {
-            epoch.Resume();
-            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
-            info.FlushedUntilAddress = allocator.FlushedUntilAddress;
-            info.BeginAddress = allocator.BeginAddress;
-            epoch.Suspend();
-
-            // We can only allow serial monotonic synchronous commit
-            lock (this)
-            {
-                if (flushAddress > CommitUntilAddress)
-                {
-                    logCommitManager.Commit(info.ToByteArray());
-                    CommitUntilAddress = flushAddress;
-                    info.DebugPrint();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Restore log
-        /// </summary>
-        private void Restore()
-        {
-            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
-            var commitInfo = logCommitManager.GetCommitMetadata();
-
-            if (commitInfo == null) return;
-
-            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
-            {
-                info.Initialize(r);
-            }
-
-            allocator.RestoreHybridLog(info.FlushedUntilAddress, 
-                info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress), 
-                info.BeginAddress);
         }
 
         /// <summary>
@@ -151,6 +107,60 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Try to append entry to log
+        /// </summary>
+        /// <param name="entry">Entry to be appended to log</param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryAppend(byte[] entry, out long logicalAddress)
+        {
+            epoch.Resume();
+            logicalAddress = 0;
+            long tail = -allocator.GetTailAddress();
+            allocator.CheckForAllocateComplete(ref tail);
+            if (tail < 0)
+            { 
+                epoch.Suspend();
+                return false;
+            }
+            var length = entry.Length;
+            BlockAllocate(4 + length, out logicalAddress);
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            *(int*)physicalAddress = length;
+            fixed (byte* bp = entry)
+                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to append entry to log
+        /// </summary>
+        /// <param name="entry">Entry to be appended to log</param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryAppend(Span<byte> entry, out long logicalAddress)
+        {
+            epoch.Resume();
+            logicalAddress = 0;
+            long tail = -allocator.GetTailAddress();
+            allocator.CheckForAllocateComplete(ref tail);
+            if (tail < 0)
+            {
+                epoch.Suspend();
+                return false;
+            }
+            var length = entry.Length;
+            BlockAllocate(4 + length, out logicalAddress);
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            *(int*)physicalAddress = length;
+            fixed (byte* bp = &entry.GetPinnableReference())
+                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
         /// Append batch of entries to log
         /// </summary>
         /// <param name="entries"></param>
@@ -182,7 +192,7 @@ namespace FASTER.core
             
             if (spinWait)
             {
-                while (CommitUntilAddress < tailAddress)
+                while (CommittedUntilAddress < tailAddress)
                 {
                     epoch.ProtectAndDrain();
                     Thread.Yield();
@@ -204,7 +214,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Iterator interface for scanning FASTER log
+        /// Pull-based iterator interface for scanning FASTER log
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
@@ -235,6 +245,11 @@ namespace FASTER.core
             epoch.Release();
         }
 
+        /// <summary>
+        /// Block allocate
+        /// </summary>
+        /// <param name="recordSize"></param>
+        /// <param name="logicalAddress"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BlockAllocate(int recordSize, out long logicalAddress)
         {
@@ -258,6 +273,49 @@ namespace FASTER.core
                 Debug.WriteLine("Allocated address is read-only, retrying");
                 BlockAllocate(recordSize, out logicalAddress);
             }
+        }
+
+        /// <summary>
+        /// Commit log
+        /// </summary>
+        private void Commit(long flushAddress)
+        {
+            epoch.Resume();
+            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
+            info.FlushedUntilAddress = allocator.FlushedUntilAddress;
+            info.BeginAddress = allocator.BeginAddress;
+            epoch.Suspend();
+
+            // We can only allow serial monotonic synchronous commit
+            lock (this)
+            {
+                if (flushAddress > CommittedUntilAddress)
+                {
+                    logCommitManager.Commit(flushAddress, info.ToByteArray());
+                    CommittedUntilAddress = flushAddress;
+                    info.DebugPrint();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Restore log
+        /// </summary>
+        private void Restore()
+        {
+            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
+            var commitInfo = logCommitManager.GetCommitMetadata();
+
+            if (commitInfo == null) return;
+
+            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+            {
+                info.Initialize(r);
+            }
+
+            allocator.RestoreHybridLog(info.FlushedUntilAddress,
+                info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress),
+                info.BeginAddress);
         }
     }
 }
