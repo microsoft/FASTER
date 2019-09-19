@@ -33,6 +33,15 @@ namespace FasterLogSample
             }
         }
 
+        static void CommitThread()
+        {
+            while (true)
+            {
+                Thread.Sleep(100);
+                log.FlushAndCommit(true);
+            }
+        }
+
         static void AppendThread()
         {
             byte[] entry = new byte[entryLength];
@@ -90,6 +99,7 @@ namespace FasterLogSample
             new Thread(new ThreadStart(AppendThread)).Start();
             new Thread(new ThreadStart(ScanThread)).Start();
             new Thread(new ThreadStart(ReportThread)).Start();
+            new Thread(new ThreadStart(CommitThread)).Start();
 
             Thread.Sleep(500*1000);
         }

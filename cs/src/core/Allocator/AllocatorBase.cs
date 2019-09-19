@@ -49,7 +49,7 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public unsafe abstract class AllocatorBase<Key, Value> : IDisposable
+    public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
         where Key : new()
         where Value : new()
     {
@@ -222,6 +222,11 @@ namespace FASTER.core
         protected readonly Action<long, long> EvictCallback = null;
 
         /// <summary>
+        /// Flush callback
+        /// </summary>
+        protected readonly Action<long> FlushCallback = null;
+
+        /// <summary>
         /// Observer for records entering read-only region
         /// </summary>
         internal IObserver<IFasterScanIterator<Key, Value>> OnReadOnlyObserver;
@@ -380,7 +385,8 @@ namespace FASTER.core
         /// Clear page
         /// </summary>
         /// <param name="page">Page number to be cleared</param>
-        protected abstract void ClearPage(long page);
+        /// <param name="offset">Offset to clear from (if partial clear)</param>
+        protected abstract void ClearPage(long page, int offset = 0);
         /// <summary>
         /// Write page (async)
         /// </summary>
@@ -469,13 +475,15 @@ namespace FASTER.core
         /// <param name="comparer"></param>
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch)
+        /// <param name="flushCallback"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<long> flushCallback)
         {
             if (evictCallback != null)
             {
                 ReadCache = true;
                 EvictCallback = evictCallback;
             }
+            FlushCallback = flushCallback;
 
             this.comparer = comparer;
             if (epoch == null)
@@ -1100,7 +1108,10 @@ namespace FASTER.core
 
             if (update)
             {
-                Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress);
+                if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
+                {
+                    FlushCallback?.Invoke(FlushedUntilAddress);
+                }
             }
         }
 
@@ -1145,6 +1156,9 @@ namespace FASTER.core
             pageIndex = GetPageIndexForAddress(tailAddress);
             PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
             PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
+
+            // clear the last page starting from tail address
+            ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
 
             // Printing debug info
             Debug.WriteLine("******* Recovered HybridLog Stats *******");

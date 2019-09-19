@@ -7,6 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -32,9 +33,16 @@ namespace FASTER.core
         public long TailAddress => allocator.GetTailAddress();
 
         /// <summary>
-        /// Flushed until address
+        /// Log flushed until address
         /// </summary>
         public long FlushedUntilAddress => allocator.FlushedUntilAddress;
+
+        /// <summary>
+        /// Log commit until address
+        /// </summary>
+        public long CommitUntilAddress;
+
+        private ILogCommitManager logCommitManager;
 
         /// <summary>
         /// Create new log instance
@@ -42,9 +50,59 @@ namespace FASTER.core
         /// <param name="logSettings"></param>
         public FasterLog(FasterLogSettings logSettings)
         {
+            logCommitManager = logSettings.LogCommitManager ?? 
+                new LocalLogCommitManager(logSettings.LogCommitFile ??
+                logSettings.LogDevice.FileName + ".commit");
+
             epoch = new LightEpoch();
-            allocator = new BlittableAllocator<Empty, byte>(logSettings.GetLogSettings(), null, null, epoch);
+            allocator = new BlittableAllocator<Empty, byte>(
+                logSettings.GetLogSettings(), null, 
+                null, epoch, e => Commit(e));
             allocator.Initialize();
+            Restore();
+        }
+
+        /// <summary>
+        /// Commit log
+        /// </summary>
+        private void Commit(long flushAddress)
+        {
+            epoch.Resume();
+            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
+            info.FlushedUntilAddress = allocator.FlushedUntilAddress;
+            info.BeginAddress = allocator.BeginAddress;
+            epoch.Suspend();
+
+            // We can only allow serial monotonic synchronous commit
+            lock (this)
+            {
+                if (flushAddress > CommitUntilAddress)
+                {
+                    logCommitManager.Commit(info.ToByteArray());
+                    CommitUntilAddress = flushAddress;
+                    info.DebugPrint();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Restore log
+        /// </summary>
+        private void Restore()
+        {
+            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
+            var commitInfo = logCommitManager.GetCommitMetadata();
+
+            if (commitInfo == null) return;
+
+            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+            {
+                info.Initialize(r);
+            }
+
+            allocator.RestoreHybridLog(info.FlushedUntilAddress, 
+                info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress), 
+                info.BeginAddress);
         }
 
         /// <summary>
@@ -117,16 +175,20 @@ namespace FASTER.core
         /// <summary>
         /// Flush the log until tail
         /// </summary>
-        public long Flush(bool spinWait = false)
+        public long FlushAndCommit(bool spinWait = false)
         {
             epoch.Resume();
             allocator.ShiftReadOnlyToTail(out long tailAddress);
-            epoch.Suspend();
+            
             if (spinWait)
             {
-                while (allocator.FlushedUntilAddress < tailAddress)
+                while (CommitUntilAddress < tailAddress)
+                {
+                    epoch.ProtectAndDrain();
                     Thread.Yield();
+                }
             }
+            epoch.Suspend();
             return tailAddress;
         }
 

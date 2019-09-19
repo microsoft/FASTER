@@ -44,7 +44,7 @@ namespace FASTER.test
             {
                 log.Append(entry);
             }
-            log.Flush(true);
+            log.FlushAndCommit(true);
 
             using (var iter = log.Scan(0, long.MaxValue))
             {
