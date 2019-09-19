@@ -14,7 +14,7 @@ namespace FASTER.core
     /// on the device, it is considered persistent. Reads are served from the closest device with available data. Writes are issued in parallel to
     /// all devices 
     /// </summary>
-    class TieredStorageDevice : StorageDeviceBase
+    public class TieredStorageDevice : StorageDeviceBase
     {
         private readonly IList<IDevice> devices;
         private readonly int commitPoint;
@@ -31,7 +31,8 @@ namespace FASTER.core
         /// List of devices to be used. The list should be given in order of hot to cold. Read is served from the
         /// device with smallest index in the list that has the requested data
         /// </param>
-        public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices))
+        public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : 
+            base(devices[0].FileName, 512, ComputeCapacity(devices))
         {
             Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
 

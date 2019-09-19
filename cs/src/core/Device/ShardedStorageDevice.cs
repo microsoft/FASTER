@@ -11,7 +11,7 @@ namespace FASTER.core
     /// allows users to customize their sharding behaviors. Some default implementations are supplied for common
     /// partitioning schemes.
     /// </summary>
-    interface IPartitionScheme
+    public interface IPartitionScheme
     {
         /// <summary>
         /// A list of <see cref="IDevice"/> that represents the shards. Indexes into this list will be
@@ -51,8 +51,11 @@ namespace FASTER.core
     /// <summary>
     /// Uniformly shards data across given devices.
     /// </summary>
-    class UniformPartitionScheme : IPartitionScheme
+    public class UniformPartitionScheme : IPartitionScheme
     {
+        /// <summary>
+        /// List of devices
+        /// </summary>
         public IList<IDevice> Devices { get; }
         private readonly long chunkSize;
 
@@ -132,7 +135,7 @@ namespace FASTER.core
     /// able to issue large reads and writes in parallel into multiple devices and improve throughput. Beware that this
     /// code does not contain error detection or correction mechanism to cope with increased failure from more devices.
     /// </summary>
-    class ShardedStorageDevice : StorageDeviceBase
+    public class ShardedStorageDevice : StorageDeviceBase
     {
         private readonly IPartitionScheme partitions;
 
@@ -140,7 +143,8 @@ namespace FASTER.core
         /// Constructs a new ShardedStorageDevice with the given partition scheme
         /// </summary>
         /// <param name="partitions"> The parition scheme to use </param>
-        public ShardedStorageDevice(IPartitionScheme partitions) : base("", 512, -1)
+        public ShardedStorageDevice(IPartitionScheme partitions) 
+            : base(partitions.Devices[0].FileName, 512, -1)
         {
             this.partitions = partitions;
         }
