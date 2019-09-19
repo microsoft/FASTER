@@ -244,7 +244,7 @@ class PersistentMemoryMalloc {
   static constexpr uint32_t kNumHeadPages = 4;
 
   PersistentMemoryMalloc(uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
-                         Address start_address, double log_mutable_fraction)
+                         Address start_address, double log_mutable_fraction, bool pre_allocate_log)
     : sector_size{ static_cast<uint32_t>(file_.alignment()) }
     , epoch_{ &epoch }
     , disk{ &disk_ }
@@ -260,7 +260,8 @@ class PersistentMemoryMalloc {
     , tail_page_offset_{ start_address }
     , buffer_size_{ 0 }
     , pages_{ nullptr }
-    , page_status_{ nullptr } {
+    , page_status_{ nullptr }
+    , pre_allocate_log_{ pre_allocate_log } {
     assert(start_address.page() <= Address::kMaxPage);
 
     if(log_size % kPageSize != 0) {
@@ -282,12 +283,19 @@ class PersistentMemoryMalloc {
       throw std::invalid_argument{ "Must have at least 2 mutable pages" };
     }
 
+    page_status_ = new FullPageStatus[buffer_size_];
+
     pages_ = new uint8_t* [buffer_size_];
     for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
-      pages_[idx] = nullptr;
+      if (pre_allocate_log_) {
+        pages_[idx] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
+        std::memset(pages_[idx], 0, kPageSize);
+        // Mark the page as accessible.
+        page_status_[idx].status.store(FlushStatus::Flushed, CloseStatus::Open);
+      } else {
+        pages_[idx] = nullptr;
+      }
     }
-
-    page_status_ = new FullPageStatus[buffer_size_];
 
     PageOffset tail_page_offset = tail_page_offset_.load();
     AllocatePage(tail_page_offset.page());
@@ -295,8 +303,8 @@ class PersistentMemoryMalloc {
   }
 
   PersistentMemoryMalloc(uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
-                         double log_mutable_fraction)
-    : PersistentMemoryMalloc(log_size, epoch, disk_, file_, Address{ 0 }, log_mutable_fraction) {
+                         double log_mutable_fraction, bool pre_allocate_log)
+    : PersistentMemoryMalloc(log_size, epoch, disk_, file_, Address{ 0 }, log_mutable_fraction, pre_allocate_log) {
     /// Allocate the invalid page. Supports allocations aligned up to kCacheLineBytes.
     uint32_t discard;
     Allocate(Constants::kCacheLineBytes, discard);
@@ -555,6 +563,7 @@ class PersistentMemoryMalloc {
 
  private:
   uint32_t buffer_size_;
+  bool pre_allocate_log_;
 
   /// -- the latest N pages should be mutable.
   uint32_t num_mutable_pages_;
@@ -567,18 +576,20 @@ class PersistentMemoryMalloc {
 
   // Global address of the current tail (next element to be allocated from the circular buffer)
   AtomicPageOffset tail_page_offset_;
+
 };
 
 /// Implementations.
 template <class D>
 inline void PersistentMemoryMalloc<D>::AllocatePage(uint32_t index) {
   index = index % buffer_size_;
-  assert(pages_[index] == nullptr);
-  pages_[index] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));;
-  std::memset(pages_[index], 0, kPageSize);
-
-  // Mark the page as accessible.
-  page_status_[index].status.store(FlushStatus::Flushed, CloseStatus::Open);
+  if (!pre_allocate_log_) {
+    assert(pages_[index] == nullptr);
+    pages_[index] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
+    std::memset(pages_[index], 0, kPageSize);
+    // Mark the page as accessible.
+    page_status_[index].status.store(FlushStatus::Flushed, CloseStatus::Open);
+  }
 }
 
 template <class D>

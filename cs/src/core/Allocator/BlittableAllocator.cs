@@ -31,8 +31,8 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
-            : base(settings, comparer, evictCallback, epoch)
+        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<long> flushCallback = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
@@ -198,9 +198,16 @@ namespace FASTER.core
             return page << LogPageSizeBits;
         }
 
-        protected override void ClearPage(long page)
+        protected override void ClearPage(long page, int offset)
         {
-            Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
+            if (offset == 0)
+                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
+            else
+            {
+                // Adjust array offset for cache alignment
+                offset += (int)(pointers[page % BufferSize] - (long)handles[page % BufferSize].AddrOfPinnedObject());
+                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
+            }
         }
 
         /// <summary>
