@@ -293,7 +293,7 @@ namespace FASTER.core
                 {
                     logCommitManager.Commit(flushAddress, info.ToByteArray());
                     CommittedUntilAddress = flushAddress;
-                    info.DebugPrint();
+                    // info.DebugPrint();
                 }
             }
         }

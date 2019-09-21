@@ -433,7 +433,8 @@ namespace FASTER.core
                 ((headAddress == untilAddress) && (GetOffsetInPage(headAddress) == 0)) // Empty in-memory page
                 )
             {
-                AllocatePage(GetPageIndexForAddress(headAddress));
+                if (!IsAllocated(GetPageIndexForAddress(headAddress)))
+                    AllocatePage(GetPageIndexForAddress(headAddress));
             }
             else
             {

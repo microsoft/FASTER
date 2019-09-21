@@ -41,8 +41,8 @@ namespace FASTER.core
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
-            : base(settings, comparer, evictCallback, epoch, null)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<long> flushCallback = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
             SerializerSettings = serializerSettings;
 

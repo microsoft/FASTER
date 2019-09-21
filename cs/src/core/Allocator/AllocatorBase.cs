@@ -116,7 +116,7 @@ namespace FASTER.core
         /// <summary>
         /// HeadOffset lag (from tail)
         /// </summary>
-        protected const int HeadOffsetLagNumPages = 4;
+        protected const int HeadOffsetLagNumPages = 2;
 
         /// <summary>
         /// HeadOffset lag (from tail) for ReadCache
@@ -190,7 +190,7 @@ namespace FASTER.core
         /// <summary>
         /// Index in circular buffer, of the current tail page
         /// </summary>
-        private volatile int TailPageIndex;
+        private volatile int TailPageCache;
 
         // Array that indicates the status of each buffer page
         internal readonly FullPageStatus[] PageStatusIndicator;
@@ -521,9 +521,9 @@ namespace FASTER.core
             SegmentSize = 1 << LogSegmentSizeBits;
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
-            if (BufferSize < 16)
+            if (BufferSize < 4)
             {
-                throw new Exception("HLOG buffer must be at least 16 pages");
+                throw new Exception("HLOG buffer must be at least 4 pages");
             }
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
@@ -561,7 +561,7 @@ namespace FASTER.core
             TailPageOffset.Page = (int)(firstValidAddress >> LogPageSizeBits);
             TailPageOffset.Offset = (int)(firstValidAddress & PageSizeMask);
 
-            TailPageIndex = 0;
+            TailPageCache = 0;
         }
 
         /// <summary>
@@ -778,17 +778,18 @@ namespace FASTER.core
 
             long address = (((long)page) << LogPageSizeBits) | ((long)offset);
 
-            // Check if TailPageIndex is appropriate and allocated!
-            int pageIndex = page % BufferSize;
-
-            if (TailPageIndex == pageIndex)
+            // Check for TailPageCache hit
+            if (TailPageCache == page)
             {
                 return (address);
             }
 
+            int pageIndex = page % BufferSize;
+
             //Invert the address if either the previous page is not flushed or if it is null
             if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
                 (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
+                (page >= BufferSize + (SafeHeadAddress >> LogPageSizeBits)) ||
                 (!IsAllocated(pageIndex)))
             {
                 address = -address;
@@ -799,7 +800,7 @@ namespace FASTER.core
             {
                 if (address >= 0)
                 {
-                    TailPageIndex = pageIndex;
+                    TailPageCache = page;
                     Interlocked.MemoryBarrier();
                 }
 
@@ -837,21 +838,21 @@ namespace FASTER.core
             p.Page = (int)((-address) >> LogPageSizeBits);
             p.Offset = (int)((-address) & PageSizeMask);
 
-            //Check write cache
-            int pageIndex = p.Page % BufferSize;
-            if (TailPageIndex == pageIndex)
+            // Check write cache
+            if (TailPageCache == p.Page)
             {
                 address = -address;
                 return;
             }
 
-            //Check if we can move the head offset
-            long currentTailAddress = GetTailAddress();
-            PageAlignedShiftHeadAddress(currentTailAddress);
+            int pageIndex = p.Page % BufferSize;
 
-            //Check if I can allocate pageIndex at all
+            PageAlignedShiftHeadAddress(GetTailAddress());
+
+            // Check if we can allocate pageIndex at all
             if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
                 (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
+                (p.Page >= BufferSize + (SafeHeadAddress >> LogPageSizeBits)) ||
                 (!IsAllocated(pageIndex)))
             {
                 return;
@@ -861,7 +862,7 @@ namespace FASTER.core
             address = -address;
             if (p.Offset == 0)
             {
-                TailPageIndex = pageIndex;
+                TailPageCache = p.Page;
             }
             return;
         }
@@ -989,7 +990,7 @@ namespace FASTER.core
 
                     while (true)
                     {
-                        var oldStatus = PageStatusIndicator[closePage].PageFlushCloseStatus;
+                        var oldStatus = new FlushCloseStatus { value = Interlocked.Read(ref PageStatusIndicator[closePage].PageFlushCloseStatus.value) };
                         if (oldStatus.PageFlushStatus == PMMFlushStatus.Flushed)
                         {
                             ClearPage(closePageAddress >> LogPageSizeBits);
@@ -1127,13 +1128,14 @@ namespace FASTER.core
             long offsetInPage = GetOffsetInPage(tailAddress);
             TailPageOffset.Page = (int)tailPage;
             TailPageOffset.Offset = (int)offsetInPage;
-            TailPageIndex = GetPageIndexForPage(TailPageOffset.Page);
+            TailPageCache = TailPageOffset.Page;
 
             // allocate next page as well - this is an invariant in the allocator!
             var pageIndex = (TailPageOffset.Page % BufferSize);
             var nextPageIndex = (pageIndex + 1) % BufferSize;
             if (tailAddress > 0)
-                AllocatePage(nextPageIndex);
+                if (!IsAllocated(nextPageIndex))
+                    AllocatePage(nextPageIndex);
 
             BeginAddress = beginAddress;
             HeadAddress = headAddress;
@@ -1344,8 +1346,8 @@ namespace FASTER.core
                     if (untilAddress >= pageEndAddress)
                     {
                         // Set status to in-progress
-                        PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus
-                            = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open };
+                        var tmp = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open }.value;
+                        Interlocked.Exchange(ref PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus.value, tmp);
                     }
                 }
                 else
@@ -1355,8 +1357,8 @@ namespace FASTER.core
                     asyncResult.untilAddress = pageEndAddress;
 
                     // Set status to in-progress
-                    PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus
-                        = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open };
+                    var tmp = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open }.value;
+                    Interlocked.Exchange(ref PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus.value, tmp);
                 }
 
                 Interlocked.Exchange(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, -1);

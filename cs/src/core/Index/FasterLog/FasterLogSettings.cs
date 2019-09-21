@@ -32,7 +32,7 @@ namespace FASTER.core
         /// <summary>
         /// Total size of in-memory part of log, in bits
         /// </summary>
-        public int MemorySizeBits = 26;
+        public int MemorySizeBits = 24;
 
         /// <summary>
         /// Log commit manager
