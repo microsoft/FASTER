@@ -10,7 +10,7 @@ namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 96;
+        const int entryLength = 9996;
         static FasterLog log;
 
         static void ReportThread()
@@ -51,7 +51,7 @@ namespace FasterLogSample
             while (true)
             {
                 log.Append(entry);
-                
+
                 // We also support a Span-based version of Append
 
                 // We also support TryAppend to allow throttling/back-off:
@@ -87,7 +87,7 @@ namespace FasterLogSample
                         throw new Exception("Invalid entry found");
                     }
 
-                    if (r.Next(100) < 10)
+                    if (r.Next(100) < 0)
                         log.Append(result);
 
                     if (iter.CurrentAddress - lastAddress > 500000000)
@@ -99,6 +99,16 @@ namespace FasterLogSample
             }
         }
 
+        static void FindDiff(Span<byte> b1, Span<byte> b2)
+        {
+            for (int i=0; i<b1.Length; i++)
+            {
+                if (b1[i] != b2[i])
+                {
+                    Console.WriteLine("Different at " + i);
+                }
+            }
+        }
         static void Main(string[] args)
         {
             var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");

@@ -623,6 +623,11 @@ namespace FASTER.core
         public long GetTailAddress()
         {
             var local = TailPageOffset;
+            if (local.Offset >= PageSize)
+            {
+                local.Page++;
+                local.Offset = 0;
+            }   
             return ((long)local.Page << LogPageSizeBits) | (uint)local.Offset;
         }
 
@@ -815,6 +820,11 @@ namespace FASTER.core
                 {
                     AllocatePage(newPageIndex);
                 }
+
+                // We refreshed epoch, so address may have
+                // become read-only.
+                if (address < ReadOnlyAddress)
+                    return Allocate(numSlots);
             }
 
             return (address);
@@ -1012,6 +1022,25 @@ namespace FASTER.core
                     Interlocked.MemoryBarrier();
                 }
             }
+        }
+
+        private void DebugPrintAddresses(long closePageAddress)
+        {
+            var _flush = FlushedUntilAddress;
+            var _readonly = ReadOnlyAddress;
+            var _safereadonly = SafeReadOnlyAddress;
+            var _tail = GetTailAddress();
+            var _head = HeadAddress;
+            var _safehead = SafeHeadAddress;
+
+            Console.WriteLine("ClosePageAddress: {0}.{1}", GetPage(closePageAddress), GetOffsetInPage(closePageAddress));
+            Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetInPage(_flush));
+            Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetInPage(_tail));
+            Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetInPage(_head));
+            Console.WriteLine("SafeHead: {0}.{1}", GetPage(_safehead), GetOffsetInPage(_safehead));
+            Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetInPage(_readonly));
+            Console.WriteLine("SafeReadOnly: {0}.{1}", GetPage(_safereadonly), GetOffsetInPage(_safereadonly));
+            Console.WriteLine("TailPageCache: {0}", TailPageCache);
         }
 
         /// <summary>
@@ -1309,12 +1338,32 @@ namespace FASTER.core
             long startPage = fromAddress >> LogPageSizeBits;
             long endPage = untilAddress >> LogPageSizeBits;
             int numPages = (int)(endPage - startPage);
+
+            long offsetInStartPage = GetOffsetInPage(fromAddress);
             long offsetInEndPage = GetOffsetInPage(untilAddress);
-            if (offsetInEndPage > 0)
-            {
-                numPages++;
+            if (offsetInStartPage > 0)
+            {   
+                fromAddress = fromAddress - offsetInStartPage;
+                offsetInStartPage = 0;
             }
 
+            // if (offsetInStartPage > 0 || offsetInEndPage > 0)
+            //     Console.WriteLine("Flushing [{0}.{1} - {2}.{3}]", startPage, offsetInStartPage, endPage, offsetInEndPage);
+
+            // Extra (partial) page being flushed
+            if (offsetInEndPage > 0)
+                numPages++;
+
+            // Partial page starting point, need to wait until the
+            // ongoing adjacent flush is completed to ensure correctness
+            if (offsetInStartPage > 0)
+            {
+                while (FlushedUntilAddress < fromAddress)
+                {
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
+                }
+            }
 
             /* Request asynchronous writes to the device. If waitForPendingFlushComplete
              * is set, then a CountDownEvent is set in the callback handle.
@@ -1341,7 +1390,6 @@ namespace FASTER.core
                     if (pageStartAddress < fromAddress)
                         asyncResult.fromAddress = fromAddress;
                     
-
                     // Are we flushing until the end of page?
                     if (untilAddress >= pageEndAddress)
                     {
