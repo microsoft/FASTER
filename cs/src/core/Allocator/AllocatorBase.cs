@@ -19,18 +19,7 @@ namespace FASTER.core
         [FieldOffset(0)]
         public long LastFlushedUntilAddress;
         [FieldOffset(8)]
-        public FlushCloseStatus PageFlushCloseStatus;
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    internal struct FlushCloseStatus
-    {
-        [FieldOffset(0)]
-        public PMMFlushStatus PageFlushStatus;
-        [FieldOffset(4)]
-        public PMMCloseStatus PageCloseStatus;
-        [FieldOffset(0)]
-        public long value;
+        public long LastClosedUntilAddress;
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -167,6 +156,11 @@ namespace FASTER.core
         /// Flushed until address
         /// </summary>
         public long FlushedUntilAddress;
+
+        /// <summary>
+        /// Flushed until address
+        /// </summary>
+        public long ClosedUntilAddress;
 
         /// <summary>
         /// Begin address
@@ -555,6 +549,7 @@ namespace FASTER.core
             ReadOnlyAddress = firstValidAddress;
             SafeHeadAddress = firstValidAddress;
             HeadAddress = firstValidAddress;
+            ClosedUntilAddress = firstValidAddress;
             FlushedUntilAddress = firstValidAddress;
             BeginAddress = firstValidAddress;
 
@@ -627,7 +622,7 @@ namespace FASTER.core
             {
                 local.Page++;
                 local.Offset = 0;
-            }   
+            }
             return ((long)local.Page << LogPageSizeBits) | (uint)local.Offset;
         }
 
@@ -792,10 +787,10 @@ namespace FASTER.core
             int pageIndex = page % BufferSize;
 
             //Invert the address if either the previous page is not flushed or if it is null
-            if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
-                (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
-                (page >= BufferSize + (SafeHeadAddress >> LogPageSizeBits)) ||
-                (!IsAllocated(pageIndex)))
+            if (
+                (page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits)) ||
+                (!IsAllocated(pageIndex))
+               )
             {
                 address = -address;
             }
@@ -809,9 +804,7 @@ namespace FASTER.core
                     Interlocked.MemoryBarrier();
                 }
 
-                long newPage = page + 1;
-                int newPageIndex = (int)((page + 1) % BufferSize);
-
+                int newPageIndex = (page + 1) % BufferSize;
                 long tailAddress = (address < 0 ? -address : address);
                 PageAlignedShiftReadOnlyAddress(tailAddress);
                 PageAlignedShiftHeadAddress(tailAddress);
@@ -822,12 +815,12 @@ namespace FASTER.core
                 }
 
                 // We refreshed epoch, so address may have
-                // become read-only.
+                // become read-only; re-check
                 if (address < ReadOnlyAddress)
                     return Allocate(numSlots);
             }
 
-            return (address);
+            return address;
         }
 
         /// <summary>
@@ -860,10 +853,10 @@ namespace FASTER.core
             PageAlignedShiftHeadAddress(GetTailAddress());
 
             // Check if we can allocate pageIndex at all
-            if ((PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus != PMMFlushStatus.Flushed) ||
-                (PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus != PMMCloseStatus.Closed) ||
-                (p.Page >= BufferSize + (SafeHeadAddress >> LogPageSizeBits)) ||
-                (!IsAllocated(pageIndex)))
+            if (
+                (p.Page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits)) ||
+                (!IsAllocated(pageIndex))
+               )
             {
                 return;
             }
@@ -991,13 +984,17 @@ namespace FASTER.core
                         return;
                     }
 
-                    int closePage = (int)((closePageAddress >> LogPageSizeBits) % BufferSize);
+                    int closePage = (int)(closePageAddress >> LogPageSizeBits);
+                    int closePageIndex = closePage % BufferSize;
 
-                    if (!IsAllocated(closePage))
-                    {
-                        AllocatePage(closePage);
-                    }
+                    if (!IsAllocated(closePageIndex))
+                        AllocatePage(closePageIndex);
+                    else
+                        ClearPage(closePage);
+                    PageStatusIndicator[closePageIndex].LastClosedUntilAddress = closePageAddress + PageSize;
+                    ShiftClosedUntilAddress();
 
+                    /*
                     while (true)
                     {
                         var oldStatus = new FlushCloseStatus { value = Interlocked.Read(ref PageStatusIndicator[closePage].PageFlushCloseStatus.value) };
@@ -1020,6 +1017,7 @@ namespace FASTER.core
 
                     // Necessary to propagate this change to other threads
                     Interlocked.MemoryBarrier();
+                    */
                 }
             }
         }
@@ -1127,13 +1125,13 @@ namespace FASTER.core
             long page = GetPage(currentFlushedUntilAddress);
 
             bool update = false;
-            long pageLastFlushedAddress = Interlocked.Read(ref PageStatusIndicator[(int)(page % BufferSize)].LastFlushedUntilAddress);
+            long pageLastFlushedAddress = PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress;
             while (pageLastFlushedAddress >= currentFlushedUntilAddress)
             {
                 currentFlushedUntilAddress = pageLastFlushedAddress;
                 update = true;
                 page++;
-                pageLastFlushedAddress = Interlocked.Read(ref PageStatusIndicator[(int)(page % BufferSize)].LastFlushedUntilAddress);
+                pageLastFlushedAddress = PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress;
             }
 
             if (update)
@@ -1142,6 +1140,30 @@ namespace FASTER.core
                 {
                     FlushCallback?.Invoke(FlushedUntilAddress);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Shift ClosedUntil address
+        /// </summary>
+        protected void ShiftClosedUntilAddress()
+        {
+            long currentClosedUntilAddress = ClosedUntilAddress;
+            long page = GetPage(currentClosedUntilAddress);
+
+            bool update = false;
+            long pageLastClosedAddress = PageStatusIndicator[page % BufferSize].LastClosedUntilAddress;
+            while (pageLastClosedAddress >= currentClosedUntilAddress)
+            {
+                currentClosedUntilAddress = pageLastClosedAddress;
+                update = true;
+                page++;
+                pageLastClosedAddress = Interlocked.Read(ref PageStatusIndicator[(int)(page % BufferSize)].LastClosedUntilAddress);
+            }
+
+            if (update)
+            {
+                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out long oldClosedUntilAddress);
             }
         }
 
@@ -1169,24 +1191,13 @@ namespace FASTER.core
             BeginAddress = beginAddress;
             HeadAddress = headAddress;
             SafeHeadAddress = headAddress;
+            ClosedUntilAddress = headAddress;
             FlushedUntilAddress = tailAddress;
             ReadOnlyAddress = tailAddress;
             SafeReadOnlyAddress = tailAddress;
 
-            // ensure appropriate page status for all pages in memory
-            // note: they must have been read in previously during recovery
-            var addr = GetStartLogicalAddress(GetPage(headAddress));
-            for (; addr < tailAddress; addr += PageSize)
-            {
-                pageIndex = GetPageIndexForAddress(addr);
-                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
-                PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-            }
-
             // for the last page which contains tailoffset, it must be open
             pageIndex = GetPageIndexForAddress(tailAddress);
-            PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Open;
-            PageStatusIndicator[pageIndex].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
 
             // clear the last page starting from tail address
             ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
@@ -1341,14 +1352,12 @@ namespace FASTER.core
 
             long offsetInStartPage = GetOffsetInPage(fromAddress);
             long offsetInEndPage = GetOffsetInPage(untilAddress);
+
             if (offsetInStartPage > 0)
-            {   
+            {
                 fromAddress = fromAddress - offsetInStartPage;
                 offsetInStartPage = 0;
             }
-
-            // if (offsetInStartPage > 0 || offsetInEndPage > 0)
-            //     Console.WriteLine("Flushing [{0}.{1} - {2}.{3}]", startPage, offsetInStartPage, endPage, offsetInEndPage);
 
             // Extra (partial) page being flushed
             if (offsetInEndPage > 0)
@@ -1389,27 +1398,13 @@ namespace FASTER.core
 
                     if (pageStartAddress < fromAddress)
                         asyncResult.fromAddress = fromAddress;
-                    
-                    // Are we flushing until the end of page?
-                    if (untilAddress >= pageEndAddress)
-                    {
-                        // Set status to in-progress
-                        var tmp = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open }.value;
-                        Interlocked.Exchange(ref PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus.value, tmp);
-                    }
                 }
                 else
                 {
                     asyncResult.partial = false;
                     asyncResult.fromAddress = pageStartAddress;
                     asyncResult.untilAddress = pageEndAddress;
-
-                    // Set status to in-progress
-                    var tmp = new FlushCloseStatus { PageFlushStatus = PMMFlushStatus.InProgress, PageCloseStatus = PMMCloseStatus.Open }.value;
-                    Interlocked.Exchange(ref PageStatusIndicator[flushPage % BufferSize].PageFlushCloseStatus.value, tmp);
                 }
-
-                Interlocked.Exchange(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, -1);
 
                 WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
             }
@@ -1577,24 +1572,7 @@ namespace FASTER.core
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                if (!result.partial || (result.untilAddress >= ((result.page + 1) << LogPageSizeBits)))
-                {
-                    while (true)
-                    {
-                        var oldStatus = PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus;
-                        if (oldStatus.PageCloseStatus == PMMCloseStatus.Closed)
-                        {
-                            throw new Exception("Error: page should not be closed at this point");
-                        }
-                        var newStatus = oldStatus;
-                        newStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-                        if (oldStatus.value == Interlocked.CompareExchange(ref PageStatusIndicator[result.page % BufferSize].PageFlushCloseStatus.value, newStatus.value, oldStatus.value))
-                        {
-                            break;
-                        }
-                    }
-                }
-                Interlocked.Exchange(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress);
+                PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress = result.untilAddress;
                 ShiftFlushedUntilAddress();
                 result.Free();
             }

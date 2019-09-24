@@ -10,7 +10,7 @@ namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 9996;
+        const int entryLength = 96;
         static FasterLog log;
 
         static void ReportThread()
@@ -115,13 +115,14 @@ namespace FasterLogSample
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             new Thread(new ThreadStart(AppendThread)).Start();
+            new Thread(new ThreadStart(AppendThread)).Start();
             
             // Can have multiple append threads if needed
             // new Thread(new ThreadStart(AppendThread)).Start();
             
-            new Thread(new ThreadStart(ScanThread)).Start();
+            // new Thread(new ThreadStart(ScanThread)).Start();
             new Thread(new ThreadStart(ReportThread)).Start();
-            new Thread(new ThreadStart(CommitThread)).Start();
+            // new Thread(new ThreadStart(CommitThread)).Start();
 
             Thread.Sleep(500*1000);
         }

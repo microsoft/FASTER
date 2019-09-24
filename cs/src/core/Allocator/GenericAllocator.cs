@@ -200,9 +200,6 @@ namespace FASTER.core
         internal override void AllocatePage(int index)
         {
             values[index] = AllocatePage();
-            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
-            Interlocked.MemoryBarrier();
         }
 
         internal Record<Key, Value>[] AllocatePage()

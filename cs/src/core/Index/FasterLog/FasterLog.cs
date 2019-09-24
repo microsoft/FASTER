@@ -280,11 +280,9 @@ namespace FASTER.core
         /// </summary>
         private void Commit(long flushAddress)
         {
-            epoch.Resume();
             FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
-            info.FlushedUntilAddress = allocator.FlushedUntilAddress;
+            info.FlushedUntilAddress = flushAddress;
             info.BeginAddress = allocator.BeginAddress;
-            epoch.Suspend();
 
             // We can only allow serial monotonic synchronous commit
             lock (this)
