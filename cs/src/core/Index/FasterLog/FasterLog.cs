@@ -262,7 +262,7 @@ namespace FASTER.core
                 allocator.CheckForAllocateComplete(ref logicalAddress);
                 if (logicalAddress < 0)
                 {
-                    Thread.Sleep(10);
+                    Thread.Yield();
                 }
             }
 

@@ -10,7 +10,7 @@ namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 96;
+        const int entryLength = 10000;
         static FasterLog log;
 
         static void ReportThread()
@@ -84,11 +84,11 @@ namespace FasterLogSample
                         Thread.Sleep(1000);
                     if (!result.SequenceEqual(entrySpan))
                     {
-                        throw new Exception("Invalid entry found");
+                        throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
                     }
 
-                    if (r.Next(100) < 0)
-                        log.Append(result);
+                    //if (r.Next(100) < 0)
+                    //    log.Append(result);
 
                     if (iter.CurrentAddress - lastAddress > 500000000)
                     {
@@ -99,15 +99,16 @@ namespace FasterLogSample
             }
         }
 
-        static void FindDiff(Span<byte> b1, Span<byte> b2)
+        static int FindDiff(Span<byte> b1, Span<byte> b2)
         {
             for (int i=0; i<b1.Length; i++)
             {
                 if (b1[i] != b2[i])
                 {
-                    Console.WriteLine("Different at " + i);
+                    return i;
                 }
             }
+            return 0;
         }
         static void Main(string[] args)
         {
@@ -115,14 +116,14 @@ namespace FasterLogSample
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             new Thread(new ThreadStart(AppendThread)).Start();
-            new Thread(new ThreadStart(AppendThread)).Start();
+            // new Thread(new ThreadStart(AppendThread)).Start();
             
             // Can have multiple append threads if needed
             // new Thread(new ThreadStart(AppendThread)).Start();
             
-            // new Thread(new ThreadStart(ScanThread)).Start();
+            new Thread(new ThreadStart(ScanThread)).Start();
             new Thread(new ThreadStart(ReportThread)).Start();
-            // new Thread(new ThreadStart(CommitThread)).Start();
+            new Thread(new ThreadStart(CommitThread)).Start();
 
             Thread.Sleep(500*1000);
         }

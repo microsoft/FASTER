@@ -1896,7 +1896,7 @@ namespace FASTER.core
                 hlog.CheckForAllocateComplete(ref logicalAddress);
                 if (logicalAddress < 0)
                 {
-                    Thread.Sleep(10);
+                    Thread.Yield();
                 }
             }
 
@@ -1923,7 +1923,7 @@ namespace FASTER.core
                 readcache.CheckForAllocateComplete(ref logicalAddress);
                 if (logicalAddress < 0)
                 {
-                    Thread.Sleep(10);
+                    Thread.Yield();
                 }
             }
 
@@ -2323,29 +2323,32 @@ namespace FASTER.core
             {
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
                 var recordSize = readcache.GetRecordSize(physicalAddress);
-                ref Key key = ref readcache.GetKey(physicalAddress);
                 ref RecordInfo info = ref readcache.GetInfo(physicalAddress);
-                entry.word = info.PreviousAddress;
-                if (!entry.ReadCache)
+                if (!info.Invalid)
                 {
-                    var hash = comparer.GetHashCode64(ref key);
-                    var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-                    entry = default(HashBucketEntry);
-                    var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
-                    while (tagExists && entry.ReadCache)
+                    ref Key key = ref readcache.GetKey(physicalAddress);
+                    entry.word = info.PreviousAddress;
+                    if (!entry.ReadCache)
                     {
-                        var updatedEntry = default(HashBucketEntry);
-                        updatedEntry.Tag = tag;
-                        updatedEntry.Address = info.PreviousAddress;
-                        updatedEntry.Pending = entry.Pending;
-                        updatedEntry.Tentative = false;
+                        var hash = comparer.GetHashCode64(ref key);
+                        var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-                        if (entry.word == Interlocked.CompareExchange
-                            (ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
-                            break;
+                        entry = default(HashBucketEntry);
+                        var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                        while (tagExists && entry.ReadCache)
+                        {
+                            var updatedEntry = default(HashBucketEntry);
+                            updatedEntry.Tag = tag;
+                            updatedEntry.Address = info.PreviousAddress;
+                            updatedEntry.Pending = entry.Pending;
+                            updatedEntry.Tentative = false;
 
-                        tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                            if (entry.word == Interlocked.CompareExchange
+                                (ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
+                                break;
+
+                            tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                        }
                     }
                 }
                 logicalAddress += recordSize;
