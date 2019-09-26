@@ -10,7 +10,7 @@ namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 96;
+        const int entryLength = 996;
         static FasterLog log;
 
         static void ReportThread()
@@ -87,7 +87,7 @@ namespace FasterLogSample
                         throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
                     }
 
-                    if (r.Next(100) < 0)
+                    if (r.Next(100) < 10)
                         log.Append(result);
 
                     if (iter.CurrentAddress - lastAddress > 500000000)
@@ -117,7 +117,6 @@ namespace FasterLogSample
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             new Thread(new ThreadStart(AppendThread)).Start();
-            // new Thread(new ThreadStart(AppendThread)).Start();
             
             // Can have multiple append threads if needed
             // new Thread(new ThreadStart(AppendThread)).Start();
