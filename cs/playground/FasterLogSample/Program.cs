@@ -10,7 +10,7 @@ namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 996;
+        const int entryLength = 96;
         static FasterLog log;
 
         static void ReportThread()
