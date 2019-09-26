@@ -79,7 +79,8 @@ namespace FASTER.core
         {
             epoch.Resume();
             var length = entry.Length;
-            BlockAllocate(4 + length, out long logicalAddress);
+            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
+            BlockAllocate(4 + alignedLength, out long logicalAddress);
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
             fixed (byte* bp = &entry.GetPinnableReference())
@@ -97,7 +98,8 @@ namespace FASTER.core
         {
             epoch.Resume();
             var length = entry.Length;
-            BlockAllocate(4 + length, out long logicalAddress);
+            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
+            BlockAllocate(4 + alignedLength, out long logicalAddress);
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
             fixed (byte* bp = entry)
@@ -124,7 +126,8 @@ namespace FASTER.core
                 return false;
             }
             var length = entry.Length;
-            BlockAllocate(4 + length, out logicalAddress);
+            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
+            BlockAllocate(4 + alignedLength, out logicalAddress);
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
             fixed (byte* bp = entry)
@@ -151,7 +154,8 @@ namespace FASTER.core
                 return false;
             }
             var length = entry.Length;
-            BlockAllocate(4 + length, out logicalAddress);
+            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
+            BlockAllocate(4 + alignedLength, out logicalAddress);
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
             fixed (byte* bp = &entry.GetPinnableReference())
@@ -172,7 +176,8 @@ namespace FASTER.core
             foreach (var entry in entries)
             {
                 var length = entry.Length;
-                BlockAllocate(4 + length, out logicalAddress);
+                var alignedLength = (length + 3) & ~3; // round up to multiple of 4
+                BlockAllocate(4 + alignedLength, out logicalAddress);
                 var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
                 *(int*)physicalAddress = length;
                 fixed (byte* bp = entry)
@@ -262,7 +267,7 @@ namespace FASTER.core
                 allocator.CheckForAllocateComplete(ref logicalAddress);
                 if (logicalAddress < 0)
                 {
-                    Thread.Sleep(10);
+                    Thread.Yield();
                 }
             }
 
@@ -280,11 +285,9 @@ namespace FASTER.core
         /// </summary>
         private void Commit(long flushAddress)
         {
-            epoch.Resume();
             FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
-            info.FlushedUntilAddress = allocator.FlushedUntilAddress;
+            info.FlushedUntilAddress = flushAddress;
             info.BeginAddress = allocator.BeginAddress;
-            epoch.Suspend();
 
             // We can only allow serial monotonic synchronous commit
             lock (this)
@@ -293,7 +296,7 @@ namespace FASTER.core
                 {
                     logCommitManager.Commit(flushAddress, info.ToByteArray());
                     CommittedUntilAddress = flushAddress;
-                    info.DebugPrint();
+                    // info.DebugPrint();
                 }
             }
         }

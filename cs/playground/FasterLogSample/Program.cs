@@ -51,7 +51,7 @@ namespace FasterLogSample
             while (true)
             {
                 log.Append(entry);
-                
+
                 // We also support a Span-based version of Append
 
                 // We also support TryAppend to allow throttling/back-off:
@@ -84,7 +84,7 @@ namespace FasterLogSample
                         Thread.Sleep(1000);
                     if (!result.SequenceEqual(entrySpan))
                     {
-                        throw new Exception("Invalid entry found");
+                        throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
                     }
 
                     if (r.Next(100) < 10)
@@ -97,6 +97,18 @@ namespace FasterLogSample
                     }
                 }
             }
+        }
+
+        static int FindDiff(Span<byte> b1, Span<byte> b2)
+        {
+            for (int i=0; i<b1.Length; i++)
+            {
+                if (b1[i] != b2[i])
+                {
+                    return i;
+                }
+            }
+            return 0;
         }
 
         static void Main(string[] args)

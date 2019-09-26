@@ -25,14 +25,15 @@ namespace FASTER.core
         public int PageSizeBits = 22;
 
         /// <summary>
+        /// Total size of in-memory part of log, in bits
+        /// Num pages = 2^(MemorySizeBits-PageSizeBits)
+        /// </summary>
+        public int MemorySizeBits = 24;
+
+        /// <summary>
         /// Size of a segment (group of pages), in bits
         /// </summary>
         public int SegmentSizeBits = 30;
-
-        /// <summary>
-        /// Total size of in-memory part of log, in bits
-        /// </summary>
-        public int MemorySizeBits = 26;
 
         /// <summary>
         /// Log commit manager
