@@ -784,13 +784,8 @@ namespace FASTER.core
                 return (address);
             }
 
-            int pageIndex = page % BufferSize;
-
-            //Invert the address if either the previous page is not flushed or if it is null
-            if (
-                (page >= -1 + BufferSize + (ClosedUntilAddress >> LogPageSizeBits)) ||
-                (!IsAllocated(pageIndex))
-               )
+            // Negate the address if page not ready to be used
+            if (CannotAllocate(page))
             {
                 address = -address;
             }
@@ -848,15 +843,10 @@ namespace FASTER.core
                 return;
             }
 
-            int pageIndex = p.Page % BufferSize;
-
             PageAlignedShiftHeadAddress(GetTailAddress());
 
-            // Check if we can allocate pageIndex at all
-            if (
-                (p.Page >= -1 + BufferSize + (ClosedUntilAddress >> LogPageSizeBits)) ||
-                (!IsAllocated(pageIndex))
-               )
+            // Check if we can allocate pageIndex
+            if (CannotAllocate(p.Page))
             {
                 return;
             }
@@ -868,6 +858,14 @@ namespace FASTER.core
                 TailPageCache = p.Page;
             }
             return;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool CannotAllocate(int page)
+        {
+            return
+                (page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits) - 1) ||
+                !IsAllocated(page % BufferSize);
         }
 
         /// <summary>

@@ -121,9 +121,9 @@ namespace FASTER.core
 
                 // Check if record fits on page, if not skip to next page
                 int length = *(int*)physicalAddress;
-                int recordSize = 4;
-                if (length > 0)
-                    recordSize += length;
+                int alignedLength = (length + 3) & ~3; // round up to multiple of 4
+
+                int recordSize = 4 + alignedLength;
                 if ((currentAddress & allocator.PageSizeMask) + recordSize > allocator.PageSize)
                 {
                     if (currentAddress >= headAddress)
