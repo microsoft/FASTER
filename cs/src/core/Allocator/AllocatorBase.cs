@@ -819,6 +819,96 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Try allocate, no thread spinning allowed
+        /// May return 0 in case of inability
+        /// May also return negative address
+        /// </summary>
+        /// <param name="numSlots"></param>
+        /// <returns></returns>
+        public long TryAllocate(int numSlots = 1)
+        {
+            PageOffset localTailPageOffset = TailPageOffset;
+
+            if (localTailPageOffset.Offset >= PageSize)
+                return 0;
+
+            // Determine insertion index.
+            // ReSharper disable once CSharpWarnings::CS0420
+#pragma warning disable 420
+            localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
+#pragma warning restore 420
+
+            int page = localTailPageOffset.Page;
+            int offset = localTailPageOffset.Offset - numSlots;
+
+            #region HANDLE PAGE OVERFLOW
+            if (localTailPageOffset.Offset >= PageSize)
+            {
+                if (offset >= PageSize)
+                {
+                    return 0;
+                }
+
+                // The thread that "makes" the offset incorrect
+                // is the one that is elected to fix it
+                localTailPageOffset.Page++;
+                localTailPageOffset.Offset = 0;
+                TailPageOffset = localTailPageOffset;
+
+                if (localTailPageOffset.Offset == PageSize)
+                {
+                    // Successfully allocated on previous page
+                    return (((long)page) << LogPageSizeBits) | ((long)offset);
+                }
+
+                return 0;
+            }
+            #endregion
+
+            long address = (((long)page) << LogPageSizeBits) | ((long)offset);
+
+            // Check for TailPageCache hit
+            if (TailPageCache == page)
+            {
+                return address;
+            }
+
+            // Address has been allocated. Negate the address 
+            // if page is not ready to be used.
+            if (CannotAllocate(page))
+            {
+                address = -address;
+            }
+
+            // Update the read-only so that we can get more space for the tail
+            if (offset == 0)
+            {
+                if (address >= 0)
+                {
+                    TailPageCache = page;
+                    Interlocked.MemoryBarrier();
+                }
+
+                int newPageIndex = (page + 1) % BufferSize;
+                long tailAddress = (address < 0 ? -address : address);
+                PageAlignedShiftReadOnlyAddress(tailAddress);
+                PageAlignedShiftHeadAddress(tailAddress);
+
+                if ((!IsAllocated(newPageIndex)))
+                {
+                    AllocatePage(newPageIndex);
+                }
+
+                // We refreshed epoch, so address may have
+                // become read-only; re-check
+                if (tailAddress < ReadOnlyAddress)
+                    return Allocate(numSlots);
+            }
+
+            return address;
+        }
+
+        /// <summary>
         /// If allocator cannot allocate new memory as the head has not shifted or the previous page 
         /// is not yet closed, it allocates but returns the negative address. 
         /// This function is invoked to check if the address previously allocated has become valid to be used
