@@ -136,10 +136,6 @@ namespace FASTER.core
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
-            if (*(int*)(physicalAddress - 4) == 96)
-            {
-
-            }
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
 
@@ -273,10 +269,6 @@ namespace FASTER.core
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
-            if (*(int*)(physicalAddress-4) == 96)
-            {
-
-            }
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
 

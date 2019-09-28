@@ -908,11 +908,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CheckForAllocateComplete(ref long address)
         {
-            if (address >= 0)
-            {
-                throw new Exception("Address already allocated!");
-            }
-
             PageOffset p = default(PageOffset);
             p.Page = (int)((-address) >> LogPageSizeBits);
             p.Offset = (int)((-address) & PageSizeMask);
