@@ -829,7 +829,7 @@ namespace FASTER.core
         {
             PageOffset localTailPageOffset = TailPageOffset;
 
-            if (localTailPageOffset.Offset >= PageSize)
+            if (localTailPageOffset.Offset > PageSize)
                 return 0;
 
             // Determine insertion index.
@@ -842,24 +842,23 @@ namespace FASTER.core
             int offset = localTailPageOffset.Offset - numSlots;
 
             #region HANDLE PAGE OVERFLOW
-            if (localTailPageOffset.Offset >= PageSize)
+            if (localTailPageOffset.Offset > PageSize)
             {
-                if (offset >= PageSize)
+                if (offset > PageSize)
                 {
                     return 0;
                 }
 
                 // The thread that "makes" the offset incorrect
-                // is the one that is elected to fix it
+                // is the one that is elected to fix it and
+                // shift read-only/head.
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = 0;
                 TailPageOffset = localTailPageOffset;
 
-                if (localTailPageOffset.Offset == PageSize)
-                {
-                    // Successfully allocated on previous page
-                    return (((long)page) << LogPageSizeBits) | ((long)offset);
-                }
+                long shiftAddress = ((long)(page + 1)) << LogPageSizeBits;
+                PageAlignedShiftReadOnlyAddress(shiftAddress);
+                PageAlignedShiftHeadAddress(shiftAddress);
 
                 return 0;
             }
@@ -889,20 +888,12 @@ namespace FASTER.core
                     Interlocked.MemoryBarrier();
                 }
 
+                // Allocate next page in advance, if needed
                 int newPageIndex = (page + 1) % BufferSize;
-                long tailAddress = (address < 0 ? -address : address);
-                PageAlignedShiftReadOnlyAddress(tailAddress);
-                PageAlignedShiftHeadAddress(tailAddress);
-
                 if ((!IsAllocated(newPageIndex)))
                 {
                     AllocatePage(newPageIndex);
                 }
-
-                // We refreshed epoch, so address may have
-                // become read-only; re-check
-                if (tailAddress < ReadOnlyAddress)
-                    return Allocate(numSlots);
             }
 
             return address;

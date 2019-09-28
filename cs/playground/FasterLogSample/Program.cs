@@ -112,19 +112,17 @@ namespace FasterLogSample
 
         static void Main(string[] args)
         {
-            // var device = Devices.CreateLogDevice("C:\\logs\\hlog.log");
-            var device = Devices.CreateLogDevice("");
+            var device = Devices.CreateLogDevice("C:\\logs\\hlog.log");
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             new Thread(new ThreadStart(AppendThread)).Start();
-            // new Thread(new ThreadStart(AppendThread)).Start();
             
             // Can have multiple append threads if needed
             // new Thread(new ThreadStart(AppendThread)).Start();
             
-            //new Thread(new ThreadStart(ScanThread)).Start();
+            new Thread(new ThreadStart(ScanThread)).Start();
             new Thread(new ThreadStart(ReportThread)).Start();
-            //new Thread(new ThreadStart(CommitThread)).Start();
+            new Thread(new ThreadStart(CommitThread)).Start();
 
             Thread.Sleep(500*1000);
         }
