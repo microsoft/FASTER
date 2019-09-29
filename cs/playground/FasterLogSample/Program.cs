@@ -56,7 +56,7 @@ namespace FasterLogSample
                 // We also support a Span-based variant of Append
 
                 // We also support TryAppend to allow throttling/back-off
-                // (expect this to be slower than the sync version)
+                // (expect this to be slightly slower than the sync version)
                 // Make sure you supply a "starting" logical address of 0
                 // Retries must send back the current logical address.
                 // 

@@ -825,11 +825,14 @@ namespace FASTER.core
         /// </summary>
         /// <param name="numSlots"></param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long TryAllocate(int numSlots = 1)
         {
-            PageOffset localTailPageOffset = TailPageOffset;
+            PageOffset localTailPageOffset = default(PageOffset);
 
-            if (localTailPageOffset.Offset > PageSize)
+            // Necessary to check because threads keep retrying and we do not
+            // want to overflow offset more than once per thread
+            if (TailPageOffset.Offset > PageSize)
                 return 0;
 
             // Determine insertion index.
