@@ -385,9 +385,10 @@ namespace FASTER.core
                 info.Initialize(r);
             }
 
-            allocator.RestoreHybridLog(info.FlushedUntilAddress,
-                info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress),
-                info.BeginAddress);
+            var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
+            if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
+
+            allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
         }
     }
 }
