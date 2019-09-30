@@ -55,6 +55,7 @@ namespace FASTER.core
                 logSettings.LogDevice.FileName + ".commit");
 
             epoch = new LightEpoch();
+            CommittedUntilAddress = Constants.kFirstValidAddress;
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null, 
                 null, epoch, e => Commit(e));
@@ -180,7 +181,6 @@ namespace FASTER.core
         }
 
         private TaskCompletionSource<long> commitTask = new TaskCompletionSource<long>();
-        private int commitTaskWaiters;
 
         /// <summary>
         /// Append entry to log (async) - completes after entry is flushed to storage
@@ -190,42 +190,20 @@ namespace FASTER.core
         public async ValueTask<long> AppendAsync(byte[] entry)
         {
             long logicalAddress = 0;
-            long commitAddress = CommittedUntilAddress;
 
             while (true)
             {
                 if (TryAppend(entry, ref logicalAddress))
                     break;
 
-                while (true)
-                {
-                    while (commitTaskWaiters < 0) ;
-                    if (Interlocked.Increment(ref commitTaskWaiters) >= 0)
-                    {
-                        var tcs = commitTask;
-                        commitAddress = await tcs.Task;
-                        Interlocked.Decrement(ref commitTaskWaiters);
-                        break;
-                    }
-
-                    Interlocked.Decrement(ref commitTaskWaiters);
-                }
+                await commitTask.Task;
             }
 
+
+            long commitAddress = CommittedUntilAddress;
             while (commitAddress < logicalAddress + 4 + entry.Length)
             {
-                while (true)
-                {
-                    if (Interlocked.Increment(ref commitTaskWaiters) >= 0)
-                    {
-                        var tcs = commitTask;
-                        Interlocked.Decrement(ref commitTaskWaiters);
-                        commitAddress = await tcs.Task;
-                        break;
-                    }
-
-                    Interlocked.Decrement(ref commitTaskWaiters);
-                }
+                commitAddress = await commitTask.Task;
             }
 
             return logicalAddress;
@@ -421,12 +399,8 @@ namespace FASTER.core
                     // info.DebugPrint();
                 }
 
-                Interlocked.Add(ref commitTaskWaiters, -(1 << 16));
-                while (commitTaskWaiters != -(1 << 16)) ;
                 var _commitTask = commitTask;
                 commitTask = new TaskCompletionSource<long>();
-                Interlocked.Add(ref commitTaskWaiters, (1 << 16));
-
                 _commitTask.SetResult(flushAddress);
             }
         }
@@ -450,6 +424,7 @@ namespace FASTER.core
             if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
 
             allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
+            CommittedUntilAddress = info.FlushedUntilAddress;
         }
     }
 }

@@ -26,8 +26,8 @@ namespace FasterLogSample
                 var nowTime = sw.ElapsedMilliseconds;
                 var nowValue = log.TailAddress;
 
-                Console.WriteLine("Throughput: {0} MB/sec",
-                    (nowValue - lastValue) / (1000*(nowTime - lastTime)));
+                Console.WriteLine("Throughput: {0} MB/sec, Tail: {1}",
+                    (nowValue - lastValue) / (1000*(nowTime - lastTime)), nowValue);
                 lastTime = nowTime;
                 lastValue = nowValue;
             }
@@ -50,9 +50,8 @@ namespace FasterLogSample
 
             while (true)
             {
-              
                 // Sync append
-                log.Append(entry);
+                // log.Append(entry);
 
                 // We also support a Span-based variant of Append
 
@@ -63,10 +62,9 @@ namespace FasterLogSample
                 // 
                 // long logicalAddress = 0;
                 // while (!log.TryAppend(entry, ref logicalAddress)) ;
-              
+
                 // Async version of Append
-                // var t1 = log.AppendAsync(entry);
-                // t1.AsTask().Wait();
+                var address = log.AppendAsync(entry).GetAwaiter().GetResult();
             }
         }
 
@@ -129,7 +127,7 @@ namespace FasterLogSample
             // Can have multiple append threads if needed
             // new Thread(new ThreadStart(AppendThread)).Start();
             
-            // new Thread(new ThreadStart(ScanThread)).Start();
+            new Thread(new ThreadStart(ScanThread)).Start();
             new Thread(new ThreadStart(ReportThread)).Start();
             new Thread(new ThreadStart(CommitThread)).Start();
 
