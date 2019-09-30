@@ -54,6 +54,7 @@ namespace FASTER.core
                 logSettings.LogDevice.FileName + ".commit");
 
             epoch = new LightEpoch();
+            CommittedUntilAddress = Constants.kFirstValidAddress;
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null, 
                 null, epoch, e => Commit(e));
@@ -316,6 +317,7 @@ namespace FASTER.core
             allocator.RestoreHybridLog(info.FlushedUntilAddress,
                 info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress),
                 info.BeginAddress);
+            CommittedUntilAddress = info.FlushedUntilAddress;
         }
     }
 }
