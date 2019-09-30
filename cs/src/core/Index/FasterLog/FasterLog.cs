@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -176,6 +177,58 @@ namespace FASTER.core
 
             epoch.Suspend();
             return true;
+        }
+
+        private TaskCompletionSource<long> commitTask = new TaskCompletionSource<long>();
+        private int commitTaskWaiters;
+
+        /// <summary>
+        /// Append entry to log (async) - completes after entry is flushed to storage
+        /// </summary>
+        /// <param name="entry"></param>
+        /// <returns></returns>
+        public async ValueTask<long> AppendAsync(byte[] entry)
+        {
+            long logicalAddress = 0;
+            long commitAddress = CommittedUntilAddress;
+
+            while (true)
+            {
+                if (TryAppend(entry, ref logicalAddress))
+                    break;
+
+                while (true)
+                {
+                    while (commitTaskWaiters < 0) ;
+                    if (Interlocked.Increment(ref commitTaskWaiters) >= 0)
+                    {
+                        var tcs = commitTask;
+                        commitAddress = await tcs.Task;
+                        Interlocked.Decrement(ref commitTaskWaiters);
+                        break;
+                    }
+
+                    Interlocked.Decrement(ref commitTaskWaiters);
+                }
+            }
+
+            while (commitAddress < logicalAddress + 4 + entry.Length)
+            {
+                while (true)
+                {
+                    if (Interlocked.Increment(ref commitTaskWaiters) >= 0)
+                    {
+                        var tcs = commitTask;
+                        Interlocked.Decrement(ref commitTaskWaiters);
+                        commitAddress = await tcs.Task;
+                        break;
+                    }
+
+                    Interlocked.Decrement(ref commitTaskWaiters);
+                }
+            }
+
+            return logicalAddress;
         }
 
         /// <summary>
@@ -367,6 +420,14 @@ namespace FASTER.core
                     CommittedUntilAddress = flushAddress;
                     // info.DebugPrint();
                 }
+
+                Interlocked.Add(ref commitTaskWaiters, -(1 << 16));
+                while (commitTaskWaiters != -(1 << 16)) ;
+                var _commitTask = commitTask;
+                commitTask = new TaskCompletionSource<long>();
+                Interlocked.Add(ref commitTaskWaiters, (1 << 16));
+
+                _commitTask.SetResult(flushAddress);
             }
         }
 
