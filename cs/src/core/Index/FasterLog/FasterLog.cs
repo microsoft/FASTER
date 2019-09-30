@@ -109,82 +109,73 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Try to append entry to log
+        /// Try to append entry to log. If is returns true, we are
+        /// done. If it returns false with negative address, user
+        /// needs to call TryCompleteAppend to finalize the append.
+        /// See TryCompleteAppend for more info.
         /// </summary>
         /// <param name="entry">Entry to be appended to log</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryAppend(byte[] entry, out long logicalAddress)
+        public unsafe bool TryAppend(byte[] entry, ref long logicalAddress)
         {
+            if (logicalAddress < 0)
+                return TryCompleteAppend(entry, ref logicalAddress);
+
             epoch.Resume();
-            logicalAddress = 0;
-            long tail = -allocator.GetTailAddress();
-            allocator.CheckForAllocateComplete(ref tail);
-            if (tail < 0)
-            { 
+
+            var length = entry.Length;
+            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
+
+            logicalAddress = allocator.TryAllocate(4 + alignedLength);
+            if (logicalAddress <= 0)
+            {
                 epoch.Suspend();
                 return false;
             }
-            var length = entry.Length;
-            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
-            BlockAllocate(4 + alignedLength, out logicalAddress);
+
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+
             epoch.Suspend();
             return true;
         }
 
         /// <summary>
-        /// Try to append entry to log
+        /// Try to append entry to log. If is returns true, we are
+        /// done. If it returns false with negative address, user
+        /// needs to call TryCompleteAppend to finalize the append.
+        /// See TryCompleteAppend for more info.
         /// </summary>
         /// <param name="entry">Entry to be appended to log</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryAppend(Span<byte> entry, out long logicalAddress)
+        public unsafe bool TryAppend(Span<byte> entry, ref long logicalAddress)
         {
+            if (logicalAddress < 0)
+                return TryCompleteAppend(entry, ref logicalAddress);
+
             epoch.Resume();
-            logicalAddress = 0;
-            long tail = -allocator.GetTailAddress();
-            allocator.CheckForAllocateComplete(ref tail);
-            if (tail < 0)
+
+            var length = entry.Length;
+            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
+
+            logicalAddress = allocator.TryAllocate(4 + alignedLength);
+            if (logicalAddress <= 0)
             {
                 epoch.Suspend();
                 return false;
             }
-            var length = entry.Length;
-            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
-            BlockAllocate(4 + alignedLength, out logicalAddress);
+
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             *(int*)physicalAddress = length;
             fixed (byte* bp = &entry.GetPinnableReference())
                 Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+
             epoch.Suspend();
             return true;
-        }
-
-        /// <summary>
-        /// Append batch of entries to log
-        /// </summary>
-        /// <param name="entries"></param>
-        /// <returns>Logical address of last added entry</returns>
-        public unsafe long Append(List<byte[]> entries)
-        {
-            long logicalAddress = 0;
-            epoch.Resume();
-            foreach (var entry in entries)
-            {
-                var length = entry.Length;
-                var alignedLength = (length + 3) & ~3; // round up to multiple of 4
-                BlockAllocate(4 + alignedLength, out logicalAddress);
-                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-                *(int*)physicalAddress = length;
-                fixed (byte* bp = entry)
-                    Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
-            }
-            epoch.Suspend();
-            return logicalAddress;
         }
 
         /// <summary>
@@ -281,6 +272,84 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Try to complete partial allocation. Succeeds when address
+        /// turns positive. If failed with negative address, try the
+        /// operation. If failed with zero address, user needs to start 
+        /// afresh with a new TryAppend operation.
+        /// </summary>
+        /// <param name="entry"></param>
+        /// <param name="logicalAddress"></param>
+        /// <returns>Whether operation succeeded</returns>
+        private unsafe bool TryCompleteAppend(byte[] entry, ref long logicalAddress)
+        {
+            epoch.Resume();
+
+            allocator.CheckForAllocateComplete(ref logicalAddress);
+
+            if (logicalAddress < 0)
+            {
+                epoch.Suspend();
+                return false;
+            }
+
+            if (logicalAddress < allocator.ReadOnlyAddress)
+            {
+                logicalAddress = 0;
+                epoch.Suspend();
+                return false;
+            }
+
+            var length = entry.Length;
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            *(int*)physicalAddress = length;
+            fixed (byte* bp = entry)
+                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to complete partial allocation. Succeeds when address
+        /// turns positive. If failed with negative address, try the
+        /// operation. If failed with zero address, user needs to start 
+        /// afresh with a new TryAppend operation.
+        /// </summary>
+        /// <param name="entry"></param>
+        /// <param name="logicalAddress"></param>
+        /// <returns>Whether operation succeeded</returns>
+        private unsafe bool TryCompleteAppend(Span<byte> entry, ref long logicalAddress)
+        {
+            epoch.Resume();
+
+            allocator.CheckForAllocateComplete(ref logicalAddress);
+
+            if (logicalAddress < 0)
+            {
+                epoch.Suspend();
+                return false;
+            }
+
+            if (logicalAddress < allocator.ReadOnlyAddress)
+            {
+                logicalAddress = 0;
+                epoch.Suspend();
+                return false;
+            }
+
+            var length = entry.Length;
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            *(int*)physicalAddress = length;
+            fixed (byte* bp = &entry.GetPinnableReference())
+                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
+
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
         /// Commit log
         /// </summary>
         private void Commit(long flushAddress)
@@ -316,9 +385,10 @@ namespace FASTER.core
                 info.Initialize(r);
             }
 
-            allocator.RestoreHybridLog(info.FlushedUntilAddress,
-                info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress),
-                info.BeginAddress);
+            var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
+            if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
+
+            allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
         }
     }
 }

@@ -10,7 +10,7 @@ namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 96;
+        const int entryLength = 996;
         static FasterLog log;
 
         static void ReportThread()
@@ -50,15 +50,18 @@ namespace FasterLogSample
 
             while (true)
             {
+                // Sync append
                 log.Append(entry);
 
-                // We also support a Span-based version of Append
+                // We also support a Span-based variant of Append
 
-                // We also support TryAppend to allow throttling/back-off:
-                // while (!log.TryAppend(entry, out long logicalAddress))
-                // {
-                //    Thread.Sleep(10);
-                // }
+                // We also support TryAppend to allow throttling/back-off
+                // (expect this to be slightly slower than the sync version)
+                // Make sure you supply a "starting" logical address of 0
+                // Retries must send back the current logical address.
+                // 
+                // long logicalAddress = 0;
+                // while (!log.TryAppend(entry, ref logicalAddress)) ;
             }
         }
 
