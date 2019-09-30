@@ -42,7 +42,7 @@ namespace FasterLogSample
             }
         }
 
-        static async void AppendThread()
+        static void AppendThread()
         {
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -50,23 +50,23 @@ namespace FasterLogSample
 
             while (true)
             {
-                var t1 = log.AppendAsync(entry);
-                var t2 = log.AppendAsync(entry);
-                t1.AsTask().Wait();
-                t2.AsTask().Wait();
-
+              
                 // Sync append
-                // log.Append(entry);
+                log.Append(entry);
 
                 // We also support a Span-based variant of Append
 
-                // We also support non-blocking TryAppend to allow throttling/back-off
+                // We also support TryAppend to allow throttling/back-off
                 // (expect this to be slightly slower than the sync version)
                 // Make sure you supply a "starting" logical address of 0
                 // Retries must send back the current logical address.
                 // 
                 // long logicalAddress = 0;
                 // while (!log.TryAppend(entry, ref logicalAddress)) ;
+              
+                // Async version of Append
+                // var t1 = log.AppendAsync(entry);
+                // t1.AsTask().Wait();
             }
         }
 
