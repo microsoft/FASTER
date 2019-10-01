@@ -38,12 +38,8 @@ namespace FasterLogSample
         {
             while (true)
             {
-                // Thread.Sleep(100);
-                // log.FlushAndCommit(true);
-
-                // Async version
-                log.FlushAndCommitAsync().GetAwaiter().GetResult();
-                Task.Delay(100);
+                Thread.Sleep(100);
+                log.FlushAndCommit(true);
             }
         }
 
@@ -56,7 +52,7 @@ namespace FasterLogSample
             while (true)
             {
                 // Sync append
-                // log.Append(entry);
+                log.Append(entry);
 
                 // We also support a Span-based variant of Append
 
@@ -67,9 +63,6 @@ namespace FasterLogSample
                 // 
                 // long logicalAddress = 0;
                 // while (!log.TryAppend(entry, ref logicalAddress)) ;
-
-                // Async version of Append
-                log.AppendAsync(entry).GetAwaiter().GetResult();
             }
         }
 
@@ -98,6 +91,7 @@ namespace FasterLogSample
                         throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
                     }
 
+                    // Re-insert entry with small probability
                     if (r.Next(100) < 10)
                         log.Append(result);
 
@@ -110,7 +104,7 @@ namespace FasterLogSample
             }
         }
 
-        static int FindDiff(Span<byte> b1, Span<byte> b2)
+        private static int FindDiff(Span<byte> b1, Span<byte> b2)
         {
             for (int i=0; i<b1.Length; i++)
             {
@@ -122,21 +116,73 @@ namespace FasterLogSample
             return 0;
         }
 
+        /// <summary>
+        /// Main program entry point
+        /// </summary>
+        /// <param name="args"></param>
         static void Main(string[] args)
         {
+            bool sync = true;
             var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
-            new Thread(new ThreadStart(AppendThread)).Start();
-            
-            // Can have multiple append threads if needed
-            // new Thread(new ThreadStart(AppendThread)).Start();
-            
-            new Thread(new ThreadStart(ScanThread)).Start();
-            new Thread(new ThreadStart(ReportThread)).Start();
-            new Thread(new ThreadStart(CommitThread)).Start();
+            if (sync)
+            {
 
-            Thread.Sleep(500*1000);
+                new Thread(new ThreadStart(AppendThread)).Start();
+
+                // Can have multiple append threads if needed
+                // new Thread(new ThreadStart(AppendThread)).Start();
+
+                var t1 = new Thread(new ThreadStart(ScanThread));
+                var t2 = new Thread(new ThreadStart(ReportThread));
+                var t3 = new Thread(new ThreadStart(CommitThread));
+                t1.Start(); t2.Start(); t3.Start();
+                t1.Join(); t2.Join(); t3.Join();
+            }
+            else
+            {
+                // Async version of demo: expect lower performance
+                const int NumParallelTasks = 100;
+                Task[] tasks = new Task[NumParallelTasks + 1];
+                for (int i = 0; i < NumParallelTasks; i++)
+                {
+                    tasks[i] = AppendAsync();
+                }
+                tasks[NumParallelTasks] = CommitAsync();
+
+
+                // Use threads for scan and reporting
+                var t1 = new Thread(new ThreadStart(ScanThread));
+                var t2 = new Thread(new ThreadStart(ReportThread));
+                t1.Start();
+                t2.Start();
+                t1.Join();
+                t2.Join();
+
+                Task.WaitAll(tasks);
+            }
+        }
+
+        static async Task AppendAsync()
+        {
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            while (true)
+            {
+                await log.AppendAsync(entry);
+            }
+        }
+
+        static async Task CommitAsync()
+        {
+            while (true)
+            {
+                await Task.Delay(100);
+                await log.FlushAndCommitAsync();
+            }
         }
     }
 }
