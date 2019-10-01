@@ -199,11 +199,16 @@ namespace FASTER.core
                 await commitTask.Task;
             }
 
-
-            long commitAddress = CommittedUntilAddress;
-            while (commitAddress < logicalAddress + 4 + entry.Length)
+            while (true)
             {
-                commitAddress = await commitTask.Task;
+                var task = commitTask.Task;
+                var commitAddress = CommittedUntilAddress;
+                if (commitAddress < logicalAddress + 4 + entry.Length)
+                {
+                    await task;
+                }
+                else
+                    break;
             }
 
             return logicalAddress;
@@ -228,6 +233,28 @@ namespace FASTER.core
             epoch.Suspend();
             return tailAddress;
         }
+
+        /// <summary>
+        /// Async flush log until tail
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask<long> FlushAndCommitAsync()
+        {
+            var tailAddress = FlushAndCommit();
+
+            while (true)
+            {
+                var task = commitTask.Task;
+                var commitAddress = CommittedUntilAddress;
+                if (commitAddress < tailAddress)
+                {
+                    await task;
+                }
+                else
+                    break;
+            }
+            return tailAddress;
+       }
 
         /// <summary>
         /// Truncate the log until, but not including, untilAddress

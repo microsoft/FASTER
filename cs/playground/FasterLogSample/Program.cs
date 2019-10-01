@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using FASTER.core;
 
 namespace FasterLogSample
@@ -37,8 +38,12 @@ namespace FasterLogSample
         {
             while (true)
             {
-                Thread.Sleep(100);
-                log.FlushAndCommit(true);
+                // Thread.Sleep(100);
+                // log.FlushAndCommit(true);
+
+                // Async version
+                log.FlushAndCommitAsync().GetAwaiter().GetResult();
+                Task.Delay(100);
             }
         }
 
@@ -64,7 +69,7 @@ namespace FasterLogSample
                 // while (!log.TryAppend(entry, ref logicalAddress)) ;
 
                 // Async version of Append
-                var address = log.AppendAsync(entry).GetAwaiter().GetResult();
+                log.AppendAsync(entry).GetAwaiter().GetResult();
             }
         }
 
