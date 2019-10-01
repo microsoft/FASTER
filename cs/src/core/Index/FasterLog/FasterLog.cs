@@ -180,7 +180,7 @@ namespace FASTER.core
             return true;
         }
 
-        private TaskCompletionSource<long> commitTask = new TaskCompletionSource<long>();
+        private TaskCompletionSource<long> commitTask = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>
         /// Append entry to log (async) - completes after entry is flushed to storage
@@ -416,6 +416,9 @@ namespace FASTER.core
             info.FlushedUntilAddress = flushAddress;
             info.BeginAddress = allocator.BeginAddress;
 
+            var _newCommitTask = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<long> _commitTask;
+
             // We can only allow serial monotonic synchronous commit
             lock (this)
             {
@@ -426,10 +429,10 @@ namespace FASTER.core
                     // info.DebugPrint();
                 }
 
-                var _commitTask = commitTask;
-                commitTask = new TaskCompletionSource<long>();
-                _commitTask.SetResult(flushAddress);
+                _commitTask = commitTask;
+                commitTask = _newCommitTask;
             }
+            _commitTask.SetResult(flushAddress);
         }
 
         /// <summary>

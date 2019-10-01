@@ -143,7 +143,8 @@ namespace FasterLogSample
             else
             {
                 // Async version of demo: expect lower performance
-                const int NumParallelTasks = 100;
+                const int NumParallelTasks = 10000;
+
                 Task[] tasks = new Task[NumParallelTasks + 1];
                 for (int i = 0; i < NumParallelTasks; i++)
                 {
