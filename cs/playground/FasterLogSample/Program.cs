@@ -11,7 +11,7 @@ namespace FasterLogSample
 {
     public class Program
     {
-        const int entryLength = 996;
+        const int entryLength = 16380;
         static FasterLog log;
 
         static void ReportThread()
@@ -28,7 +28,7 @@ namespace FasterLogSample
                 var nowValue = log.TailAddress;
 
                 Console.WriteLine("Throughput: {0} MB/sec, Tail: {1}",
-                    (nowValue - lastValue) / (1000*(nowTime - lastTime)), nowValue);
+                    (nowValue - lastValue) / (1000 * (nowTime - lastTime)), nowValue);
                 lastTime = nowTime;
                 lastValue = nowValue;
             }
@@ -38,7 +38,7 @@ namespace FasterLogSample
         {
             while (true)
             {
-                Thread.Sleep(100);
+                Thread.Sleep(5);
                 log.FlushAndCommit(true);
             }
         }
@@ -47,7 +47,9 @@ namespace FasterLogSample
         {
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
+            {
                 entry[i] = (byte)i;
+            }
 
             while (true)
             {
@@ -74,7 +76,10 @@ namespace FasterLogSample
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
+            {
                 entry[i] = (byte)i;
+            }
+
             var entrySpan = new Span<byte>(entry);
 
 
@@ -85,7 +90,10 @@ namespace FasterLogSample
                 while (true)
                 {
                     while (!iter.GetNext(out result))
+                    {
                         Thread.Sleep(1000);
+                    }
+
                     if (!result.SequenceEqual(entrySpan))
                     {
                         throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
@@ -93,9 +101,11 @@ namespace FasterLogSample
 
                     // Re-insert entry with small probability
                     if (r.Next(100) < 10)
+                    {
                         log.Append(result);
+                    }
 
-                    if (iter.CurrentAddress - lastAddress > 500000000)
+                    if (iter.CurrentAddress - lastAddress > 500_000_000)
                     {
                         log.TruncateUntil(iter.CurrentAddress);
                         lastAddress = iter.CurrentAddress;
@@ -106,7 +116,7 @@ namespace FasterLogSample
 
         private static int FindDiff(Span<byte> b1, Span<byte> b2)
         {
-            for (int i=0; i<b1.Length; i++)
+            for (int i = 0; i < b1.Length; i++)
             {
                 if (b1[i] != b2[i])
                 {
@@ -122,8 +132,8 @@ namespace FasterLogSample
         /// <param name="args"></param>
         static void Main(string[] args)
         {
-            bool sync = true;
-            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            bool sync = false;
+            var device = Devices.CreateLogDevice("D:\\hitesh_logs\\hlog.log", deleteOnClose: true, recoverDevice: false);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             if (sync)
@@ -142,40 +152,58 @@ namespace FasterLogSample
             }
             else
             {
-                // Async version of demo: expect lower performance
-                const int NumParallelTasks = 10000;
+                TaskScheduler.UnobservedTaskException += (object sender, UnobservedTaskExceptionEventArgs e) =>
+                {
+                    Console.WriteLine($"Unobserved task exception: {e.Exception}");
+                    e.SetObserved();
+                };
 
-                Task[] tasks = new Task[NumParallelTasks + 1];
+                ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);
+
+                // Async version of demo: expect lower performance
+                const int NumParallelTasks = 10_000;
+                for (int i = 0; i < entryLength; i++)
+                {
+                    staticEntry[i] = (byte)i;
+                }
+
+                Task[] tasks = new Task[NumParallelTasks];
                 for (int i = 0; i < NumParallelTasks; i++)
                 {
-                    tasks[i] = AppendAsync();
+                    int local = i;
+                    tasks[i] = Task.Run(() => AppendAsync(local));
                 }
-                tasks[NumParallelTasks] = CommitAsync();
-
+                // tasks[NumParallelTasks] = Task.Run(() => CommitAsync());
 
                 // Use threads for scan and reporting
                 var t1 = new Thread(new ThreadStart(ScanThread));
                 var t2 = new Thread(new ThreadStart(ReportThread));
-                t1.Start();
-                t2.Start();
-                t1.Join();
-                t2.Join();
+                var t3 = new Thread(new ThreadStart(CommitThread));
+                t1.Start(); t2.Start(); t3.Start();
+                t1.Join(); t2.Join(); t3.Join();
 
                 Task.WaitAll(tasks);
             }
         }
 
-        static async Task AppendAsync()
+        static readonly byte[] staticEntry = new byte[entryLength];
+
+        static async Task AppendAsync(int id)
         {
-            byte[] entry = new byte[entryLength];
-            for (int i = 0; i < entryLength; i++)
-                entry[i] = (byte)i;
+            await Task.Yield();
 
             // Simple version - append with commit
             // Needs very high parallelism for perf
             while (true)
             {
-                await log.AppendAsync(entry);
+                try
+                {
+                    await log.AppendAsync(staticEntry);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"{nameof(AppendAsync)}({id}): {ex}");
+                }
             }
 
             // Batched version - we append to memory, wait for commit periodically
@@ -189,13 +217,19 @@ namespace FasterLogSample
             //     }
             // }
         }
-
         static async Task CommitAsync()
         {
             while (true)
             {
-                await Task.Delay(100);
-                await log.FlushAndCommitAsync();
+                try
+                {
+                    await Task.Delay(5);
+                    await log.FlushAndCommitAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"{nameof(CommitAsync)}: {ex}");
+                }
             }
         }
     }

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net46</TargetFramework>
+    <TargetFramework>netcoreapp2.2</TargetFramework>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win7-x64</RuntimeIdentifier>
   </PropertyGroup>
