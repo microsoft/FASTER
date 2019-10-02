@@ -171,10 +171,23 @@ namespace FasterLogSample
             for (int i = 0; i < entryLength; i++)
                 entry[i] = (byte)i;
 
+            // Simple version - append with commit
+            // Needs very high parallelism for perf
             while (true)
             {
                 await log.AppendAsync(entry);
             }
+
+            // Batched version - we append to memory, wait for commit periodically
+            // int count = 0;
+            // while (true)
+            // {
+            //     await log.AppendToMemoryAsync(entry);
+            //     if (count++ % 100 == 0)
+            //     {
+            //         await log.WaitForCommitAsync();
+            //     }
+            // }
         }
 
         static async Task CommitAsync()

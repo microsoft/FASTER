@@ -191,6 +191,7 @@ namespace FASTER.core
         {
             long logicalAddress = 0;
 
+            // Phase 1: wait for commit to memory
             while (true)
             {
                 if (TryAppend(entry, ref logicalAddress))
@@ -199,6 +200,7 @@ namespace FASTER.core
                 await commitTask.Task;
             }
 
+            // Phase 2: wait for commit/flush to storage
             while (true)
             {
                 var task = commitTask.Task;
@@ -212,6 +214,52 @@ namespace FASTER.core
             }
 
             return logicalAddress;
+        }
+
+        /// <summary>
+        /// Append entry to log in memory (async) - completes after entry is appended
+        /// to memory, not necessarily committed to storage.
+        /// </summary>
+        /// <param name="entry"></param>
+        /// <returns></returns>
+        public async ValueTask<long> AppendToMemoryAsync(byte[] entry)
+        {
+            long logicalAddress = 0;
+
+            while (true)
+            {
+                if (TryAppend(entry, ref logicalAddress))
+                    break;
+
+                await commitTask.Task;
+            }
+
+            return logicalAddress;
+        }
+
+        /// <summary>
+        /// Wait for all prior appends (in memory) to commit to storage. Does not
+        /// itself issue a commit, just waits for commit. So you should ensure that
+        /// someone else causes the commit to happen.
+        /// </summary>
+        /// <param name="untilAddress">Address until which we should wait for commit, default 0 for tail of log</param>
+        /// <returns></returns>
+        public async ValueTask WaitForCommitAsync(long untilAddress = 0)
+        {
+            var tailAddress = untilAddress;
+            if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
+
+            while (true)
+            {
+                var task = commitTask.Task;
+                var commitAddress = CommittedUntilAddress;
+                if (commitAddress < tailAddress)
+                {
+                    await task;
+                }
+                else
+                    break;
+            }
         }
 
         /// <summary>
