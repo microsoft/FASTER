@@ -1,8 +1,8 @@
 ---
 layout: default
 title: FasterLog - a fast concurrent write-ahead log and tailing iterator
-parent: Tuning FASTER
 nav_order: 3
+permalink: /docs/fasterlog
 ---
 
 # Introducing FasterLog
