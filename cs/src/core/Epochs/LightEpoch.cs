@@ -283,6 +283,7 @@ namespace FASTER.core
 
                 if (++i == kDrainListSize)
                 {
+                    ProtectAndDrain();
                     i = 0;
                     if (++j == 500)
                     {

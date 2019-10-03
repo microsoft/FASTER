@@ -23,6 +23,7 @@ namespace FASTER.core
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
         private ILogCommitManager logCommitManager;
+        private TaskCompletionSource<long> commitTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>
         /// Beginning address of log
@@ -43,6 +44,11 @@ namespace FASTER.core
         /// Log commit until address
         /// </summary>
         public long CommittedUntilAddress;
+
+        /// <summary>
+        /// Task notifying commit completions
+        /// </summary>
+        public Task<long> CommitTask => commitTcs.Task;
 
         /// <summary>
         /// Create new log instance
@@ -77,17 +83,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="entry"></param>
         /// <returns>Logical address of added entry</returns>
-        public unsafe long Append(Span<byte> entry)
+        public long Append(Span<byte> entry)
         {
-            epoch.Resume();
-            var length = entry.Length;
-            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
-            BlockAllocate(4 + alignedLength, out long logicalAddress);
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            *(int*)physicalAddress = length;
-            fixed (byte* bp = &entry.GetPinnableReference())
-                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
-            epoch.Suspend();
+            long logicalAddress;
+            while (!TryAppend(entry, out logicalAddress)) ;
             return logicalAddress;
         }
 
@@ -96,17 +95,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="entry"></param>
         /// <returns>Logical address of added entry</returns>
-        public unsafe long Append(byte[] entry)
+        public long Append(byte[] entry)
         {
-            epoch.Resume();
-            var length = entry.Length;
-            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
-            BlockAllocate(4 + alignedLength, out long logicalAddress);
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            *(int*)physicalAddress = length;
-            fixed (byte* bp = entry)
-                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
-            epoch.Suspend();
+            long logicalAddress;
+            while (!TryAppend(entry, out logicalAddress)) ;
             return logicalAddress;
         }
 
@@ -119,10 +111,9 @@ namespace FASTER.core
         /// <param name="entry">Entry to be appended to log</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryAppend(byte[] entry, ref long logicalAddress)
+        public unsafe bool TryAppend(byte[] entry, out long logicalAddress)
         {
-            if (logicalAddress < 0)
-                return TryCompleteAppend(entry, ref logicalAddress);
+            logicalAddress = 0;
 
             epoch.Resume();
 
@@ -130,7 +121,7 @@ namespace FASTER.core
             var alignedLength = (length + 3) & ~3; // round up to multiple of 4
 
             logicalAddress = allocator.TryAllocate(4 + alignedLength);
-            if (logicalAddress <= 0)
+            if (logicalAddress == 0)
             {
                 epoch.Suspend();
                 return false;
@@ -154,10 +145,9 @@ namespace FASTER.core
         /// <param name="entry">Entry to be appended to log</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryAppend(Span<byte> entry, ref long logicalAddress)
+        public unsafe bool TryAppend(Span<byte> entry, out long logicalAddress)
         {
-            if (logicalAddress < 0)
-                return TryCompleteAppend(entry, ref logicalAddress);
+            logicalAddress = 0;
 
             epoch.Resume();
 
@@ -165,7 +155,7 @@ namespace FASTER.core
             var alignedLength = (length + 3) & ~3; // round up to multiple of 4
 
             logicalAddress = allocator.TryAllocate(4 + alignedLength);
-            if (logicalAddress <= 0)
+            if (logicalAddress == 0)
             {
                 epoch.Suspend();
                 return false;
@@ -180,8 +170,6 @@ namespace FASTER.core
             return true;
         }
 
-        private TaskCompletionSource<long> commitTask = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-
         /// <summary>
         /// Append entry to log (async) - completes after entry is flushed to storage
         /// </summary>
@@ -189,23 +177,22 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask<long> AppendAsync(byte[] entry)
         {
-            long logicalAddress = 0;
+            long logicalAddress;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                if (TryAppend(entry, ref logicalAddress))
+                var task = CommitTask;
+                if (TryAppend(entry, out logicalAddress))
                     break;
-
-                await commitTask.Task;
+                await task;
             }
 
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
-                var task = commitTask.Task;
-                var commitAddress = CommittedUntilAddress;
-                if (commitAddress < logicalAddress + 4 + entry.Length)
+                var task = CommitTask;
+                if (CommittedUntilAddress < logicalAddress + 4 + entry.Length)
                 {
                     await task;
                 }
@@ -224,14 +211,14 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask<long> AppendToMemoryAsync(byte[] entry)
         {
-            long logicalAddress = 0;
+            long logicalAddress;
 
             while (true)
             {
-                if (TryAppend(entry, ref logicalAddress))
+                var task = CommitTask;
+                if (TryAppend(entry, out logicalAddress))
                     break;
-
-                await commitTask.Task;
+                await task;
             }
 
             return logicalAddress;
@@ -251,9 +238,8 @@ namespace FASTER.core
 
             while (true)
             {
-                var task = commitTask.Task;
-                var commitAddress = CommittedUntilAddress;
-                if (commitAddress < tailAddress)
+                var task = CommitTask;
+                if (CommittedUntilAddress < tailAddress)
                 {
                     await task;
                 }
@@ -265,6 +251,8 @@ namespace FASTER.core
         /// <summary>
         /// Flush the log until tail
         /// </summary>
+        /// <param name="spinWait">If true, wait until flush completes. Otherwise, issue flush and return.</param>
+        /// <returns></returns>
         public long FlushAndCommit(bool spinWait = false)
         {
             epoch.Resume();
@@ -292,9 +280,8 @@ namespace FASTER.core
 
             while (true)
             {
-                var task = commitTask.Task;
-                var commitAddress = CommittedUntilAddress;
-                if (commitAddress < tailAddress)
+                var task = CommitTask;
+                if (CommittedUntilAddress < tailAddress)
                 {
                     await task;
                 }
@@ -318,13 +305,14 @@ namespace FASTER.core
         /// <summary>
         /// Pull-based iterator interface for scanning FASTER log
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
+        /// <param name="beginAddress">Begin address for scan</param>
+        /// <param name="endAddress">End address for scan (or long.MaxValue for tailing)</param>
+        /// <param name="getMemory">Delegate to provide user memory where data gets copied to</param>
+        /// <param name="scanBufferingMode">Use single or double buffering</param>
         /// <returns></returns>
-        public FasterLogScanIterator Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        public FasterLogScanIterator Scan(long beginAddress, long endAddress, GetMemory getMemory = null, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
         {
-            return new FasterLogScanIterator(allocator, beginAddress, endAddress, scanBufferingMode, epoch);
+            return new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch);
         }
 
         /// <summary>
@@ -345,114 +333,6 @@ namespace FASTER.core
         public void ReleaseThread()
         {
             epoch.Release();
-        }
-
-        /// <summary>
-        /// Block allocate
-        /// </summary>
-        /// <param name="recordSize"></param>
-        /// <param name="logicalAddress"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocate(int recordSize, out long logicalAddress)
-        {
-            logicalAddress = allocator.Allocate(recordSize);
-            if (logicalAddress >= 0) return;
-
-            while (logicalAddress < 0 && -logicalAddress >= allocator.ReadOnlyAddress)
-            {
-                epoch.ProtectAndDrain();
-                allocator.CheckForAllocateComplete(ref logicalAddress);
-                if (logicalAddress < 0)
-                {
-                    Thread.Yield();
-                }
-            }
-
-            logicalAddress = logicalAddress < 0 ? -logicalAddress : logicalAddress;
-
-            if (logicalAddress < allocator.ReadOnlyAddress)
-            {
-                Debug.WriteLine("Allocated address is read-only, retrying");
-                BlockAllocate(recordSize, out logicalAddress);
-            }
-        }
-
-        /// <summary>
-        /// Try to complete partial allocation. Succeeds when address
-        /// turns positive. If failed with negative address, try the
-        /// operation. If failed with zero address, user needs to start 
-        /// afresh with a new TryAppend operation.
-        /// </summary>
-        /// <param name="entry"></param>
-        /// <param name="logicalAddress"></param>
-        /// <returns>Whether operation succeeded</returns>
-        private unsafe bool TryCompleteAppend(byte[] entry, ref long logicalAddress)
-        {
-            epoch.Resume();
-
-            allocator.CheckForAllocateComplete(ref logicalAddress);
-
-            if (logicalAddress < 0)
-            {
-                epoch.Suspend();
-                return false;
-            }
-
-            if (logicalAddress < allocator.ReadOnlyAddress)
-            {
-                logicalAddress = 0;
-                epoch.Suspend();
-                return false;
-            }
-
-            var length = entry.Length;
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            *(int*)physicalAddress = length;
-            fixed (byte* bp = entry)
-                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
-
-            epoch.Suspend();
-            return true;
-        }
-
-        /// <summary>
-        /// Try to complete partial allocation. Succeeds when address
-        /// turns positive. If failed with negative address, try the
-        /// operation. If failed with zero address, user needs to start 
-        /// afresh with a new TryAppend operation.
-        /// </summary>
-        /// <param name="entry"></param>
-        /// <param name="logicalAddress"></param>
-        /// <returns>Whether operation succeeded</returns>
-        private unsafe bool TryCompleteAppend(Span<byte> entry, ref long logicalAddress)
-        {
-            epoch.Resume();
-
-            allocator.CheckForAllocateComplete(ref logicalAddress);
-
-            if (logicalAddress < 0)
-            {
-                epoch.Suspend();
-                return false;
-            }
-
-            if (logicalAddress < allocator.ReadOnlyAddress)
-            {
-                logicalAddress = 0;
-                epoch.Suspend();
-                return false;
-            }
-
-            var length = entry.Length;
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            *(int*)physicalAddress = length;
-            fixed (byte* bp = &entry.GetPinnableReference())
-                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
-
-            epoch.Suspend();
-            return true;
         }
 
         /// <summary>
@@ -477,8 +357,8 @@ namespace FASTER.core
                     // info.DebugPrint();
                 }
 
-                _commitTask = commitTask;
-                commitTask = _newCommitTask;
+                _commitTask = commitTcs;
+                commitTcs = _newCommitTask;
             }
             _commitTask.SetResult(flushAddress);
         }

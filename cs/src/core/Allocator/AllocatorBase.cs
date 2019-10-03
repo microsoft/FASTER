@@ -785,7 +785,7 @@ namespace FASTER.core
             }
 
             // Negate the address if page not ready to be used
-            if (CannotAllocate(page))
+            if (CannotAllocateNext(page))
             {
                 address = -address;
             }
@@ -820,8 +820,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Try allocate, no thread spinning allowed
-        /// May return 0 in case of inability
-        /// May also return negative address
+        /// May return 0 in case of inability to allocate
         /// </summary>
         /// <param name="numSlots"></param>
         /// <returns></returns>
@@ -855,51 +854,36 @@ namespace FASTER.core
                 // The thread that "makes" the offset incorrect
                 // is the one that is elected to fix it and
                 // shift read-only/head.
+
+                long shiftAddress = ((long)(localTailPageOffset.Page + 1)) << LogPageSizeBits;
+                PageAlignedShiftReadOnlyAddress(shiftAddress);
+                PageAlignedShiftHeadAddress(shiftAddress);
+
+                if (CannotAllocate(localTailPageOffset.Page + 1))
+                {
+                    // We should not allocate the next page; reset to end of page
+                    // so that next attempt can retry
+                    localTailPageOffset.Offset = PageSize;
+                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                    return 0;
+                }
+
+                // Allocate next page in advance, if needed
+                int nextPageIndex = (localTailPageOffset.Page + 2) % BufferSize;
+                if ((!IsAllocated(nextPageIndex)))
+                {
+                    AllocatePage(nextPageIndex);
+                }
+
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = 0;
                 TailPageOffset = localTailPageOffset;
-
-                long shiftAddress = ((long)(page + 1)) << LogPageSizeBits;
-                PageAlignedShiftReadOnlyAddress(shiftAddress);
-                PageAlignedShiftHeadAddress(shiftAddress);
 
                 return 0;
             }
             #endregion
 
-            long address = (((long)page) << LogPageSizeBits) | ((long)offset);
-
-            // Check for TailPageCache hit
-            if (TailPageCache == page)
-            {
-                return address;
-            }
-
-            // Address has been allocated. Negate the address 
-            // if page is not ready to be used.
-            if (CannotAllocate(page))
-            {
-                address = -address;
-            }
-
-            // Update the read-only so that we can get more space for the tail
-            if (offset == 0)
-            {
-                if (address >= 0)
-                {
-                    TailPageCache = page;
-                    Interlocked.MemoryBarrier();
-                }
-
-                // Allocate next page in advance, if needed
-                int newPageIndex = (page + 1) % BufferSize;
-                if ((!IsAllocated(newPageIndex)))
-                {
-                    AllocatePage(newPageIndex);
-                }
-            }
-
-            return address;
+            return (((long)page) << LogPageSizeBits) | ((long)offset);
         }
 
         /// <summary>
@@ -925,7 +909,7 @@ namespace FASTER.core
             PageAlignedShiftHeadAddress(GetTailAddress());
 
             // Check if we can allocate pageIndex
-            if (CannotAllocate(p.Page))
+            if (CannotAllocateNext(p.Page))
             {
                 return;
             }
@@ -940,13 +924,18 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CannotAllocate(int page)
+        private bool CannotAllocateNext(int page)
         {
             return
                 (page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits) - 1) ||
                 !IsAllocated(page % BufferSize);
         }
 
+        private bool CannotAllocate(int page)
+        {
+            return
+                (page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits));
+        }
         /// <summary>
         /// Used by applications to make the current state of the database immutable quickly
         /// </summary>
