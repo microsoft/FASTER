@@ -4,22 +4,31 @@
 using System;
 using System.Threading;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Delegate for getting memory from user
+    /// </summary>
+    /// <param name="length"></param>
+    /// <returns></returns>
+    public delegate Span<byte> GetMemory(int length);
+
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
     public class FasterLogScanIterator : IDisposable
     {
         private readonly int frameSize;
+        private readonly FasterLog fasterLog;
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly long endAddress;
         private readonly BlittableFrame frame;
         private readonly CountdownEvent[] loaded;
         private readonly long[] loadedPage;
         private readonly LightEpoch epoch;
-
+        private readonly GetMemory getMemory;
         private long currentAddress, nextAddress;
         
 
@@ -31,14 +40,18 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
+        /// <param name="fasterLog"></param>
         /// <param name="hlog"></param>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
-        internal unsafe FasterLogScanIterator(BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
+        /// <param name="getMemory"></param>
+        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
         {
+            this.fasterLog = fasterLog;
             this.allocator = hlog;
+            this.getMemory = getMemory;
             this.epoch = epoch;
 
             if (beginAddress == 0)
@@ -83,7 +96,7 @@ namespace FASTER.core
                     currentAddress = allocator.BeginAddress;
                 }
 
-                if ((currentAddress >= endAddress) || (currentAddress >= allocator.ReadOnlyAddress))
+                if ((currentAddress >= endAddress) || (currentAddress >= fasterLog.CommittedUntilAddress))
                 {
                     entry = default(Span<byte>);
                     return false;
@@ -121,36 +134,46 @@ namespace FASTER.core
 
                 // Check if record fits on page, if not skip to next page
                 int length = *(int*)physicalAddress;
-                int alignedLength = (length + 3) & ~3; // round up to multiple of 4
+                int recordSize = 4 + Align(length);
 
-                int recordSize = 4 + alignedLength;
                 if ((currentAddress & allocator.PageSizeMask) + recordSize > allocator.PageSize)
+                    throw new Exception();
+
+                if (length == 0) // we are at end of page, skip to next
                 {
+                    // If record
                     if (currentAddress >= headAddress)
                         epoch.Suspend();
                     currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
                     continue;
                 }
 
-                if (length == 0)
+                if (getMemory != null)
                 {
-                    if (currentAddress >= headAddress)
-                        epoch.Suspend();
-                    currentAddress += recordSize;
-                    continue;
+                    // Use user delegate to allocate memory
+                    entry = getMemory(length);
+                    if (entry.Length != length)
+                        throw new Exception("Span provided has invalid length");
+                }
+                else
+                {
+                    // We allocate a byte array from heap
+                    entry = new Span<byte>(new byte[length]);
                 }
 
-                entry = new Span<byte>((void*)(physicalAddress + 4), length);
+                fixed (byte* bp = &entry.GetPinnableReference())
+                    Buffer.MemoryCopy((void*)(4 + physicalAddress), bp, length, length);
+
                 if (currentAddress >= headAddress)
-                {
-                    // Have to copy out bytes within epoch protection in 
-                    // this case because this is a shared buffer
-                    var _entry = new byte[length];
-                    entry.CopyTo(_entry);
-                    entry = _entry;
                     epoch.Suspend();
-                }
-                nextAddress = currentAddress + recordSize;
+
+                Debug.Assert((currentAddress & allocator.PageSizeMask) + recordSize <= allocator.PageSize);
+
+                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
+                    nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                else
+                    nextAddress = currentAddress + recordSize;
+                
                 return true;
             }
         }
@@ -213,6 +236,13 @@ namespace FASTER.core
             Interlocked.MemoryBarrier();
             Overlapped.Free(overlap);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int Align(int length)
+        {
+            return (length + 3) & ~3;
+        }
+
     }
 }
 
