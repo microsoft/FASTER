@@ -14,6 +14,7 @@ namespace FasterLogSample
         // Entry length can be between 1 and ((1 << FasterLogSettings.PageSizeBits) - 4)
         const int entryLength = 1 << 10;
         static readonly byte[] staticEntry = new byte[entryLength];
+        static readonly SpanBatch spanBatch = new SpanBatch(10);
         static FasterLog log;
 
         static void ReportThread()
@@ -60,6 +61,9 @@ namespace FasterLogSample
                 // Synchronous blocking append
                 // Accepts byte[] and Span<byte>
                 // log.Append(entry);
+
+                // Batched append - batch must fit on one page
+                // while (!log.TryAppend(spanBatch, out _)) ;
             }
         }
 
@@ -219,5 +223,14 @@ namespace FasterLogSample
                 }
             }
         }
+
+        private struct SpanBatch : ISpanBatch
+        {
+            private readonly int batchSize;
+            public SpanBatch(int batchSize) => this.batchSize = batchSize;
+            public Span<byte> Get(int index) => staticEntry;
+            public int TotalEntries() => batchSize;
+        }
+
     }
 }

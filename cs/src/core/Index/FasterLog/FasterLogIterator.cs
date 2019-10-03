@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -133,11 +134,9 @@ namespace FASTER.core
 
                 // Check if record fits on page, if not skip to next page
                 int length = *(int*)physicalAddress;
-                int alignedLength = (length + 3) & ~3; // round up to multiple of 4
+                int recordSize = 4 + Align(length);
 
-                int recordSize = 4 + alignedLength;
-
-                if (((currentAddress & allocator.PageSizeMask) + recordSize > allocator.PageSize))
+                if ((currentAddress & allocator.PageSizeMask) + recordSize > allocator.PageSize)
                     throw new Exception();
 
                 if (length == 0) // we are at end of page, skip to next
@@ -237,6 +236,13 @@ namespace FASTER.core
             Interlocked.MemoryBarrier();
             Overlapped.Free(overlap);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int Align(int length)
+        {
+            return (length + 3) & ~3;
+        }
+
     }
 }
 

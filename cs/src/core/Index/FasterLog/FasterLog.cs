@@ -4,9 +4,6 @@
 #pragma warning disable 0162
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -103,10 +100,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Try to append entry to log. If is returns true, we are
-        /// done. If it returns false with negative address, user
-        /// needs to call TryCompleteAppend to finalize the append.
-        /// See TryCompleteAppend for more info.
+        /// Try to append entry to log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="entry">Entry to be appended to log</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
@@ -118,9 +113,7 @@ namespace FASTER.core
             epoch.Resume();
 
             var length = entry.Length;
-            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
-
-            logicalAddress = allocator.TryAllocate(4 + alignedLength);
+            logicalAddress = allocator.TryAllocate(4 + Align(length));
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -137,10 +130,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Try to append entry to log. If is returns true, we are
-        /// done. If it returns false with negative address, user
-        /// needs to call TryCompleteAppend to finalize the append.
-        /// See TryCompleteAppend for more info.
+        /// Try to append entry to log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="entry">Entry to be appended to log</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
@@ -152,9 +143,7 @@ namespace FASTER.core
             epoch.Resume();
 
             var length = entry.Length;
-            var alignedLength = (length + 3) & ~3; // round up to multiple of 4
-
-            logicalAddress = allocator.TryAllocate(4 + alignedLength);
+            logicalAddress = allocator.TryAllocate(4 + Align(length));
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -168,6 +157,18 @@ namespace FASTER.core
 
             epoch.Suspend();
             return true;
+        }
+
+        /// <summary>
+        /// Try to append batch of entries as a single atomic unit. Entire batch
+        /// needs to fit on one page.
+        /// </summary>
+        /// <param name="spanBatch">Batch to be appended to log</param>
+        /// <param name="logicalAddress">Logical address of first added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public bool TryAppend(ISpanBatch spanBatch, out long logicalAddress)
+        {
+            return TryAppend(spanBatch, out logicalAddress, out _);
         }
 
         /// <summary>
@@ -193,6 +194,40 @@ namespace FASTER.core
             {
                 var task = CommitTask;
                 if (CommittedUntilAddress < logicalAddress + 4 + entry.Length)
+                {
+                    await task;
+                }
+                else
+                    break;
+            }
+
+            return logicalAddress;
+        }
+
+        /// <summary>
+        /// Append batch of entries to log (async) - completes after batch is flushed to storage
+        /// </summary>
+        /// <param name="spanBatch"></param>
+        /// <returns></returns>
+        public async ValueTask<long> AppendAsync(ISpanBatch spanBatch)
+        {
+            long logicalAddress;
+            int allocatedLength;
+
+            // Phase 1: wait for commit to memory
+            while (true)
+            {
+                var task = CommitTask;
+                if (TryAppend(spanBatch, out logicalAddress, out allocatedLength))
+                    break;
+                await task;
+            }
+
+            // Phase 2: wait for commit/flush to storage
+            while (true)
+            {
+                var task = CommitTask;
+                if (CommittedUntilAddress < logicalAddress + allocatedLength)
                 {
                     await task;
                 }
@@ -335,6 +370,12 @@ namespace FASTER.core
             epoch.Release();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int Align(int length)
+        {
+            return (length + 3) & ~3;
+        }
+
         /// <summary>
         /// Commit log
         /// </summary>
@@ -383,6 +424,49 @@ namespace FASTER.core
 
             allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
             CommittedUntilAddress = info.FlushedUntilAddress;
+        }
+
+        /// <summary>
+        /// Try to append batch of entries as a single atomic unit. Entire batch
+        /// needs to fit on one page.
+        /// </summary>
+        /// <param name="spanBatch">Batch to be appended to log</param>
+        /// <param name="logicalAddress">Logical address of first added entry</param>
+        /// <param name="allocatedLength">Actual allocated length</param>
+        /// <returns>Whether the append succeeded</returns>
+        private unsafe bool TryAppend(ISpanBatch spanBatch, out long logicalAddress, out int allocatedLength)
+        {
+            logicalAddress = 0;
+
+            int totalEntries = spanBatch.TotalEntries();
+            allocatedLength = 0;
+            for (int i = 0; i < totalEntries; i++)
+            {
+                allocatedLength += Align(spanBatch.Get(i).Length) + 4;
+            }
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocate(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                return false;
+            }
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            for (int i = 0; i < totalEntries; i++)
+            {
+                var span = spanBatch.Get(i);
+                var entryLength = span.Length;
+                *(int*)physicalAddress = entryLength;
+                fixed (byte* bp = &span.GetPinnableReference())
+                    Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), entryLength, entryLength);
+                physicalAddress += Align(entryLength) + 4;
+            }
+
+            epoch.Suspend();
+            return true;
         }
     }
 }
