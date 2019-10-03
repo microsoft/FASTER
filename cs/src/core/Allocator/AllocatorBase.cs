@@ -827,6 +827,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long TryAllocate(int numSlots = 1)
         {
+            if (numSlots > PageSize)
+                throw new Exception("Entry does not fit on page");
+
             PageOffset localTailPageOffset = default(PageOffset);
 
             // Necessary to check because threads keep retrying and we do not

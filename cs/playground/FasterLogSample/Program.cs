@@ -11,6 +11,7 @@ namespace FasterLogSample
 {
     public class Program
     {
+        // Entry length can be between 1 and ((1 << FasterLogSettings.PageSizeBits) - 4)
         const int entryLength = 1 << 10;
         static readonly byte[] staticEntry = new byte[entryLength];
         static FasterLog log;
@@ -89,7 +90,10 @@ namespace FasterLogSample
 
                     if (!result.SequenceEqual(entrySpan))
                     {
-                        throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
+                        if (result.Length != entrySpan.Length)
+                            throw new Exception("Invalid entry found, expected length " + entrySpan.Length + ", actual length " + result.Length);
+                        else
+                            throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
                     }
 
                     // Re-insert entry with small probability
