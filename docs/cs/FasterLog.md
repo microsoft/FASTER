@@ -117,7 +117,7 @@ default) indicates that 90% of memory will be mutable.
 each chunk independently of pages, as one segment typically consists of many pages. For instance, if we want
 each file on disk to be 1GB (the default), we can set `SegmentSizeBits` S to 30, since 2<sup>30</sup> = 1GB.
 
-* `LogCommitManager': Users can fine tune the commit of log metadata by extending or replacing the default log
+* `LogCommitManager`: Users can fine tune the commit of log metadata by extending or replacing the default log
 commit manager provided (`LocalLogCommitManager`). For instance, users may commit to a database instead of the
 local file system. They may also perform various pre-commit and post-commit operations if needed.
 
