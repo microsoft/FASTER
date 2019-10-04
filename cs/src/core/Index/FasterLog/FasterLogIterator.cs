@@ -144,8 +144,9 @@ namespace FASTER.core
             if (GetNextInternal(out long physicalAddress, out entryLength, out bool epochTaken))
             {
                 entry = pool.Rent(entryLength);
-                using (var handle = entry.Memory.Pin())
-                    Buffer.MemoryCopy((void*)(4 + physicalAddress), handle.Pointer, entryLength, entryLength);
+
+                fixed (byte* bp = &entry.Memory.Span.GetPinnableReference())
+                    Buffer.MemoryCopy((void*)(4 + physicalAddress), bp, entryLength, entryLength);
 
                 if (epochTaken)
                     epoch.Suspend();
