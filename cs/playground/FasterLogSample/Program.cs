@@ -87,9 +87,9 @@ namespace FasterLogSample
             {
                 while (true)
                 {
-                    while (!iter.GetNext(out result))
+                    while (!iter.GetNext(out result, out int length))
                     {
-                        Thread.Sleep(1000);
+                        iter.WaitAsync().GetAwaiter().GetResult();
                     }
 
                     if (!result.SequenceEqual(entrySpan))
