@@ -6,9 +6,9 @@ using System;
 namespace FASTER.core
 {
     /// <summary>
-    /// Interface to provide a batch of Span[byte] data to FASTER
+    /// Interface to provide a batch of ReadOnlySpan[byte] data to FASTER
     /// </summary>
-    public interface ISpanBatch
+    public interface IReadOnlySpanBatch
     {
         /// <summary>
         /// Number of entries in provided batch
@@ -21,6 +21,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="index">Index</param>
         /// <returns></returns>
-        Span<byte> Get(int index);
+        ReadOnlySpan<byte> Get(int index);
     }
 }

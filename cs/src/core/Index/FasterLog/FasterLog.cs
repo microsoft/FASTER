@@ -80,7 +80,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="entry"></param>
         /// <returns>Logical address of added entry</returns>
-        public long Append(Span<byte> entry)
+        public long Append(ReadOnlySpan<byte> entry)
         {
             long logicalAddress;
             while (!TryAppend(entry, out logicalAddress)) ;
@@ -136,7 +136,7 @@ namespace FASTER.core
         /// <param name="entry">Entry to be appended to log</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryAppend(Span<byte> entry, out long logicalAddress)
+        public unsafe bool TryAppend(ReadOnlySpan<byte> entry, out long logicalAddress)
         {
             logicalAddress = 0;
 
@@ -163,12 +163,12 @@ namespace FASTER.core
         /// Try to append batch of entries as a single atomic unit. Entire batch
         /// needs to fit on one page.
         /// </summary>
-        /// <param name="spanBatch">Batch to be appended to log</param>
+        /// <param name="readOnlySpanBatch">Batch to be appended to log</param>
         /// <param name="logicalAddress">Logical address of first added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public bool TryAppend(ISpanBatch spanBatch, out long logicalAddress)
+        public bool TryAppend(IReadOnlySpanBatch readOnlySpanBatch, out long logicalAddress)
         {
-            return TryAppend(spanBatch, out logicalAddress, out _);
+            return TryAppend(readOnlySpanBatch, out logicalAddress, out _);
         }
 
         /// <summary>
@@ -207,9 +207,9 @@ namespace FASTER.core
         /// <summary>
         /// Append batch of entries to log (async) - completes after batch is flushed to storage
         /// </summary>
-        /// <param name="spanBatch"></param>
+        /// <param name="readOnlySpanBatch"></param>
         /// <returns></returns>
-        public async ValueTask<long> AppendAsync(ISpanBatch spanBatch)
+        public async ValueTask<long> AppendAsync(IReadOnlySpanBatch readOnlySpanBatch)
         {
             long logicalAddress;
             int allocatedLength;
@@ -218,7 +218,7 @@ namespace FASTER.core
             while (true)
             {
                 var task = CommitTask;
-                if (TryAppend(spanBatch, out logicalAddress, out allocatedLength))
+                if (TryAppend(readOnlySpanBatch, out logicalAddress, out allocatedLength))
                     break;
                 await task;
             }
@@ -430,19 +430,19 @@ namespace FASTER.core
         /// Try to append batch of entries as a single atomic unit. Entire batch
         /// needs to fit on one page.
         /// </summary>
-        /// <param name="spanBatch">Batch to be appended to log</param>
+        /// <param name="readOnlySpanBatch">Batch to be appended to log</param>
         /// <param name="logicalAddress">Logical address of first added entry</param>
         /// <param name="allocatedLength">Actual allocated length</param>
         /// <returns>Whether the append succeeded</returns>
-        private unsafe bool TryAppend(ISpanBatch spanBatch, out long logicalAddress, out int allocatedLength)
+        private unsafe bool TryAppend(IReadOnlySpanBatch readOnlySpanBatch, out long logicalAddress, out int allocatedLength)
         {
             logicalAddress = 0;
 
-            int totalEntries = spanBatch.TotalEntries();
+            int totalEntries = readOnlySpanBatch.TotalEntries();
             allocatedLength = 0;
             for (int i = 0; i < totalEntries; i++)
             {
-                allocatedLength += Align(spanBatch.Get(i).Length) + 4;
+                allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + 4;
             }
 
             epoch.Resume();
@@ -457,7 +457,7 @@ namespace FASTER.core
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             for (int i = 0; i < totalEntries; i++)
             {
-                var span = spanBatch.Get(i);
+                var span = readOnlySpanBatch.Get(i);
                 var entryLength = span.Length;
                 *(int*)physicalAddress = entryLength;
                 fixed (byte* bp = &span.GetPinnableReference())
