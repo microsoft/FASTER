@@ -16,24 +16,37 @@ namespace FasterLogSample
         static readonly byte[] staticEntry = new byte[entryLength];
         static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10);
         static FasterLog log;
+        static FasterLogScanIterator iter;
 
         static void ReportThread()
         {
             long lastTime = 0;
             long lastValue = log.TailAddress;
+            long lastIterValue = log.BeginAddress;
+
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
             while (true)
             {
                 Thread.Sleep(5000);
+
                 var nowTime = sw.ElapsedMilliseconds;
                 var nowValue = log.TailAddress;
 
-                Console.WriteLine("Throughput: {0} MB/sec, Tail: {1}",
+                Console.WriteLine("Append Throughput: {0} MB/sec, Tail: {1}",
                     (nowValue - lastValue) / (1000 * (nowTime - lastTime)), nowValue);
-                lastTime = nowTime;
                 lastValue = nowValue;
+
+                if (iter != null)
+                {
+                    var nowIterValue = iter.CurrentAddress;
+                    Console.WriteLine("Scan Throughput: {0} MB/sec, Iter pos: {1}",
+                        (nowIterValue - lastIterValue) / (1000 * (nowTime - lastTime)), nowIterValue);
+                    lastIterValue = nowIterValue;
+                }
+
+                lastTime = nowTime;
             }
         }
 
@@ -71,8 +84,6 @@ namespace FasterLogSample
         {
             Random r = new Random();
 
-            Thread.Sleep(5000);
-
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
             {
@@ -83,7 +94,7 @@ namespace FasterLogSample
 
             long lastAddress = 0;
             Span<byte> result;
-            using (var iter = log.Scan(0, long.MaxValue))
+            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
             {
                 while (true)
                 {
@@ -91,6 +102,9 @@ namespace FasterLogSample
                     {
                         iter.WaitAsync().GetAwaiter().GetResult();
                     }
+
+                    // Memory pool variant:
+                    // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length))
 
                     if (!result.SequenceEqual(entrySpan))
                     {

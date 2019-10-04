@@ -49,7 +49,7 @@ namespace FASTER.test
             using (var iter = log.Scan(0, long.MaxValue))
             {
                 int count = 0;
-                while (iter.GetNext(out Span<byte> result))
+                while (iter.GetNext(out Span<byte> result, out int length))
                 {
                     count++;
                     Assert.IsTrue(result.SequenceEqual(entry));
