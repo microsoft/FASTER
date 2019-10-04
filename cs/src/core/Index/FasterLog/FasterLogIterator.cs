@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -77,6 +78,22 @@ namespace FASTER.core
             for (int i = 0; i < frameSize; i++)
                 loadedPage[i] = -1;
 
+        }
+
+        /// <summary>
+        /// Wait for iteration to be ready to continue
+        /// </summary>
+        /// <returns></returns>
+        public async void WaitAsync()
+        {
+            while (true)
+            {
+                var commitTask = fasterLog.CommitTask;
+                if (nextAddress >= fasterLog.CommittedUntilAddress)
+                    await commitTask;
+                else
+                    break;
+            }
         }
 
         /// <summary>
