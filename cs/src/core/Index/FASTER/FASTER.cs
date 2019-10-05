@@ -78,7 +78,6 @@ namespace FASTER.core
 
         private ConcurrentDictionary<Guid, CommitPoint> _recoveredSessions;
 
-        private readonly FastThreadLocal<FasterExecutionContext> prevThreadCtx;
         private readonly FastThreadLocal<FasterExecutionContext> threadCtx;
 
 
@@ -95,7 +94,6 @@ namespace FASTER.core
         public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
             threadCtx = new FastThreadLocal<FasterExecutionContext>();
-            prevThreadCtx = new FastThreadLocal<FasterExecutionContext>();
 
             if (comparer != null)
                 this.comparer = comparer;
@@ -294,7 +292,6 @@ namespace FASTER.core
             return InternalAcquire();
         }
 
-
         /// <summary>
         /// Continue session with FASTER
         /// </summary>
@@ -302,7 +299,12 @@ namespace FASTER.core
         /// <returns></returns>
         public CommitPoint ContinueSession(Guid guid)
         {
-            return InternalContinue(guid);
+            StartSession();
+
+            var cp = InternalContinue(guid, out FasterExecutionContext ctx);
+            threadCtx.Value = ctx;
+
+            return cp;
         }
 
         /// <summary>
@@ -310,7 +312,7 @@ namespace FASTER.core
         /// </summary>
         public void StopSession()
         {
-            InternalRelease();
+            InternalRelease(this.threadCtx.Value);
         }
 
         /// <summary>
@@ -318,7 +320,7 @@ namespace FASTER.core
         /// </summary>
         public void Refresh()
         {
-            InternalRefresh();
+            InternalRefresh(threadCtx.Value);
         }
 
 
@@ -329,7 +331,7 @@ namespace FASTER.core
         /// <returns>Whether all pending operations have completed</returns>
         public bool CompletePending(bool wait = false)
         {
-            return InternalCompletePending(wait);
+            return InternalCompletePending(threadCtx.Value, wait);
         }
 
         /// <summary>
@@ -339,10 +341,10 @@ namespace FASTER.core
         public IEnumerable<long> GetPendingRequests()
         {
 
-            foreach (var kvp in prevThreadCtx.Value.ioPendingRequests)
+            foreach (var kvp in threadCtx.Value.prevCtx?.ioPendingRequests)
                 yield return kvp.Value.serialNum;
 
-            foreach (var val in prevThreadCtx.Value.retryRequests)
+            foreach (var val in threadCtx.Value.prevCtx?.retryRequests)
                 yield return val.serialNum;
 
             foreach (var kvp in threadCtx.Value.ioPendingRequests)
@@ -355,7 +357,7 @@ namespace FASTER.core
         /// <summary>
         /// Complete the ongoing checkpoint (if any)
         /// </summary>
-        /// <param name="wait"></param>
+        /// <param name="wait">Spin-wait for completion</param>
         /// <returns></returns>
         public bool CompleteCheckpoint(bool wait = false)
         {
@@ -399,11 +401,16 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
         {
+            return Read(ref key, ref input, ref output, context, serialNo, threadCtx.Value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, sessionCtx);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -411,9 +418,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = serialNo;
+            sessionCtx.serialNum = serialNo;
             return status;
         }
 
@@ -425,11 +432,16 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
         {
+            return Upsert(ref key, ref value, context, serialNo, threadCtx.Value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status Upsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext);
+            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx);
             Status status;
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -438,11 +450,12 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = serialNo;
+            sessionCtx.serialNum = serialNo;
             return status;
         }
+
 
         /// <summary>
         /// Atomic read-modify-write operation
@@ -452,11 +465,16 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
         {
+            return RMW(ref key, ref input, context, serialNo, threadCtx.Value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status RMW(ref Key key, ref Input input, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext);
+            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, sessionCtx);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -464,9 +482,9 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(threadCtx.Value, pcontext, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
-            threadCtx.Value.serialNum = serialNo;
+            sessionCtx.serialNum = serialNo;
             return status;
         }
 
@@ -480,18 +498,37 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, Context context, long serialNo)
         {
+            return Delete(ref key, context, serialNo, threadCtx.Value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status Delete(ref Key key, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalDelete(ref key, ref context, ref pcontext);
+            var internalStatus = InternalDelete(ref key, ref context, ref pcontext, sessionCtx);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
             }
-            threadCtx.Value.serialNum = serialNo;
+            sessionCtx.serialNum = serialNo;
             return status;
+        }
+
+        /// <summary>
+        /// Experimental feature
+        /// Checks whether specified record is present in memory
+        /// (between HeadAddress and tail, or between fromAddress
+        /// and tail)
+        /// </summary>
+        /// <param name="key">Key of the record.</param>
+        /// <param name="fromAddress">Look until this address</param>
+        /// <returns>Status</returns>
+        public Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
+        {
+            return InternalContainsKeyInMemory(ref key, threadCtx.Value, fromAddress);
         }
 
         /// <summary>
@@ -509,8 +546,7 @@ namespace FASTER.core
         public void Dispose()
         {
             base.Free();
-            threadCtx.Dispose();
-            prevThreadCtx.Dispose();
+            threadCtx?.Dispose();
             hlog.Dispose();
             readcache?.Dispose();
         }

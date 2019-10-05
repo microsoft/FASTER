@@ -48,7 +48,7 @@ namespace FASTER.core
             if (_systemState.phase == Phase.GC)
             {
                 Debug.WriteLine("Forcing completion of GC");
-                GarbageCollectBuckets(0, true);
+                GarbageCollectBuckets(0, null, true);
             }
 
             if (_systemState.phase == Phase.REST)
@@ -70,7 +70,7 @@ namespace FASTER.core
             if (_systemState.phase == Phase.GC)
             {
                 Debug.WriteLine("Forcing completion of GC");
-                GarbageCollectBuckets(0, true);
+                GarbageCollectBuckets(0, null, true);
             }
 
             if (_systemState.phase == Phase.REST)
@@ -295,7 +295,7 @@ namespace FASTER.core
                                 // write dormant sessions to checkpoint
                                 foreach (var kvp in _activeSessions)
                                 {
-                                    AtomicSwitch(kvp.Value.ctx, kvp.Value.prevCtx, currentState.version - 1);
+                                    AtomicSwitch(kvp.Value.ctx, kvp.Value.ctx.prevCtx, currentState.version - 1);
                                 }
                             }
                             WriteHybridLogMetaInfo();
@@ -389,9 +389,9 @@ namespace FASTER.core
         /// Corresponding thread-local actions that must be performed when any state machine is active
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void HandleCheckpointingPhases()
+        private void HandleCheckpointingPhases(FasterExecutionContext ctx)
         {
-            var _ = HandleCheckpointingPhasesAsync(null, false);
+            var _ = HandleCheckpointingPhasesAsync(ctx, null, false);
             return;
         }
 
@@ -419,15 +419,15 @@ namespace FASTER.core
             }
         }
 
-        private void AcquireSharedLatchesForAllPendingRequests()
+        private void AcquireSharedLatchesForAllPendingRequests(FasterExecutionContext ctx)
         {
-            foreach (var ctx in threadCtx.Value.retryRequests)
+            foreach (var _ctx in ctx.retryRequests)
             {
-                AcquireSharedLatch(ctx.key.Get());
+                AcquireSharedLatch(_ctx.key.Get());
             }
-            foreach (var ctx in threadCtx.Value.ioPendingRequests.Values)
+            foreach (var _ctx in ctx.ioPendingRequests.Values)
             {
-                AcquireSharedLatch(ctx.key.Get());
+                AcquireSharedLatch(_ctx.key.Get());
             }
         }
 

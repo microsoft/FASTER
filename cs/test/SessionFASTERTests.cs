@@ -54,7 +54,7 @@ namespace FASTER.test.async
 
                 if (status == Status.PENDING)
                 {
-                    session.TryCompletePending(true);
+                    session.CompletePending(true);
                 }
                 else
                 {
@@ -88,7 +88,7 @@ namespace FASTER.test.async
 
                 if (status == Status.PENDING)
                 {
-                    session1.TryCompletePending(true);
+                    session1.CompletePending(true);
                 }
                 else
                 {
@@ -102,7 +102,7 @@ namespace FASTER.test.async
 
                 if (status == Status.PENDING)
                 {
-                    session2.TryCompletePending(true);
+                    session2.CompletePending(true);
                 }
                 else
                 {
@@ -132,7 +132,7 @@ namespace FASTER.test.async
 
                     if (status == Status.PENDING)
                     {
-                        session.TryCompletePending(true);
+                        session.CompletePending(true);
                     }
                     else
                     {
@@ -164,7 +164,7 @@ namespace FASTER.test.async
 
                     if (status == Status.PENDING)
                     {
-                        session1.TryCompletePending(true);
+                        session1.CompletePending(true);
                     }
                     else
                     {
@@ -189,7 +189,7 @@ namespace FASTER.test.async
 
                     if (status == Status.PENDING)
                     {
-                        session2.TryCompletePending(true);
+                        session2.CompletePending(true);
                     }
                     else
                     {
@@ -222,7 +222,7 @@ namespace FASTER.test.async
 
             if (status == Status.PENDING)
             {
-                session.TryCompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -245,7 +245,7 @@ namespace FASTER.test.async
 
             if (status == Status.PENDING)
             {
-                session.TryCompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -256,7 +256,7 @@ namespace FASTER.test.async
 
             if (status == Status.PENDING)
             {
-                session.TryCompletePending(true);
+                session.CompletePending(true);
             }
             else
             {

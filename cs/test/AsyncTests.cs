@@ -61,24 +61,20 @@ namespace FASTER.test.async
 
             var s1 = fht1.StartClientSession();
 
-            // fht1.StartSession();
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
                 s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
             }
 
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TakeFullCheckpoint(out Guid token); // does not require session
 
             var s2 = fht1.StartClientSession();
-
-            // s1 becomes dormant
             await s2.CompleteCheckpointAsync();
 
             s2.Dispose();
             s1.Dispose(); // should receive persistence callback
-            s0.UnsafeResumeThread(); // should receive persistence callback
-            s0.Dispose();
+            s0.Dispose(); // should receive persistence callback
             fht1.Dispose();
 
             fht2.Recover(token); // sync, does not require session
@@ -93,7 +89,7 @@ namespace FASTER.test.async
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
                     if (status == Status.PENDING)
-                        s3.TryCompletePending(true);
+                        s3.CompletePending(true);
                     else
                     {
                         Assert.IsTrue(output.value.numClicks == key);
