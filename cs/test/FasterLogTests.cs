@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using FASTER.core;
 using NUnit.Framework;
@@ -13,7 +14,7 @@ namespace FASTER.test
     internal class FasterLogTests
     {
         const int entryLength = 100;
-        const int numEntries = 1000000;
+        const int numEntries = 100;
         private FasterLog log;
         private IDevice device;
 
@@ -21,6 +22,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            if (File.Exists(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit"))
+                File.Delete(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit");
             device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log", deleteOnClose: true);
         }
 
@@ -28,6 +31,8 @@ namespace FASTER.test
         public void TearDown()
         {
             device.Close();
+            if (File.Exists(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit"))
+                File.Delete(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit");
         }
 
         [Test]

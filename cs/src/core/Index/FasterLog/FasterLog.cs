@@ -291,7 +291,7 @@ namespace FASTER.core
         public long FlushAndCommit(bool spinWait = false)
         {
             epoch.Resume();
-            allocator.ShiftReadOnlyToTail(out long tailAddress);
+            allocator.ShiftReadOnlyToTail(out long tailAddress, out _);
             
             if (spinWait)
             {
