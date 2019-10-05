@@ -4,6 +4,7 @@
 using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -24,16 +25,18 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="filename"></param>
+        /// <param name="filename">File name (or prefix) with path</param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
         /// <param name="disableFileBuffering"></param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         public LocalStorageDevice(string filename,
                                   bool preallocateFile = false,
                                   bool deleteOnClose = false,
                                   bool disableFileBuffering = true,
-                                  long capacity = Devices.CAPACITY_UNSPECIFIED)
+                                  long capacity = Devices.CAPACITY_UNSPECIFIED,
+                                  bool recoverDevice = false)
             : base(filename, GetSectorSize(filename), capacity)
         
         {
@@ -42,7 +45,8 @@ namespace FASTER.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             logHandles = new SafeConcurrentDictionary<int, SafeFileHandle>();
-            RecoverFiles();
+            if (recoverDevice)
+                RecoverFiles();
         }
 
         private void RecoverFiles()
@@ -53,14 +57,19 @@ namespace FASTER.core
 
             string bareName = fi.Name;
 
-            int prevSegmentId = -1;
+            List<int> segids = new List<int>();
             foreach (FileInfo item in di.GetFiles(bareName + "*"))
             {
-                int segmentId = Int32.Parse(item.Name.Replace(bareName, "").Replace(".", ""));
+                segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
+            }
+            segids.Sort();
+
+            int prevSegmentId = -1;
+            foreach (int segmentId in segids)
+            {
                 if (segmentId != prevSegmentId + 1)
                 {
                     startSegment = segmentId;
-
                 }
                 else
                 {

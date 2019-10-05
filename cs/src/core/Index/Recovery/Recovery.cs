@@ -89,7 +89,7 @@ namespace FASTER.core
             recoveredHLCInfo.info.DebugPrint();
 
             // Check if the two checkpoints are compatible for recovery
-            if(!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
+            if (!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
             {
                 throw new Exception("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
             }
@@ -118,68 +118,14 @@ namespace FASTER.core
             {
                 RecoverHybridLogFromSnapshotFile(recoveredICInfo.info, recoveredHLCInfo.info);
             }
-            
+
 
             // Read appropriate hybrid log pages into memory
-            RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress, recoveredHLCInfo.info.beginAddress);
+            hlog.RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress, recoveredHLCInfo.info.beginAddress);
 
             // Recover session information
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
         }
-
-        private void RestoreHybridLog(long untilAddress, long headAddress, long beginAddress)
-        {
-            Debug.Assert(beginAddress <= headAddress);
-            Debug.Assert(headAddress <= untilAddress);
-
-            // Special cases: we do not load any records into memory
-            if (
-                (beginAddress == untilAddress) || // Empty log
-                ((headAddress == untilAddress) && (hlog.GetOffsetInPage(headAddress) == 0)) // Empty in-memory page
-                )
-            {
-                hlog.AllocatePage(hlog.GetPageIndexForAddress(headAddress));
-            }
-            else
-            {
-                var tailPage = hlog.GetPage(untilAddress);
-                var headPage = hlog.GetPage(headAddress);
-
-                var recoveryStatus = new RecoveryStatus(hlog.GetCapacityNumPages(), headPage, tailPage, untilAddress);
-                for (int i = 0; i < recoveryStatus.capacity; i++)
-                {
-                    recoveryStatus.readStatus[i] = ReadStatus.Done;
-                }
-
-                var numPages = 0;
-                for (var page = headPage; page <= tailPage; page++)
-                {
-                    var pageIndex = hlog.GetPageIndexForPage(page);
-                    recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                    numPages++;
-                }
-
-                hlog.AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
-
-                var done = false;
-                while (!done)
-                {
-                    done = true;
-                    for (long page = headPage; page <= tailPage; page++)
-                    {
-                        int pageIndex = hlog.GetPageIndexForPage(page);
-                        if (recoveryStatus.readStatus[pageIndex] == ReadStatus.Pending)
-                        {
-                            done = false;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            hlog.RecoveryReset(untilAddress, headAddress, beginAddress);
-        }
-
 
         private void RecoverHybridLog(IndexRecoveryInfo indexRecoveryInfo,
                                         HybridLogRecoveryInfo recoveryInfo)
@@ -202,8 +148,8 @@ namespace FASTER.core
             int numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
 
             // Issue request to read pages as much as possible
-            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
-           
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
+
             for (long page = startPage; page < endPage; page++)
             {
                 // Ensure page has been read into memory
@@ -227,7 +173,7 @@ namespace FASTER.core
                 {
                     pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
                 }
-                
+
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
                                 startLogicalAddress, physicalAddress, recoveryInfo.version);
@@ -292,7 +238,7 @@ namespace FASTER.core
             int numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
 
             hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress,
-                            AsyncReadPagesCallbackForRecovery,
+                            hlog.AsyncReadPagesCallbackForRecovery,
                             recoveryStatus,
                             recoveryStatus.recoveryDevicePageOffset,
                             recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
@@ -430,26 +376,6 @@ namespace FASTER.core
             }
         }
 
-        private void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
-        {
-            if (errorCode != 0)
-            {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-            }
-
-            // Set the page status to flushed
-            var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
-
-            if (result.freeBuffer1 != null)
-            {
-                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
-                result.freeBuffer1.Return();
-            }
-            int index = hlog.GetPageIndexForPage(result.page);
-            result.context.readStatus[index] = ReadStatus.Done;
-            Interlocked.MemoryBarrier();
-            Overlapped.Free(overlap);
-        }
 
         private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
@@ -470,11 +396,11 @@ namespace FASTER.core
                     long readPage = result.page + result.context.capacity;
                     if (FoldOverSnapshot)
                     {
-                        hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, AsyncReadPagesCallbackForRecovery, result.context);
+                        hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, hlog.AsyncReadPagesCallbackForRecovery, result.context);
                     }
                     else
                     {
-                        hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, AsyncReadPagesCallbackForRecovery,
+                        hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
                                                             result.context,
                                                             result.context.recoveryDevicePageOffset,
                                                             result.context.recoveryDevice, result.context.objectLogRecoveryDevice);
@@ -482,6 +408,92 @@ namespace FASTER.core
                 }
                 result.Free();
             }
+            Overlapped.Free(overlap);
+        }
+    }
+
+    public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
+        where Key : new()
+        where Value : new()
+    {
+        /// <summary>
+        /// Restore log
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        /// <param name="headAddress"></param>
+        /// <param name="beginAddress"></param>
+        public void RestoreHybridLog(long untilAddress, long headAddress, long beginAddress)
+        {
+            Debug.Assert(beginAddress <= headAddress);
+            Debug.Assert(headAddress <= untilAddress);
+
+            // Special cases: we do not load any records into memory
+            if (
+                (beginAddress == untilAddress) || // Empty log
+                ((headAddress == untilAddress) && (GetOffsetInPage(headAddress) == 0)) // Empty in-memory page
+                )
+            {
+                if (!IsAllocated(GetPageIndexForAddress(headAddress)))
+                    AllocatePage(GetPageIndexForAddress(headAddress));
+            }
+            else
+            {
+                var tailPage = GetPage(untilAddress);
+                var headPage = GetPage(headAddress);
+
+                var recoveryStatus = new RecoveryStatus(GetCapacityNumPages(), headPage, tailPage, untilAddress);
+                for (int i = 0; i < recoveryStatus.capacity; i++)
+                {
+                    recoveryStatus.readStatus[i] = ReadStatus.Done;
+                }
+
+                var numPages = 0;
+                for (var page = headPage; page <= tailPage; page++)
+                {
+                    var pageIndex = GetPageIndexForPage(page);
+                    recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
+                    numPages++;
+                }
+
+                AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
+
+                var done = false;
+                while (!done)
+                {
+                    done = true;
+                    for (long page = headPage; page <= tailPage; page++)
+                    {
+                        int pageIndex = GetPageIndexForPage(page);
+                        if (recoveryStatus.readStatus[pageIndex] == ReadStatus.Pending)
+                        {
+                            done = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            RecoveryReset(untilAddress, headAddress, beginAddress);
+        }
+
+        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        {
+            if (errorCode != 0)
+            {
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+            }
+
+            // Set the page status to flushed
+            var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+
+            if (result.freeBuffer1 != null)
+            {
+                PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                result.freeBuffer1.Return();
+            }
+            int index = GetPageIndexForPage(result.page);
+            result.context.readStatus[index] = ReadStatus.Done;
+            Interlocked.MemoryBarrier();
             Overlapped.Free(overlap);
         }
     }

@@ -176,8 +176,10 @@ namespace FASTER.core
         public int MemorySizeBits = 34;
 
         /// <summary>
-        /// Fraction of log used for second chance copy to tail
+        /// Fraction of log head (in memory) used for second chance 
+        /// copy to tail. This is (1 - MutableFraction) for the 
+        /// underlying log
         /// </summary>
-        public double SecondChanceFraction = 0.9;
+        public double SecondChanceFraction = 0.1;
     }
 }
