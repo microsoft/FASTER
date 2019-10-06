@@ -18,7 +18,6 @@ namespace FASTER.test
         private FasterLog log;
         private IDevice device;
 
-
         [SetUp]
         public void Setup()
         {
