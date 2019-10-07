@@ -54,7 +54,7 @@ namespace FASTER.test
             using (var iter = log.Scan(0, long.MaxValue))
             {
                 int count = 0;
-                while (iter.GetNext(out Span<byte> result, out int length))
+                while (iter.GetNext(out byte[] result, out int length))
                 {
                     count++;
                     Assert.IsTrue(result.SequenceEqual(entry));
@@ -90,7 +90,8 @@ namespace FASTER.test
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
-                    var result = GetNext(iter);
+                    var curr = iter.GetNext(out byte[] result, out _);
+                    Assert.IsTrue(curr);
                     Assert.IsTrue(result.SequenceEqual(data1));
 
                     var next = iter.GetNext(out _, out _);
@@ -98,12 +99,6 @@ namespace FASTER.test
                 }
             }
             log.Dispose();
-        }
-
-        private byte[] GetNext(FasterLogScanIterator iter)
-        {
-            iter.GetNext(out Span<byte> entry, out _);
-            return entry.ToArray();
         }
     }
 }
