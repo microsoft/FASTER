@@ -24,8 +24,13 @@ namespace FASTER.benchmark
             ReadModifyWrite = 2
         }
 
-        const bool kUseSyntheticData = false;
+#if DEBUG
+        const bool kUseSmallData = true;
+        const bool kUseSyntheticData = true;
+#else
         const bool kUseSmallData = false;
+        const bool kUseSyntheticData = false;
+#endif
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
@@ -432,7 +437,7 @@ namespace FASTER.benchmark
         }
 #endif
 
-        #region Load Data
+#region Load Data
 
         private unsafe void LoadDataFromFile(string filePath)
         {
@@ -574,7 +579,7 @@ namespace FASTER.benchmark
             Console.WriteLine("loaded " + kTxnCount + " txns.");
 
         }
-        #endregion
+#endregion
 
 
     }

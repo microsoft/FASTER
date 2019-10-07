@@ -38,9 +38,7 @@ namespace FASTER.core
 
                     if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
                     {
-                        clientSession.UnsafeResumeThread();
                         CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
-                        clientSession.UnsafeSuspendThread();
                     }
 
                     done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);

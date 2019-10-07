@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace FASTER.core
@@ -34,14 +35,10 @@ namespace FASTER.core
             this.fht = fht;
             this.ctx = ctx;
             this.supportAsync = supportAsync;
-            if (supportAsync)
-            {
-                fht.UseRelaxedCPR();
-            }
-            else
-            {
+
+            // Session runs on a single thread
+            if (!supportAsync)
                 UnsafeResumeThread();
-            }
         }
 
         /// <summary>
@@ -55,24 +52,10 @@ namespace FASTER.core
         public void Dispose()
         {
             CompletePending(true);
-            fht.DisposeClientSession(ID);
-        }
 
-        /// <summary>
-        /// Resume session on current thread
-        /// Call SuspendThread before any async op
-        /// </summary>
-        internal void UnsafeResumeThread()
-        {
-            fht.ResumeSession(ctx);
-        }
-
-        /// <summary>
-        /// Suspend session on current thread
-        /// </summary>
-        internal void UnsafeSuspendThread()
-        {
-            fht.SuspendSession();
+            // Session runs on a single thread
+            if (!supportAsync)
+                UnsafeSuspendThread();
         }
 
         /// <summary>
@@ -84,6 +67,7 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
@@ -100,6 +84,7 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
@@ -116,6 +101,7 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
@@ -131,6 +117,7 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
@@ -189,10 +176,31 @@ namespace FASTER.core
         /// Complete the ongoing checkpoint (if any)
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompleteCheckpointAsync()
+        public async ValueTask CompleteCheckpointAsync()
         {
             if (!supportAsync) throw new NotSupportedException();
             await fht.CompleteCheckpointAsync(ctx, this);
         }
+
+        /// <summary>
+        /// Resume session on current thread
+        /// Call SuspendThread before any async op
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void UnsafeResumeThread()
+        {
+            fht.epoch.Acquire();
+            fht.InternalRefresh(ctx);
+        }
+
+        /// <summary>
+        /// Suspend session on current thread
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void UnsafeSuspendThread()
+        {
+            fht.epoch.Release();
+        }
+
     }
 }

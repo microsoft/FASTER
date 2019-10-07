@@ -25,6 +25,9 @@ namespace FASTER.core
         /// <returns></returns>
         public ClientSession<Key, Value, Input, Output, Context, Functions> StartClientSession(bool supportAsync = true)
         {
+            if (supportAsync)
+                UseRelaxedCPR();
+
             Guid guid = Guid.NewGuid();
             var ctx = new FasterExecutionContext();
             InitContext(ctx, guid);
@@ -52,6 +55,9 @@ namespace FASTER.core
         /// <returns></returns>
         public ClientSession<Key, Value, Input, Output, Context, Functions> ContinueClientSession(Guid guid, out CommitPoint cp, bool supportAsync = true)
         {
+            if (supportAsync)
+                UseRelaxedCPR();
+
             cp = InternalContinue(guid, out FasterExecutionContext ctx);
             if (cp.UntilSerialNo == -1)
                 throw new Exception($"Unable to find session {guid} to recover");
@@ -74,25 +80,6 @@ namespace FASTER.core
         {
             lock (_activeSessions)
                 _activeSessions.Remove(guid);
-            epoch.Release();
-        }
-
-        /// <summary>
-        /// Resume session with FASTER
-        /// </summary>
-        /// <param name="ctx">Context</param>
-        internal void ResumeSession(FasterExecutionContext ctx)
-        {
-            epoch.Resume();
-            InternalRefresh(ctx);
-        }
-
-        /// <summary>
-        /// Suspend session with FASTER
-        /// </summary>
-        internal void SuspendSession()
-        {
-            epoch.Suspend();
         }
     }
 }
