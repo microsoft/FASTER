@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -53,7 +54,7 @@ namespace FASTER.test
             using (var iter = log.Scan(0, long.MaxValue))
             {
                 int count = 0;
-                while (iter.GetNext(out Span<byte> result, out int length))
+                while (iter.GetNext(out byte[] result, out int length))
                 {
                     count++;
                     Assert.IsTrue(result.SequenceEqual(entry));
@@ -64,6 +65,39 @@ namespace FASTER.test
             }
 
             log.ReleaseThread();
+            log.Dispose();
+        }
+
+        [Test]
+        public async Task FasterLogTest2()
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            byte[] data1 = new byte[10000];
+            for (int i = 00; i < 10000; i++) data1[i] = (byte)i;
+
+            using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            {
+                int i = 0;
+                while (i++ < 500)
+                {
+                    var waitingReader = iter.WaitAsync();
+                    Assert.IsTrue(!waitingReader.IsCompleted);
+
+                    while (!log.TryAppend(data1, out _)) ;
+                    Assert.IsFalse(waitingReader.IsCompleted);
+
+                    await log.FlushAndCommitAsync();
+                    while (!waitingReader.IsCompleted) ;
+                    Assert.IsTrue(waitingReader.IsCompleted);
+
+                    var curr = iter.GetNext(out byte[] result, out _);
+                    Assert.IsTrue(curr);
+                    Assert.IsTrue(result.SequenceEqual(data1));
+
+                    var next = iter.GetNext(out _, out _);
+                    Assert.IsFalse(next);
+                }
+            }
             log.Dispose();
         }
     }

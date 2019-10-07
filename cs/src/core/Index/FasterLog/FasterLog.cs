@@ -73,6 +73,7 @@ namespace FASTER.core
         {
             allocator.Dispose();
             epoch.Dispose();
+            commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
         }
 
         /// <summary>
@@ -399,7 +400,8 @@ namespace FASTER.core
                 }
 
                 _commitTask = commitTcs;
-                commitTcs = _newCommitTask;
+                if (commitTcs.Task.Status != TaskStatus.Faulted)
+                    commitTcs = _newCommitTask;
             }
             _commitTask.SetResult(flushAddress);
         }

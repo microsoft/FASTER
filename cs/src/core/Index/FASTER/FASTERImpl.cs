@@ -1889,52 +1889,20 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BlockAllocate(int recordSize, out long logicalAddress, FasterExecutionContext ctx)
         {
-            logicalAddress = hlog.Allocate(recordSize);
-            if (logicalAddress >= 0) return;
-
-            while (logicalAddress < 0 && -logicalAddress >= hlog.ReadOnlyAddress)
+            while ((logicalAddress = hlog.TryAllocate(recordSize)) == 0)
             {
                 InternalRefresh(ctx);
-                hlog.CheckForAllocateComplete(ref logicalAddress);
-                if (logicalAddress < 0)
-                {
-                    Thread.Yield();
-                }
-            }
-
-            logicalAddress = logicalAddress < 0 ? -logicalAddress : logicalAddress;
-
-            if (logicalAddress < hlog.ReadOnlyAddress)
-            {
-                Debug.WriteLine("Allocated address is read-only, retrying");
-                BlockAllocate(recordSize, out logicalAddress, ctx);
+                Thread.Yield();
             }
         }
-
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BlockAllocateReadCache(int recordSize, out long logicalAddress, FasterExecutionContext currentCtx)
         {
-            logicalAddress = readcache.Allocate(recordSize);
-            if (logicalAddress >= 0)
-                return;
-
-            while (logicalAddress < 0 && -logicalAddress >= readcache.ReadOnlyAddress)
+            while ((logicalAddress = readcache.TryAllocate(recordSize)) == 0)
             {
                 InternalRefresh(currentCtx);
-                readcache.CheckForAllocateComplete(ref logicalAddress);
-                if (logicalAddress < 0)
-                {
-                    Thread.Yield();
-                }
-            }
-
-            logicalAddress = logicalAddress < 0 ? -logicalAddress : logicalAddress;
-
-            if (logicalAddress < readcache.ReadOnlyAddress)
-            {
-                Debug.WriteLine("Allocated address is read-only, retrying");
-                BlockAllocateReadCache(recordSize, out logicalAddress, currentCtx);
+                Thread.Yield();
             }
         }
 

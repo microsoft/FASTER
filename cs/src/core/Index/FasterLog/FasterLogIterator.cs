@@ -15,7 +15,7 @@ namespace FASTER.core
     /// </summary>
     /// <param name="minLength">Minimum length of returned span</param>
     /// <returns></returns>
-    public delegate Span<byte> GetMemory(int minLength);
+    public delegate byte[] GetMemory(int minLength);
 
     /// <summary>
     /// Scan iterator for hybrid log
@@ -103,7 +103,7 @@ namespace FASTER.core
         /// <param name="entry">Copy of entry, if found</param>
         /// <param name="entryLength">Actual length of entry</param>
         /// <returns></returns>
-        public unsafe bool GetNext(out Span<byte> entry, out int entryLength)
+        public unsafe bool GetNext(out byte[] entry, out int entryLength)
         {
             if (GetNextInternal(out long physicalAddress, out entryLength, out bool epochTaken))
             {
@@ -112,15 +112,15 @@ namespace FASTER.core
                     // Use user delegate to allocate memory
                     entry = getMemory(entryLength);
                     if (entry.Length < entryLength)
-                        throw new Exception("Span provided has invalid length");
+                        throw new Exception("Byte array provided has invalid length");
                 }
                 else
                 {
                     // We allocate a byte array from heap
-                    entry = new Span<byte>(new byte[entryLength]);
+                    entry = new byte[entryLength];
                 }
 
-                fixed (byte* bp = &entry.GetPinnableReference())
+                fixed (byte* bp = entry)
                     Buffer.MemoryCopy((void*)(4 + physicalAddress), bp, entryLength, entryLength);
 
                 if (epochTaken)

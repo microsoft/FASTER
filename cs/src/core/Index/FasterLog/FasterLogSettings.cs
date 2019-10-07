@@ -20,18 +20,20 @@ namespace FASTER.core
         public IDevice LogDevice = new NullDevice();
 
         /// <summary>
-        /// Size of a segment (group of pages), in bits
+        /// Size of a page, in bits
         /// </summary>
         public int PageSizeBits = 22;
 
         /// <summary>
         /// Total size of in-memory part of log, in bits
+        /// Should be at least one page long
         /// Num pages = 2^(MemorySizeBits-PageSizeBits)
         /// </summary>
-        public int MemorySizeBits = 24;
+        public int MemorySizeBits = 23;
 
         /// <summary>
         /// Size of a segment (group of pages), in bits
+        /// This is the granularity of files on disk
         /// </summary>
         public int SegmentSizeBits = 30;
 
