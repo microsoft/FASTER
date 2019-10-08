@@ -73,7 +73,7 @@ namespace FASTER.test
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
             byte[] data1 = new byte[10000];
-            for (int i = 00; i < 10000; i++) data1[i] = (byte)i;
+            for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
 
             using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
             {
@@ -97,6 +97,45 @@ namespace FASTER.test
                     var next = iter.GetNext(out _, out _);
                     Assert.IsFalse(next);
                 }
+            }
+            log.Dispose();
+        }
+
+        [Test]
+        public async Task FasterLogTest3()
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14 });
+            byte[] data1 = new byte[10000];
+            for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
+
+            using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            {
+                var appendResult = log.TryAppend(data1, out _);
+                Assert.IsTrue(appendResult);
+                await log.FlushAndCommitAsync();
+                await iter.WaitAsync();
+                var iterResult = iter.GetNext(out byte[] entry, out _);
+                Assert.IsTrue(iterResult);
+
+                appendResult = log.TryAppend(data1, out _);
+                Assert.IsFalse(appendResult);
+                await iter.WaitAsync();
+
+                // Should read the "hole" and return false
+                iterResult = iter.GetNext(out entry, out _);
+                Assert.IsFalse(iterResult);
+
+                // Should wait for next item
+                var task = iter.WaitAsync();
+                Assert.IsFalse(task.IsCompleted);
+
+                appendResult = log.TryAppend(data1, out _);
+                Assert.IsTrue(appendResult);
+                await log.FlushAndCommitAsync();
+
+                await task;
+                iterResult = iter.GetNext(out entry, out _);
+                Assert.IsTrue(iterResult);
             }
             log.Dispose();
         }

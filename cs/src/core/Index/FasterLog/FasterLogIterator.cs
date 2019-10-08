@@ -249,6 +249,7 @@ namespace FASTER.core
 
                 if ((currentAddress >= endAddress) || (currentAddress >= fasterLog.CommittedUntilAddress))
                 {
+                    nextAddress = currentAddress;
                     return false;
                 }
 
