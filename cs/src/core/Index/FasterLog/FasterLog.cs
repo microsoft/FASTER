@@ -45,9 +45,14 @@ namespace FASTER.core
         public long CommittedUntilAddress;
 
         /// <summary>
+        /// Log committed begin address
+        /// </summary>
+        public long CommittedBeginAddress;
+
+        /// <summary>
         /// Task notifying commit completions
         /// </summary>
-        public Task<long> CommitTask => commitTcs.Task;
+        internal Task<long> CommitTask => commitTcs.Task;
 
         /// <summary>
         /// Create new log instance
@@ -62,9 +67,11 @@ namespace FASTER.core
             getMemory = logSettings.GetMemory;
             epoch = new LightEpoch();
             CommittedUntilAddress = Constants.kFirstValidAddress;
+            CommittedBeginAddress = Constants.kFirstValidAddress;
+
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null, 
-                null, epoch, e => Commit(e));
+                null, epoch, e => CommitCallback(e));
             allocator.Initialize();
             Restore();
         }
@@ -305,21 +312,9 @@ namespace FASTER.core
         /// </summary>
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
         /// <returns></returns>
-        public long Commit(bool spinWait = false)
+        public void Commit(bool spinWait = false)
         {
-            epoch.Resume();
-            allocator.ShiftReadOnlyToTail(out long tailAddress);
-
-            if (spinWait)
-            {
-                while (CommittedUntilAddress < tailAddress)
-                {
-                    epoch.ProtectAndDrain();
-                    Thread.Yield();
-                }
-            }
-            epoch.Suspend();
-            return tailAddress;
+            CommitInternal(spinWait);
         }
 
         /// <summary>
@@ -327,9 +322,9 @@ namespace FASTER.core
         /// complete the commit
         /// </summary>
         /// <returns></returns>
-        public async ValueTask<long> CommitAsync()
+        public async ValueTask CommitAsync()
         {
-            var tailAddress = Commit();
+            var tailAddress = CommitInternal();
 
             while (true)
             {
@@ -341,7 +336,6 @@ namespace FASTER.core
                 else
                     break;
             }
-            return tailAddress;
         }
 
         #endregion
@@ -556,32 +550,34 @@ namespace FASTER.core
         /// <summary>
         /// Commit log
         /// </summary>
-        private void Commit(long flushAddress)
+        private void CommitCallback(long flushAddress)
         {
-            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
-            {
-                FlushedUntilAddress = flushAddress,
-                BeginAddress = allocator.BeginAddress
-            };
-
-            var _newCommitTask = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-            TaskCompletionSource<long> _commitTask;
+            long beginAddress = allocator.BeginAddress;
+            TaskCompletionSource<long> _commitTcs = default;
 
             // We can only allow serial monotonic synchronous commit
             lock (this)
             {
-                if (flushAddress > CommittedUntilAddress)
+                if ((beginAddress > CommittedBeginAddress) || (flushAddress > CommittedUntilAddress))
                 {
-                    logCommitManager.Commit(flushAddress, info.ToByteArray());
-                    CommittedUntilAddress = flushAddress;
-                    // info.DebugPrint();
-                }
+                    FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
+                    {
+                        BeginAddress = beginAddress > CommittedBeginAddress ? beginAddress : CommittedBeginAddress,
+                        FlushedUntilAddress = flushAddress > CommittedUntilAddress ? flushAddress : CommittedUntilAddress
+                    };
 
-                _commitTask = commitTcs;
-                if (commitTcs.Task.Status != TaskStatus.Faulted)
-                    commitTcs = _newCommitTask;
+                    logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
+                    CommittedBeginAddress = info.BeginAddress;
+                    CommittedUntilAddress = info.FlushedUntilAddress;
+
+                    _commitTcs = commitTcs;
+                    if (commitTcs.Task.Status != TaskStatus.Faulted)
+                    {
+                        commitTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    }
+                }
             }
-            _commitTask.SetResult(flushAddress);
+            _commitTcs?.SetResult(flushAddress);
         }
 
         /// <summary>
@@ -604,6 +600,7 @@ namespace FASTER.core
 
             allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
             CommittedUntilAddress = info.FlushedUntilAddress;
+            CommittedBeginAddress = info.BeginAddress;
         }
 
         /// <summary>
@@ -708,6 +705,31 @@ namespace FASTER.core
             }
             record.Return();
             return (result, length);
+        }
+
+        private long CommitInternal(bool spinWait = false)
+        {
+            epoch.Resume();
+            if (allocator.ShiftReadOnlyToTail(out long tailAddress))
+            {
+                if (spinWait)
+                {
+                    while (CommittedUntilAddress < tailAddress)
+                    {
+                        epoch.ProtectAndDrain();
+                        Thread.Yield();
+                    }
+                }
+                epoch.Suspend();
+            }
+            else
+            {
+                // May need to commit begin address
+                epoch.Suspend();
+                CommitCallback(CommittedUntilAddress);
+            }
+
+            return tailAddress;
         }
     }
 }

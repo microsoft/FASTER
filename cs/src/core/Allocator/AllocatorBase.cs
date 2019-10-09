@@ -769,15 +769,17 @@ namespace FASTER.core
         /// Used by applications to make the current state of the database immutable quickly
         /// </summary>
         /// <param name="tailAddress"></param>
-        public void ShiftReadOnlyToTail(out long tailAddress)
+        public bool ShiftReadOnlyToTail(out long tailAddress)
         {
             tailAddress = GetTailAddress();
             long localTailAddress = tailAddress;
             long currentReadOnlyOffset = ReadOnlyAddress;
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out long oldReadOnlyOffset))
             {
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress, false));
+                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress));
+                return true;
             }
+            return false;
         }
 
         /// <summary>
@@ -788,7 +790,7 @@ namespace FASTER.core
         {
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
             {
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress, false));
+                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress));
                 return true;
             }
             return false;
@@ -843,8 +845,7 @@ namespace FASTER.core
         /// Flush: send page to secondary store
         /// </summary>
         /// <param name="newSafeReadOnlyAddress"></param>
-        /// <param name="waitForPendingFlushComplete"></param>
-        public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool waitForPendingFlushComplete = false)
+        public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress)
         {
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {

@@ -137,5 +137,41 @@ namespace FASTER.test
             }
             log.Dispose();
         }
+
+        [Test]
+        public async Task FasterLogTest4()
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14 });
+            byte[] data1 = new byte[100];
+            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
+
+            for (int i=0; i<100; i++)
+            {
+                log.Enqueue(data1);
+            }
+
+            Assert.IsTrue(log.CommittedUntilAddress == log.BeginAddress);
+            await log.CommitAsync();
+
+            Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
+            Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
+
+            using (var iter = log.Scan(0, long.MaxValue))
+            {
+                // Should read the "hole" and return false
+                var iterResult = iter.GetNext(out byte[] entry, out _);
+                log.TruncateUntil(iter.NextAddress);
+
+                Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
+                Assert.IsTrue(log.CommittedBeginAddress < log.BeginAddress);
+                Assert.IsTrue(iter.NextAddress == log.BeginAddress);
+
+                await log.CommitAsync();
+
+                Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
+                Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
+            }
+            log.Dispose();
+        }
     }
 }
