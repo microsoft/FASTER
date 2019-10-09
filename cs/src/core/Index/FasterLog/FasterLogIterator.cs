@@ -11,13 +11,6 @@ using System.Buffers;
 namespace FASTER.core
 {
     /// <summary>
-    /// Delegate for getting memory from user
-    /// </summary>
-    /// <param name="minLength">Minimum length of returned span</param>
-    /// <returns></returns>
-    public delegate byte[] GetMemory(int minLength);
-
-    /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
     public class FasterLogScanIterator : IDisposable
@@ -33,11 +26,15 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private long currentAddress, nextAddress;
         
-
         /// <summary>
         /// Current address
         /// </summary>
         public long CurrentAddress => currentAddress;
+
+        /// <summary>
+        /// Next address
+        /// </summary>
+        public long NextAddress => nextAddress;
 
         /// <summary>
         /// Constructor

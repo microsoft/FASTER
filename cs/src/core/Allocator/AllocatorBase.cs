@@ -801,24 +801,32 @@ namespace FASTER.core
         public void ShiftBeginAddress(long newBeginAddress)
         {
             // First update the begin address
-            Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
+            var b = Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
+            b = b && (oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits);
+
             // Then the head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
+
             // Finally the read-only address
             var r = Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
 
-            // Clean up until begin address
-            epoch.BumpCurrentEpoch(() =>
+            if (h || r || b)
             {
-                if (r)
+                epoch.Resume();
+                // Clean up until begin address
+                epoch.BumpCurrentEpoch(() =>
                 {
-                    Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
-                    Utility.MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
-                }
-                if (h) OnPagesClosed(newBeginAddress);
+                    if (r)
+                    {
+                        Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
+                        Utility.MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
+                    }
+                    if (h) OnPagesClosed(newBeginAddress);
 
-                TruncateUntilAddress(newBeginAddress);
-            });
+                    if (b) TruncateUntilAddress(newBeginAddress);
+                });
+                epoch.Suspend();
+            }
         }
 
         /// <summary>
@@ -1099,6 +1107,33 @@ namespace FASTER.core
                         alignedReadLength,
                         callback,
                         asyncResult);
+        }
+
+        /// <summary>
+        /// Read record to memory - simple version
+        /// </summary>
+        /// <param name="fromLogical"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, ref SimpleReadContext context)
+        {
+            ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
+            ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
+
+            uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
+            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
+
+            context.record = bufferPool.Get((int)alignedReadLength);
+            context.record.valid_offset = (int)(fileOffset - alignedFileOffset);
+            context.record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
+            context.record.required_bytes = numBytes;
+
+            device.ReadAsync(alignedFileOffset,
+                        (IntPtr)context.record.aligned_pointer,
+                        alignedReadLength,
+                        callback,
+                        context);
         }
 
         /// <summary>

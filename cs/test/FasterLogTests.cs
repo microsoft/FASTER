@@ -39,7 +39,6 @@ namespace FASTER.test
         public void FasterLogTest1()
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
-            log.AcquireThread();
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -47,9 +46,9 @@ namespace FASTER.test
 
             for (int i = 0; i < numEntries; i++)
             {
-                log.Append(entry);
+                log.Enqueue(entry);
             }
-            log.FlushAndCommit(true);
+            log.Commit(true);
 
             using (var iter = log.Scan(0, long.MaxValue))
             {
@@ -64,7 +63,6 @@ namespace FASTER.test
                 Assert.IsTrue(count == numEntries);
             }
 
-            log.ReleaseThread();
             log.Dispose();
         }
 
@@ -83,10 +81,10 @@ namespace FASTER.test
                     var waitingReader = iter.WaitAsync();
                     Assert.IsTrue(!waitingReader.IsCompleted);
 
-                    while (!log.TryAppend(data1, out _)) ;
+                    while (!log.TryEnqueue(data1, out _)) ;
                     Assert.IsFalse(waitingReader.IsCompleted);
 
-                    await log.FlushAndCommitAsync();
+                    await log.CommitAsync();
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
@@ -110,14 +108,14 @@ namespace FASTER.test
 
             using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
             {
-                var appendResult = log.TryAppend(data1, out _);
+                var appendResult = log.TryEnqueue(data1, out _);
                 Assert.IsTrue(appendResult);
-                await log.FlushAndCommitAsync();
+                await log.CommitAsync();
                 await iter.WaitAsync();
                 var iterResult = iter.GetNext(out byte[] entry, out _);
                 Assert.IsTrue(iterResult);
 
-                appendResult = log.TryAppend(data1, out _);
+                appendResult = log.TryEnqueue(data1, out _);
                 Assert.IsFalse(appendResult);
                 await iter.WaitAsync();
 
@@ -129,9 +127,9 @@ namespace FASTER.test
                 var task = iter.WaitAsync();
                 Assert.IsFalse(task.IsCompleted);
 
-                appendResult = log.TryAppend(data1, out _);
+                appendResult = log.TryEnqueue(data1, out _);
                 Assert.IsTrue(appendResult);
-                await log.FlushAndCommitAsync();
+                await log.CommitAsync();
 
                 await task;
                 iterResult = iter.GetNext(out entry, out _);

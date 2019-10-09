@@ -10,6 +10,13 @@ using System.IO;
 namespace FASTER.core
 {
     /// <summary>
+    /// Delegate for getting memory from user
+    /// </summary>
+    /// <param name="minLength">Minimum length of returned byte array</param>
+    /// <returns></returns>
+    public delegate byte[] GetMemory(int minLength);
+
+    /// <summary>
     /// FASTER Log Settings
     /// </summary>
     public class FasterLogSettings
@@ -48,6 +55,11 @@ namespace FASTER.core
         ///   FasterLogSettings.LogCommitManager = new LocalLogCommitManager(LogCommitFile)
         /// </summary>
         public string LogCommitFile = null;
+
+        /// <summary>
+        /// User callback to allocate memory for read entries
+        /// </summary>
+        public GetMemory GetMemory = null;
 
         internal LogSettings GetLogSettings()
         {

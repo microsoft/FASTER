@@ -20,8 +20,7 @@ namespace FasterLogSample
         /// <summary>
         /// Main program entry point
         /// </summary>
-        /// <param name="args"></param>
-        static void Main(string[] args)
+        static void Main()
         {
             bool sync = true;
             var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
@@ -35,8 +34,8 @@ namespace FasterLogSample
 
             if (sync)
             {
-                // Append thread: create as many as needed
-                new Thread(new ThreadStart(AppendThread)).Start();
+                // Log writer thread: create as many as needed
+                new Thread(new ThreadStart(LogWriterThread)).Start();
 
                 // Threads for scan, reporting, commit
                 var t1 = new Thread(new ThreadStart(ScanThread));
@@ -62,7 +61,7 @@ namespace FasterLogSample
                 for (int i = 0; i < NumParallelTasks; i++)
                 {
                     int local = i;
-                    tasks[i] = Task.Run(() => AppendAsync(local));
+                    tasks[i] = Task.Run(() => AsyncLogWriter(local));
                 }
 
                 // Threads for scan, reporting, commit
@@ -77,27 +76,29 @@ namespace FasterLogSample
         }
 
 
-        static void AppendThread()
+        static void LogWriterThread()
         {
             while (true)
             {
-                // TryAppend - can be used with throttling/back-off
+                // TryEnqueue - can be used with throttling/back-off
                 // Accepts byte[] and ReadOnlySpan<byte>
-                while (!log.TryAppend(staticEntry, out _)) ;
+                while (!log.TryEnqueue(staticEntry, out _)) ;
 
-                // Synchronous blocking append
+                // Synchronous blocking enqueue
                 // Accepts byte[] and ReadOnlySpan<byte>
-                // log.Append(entry);
+                // log.Enqueue(entry);
 
-                // Batched append - batch must fit on one page
-                // while (!log.TryAppend(spanBatch, out _)) ;
+                // Batched enqueue - batch must fit on one page
+                // Add this to class:
+                //   static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10);
+                // while (!log.TryEnqueue(spanBatch, out _)) ;
             }
         }
 
         /// <summary>
-        /// Async version of append
+        /// Async version of enqueue
         /// </summary>
-        static async Task AppendAsync(int id)
+        static async Task AsyncLogWriter(int id)
         {
             bool batched = false;
 
@@ -105,28 +106,30 @@ namespace FasterLogSample
 
             if (!batched)
             {
-                // Single commit version - append each item with commit
+                // Single commit version - append each item and wait for commit
                 // Needs high parallelism (NumParallelTasks) for perf
+                // Needs separate commit thread to perform regular commit
+                // Otherwise we commit only at page boundaries
                 while (true)
                 {
                     try
                     {
-                        await log.AppendAsync(staticEntry);
+                        await log.EnqueueAndWaitForCommitAsync(staticEntry);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"{nameof(AppendAsync)}({id}): {ex}");
+                        Console.WriteLine($"{nameof(AsyncLogWriter)}({id}): {ex}");
                     }
                 }
             }
             else
             {
-                // Group-commit version - we append many entries to memory,
+                // Batched version - we enqueue many entries to memory,
                 // then wait for commit periodically
                 int count = 0;
                 while (true)
                 {
-                    await log.AppendToMemoryAsync(staticEntry);
+                    await log.EnqueueAsync(staticEntry);
                     if (count++ % 100 == 0)
                     {
                         await log.WaitForCommitAsync();
@@ -138,9 +141,21 @@ namespace FasterLogSample
         static void ScanThread()
         {
             Random r = new Random();
-
-            long lastAddress = 0;
             byte[] result;
+
+            // First we demonstrate single random read into specified log offset
+            if (log.CommittedUntilAddress > log.BeginAddress)
+            {
+                (result, _) = log.ReadAsync(log.BeginAddress).GetAwaiter().GetResult();
+                if (Different(result, staticEntry, out int location))
+                {
+                    if (result.Length != staticEntry.Length)
+                        throw new Exception("Invalid entry found, expected length " + staticEntry.Length + ", actual length " + result.Length);
+                    else
+                        throw new Exception("Invalid entry found at offset " + location);
+                }
+            }
+
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
             {
                 while (true)
@@ -164,14 +179,10 @@ namespace FasterLogSample
                     // Re-insert entry with small probability
                     if (r.Next(100) < 10)
                     {
-                        log.Append(result);
+                        log.Enqueue(result);
                     }
 
-                    if (iter.CurrentAddress - lastAddress > 500_000_000)
-                    {
-                        log.TruncateUntil(iter.CurrentAddress);
-                        lastAddress = iter.CurrentAddress;
-                    }
+                    log.TruncateUntil(iter.NextAddress);
                 }
             }
         }
@@ -213,11 +224,10 @@ namespace FasterLogSample
             while (true)
             {
                 Thread.Sleep(5);
-                log.FlushAndCommit(true);
+                log.Commit(true);
 
                 // Async version
-                // await Task.Delay(5);
-                // await log.FlushAndCommitAsync();
+                // await log.CommitAsync();
             }
         }
 
@@ -234,9 +244,6 @@ namespace FasterLogSample
             }
             return false;
         }
-
-        // For batch append API
-        static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10);
 
         private struct ReadOnlySpanBatch : IReadOnlySpanBatch
         {
