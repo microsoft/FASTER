@@ -577,7 +577,7 @@ namespace FASTER.core
                     }
                 }
             }
-            _commitTcs?.SetResult(flushAddress);
+            _commitTcs?.TrySetResult(flushAddress);
         }
 
         /// <summary>
