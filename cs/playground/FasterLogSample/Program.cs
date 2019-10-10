@@ -143,19 +143,6 @@ namespace FasterLogSample
             Random r = new Random();
             byte[] result;
 
-            // First we demonstrate single random read into specified log offset
-            if (log.CommittedUntilAddress > log.BeginAddress)
-            {
-                (result, _) = log.ReadAsync(log.BeginAddress).GetAwaiter().GetResult();
-                if (Different(result, staticEntry, out int location))
-                {
-                    if (result.Length != staticEntry.Length)
-                        throw new Exception("Invalid entry found, expected length " + staticEntry.Length + ", actual length " + result.Length);
-                    else
-                        throw new Exception("Invalid entry found at offset " + location);
-                }
-            }
-
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
             {
                 while (true)
@@ -181,6 +168,9 @@ namespace FasterLogSample
                     {
                         log.Enqueue(result);
                     }
+
+                    // Example of random read from given address
+                    // (result, _) = log.ReadAsync(iter.CurrentAddress).GetAwaiter().GetResult();
 
                     log.TruncateUntil(iter.NextAddress);
                 }
