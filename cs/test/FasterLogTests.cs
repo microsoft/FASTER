@@ -36,9 +36,9 @@ namespace FASTER.test
         }
 
         [Test]
-        public void FasterLogTest1()
+        public void FasterLogTest1([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum });
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -67,9 +67,9 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task FasterLogTest2()
+        public async Task FasterLogTest2([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum });
             byte[] data1 = new byte[10000];
             for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
 
@@ -100,9 +100,9 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task FasterLogTest3()
+        public async Task FasterLogTest3([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14 });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum });
             byte[] data1 = new byte[10000];
             for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
 
@@ -139,9 +139,9 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task FasterLogTest4()
+        public async Task FasterLogTest4([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14 });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum });
             byte[] data1 = new byte[100];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 

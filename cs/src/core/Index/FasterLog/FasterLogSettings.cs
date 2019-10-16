@@ -17,6 +17,21 @@ namespace FASTER.core
     public delegate byte[] GetMemory(int minLength);
 
     /// <summary>
+    /// Type of checksum to add to log
+    /// </summary>
+    public enum LogChecksumType
+    {
+        /// <summary>
+        /// No checksums
+        /// </summary>
+        None,
+        /// <summary>
+        /// Checksum per entry
+        /// </summary>
+        PerEntry
+    }
+
+    /// <summary>
     /// FASTER Log Settings
     /// </summary>
     public class FasterLogSettings
@@ -60,6 +75,11 @@ namespace FASTER.core
         /// User callback to allocate memory for read entries
         /// </summary>
         public GetMemory GetMemory = null;
+
+        /// <summary>
+        /// Type of checksum to add to log
+        /// </summary>
+        public LogChecksumType LogChecksum = LogChecksumType.None;
 
         internal LogSettings GetLogSettings()
         {

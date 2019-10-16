@@ -22,8 +22,10 @@ namespace FASTER.core
         private readonly LightEpoch epoch;
         private readonly ILogCommitManager logCommitManager;
         private readonly GetMemory getMemory;
+        private readonly int headerSize;
+        private readonly LogChecksumType logChecksum;
         private TaskCompletionSource<long> commitTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-
+        
         /// <summary>
         /// Beginning address of log
         /// </summary>
@@ -64,6 +66,9 @@ namespace FASTER.core
                 new LocalLogCommitManager(logSettings.LogCommitFile ??
                 logSettings.LogDevice.FileName + ".commit");
 
+            // Reserve 8 byte checksum in header if requested
+            logChecksum = logSettings.LogChecksum;
+            headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
             epoch = new LightEpoch();
             CommittedUntilAddress = Constants.kFirstValidAddress;
@@ -139,7 +144,7 @@ namespace FASTER.core
             epoch.Resume();
 
             var length = entry.Length;
-            logicalAddress = allocator.TryAllocate(4 + Align(length));
+            logicalAddress = allocator.TryAllocate(headerSize + Align(length));
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -147,10 +152,9 @@ namespace FASTER.core
             }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            *(int*)physicalAddress = length;
             fixed (byte* bp = entry)
-                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
-
+                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
+            SetHeader(length, (byte*)physicalAddress);
             epoch.Suspend();
             return true;
         }
@@ -169,7 +173,7 @@ namespace FASTER.core
             epoch.Resume();
 
             var length = entry.Length;
-            logicalAddress = allocator.TryAllocate(4 + Align(length));
+            logicalAddress = allocator.TryAllocate(headerSize + Align(length));
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -177,10 +181,9 @@ namespace FASTER.core
             }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            *(int*)physicalAddress = length;
             fixed (byte* bp = &entry.GetPinnableReference())
-                Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), length, length);
-
+                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
+            SetHeader(length, (byte*)physicalAddress);
             epoch.Suspend();
             return true;
         }
@@ -352,7 +355,7 @@ namespace FASTER.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress)) ;
-            while (CommittedUntilAddress < logicalAddress + 4 + entry.Length) ;
+            while (CommittedUntilAddress < logicalAddress + 1) ;
             return logicalAddress;
         }
 
@@ -366,7 +369,7 @@ namespace FASTER.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress)) ;
-            while (CommittedUntilAddress < logicalAddress + 4 + entry.Length) ;
+            while (CommittedUntilAddress < logicalAddress + 1) ;
             return logicalAddress;
         }
 
@@ -411,7 +414,7 @@ namespace FASTER.core
             while (true)
             {
                 var task = CommitTask;
-                if (CommittedUntilAddress < logicalAddress + 4 + entry.Length)
+                if (CommittedUntilAddress < logicalAddress + 1)
                 {
                     await task;
                 }
@@ -445,7 +448,7 @@ namespace FASTER.core
             while (true)
             {
                 var task = CommitTask;
-                if (CommittedUntilAddress < logicalAddress + 4 + entry.Length)
+                if (CommittedUntilAddress < logicalAddress + 1)
                 {
                     await task;
                 }
@@ -510,7 +513,7 @@ namespace FASTER.core
         /// <returns></returns>
         public FasterLogScanIterator Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
         {
-            return new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch);
+            return new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize);
         }
 
         /// <summary>
@@ -534,7 +537,7 @@ namespace FASTER.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, 4 + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync();
@@ -619,7 +622,7 @@ namespace FASTER.core
             allocatedLength = 0;
             for (int i = 0; i < totalEntries; i++)
             {
-                allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + 4;
+                allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + headerSize;
             }
 
             epoch.Resume();
@@ -636,10 +639,10 @@ namespace FASTER.core
             {
                 var span = readOnlySpanBatch.Get(i);
                 var entryLength = span.Length;
-                *(int*)physicalAddress = entryLength;
                 fixed (byte* bp = &span.GetPinnableReference())
-                    Buffer.MemoryCopy(bp, (void*)(4 + physicalAddress), entryLength, entryLength);
-                physicalAddress += Align(entryLength) + 4;
+                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryLength, entryLength);
+                SetHeader(entryLength, (byte*)physicalAddress);
+                physicalAddress += Align(entryLength) + headerSize;
             }
 
             epoch.Suspend();
@@ -660,7 +663,7 @@ namespace FASTER.core
             else
             {
                 var record = ctx.record.GetValidPointer();
-                var length = *(int*)record;
+                var length = GetLength(record);
 
                 if (length < 0 || length > allocator.PageSize)
                 {
@@ -671,7 +674,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    int requiredBytes = 4 + length;
+                    int requiredBytes = headerSize + length;
                     if (ctx.record.available_bytes >= requiredBytes)
                     {
                         ctx.completedRead.Release();
@@ -696,11 +699,15 @@ namespace FASTER.core
             unsafe
             {
                 var ptr = record.GetValidPointer();
-                length = *(int*)ptr;
+                length = GetLength(ptr);
+                if (!VerifyChecksum(ptr, length))
+                {
+                    throw new Exception("Checksum failed for read");
+                }
                 result = getMemory != null ? getMemory(length) : new byte[length];
                 fixed (byte* bp = result)
                 {
-                    Buffer.MemoryCopy(ptr + 4, bp, length, length);
+                    Buffer.MemoryCopy(ptr + headerSize, bp, length, length);
                 }
             }
             record.Return();
@@ -730,6 +737,55 @@ namespace FASTER.core
             }
 
             return tailAddress;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe int GetLength(byte* ptr)
+        {
+            if (logChecksum == LogChecksumType.None)
+                return *(int*)ptr;
+            else if (logChecksum == LogChecksumType.PerEntry)
+                return *(int*)(ptr + 8);
+            return 0;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe bool VerifyChecksum(byte* ptr, int length)
+        {
+            if (logChecksum == LogChecksumType.PerEntry)
+            {
+                var cs = Utility.XorBytes(ptr + 8, length + 4);
+                if (cs != *(ulong*)ptr)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe ulong GetChecksum(byte* ptr)
+        {
+            if (logChecksum == LogChecksumType.PerEntry)
+            {
+                return *(ulong*)ptr;
+            }
+            return 0;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void SetHeader(int length, byte* dest)
+        {
+            if (logChecksum == LogChecksumType.None)
+            {
+                *(int*)dest = length;
+                return;
+            }
+            else if (logChecksum == LogChecksumType.PerEntry)
+            {
+                *(int*)(dest + 8) = length;
+                *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
+            }
         }
     }
 }
