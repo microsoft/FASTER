@@ -21,6 +21,7 @@ namespace FASTER.core
         private readonly long endAddress;
         private readonly BlittableFrame frame;
         private readonly CountdownEvent[] loaded;
+        private readonly CancellationTokenSource[] loadedCancel;
         private readonly long[] loadedPage;
         private readonly LightEpoch epoch;
         private readonly GetMemory getMemory;
@@ -75,10 +76,13 @@ namespace FASTER.core
 
             frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
             loaded = new CountdownEvent[frameSize];
+            loadedCancel = new CancellationTokenSource[frameSize];
             loadedPage = new long[frameSize];
             for (int i = 0; i < frameSize; i++)
+            {
                 loadedPage[i] = -1;
-
+                loadedCancel[i] = new CancellationTokenSource();
+            }
         }
 
         /// <summary>
@@ -171,47 +175,71 @@ namespace FASTER.core
             if (loadedPage[currentFrame] != currentPage)
             {
                 if (loadedPage[currentFrame] != -1)
-                    loaded[currentFrame].Wait(); // Ensure we have completed ongoing load
-                allocator.AsyncReadPagesFromDeviceToFrame(currentAddress >> allocator.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
+                {
+                    WaitForFrameLoad(currentFrame);
+                }
+                
+                allocator.AsyncReadPagesFromDeviceToFrame(currentAddress >> allocator.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame], 0, null, null, loadedCancel[currentFrame]);
                 loadedPage[currentFrame] = currentAddress >> allocator.LogPageSizeBits;
             }
 
             if (frameSize == 2)
             {
-                currentPage++;
-                currentFrame = (currentFrame + 1) % frameSize;
+                var nextPage = currentPage + 1;
+                var nextFrame = (currentFrame + 1) % frameSize;
 
-                if (loadedPage[currentFrame] != currentPage)
+                if (loadedPage[nextFrame] != nextPage)
                 {
-                    if (loadedPage[currentFrame] != -1)
-                        loaded[currentFrame].Wait(); // Ensure we have completed ongoing load
-                    allocator.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> allocator.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
-                    loadedPage[currentFrame] = 1 + (currentAddress >> allocator.LogPageSizeBits);
+                    if (loadedPage[nextFrame] != -1)
+                    {
+                        WaitForFrameLoad(nextFrame);
+                    }
+
+                    allocator.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> allocator.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
+                    loadedPage[nextFrame] = 1 + (currentAddress >> allocator.LogPageSizeBits);
                 }
             }
-            loaded[currentFrame].Wait();
+
+            WaitForFrameLoad(currentFrame);
+        }
+
+        private void WaitForFrameLoad(long frame)
+        {
+            if (loaded[frame].IsSet) return;
+
+            try
+            {
+                loaded[frame].Wait(loadedCancel[frame].Token); // Ensure we have completed ongoing load
+            }
+            catch (Exception e)
+            {
+                loadedPage[frame] = -1;
+                loadedCancel[frame] = new CancellationTokenSource();
+                nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                throw new Exception("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
+            }
         }
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
+            var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+
             if (errorCode != 0)
             {
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                result.cts?.Cancel();
             }
-
-            var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             if (result.freeBuffer1 != null)
             {
-                allocator.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                if (errorCode == 0)
+                    allocator.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();
                 result.freeBuffer1 = null;
             }
 
-            if (result.handle != null)
-            {
-                result.handle.Signal();
-            }
+            if (errorCode == 0)
+                result.handle?.Signal();
 
             Interlocked.MemoryBarrier();
             Overlapped.Free(overlap);

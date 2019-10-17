@@ -206,7 +206,7 @@ namespace FASTER.core
         /// <summary>
         /// Flush callback
         /// </summary>
-        protected readonly Action<long> FlushCallback = null;
+        protected readonly Action<long, long, uint> FlushCallback = null;
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -458,7 +458,7 @@ namespace FASTER.core
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<long> flushCallback)
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<long, long, uint> flushCallback)
         {
             if (evictCallback != null)
             {
@@ -987,7 +987,7 @@ namespace FASTER.core
         /// Every async flush callback tries to update the flushed until address to the latest value possible
         /// Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
         /// </summary>
-        protected void ShiftFlushedUntilAddress()
+        protected void ShiftFlushedUntilAddress(uint errorCode)
         {
             long currentFlushedUntilAddress = FlushedUntilAddress;
             long page = GetPage(currentFlushedUntilAddress);
@@ -1006,7 +1006,7 @@ namespace FASTER.core
             {
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    FlushCallback?.Invoke(FlushedUntilAddress);
+                    FlushCallback?.Invoke(oldFlushedUntilAddress, FlushedUntilAddress, errorCode);
                 }
             }
         }
@@ -1460,7 +1460,7 @@ namespace FASTER.core
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out long old);
-                ShiftFlushedUntilAddress();
+                ShiftFlushedUntilAddress(errorCode);
                 result.Free();
             }
 
