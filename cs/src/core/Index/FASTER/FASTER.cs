@@ -461,6 +461,10 @@ namespace FASTER.core
             {
                 status = (Status)internalStatus;
             }
+            else
+            {
+                status = HandleOperationStatus(threadCtx.Value, context, internalStatus);
+            }
             threadCtx.Value.serialNum = monotonicSerialNum;
             return status;
         }
