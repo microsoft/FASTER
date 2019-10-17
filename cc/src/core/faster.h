@@ -185,8 +185,7 @@ class FasterKv {
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
   // the entry.
-  inline AtomicHashBucketEntry* FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry,
-      HashBucket*& bucket);
+  inline AtomicHashBucketEntry* FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry);
   inline Address TraceBackForKeyMatch(const key_t& key, Address from_address,
                                       Address min_offset) const;
   Address TraceBackForOtherChainStart(uint64_t old_size,  uint64_t new_size, Address from_address,
@@ -495,14 +494,13 @@ bool FasterKv<K, V, D>::HasConflictingEntry(KeyHash hash, const HashBucket* buck
 
 template <class K, class V, class D>
 inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindOrCreateEntry(KeyHash hash,
-    HashBucketEntry& expected_entry, HashBucket*& bucket) {
-  bucket = nullptr;
+    HashBucketEntry& expected_entry) {
   // Truncate the hash to get a bucket page_index < state[version].size.
-  uint32_t version = resize_info_.version;
+  const uint32_t version = resize_info_.version;
   assert(version <= 1);
 
   while(true) {
-    bucket = &state_[version].bucket(hash);
+    HashBucket* bucket = &state_[version].bucket(hash);
     assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
 
     AtomicHashBucketEntry* atomic_entry = FindTentativeEntry(hash, bucket, version,
@@ -793,8 +791,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
   const key_t& key = pending_context.key();
   KeyHash hash = key.GetHash();
   HashBucketEntry expected_entry;
-  HashBucket* bucket;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry, bucket);
+  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
 
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
@@ -935,8 +932,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
   const key_t& key = pending_context.key();
   KeyHash hash = key.GetHash();
   HashBucketEntry expected_entry;
-  HashBucket* bucket;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry, bucket);
+  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
 
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
@@ -1382,8 +1378,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   const key_t& key = pending_context->key();
   KeyHash hash = key.GetHash();
   HashBucketEntry expected_entry;
-  HashBucket* bucket;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry, bucket);
+  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
 
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
@@ -1853,8 +1848,7 @@ Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_addre
     const key_t& key = record->key();
     KeyHash hash = key.GetHash();
     HashBucketEntry expected_entry;
-    HashBucket* bucket;
-    AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry, bucket);
+    AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
 
     if(record->header.checkpoint_version <= checkpoint_.log_metadata.version) {
       HashBucketEntry new_entry{ address, hash.tag(), false };
