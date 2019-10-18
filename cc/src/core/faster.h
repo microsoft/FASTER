@@ -181,7 +181,8 @@ class FasterKv {
       AsyncIOContext& io_context);
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
-  inline const AtomicHashBucketEntry* FindEntry(KeyHash hash) const;
+  // The caller can use the "expected_entry" to CAS its desired address into the entry.
+  inline const AtomicHashBucketEntry* FindEntry(KeyHash hash, HashBucketEntry& expected_entry) const;
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
   // the entry.
@@ -368,7 +369,9 @@ inline void FasterKv<K, V, D>::StopSession() {
 }
 
 template <class K, class V, class D>
-inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash) const {
+inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash,
+    HashBucketEntry& expected_entry) const {
+  expected_entry = HashBucketEntry::kInvalidEntry;
   // Truncate the hash to get a bucket page_index < state[version].size.
   uint32_t version = resize_info_.version;
   const HashBucket* bucket = &state_[version].bucket(hash);
@@ -387,6 +390,7 @@ inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash) c
         // log_2(table size) address bits.)
         if(!entry.tentative()) {
           // If (final key, return immediately)
+          expected_entry = entry;
           return &bucket->entries[entry_idx];
         }
       }
@@ -721,13 +725,13 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
 
   const key_t& key = pending_context.key();
   KeyHash hash = key.GetHash();
-  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash);
+  HashBucketEntry entry;
+  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
   if(!atomic_entry) {
     // no record found
     return OperationStatus::NOT_FOUND;
   }
 
-  HashBucketEntry entry = atomic_entry->load();
   Address address = entry.address();
   Address begin_address = hlog.begin_address.load();
   Address head_address = hlog.head_address.load();
