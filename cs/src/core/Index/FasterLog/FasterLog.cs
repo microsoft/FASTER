@@ -217,7 +217,8 @@ namespace FASTER.core
                 var task = CommitTask;
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
-                await task;
+                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                    await task;
             }
 
             return logicalAddress;
@@ -238,7 +239,8 @@ namespace FASTER.core
                 var task = CommitTask;
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
-                await task;
+                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                    await task;
             }
 
             return logicalAddress;
@@ -259,7 +261,8 @@ namespace FASTER.core
                 var task = CommitTask;
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
-                await task;
+                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                    await task;
             }
 
             return logicalAddress;
@@ -407,7 +410,8 @@ namespace FASTER.core
                 var task = CommitTask;
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
-                await task;
+                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                    await task;
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -441,7 +445,8 @@ namespace FASTER.core
                 var task = CommitTask;
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
-                await task;
+                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                    await task;
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -476,7 +481,8 @@ namespace FASTER.core
                 var task = CommitTask;
                 if (TryAppend(readOnlySpanBatch, out logicalAddress, out allocatedLength))
                     break;
-                await task;
+                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                    await task;
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -786,6 +792,19 @@ namespace FASTER.core
                 *(int*)(dest + 8) = length;
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
             }
+        }
+
+        /// <summary>
+        /// Do we need to await a commit to make forward progress?
+        /// </summary>
+        /// <param name="committedUntilAddress"></param>
+        /// <param name="tailAddress"></param>
+        /// <returns></returns>
+        private bool NeedToWait(long committedUntilAddress, long tailAddress)
+        {
+            return
+                allocator.GetPage(committedUntilAddress) <=
+                (allocator.GetPage(tailAddress) - allocator.BufferSize);
         }
     }
 }

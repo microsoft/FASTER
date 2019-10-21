@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
@@ -171,6 +172,36 @@ namespace FASTER.test
                 Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
                 Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
             }
+            log.Dispose();
+        }
+
+        [Test]
+        public async Task FasterLogTest5([Values]LogChecksumType logChecksum)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum });
+
+            int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
+            var commit = new Thread(() => { while (true) { log.Commit(true); } });
+
+            commit.Start();
+
+            // 65536=page size|headerSize|64=log header
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            commit.Abort();
+
             log.Dispose();
         }
     }
