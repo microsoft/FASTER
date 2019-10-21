@@ -181,7 +181,8 @@ namespace FASTER.test
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum });
 
             int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
-            var commit = new Thread(() => { while (true) { log.Commit(true); } });
+            bool _disposed = false;
+            var commit = new Thread(() => { while (!_disposed) { log.Commit(true); Thread.Sleep(1); } });
 
             commit.Start();
 
@@ -200,8 +201,9 @@ namespace FASTER.test
             // 65536=page size|headerSize
             await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
 
-            commit.Abort();
+            _disposed = true;
 
+            commit.Join();
             log.Dispose();
         }
     }
