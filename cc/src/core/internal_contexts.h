@@ -126,7 +126,7 @@ class AsyncPendingReadContext : public PendingContext<K> {
   }
  public:
   virtual void Get(const void* rec) = 0;
-  virtual void GetAtomic(const void* rec) = 0;
+  virtual bool GetAtomic(const void* rec) = 0;
 };
 
 /// A synchronous Read() context preserves its type information.
@@ -166,9 +166,9 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
     const record_t* record = reinterpret_cast<const record_t*>(rec);
     read_context().Get(record->value());
   }
-  inline void GetAtomic(const void* rec) final {
+  inline bool GetAtomic(const void* rec) final {
     const record_t* record = reinterpret_cast<const record_t*>(rec);
-    read_context().GetAtomic(record->value());
+    return read_context().GetAtomic(record->value());
   }
 };
 

@@ -764,8 +764,10 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
   if(address >= safe_read_only_address) {
     // Mutable or fuzzy region
     // concurrent read
-    pending_context.GetAtomic(hlog.Get(address));
-    return OperationStatus::SUCCESS;
+    if (pending_context.GetAtomic(hlog.Get(address))) {
+      return OperationStatus::SUCCESS;
+    }
+    return OperationStatus::RETRY_NOW;
   } else if(address >= head_address) {
     // Immutable region
     // single-thread read

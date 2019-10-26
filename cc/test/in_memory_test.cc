@@ -131,8 +131,9 @@ TEST(InMemFaster, UpsertRead) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       output = value.atomic_value_.load();
+      return true;
     }
 
    protected:
@@ -321,8 +322,9 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       output = value.atomic_value_.load();
+      return true;
     }
 
    protected:
@@ -493,13 +495,14 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       do {
         output_length = value.length_.load();
-        ASSERT_EQ(0, reinterpret_cast<size_t>(value.value_) % 16);
+        EXPECT_EQ(0, reinterpret_cast<size_t>(value.value_) % 16);
         output_pt1 = *reinterpret_cast<const uint64_t*>(value.value_);
         output_pt2 = *reinterpret_cast<const uint64_t*>(value.value_ + 8);
       } while(output_length != value.length_.load());
+      return true;
     }
 
    protected:
@@ -811,7 +814,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       GenLock before, after;
       do {
         before = value.gen_lock_.load();
@@ -820,6 +823,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
         output_bytes[1] = value.buffer()[value.length_ - 1];
         after = value.gen_lock_.load();
       } while(before.gen_number != after.gen_number);
+      return true;
     }
 
    protected:
@@ -1037,8 +1041,9 @@ TEST(InMemFaster, Rmw) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       output = value.atomic_value_.load();
+      return true;
     }
 
    protected:
@@ -1230,8 +1235,9 @@ TEST(InMemFaster, Rmw_Concurrent) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       output = value.atomic_value_.load();
+      return true;
     }
 
    protected:
@@ -1557,7 +1563,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       GenLock before, after;
       do {
         before = value.gen_lock_.load();
@@ -1566,6 +1572,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
         output_bytes[1] = value.buffer()[value.length_ - 1];
         after = value.gen_lock_.load();
       } while(before.gen_number != after.gen_number);
+      return true;
     }
 
    protected:
@@ -1793,11 +1800,12 @@ public:
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       // There are no concurrent updates
       output_length = value.length_;
       output_letters[0] = value.buffer()[0];
       output_letters[1] = value.buffer()[value.length_ - 1];
+      return true;
     }
 
 protected:
@@ -2017,8 +2025,9 @@ TEST(InMemFaster, GrowHashTable) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       output = value.atomic_value_.load();
+      return true;
     }
 
    protected:
@@ -2306,8 +2315,9 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
         // All reads should be atomic (from the mutable tail).
         ASSERT_TRUE(false);
       }
-      inline void GetAtomic(const Value& value) {
+      inline bool GetAtomic(const Value& value) {
         output = value.atomic_value_.load();
+        return true;
       }
 
   protected:

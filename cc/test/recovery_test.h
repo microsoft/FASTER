@@ -349,8 +349,9 @@ TEST(CLASS, Serial) {
     inline void Get(const Value1& value) {
       val_ = value.val1_;
     }
-    inline void GetAtomic(const Value1& value) {
+    inline bool GetAtomic(const Value1& value) {
       val_ = value.atomic_val1_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -396,8 +397,9 @@ TEST(CLASS, Serial) {
     inline void Get(const Value2& value) {
       val_ = value.val2_;
     }
-    inline void GetAtomic(const Value2& value) {
+    inline bool GetAtomic(const Value2& value) {
       val_ = value.atomic_val2_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -855,8 +857,9 @@ TEST(CLASS, Serial_VariableLengthKey) {
     inline void Get(const Value1& value) {
       val_ = value.val1_;
     }
-    inline void GetAtomic(const Value1& value) {
+    inline bool GetAtomic(const Value1& value) {
       val_ = value.atomic_val1_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -904,8 +907,9 @@ TEST(CLASS, Serial_VariableLengthKey) {
     inline void Get(const Value2& value) {
       val_ = value.val2_;
     }
-    inline void GetAtomic(const Value2& value) {
+    inline bool GetAtomic(const Value2& value) {
       val_ = value.atomic_val2_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -1311,8 +1315,9 @@ TEST(CLASS, Concurrent_Insert_Small) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -1470,8 +1475,9 @@ TEST(CLASS, Concurrent_Insert_Small) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -1729,8 +1735,9 @@ TEST(CLASS, Concurrent_Insert_Large) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -1886,8 +1893,9 @@ TEST(CLASS, Concurrent_Insert_Large) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -2144,8 +2152,9 @@ TEST(CLASS, Concurrent_Update_Small) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -2313,8 +2322,9 @@ TEST(CLASS, Concurrent_Update_Small) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -2581,8 +2591,9 @@ TEST(CLASS, Concurrent_Update_Large) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -2765,8 +2776,9 @@ TEST(CLASS, Concurrent_Update_Large) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -3028,8 +3040,9 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -3208,8 +3221,9 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -3472,8 +3486,9 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {
@@ -3679,8 +3694,9 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     inline void Get(const Value& value) {
       val_ = value.val_;
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       val_ = value.atomic_val_.load();
+      return true;
     }
 
     uint64_t val() const {

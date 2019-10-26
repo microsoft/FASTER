@@ -141,7 +141,7 @@ class ReadContext : public IAsyncContext {
 
   // For this benchmark, we don't copy out, so these are no-ops.
   inline void Get(const value_t& value) { }
-  inline void GetAtomic(const value_t& value) { }
+  inline bool GetAtomic(const value_t& value) { return true; }
 
  protected:
   /// The explicit interface requires a DeepCopy_Internal() implementation.

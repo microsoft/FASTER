@@ -142,8 +142,9 @@ class ReadContext : public IAsyncContext {
   inline void Get(const value_t& value) {
     *result_ = value.num_clicks;
   }
-  inline void GetAtomic(const value_t& value) {
+  inline bool GetAtomic(const value_t& value) {
     *result_ = value.atomic_num_clicks;
+    return true;
   }
 
  protected:

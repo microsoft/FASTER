@@ -156,7 +156,7 @@ TEST(CLASS, UpsertRead_Serial) {
       ASSERT_EQ(expected_, value.length_);
       ASSERT_EQ(expected_, value.value_[expected_ - 5]);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       uint64_t post_gen = value.gen_.load();
       uint64_t pre_gen;
       uint16_t len;
@@ -168,8 +168,9 @@ TEST(CLASS, UpsertRead_Serial) {
         val = value.value_[len - 5];
         post_gen = value.gen_.load();
       } while(pre_gen != post_gen);
-      ASSERT_EQ(expected_, static_cast<uint8_t>(len));
-      ASSERT_EQ(expected_, val);
+      EXPECT_EQ(expected_, static_cast<uint8_t>(len));
+      EXPECT_EQ(expected_, val);
+      return true;
     }
 
    protected:
@@ -438,7 +439,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
       ASSERT_EQ(expected_, value.length_);
       ASSERT_EQ(expected_, value.value_[expected_ - 5]);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       uint64_t post_gen = value.gen_.load();
       uint64_t pre_gen;
       uint16_t len;
@@ -450,7 +451,8 @@ TEST(CLASS, UpsertRead_Concurrent) {
         val = value.value_[len - 5];
         post_gen = value.gen_.load();
       } while(pre_gen != post_gen);
-      ASSERT_EQ(expected_, val);
+      EXPECT_EQ(expected_, val);
+      return true;
     }
 
    protected:
@@ -892,8 +894,9 @@ TEST(CLASS, Rmw_Concurrent) {
     inline void Get(const Value& value) {
       counter = value.counter_.load(std::memory_order_acquire);
     }
-    inline void GetAtomic(const Value& value) {
+    inline bool GetAtomic(const Value& value) {
       counter = value.counter_.load();
+      return true;
     }
 
    protected:
