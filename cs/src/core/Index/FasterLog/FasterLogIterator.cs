@@ -85,15 +85,26 @@ namespace FASTER.core
         /// Wait for iteration to be ready to continue
         /// </summary>
         /// <returns></returns>
-        public async ValueTask WaitAsync(CancellationToken token = default)
+        public ValueTask WaitAsync(CancellationToken token = default)
         {
-            while (true)
+            var commitTask = fasterLog.CommitTask;
+            if (nextAddress < fasterLog.CommittedUntilAddress)
             {
-                var commitTask = fasterLog.CommitTask;
-                if (nextAddress >= fasterLog.CommittedUntilAddress)
-                    await commitTask.WithCancellationAsync(token);
-                else
-                    break;
+                return new ValueTask();
+            }
+
+            return SlowWaitAsync(token);
+
+            async ValueTask SlowWaitAsync(CancellationToken ct)
+            {
+                while (true)
+                {
+                    var t = fasterLog.CommitTask;
+                    if (nextAddress >= fasterLog.CommittedUntilAddress)
+                        await t.WithCancellationAsync(ct);
+                    else
+                        break;
+                }
             }
         }
 

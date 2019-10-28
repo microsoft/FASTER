@@ -209,20 +209,26 @@ namespace FASTER.core
         /// <param name="entry"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAsync(byte[] entry, CancellationToken token = default)
+        public ValueTask<long> EnqueueAsync(byte[] entry, CancellationToken token = default)
         {
-            long logicalAddress;
+            if (TryEnqueue(entry, out long address))
+                return new ValueTask<long>(address);
 
-            while (true)
+            return SlowEnqueueAsync(entry, token);
+            async ValueTask<long> SlowEnqueueAsync(byte[] e, CancellationToken ct)
             {
-                var task = CommitTask;
-                if (TryEnqueue(entry, out logicalAddress))
-                    break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task.WithCancellationAsync(token);
-            }
+                long logicalAddress;
+                while (true)
+                {
+                    var task = CommitTask;
+                    if (TryEnqueue(e, out logicalAddress))
+                        break;
+                    if (NeedToWait(CommittedUntilAddress, TailAddress))
+                        await task.WithCancellationAsync(ct);
+                }
 
-            return logicalAddress;
+                return logicalAddress;
+            }
         }
 
         /// <summary>
@@ -232,20 +238,26 @@ namespace FASTER.core
         /// <param name="entry"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAsync(ReadOnlyMemory<byte> entry, CancellationToken token = default)
+        public ValueTask<long> EnqueueAsync(ReadOnlyMemory<byte> entry, CancellationToken token = default)
         {
-            long logicalAddress;
+            if (TryEnqueue(entry.Span, out long address))
+                return new ValueTask<long>(address);
 
-            while (true)
+            return SlowEnqueueAsync(entry, token);
+            async ValueTask<long> SlowEnqueueAsync(ReadOnlyMemory<byte> e, CancellationToken ct)
             {
-                var task = CommitTask;
-                if (TryEnqueue(entry.Span, out logicalAddress))
-                    break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task.WithCancellationAsync(token);
-            }
+                long logicalAddress;
+                while (true)
+                {
+                    var task = CommitTask;
+                    if (TryEnqueue(e.Span, out logicalAddress))
+                        break;
+                    if (NeedToWait(CommittedUntilAddress, TailAddress))
+                        await task.WithCancellationAsync(ct);
+                }
 
-            return logicalAddress;
+                return logicalAddress;
+            }
         }
 
         /// <summary>
@@ -255,20 +267,26 @@ namespace FASTER.core
         /// <param name="readOnlySpanBatch"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAsync(IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token = default)
+        public ValueTask<long> EnqueueAsync(IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token = default)
         {
-            long logicalAddress;
+            if (TryEnqueue(readOnlySpanBatch, out long address))
+                return new ValueTask<long>(address);
 
-            while (true)
+            return SlowEnqueueAsync(readOnlySpanBatch, token);
+            async ValueTask<long> SlowEnqueueAsync(IReadOnlySpanBatch e, CancellationToken ct)
             {
-                var task = CommitTask;
-                if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
-                    break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task.WithCancellationAsync(token);
-            }
+                long logicalAddress;
+                while (true)
+                {
+                    var task = CommitTask;
+                    if (TryEnqueue(e, out logicalAddress))
+                        break;
+                    if (NeedToWait(CommittedUntilAddress, TailAddress))
+                        await task.WithCancellationAsync(ct);
+                }
 
-            return logicalAddress;
+                return logicalAddress;
+            }
         }
         #endregion
 
@@ -297,18 +315,26 @@ namespace FASTER.core
         /// <param name="untilAddress">Address until which we should wait for commit, default 0 for tail of log</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask WaitForCommitAsync(long untilAddress = 0, CancellationToken token = default)
+        public ValueTask WaitForCommitAsync(long untilAddress = 0, CancellationToken token = default)
         {
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            while (true)
+            if (CommittedUntilAddress >= tailAddress)
+                return new ValueTask();
+
+            return SlowWaitForCommitAsync(tailAddress, token);
+
+            async ValueTask SlowWaitForCommitAsync(long addr, CancellationToken ct)
             {
-                var task = CommitTask;
-                if (CommittedUntilAddress < tailAddress)
-                    await task.WithCancellationAsync(token);
-                else
-                    break;
+                while (true)
+                {
+                    var task = CommitTask;
+                    if (CommittedUntilAddress < addr)
+                        await task.WithCancellationAsync(ct);
+                    else
+                        break;
+                }
             }
         }
         #endregion
@@ -331,18 +357,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask CommitAsync(CancellationToken token = default)
+        public ValueTask CommitAsync(CancellationToken token = default)
         {
             var tailAddress = CommitInternal(spinWait: false);
-
-            while (true)
-            {
-                var task = CommitTask;
-                if (CommittedUntilAddress < tailAddress)
-                    await task.WithCancellationAsync(token);
-                else
-                    break;
-            }
+            return WaitForCommitAsync(tailAddress, token);
         }
 
         #endregion

@@ -289,7 +289,7 @@ namespace FASTER.core
         /// Throws OperationCanceledException if token cancels before the real task completes.
         /// Doesn't abort the inner task, but allows the calling code to get "unblocked" and react to stuck tasks.
         /// </summary>
-        public static Task WithCancellationAsync<T>(this Task<T> task, CancellationToken token)
+        internal static Task<T> WithCancellationAsync<T>(this Task<T> task, CancellationToken token)
         {
             if (!token.CanBeCanceled || task.IsCompleted)
             {
@@ -297,12 +297,12 @@ namespace FASTER.core
             }
             else if (token.IsCancellationRequested)
             {
-                return Task<T>.FromCanceled(token);
+                return Task.FromCanceled<T>(token);
             }
 
             return Inner(task, token);
 
-            async Task Inner(Task t, CancellationToken ct)
+            async Task<T> Inner(Task<T> t, CancellationToken ct)
             {
                 var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 using (ct.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext: false))
@@ -314,7 +314,7 @@ namespace FASTER.core
                 }
 
                 // make sure any exceptions in the task get unwrapped and exposed to the caller.
-                await t.ConfigureAwait(false);
+                return await t.ConfigureAwait(continueOnCapturedContext: false);
             }
         }
     }
