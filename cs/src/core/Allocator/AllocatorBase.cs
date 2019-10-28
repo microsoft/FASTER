@@ -176,6 +176,7 @@ namespace FASTER.core
 
         // Array that indicates the status of each buffer page
         internal readonly FullPageStatus[] PageStatusIndicator;
+        internal readonly PendingFlushList[] PendingFlush;
 
         /// <summary>
         /// Global address of the current tail (next element to be allocated from the circular buffer) 
@@ -514,6 +515,9 @@ namespace FASTER.core
             }
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
+            PendingFlush = new PendingFlushList[BufferSize];
+            for (int i = 0; i < BufferSize; i++)
+                PendingFlush[i] = new PendingFlushList();
 
             device = settings.LogDevice;
             sectorSize = (int)device.SectorSize;
@@ -1245,23 +1249,11 @@ namespace FASTER.core
             int numPages = (int)(endPage - startPage);
 
             long offsetInStartPage = GetOffsetInPage(fromAddress);
-            long offsetInEndPage = GetOffsetInPage(untilAddress);
-
+            long offsetInEndPage = GetOffsetInPage(untilAddress);                
 
             // Extra (partial) page being flushed
             if (offsetInEndPage > 0)
                 numPages++;
-
-            // Partial page starting point, need to wait until the
-            // ongoing adjacent flush is completed to ensure correctness
-            if (offsetInStartPage > 0)
-            {
-                while (FlushedUntilAddress < fromAddress)
-                {
-                    epoch.ProtectAndDrain();
-                    Thread.Yield();
-                }
-            }
 
             /* Request asynchronous writes to the device. If waitForPendingFlushComplete
              * is set, then a CountDownEvent is set in the callback handle.
@@ -1293,7 +1285,20 @@ namespace FASTER.core
                         asyncResult.fromAddress = fromAddress;
                 }
 
-                WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+                // Partial page starting point, need to wait until the
+                // ongoing adjacent flush is completed to ensure correctness
+                if (GetOffsetInPage(asyncResult.fromAddress) > 0)
+                {
+                    // Enqueue work in shared queue
+                    var index = GetPageIndexForAddress(asyncResult.fromAddress);
+                    PendingFlush[index].Add(asyncResult);
+                    if (PendingFlush[index].RemoveAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
+                    {
+                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                    }
+                }
+                else
+                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
             }
         }
 
@@ -1464,6 +1469,12 @@ namespace FASTER.core
                 result.Free();
             }
 
+            var _flush = FlushedUntilAddress;
+            if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+            {
+                WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+            }
+
             Overlapped.Free(overlap);
         }
 
@@ -1507,6 +1518,11 @@ namespace FASTER.core
         public virtual void ShallowCopy(ref Value src, ref Value dst)
         {
             dst = src;
+        }
+
+        private string PrettyPrint(long address)
+        {
+            return $"{GetPage(address)}:{GetOffsetInPage(address)}";
         }
     }
 }
