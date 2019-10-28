@@ -2,11 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Buffers;
 
 namespace FASTER.core
 {
@@ -26,7 +26,7 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private long currentAddress, nextAddress;
-        
+
         /// <summary>
         /// Current address
         /// </summary>
@@ -85,13 +85,13 @@ namespace FASTER.core
         /// Wait for iteration to be ready to continue
         /// </summary>
         /// <returns></returns>
-        public async ValueTask WaitAsync()
+        public async ValueTask WaitAsync(CancellationToken token = default)
         {
             while (true)
             {
                 var commitTask = fasterLog.CommitTask;
                 if (nextAddress >= fasterLog.CommittedUntilAddress)
-                    await commitTask;
+                    await commitTask.WithCancellationAsync(token);
                 else
                     break;
             }

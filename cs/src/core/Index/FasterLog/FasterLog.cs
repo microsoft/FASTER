@@ -25,7 +25,7 @@ namespace FASTER.core
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
         private TaskCompletionSource<long> commitTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-        
+
         /// <summary>
         /// Beginning address of log
         /// </summary>
@@ -62,7 +62,7 @@ namespace FASTER.core
         /// <param name="logSettings"></param>
         public FasterLog(FasterLogSettings logSettings)
         {
-            logCommitManager = logSettings.LogCommitManager ?? 
+            logCommitManager = logSettings.LogCommitManager ??
                 new LocalLogCommitManager(logSettings.LogCommitFile ??
                 logSettings.LogDevice.FileName + ".commit");
 
@@ -75,7 +75,7 @@ namespace FASTER.core
             CommittedBeginAddress = Constants.kFirstValidAddress;
 
             allocator = new BlittableAllocator<Empty, byte>(
-                logSettings.GetLogSettings(), null, 
+                logSettings.GetLogSettings(), null,
                 null, epoch, e => CommitCallback(e));
             allocator.Initialize();
             Restore();
@@ -207,8 +207,9 @@ namespace FASTER.core
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="entry"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAsync(byte[] entry)
+        public async ValueTask<long> EnqueueAsync(byte[] entry, CancellationToken token = default)
         {
             long logicalAddress;
 
@@ -218,7 +219,7 @@ namespace FASTER.core
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                    await task.WithCancellationAsync(token);
             }
 
             return logicalAddress;
@@ -229,8 +230,9 @@ namespace FASTER.core
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="entry"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAsync(ReadOnlyMemory<byte> entry)
+        public async ValueTask<long> EnqueueAsync(ReadOnlyMemory<byte> entry, CancellationToken token = default)
         {
             long logicalAddress;
 
@@ -240,7 +242,7 @@ namespace FASTER.core
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                    await task.WithCancellationAsync(token);
             }
 
             return logicalAddress;
@@ -251,8 +253,9 @@ namespace FASTER.core
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="readOnlySpanBatch"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAsync(IReadOnlySpanBatch readOnlySpanBatch)
+        public async ValueTask<long> EnqueueAsync(IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token = default)
         {
             long logicalAddress;
 
@@ -262,7 +265,7 @@ namespace FASTER.core
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                    await task.WithCancellationAsync(token);
             }
 
             return logicalAddress;
@@ -292,8 +295,9 @@ namespace FASTER.core
         /// ensure that someone else causes the commit to happen.
         /// </summary>
         /// <param name="untilAddress">Address until which we should wait for commit, default 0 for tail of log</param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask WaitForCommitAsync(long untilAddress = 0)
+        public async ValueTask WaitForCommitAsync(long untilAddress = 0, CancellationToken token = default)
         {
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
@@ -302,16 +306,14 @@ namespace FASTER.core
             {
                 var task = CommitTask;
                 if (CommittedUntilAddress < tailAddress)
-                {
-                    await task;
-                }
+                    await task.WithCancellationAsync(token);
                 else
                     break;
             }
         }
         #endregion
 
-        #region Commit
+        #region Commit and CommitAsync
 
         /// <summary>
         /// Issue commit request for log (until tail)
@@ -327,18 +329,17 @@ namespace FASTER.core
         /// Async commit log (until tail), completes only when we 
         /// complete the commit
         /// </summary>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask CommitAsync()
+        public async ValueTask CommitAsync(CancellationToken token = default)
         {
-            var tailAddress = CommitInternal();
+            var tailAddress = CommitInternal(spinWait: false);
 
             while (true)
             {
                 var task = CommitTask;
                 if (CommittedUntilAddress < tailAddress)
-                {
-                    await task;
-                }
+                    await task.WithCancellationAsync(token);
                 else
                     break;
             }
@@ -399,8 +400,9 @@ namespace FASTER.core
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entry"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAndWaitForCommitAsync(byte[] entry)
+        public async ValueTask<long> EnqueueAndWaitForCommitAsync(byte[] entry, CancellationToken token = default)
         {
             long logicalAddress;
 
@@ -411,7 +413,7 @@ namespace FASTER.core
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                    await task.WithCancellationAsync(token);
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -419,9 +421,7 @@ namespace FASTER.core
             {
                 var task = CommitTask;
                 if (CommittedUntilAddress < logicalAddress + 1)
-                {
-                    await task;
-                }
+                    await task.WithCancellationAsync(token);
                 else
                     break;
             }
@@ -434,8 +434,9 @@ namespace FASTER.core
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entry"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAndWaitForCommitAsync(ReadOnlyMemory<byte> entry)
+        public async ValueTask<long> EnqueueAndWaitForCommitAsync(ReadOnlyMemory<byte> entry, CancellationToken token = default)
         {
             long logicalAddress;
 
@@ -446,7 +447,7 @@ namespace FASTER.core
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                    await task.WithCancellationAsync(token);
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -454,9 +455,7 @@ namespace FASTER.core
             {
                 var task = CommitTask;
                 if (CommittedUntilAddress < logicalAddress + 1)
-                {
-                    await task;
-                }
+                    await task.WithCancellationAsync(token);
                 else
                     break;
             }
@@ -469,8 +468,9 @@ namespace FASTER.core
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="readOnlySpanBatch"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async ValueTask<long> EnqueueAndWaitForCommitAsync(IReadOnlySpanBatch readOnlySpanBatch)
+        public async ValueTask<long> EnqueueAndWaitForCommitAsync(IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token = default)
         {
             long logicalAddress;
             int allocatedLength;
@@ -482,7 +482,7 @@ namespace FASTER.core
                 if (TryAppend(readOnlySpanBatch, out logicalAddress, out allocatedLength))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                    await task.WithCancellationAsync(token);
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -490,9 +490,7 @@ namespace FASTER.core
             {
                 var task = CommitTask;
                 if (CommittedUntilAddress < logicalAddress + allocatedLength)
-                {
-                    await task;
-                }
+                    await task.WithCancellationAsync(token);
                 else
                     break;
             }
