@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -987,11 +988,13 @@ namespace FASTER.core
             return newHeadAddress;
         }
 
+        List<long> errorList = new List<long>();
+
         /// <summary>
         /// Every async flush callback tries to update the flushed until address to the latest value possible
         /// Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
         /// </summary>
-        protected void ShiftFlushedUntilAddress(uint errorCode)
+        protected void ShiftFlushedUntilAddress()
         {
             long currentFlushedUntilAddress = FlushedUntilAddress;
             long page = GetPage(currentFlushedUntilAddress);
@@ -1010,12 +1013,56 @@ namespace FASTER.core
             {
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
+                    uint errorCode = 0;
+                    if (errorList.Count > 0)
+                    {
+                        long start = GetPage(oldFlushedUntilAddress);
+                        long end = GetPage(currentFlushedUntilAddress);
+                        if (GetOffsetInPage(currentFlushedUntilAddress) > 0) end++;
+
+                        bool done = false;
+                        while (!done)
+                        {
+                            done = true;
+                            lock (errorList)
+                            {
+                                for (int i = 0; i < errorList.Count; i++)
+                                {
+                                    if (errorList[i] >= start && errorList[i] < end)
+                                    {
+                                        errorCode = 1;
+                                    }
+                                    else if (errorList[i] < start)
+                                        done = false;
+                                }
+                            }
+                        }
+                    }
                     FlushCallback?.Invoke(
-                        new CommitInfo {
+                        new CommitInfo
+                        {
                             BeginAddress = BeginAddress,
                             FromAddress = oldFlushedUntilAddress,
-                            UntilAddress = FlushedUntilAddress,
-                            ErrorCode = errorCode });
+                            UntilAddress = currentFlushedUntilAddress,
+                            ErrorCode = errorCode
+                        });
+
+                    if (errorList.Count > 0)
+                    {
+                        long start = GetPage(oldFlushedUntilAddress);
+                        long end = GetPage(currentFlushedUntilAddress);
+                        if (GetOffsetInPage(currentFlushedUntilAddress) > 0) end++;
+                        lock (errorList)
+                        {
+                            for (int i = 0; i < errorList.Count; i++)
+                            {
+                                if (errorList[i] >= start && errorList[i] < end)
+                                {
+                                    errorList.RemoveAt(i);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1451,6 +1498,8 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
+        static DateTime last = DateTime.Now;
+
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>
@@ -1464,13 +1513,27 @@ namespace FASTER.core
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
+            /*
+            if (DateTime.Now - last > TimeSpan.FromSeconds(7))
+            {
+                last = DateTime.Now;
+                errorCode = 1;
+                Console.WriteLine("Disk error");
+            }*/
+            
+
             // Set the page status to flushed
             PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out long old);
-                ShiftFlushedUntilAddress(errorCode);
+                if (errorCode != 0)
+                {
+                    lock (errorList)
+                        errorList.Add(result.page);
+                }
+                Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
+                ShiftFlushedUntilAddress();
                 result.Free();
             }
 

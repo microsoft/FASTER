@@ -95,7 +95,14 @@ namespace FASTER.core
             {
                 var commitTask = fasterLog.CommitTask;
                 if (nextAddress >= fasterLog.CommittedUntilAddress)
-                    await commitTask;
+                {
+                    // Ignore commit exceptions
+                    try
+                    {
+                        await commitTask;
+                    }
+                    catch { }
+                }
                 else
                     break;
             }

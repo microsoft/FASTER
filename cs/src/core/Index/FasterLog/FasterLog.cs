@@ -623,7 +623,9 @@ namespace FASTER.core
                 CommittedUntilAddress = info.FlushedUntilAddress;
 
                 _commitTcs = commitTcs;
-                if (commitTcs.Task.Status != TaskStatus.Faulted)
+                // If task is not faulted, create new task
+                // If task is faulted due to commit exception, create new task
+                if (commitTcs.Task.Status != TaskStatus.Faulted || commitTcs.Task.Exception.InnerException as CommitFailureException != null)
                 {
                     commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                 }

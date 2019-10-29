@@ -41,8 +41,12 @@ namespace FasterLogSample
                 var t1 = new Thread(new ThreadStart(ScanThread));
                 var t2 = new Thread(new ThreadStart(ReportThread));
                 var t3 = new Thread(new ThreadStart(CommitThread));
-                t1.Start(); t2.Start(); t3.Start();
-                t1.Join(); t2.Join(); t3.Join();
+                t1.Start();
+                t2.Start();
+                t3.Start();
+                t1.Join();
+                t2.Join();
+                t3.Join();
             }
             else
             {
@@ -211,7 +215,7 @@ namespace FasterLogSample
 
         static void CommitThread()
         {
-            // Task<CommitInfo> prevCommitTask = null;
+            //Task<LinkedCommitInfo> prevCommitTask = null;
             while (true)
             {
                 Thread.Sleep(5);
@@ -221,12 +225,15 @@ namespace FasterLogSample
                 // await log.CommitAsync();
 
                 // Async version that catches all commit failures in between
-                // try {
-                //     prevCommitTask = await log.CommitAsync(prevCommitTask);
-                // } catch (CommitFailureException e) {
-                //     Console.WriteLine(e);
-                //     prevCommitTask = e.NextCommitTask;
-                // }
+                //try
+                //{
+                //    prevCommitTask = await log.CommitAsync(prevCommitTask);
+                //}
+                //catch (CommitFailureException e)
+                //{
+                //    Console.WriteLine(e);
+                //    prevCommitTask = e.LinkedCommitInfo.nextTcs.Task;
+                //}
             }
         }
 
