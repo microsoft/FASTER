@@ -911,6 +911,7 @@ namespace FASTER.core
         /// <returns></returns>
         private bool NeedToWait(long committedUntilAddress, long tailAddress)
         {
+            Thread.Yield();
             return
                 allocator.GetPage(committedUntilAddress) <=
                 (allocator.GetPage(tailAddress) - allocator.BufferSize);

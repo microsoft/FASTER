@@ -72,8 +72,12 @@ namespace FasterLogSample
                 var t1 = new Thread(new ThreadStart(ScanThread));
                 var t2 = new Thread(new ThreadStart(ReportThread));
                 var t3 = new Thread(new ThreadStart(CommitThread));
-                t1.Start(); t2.Start(); t3.Start();
-                t1.Join(); t2.Join(); t3.Join();
+                t1.Start();
+                t2.Start();
+                t3.Start();
+                t1.Join();
+                t2.Join();
+                t3.Join();
 
                 Task.WaitAll(tasks);
             }
@@ -219,7 +223,7 @@ namespace FasterLogSample
             while (true)
             {
                 Thread.Sleep(5);
-                // log.Commit(true);
+                log.Commit(true);
 
                 // Async version
                 // await log.CommitAsync();
