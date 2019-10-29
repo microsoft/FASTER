@@ -34,18 +34,18 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// Linked list of commit info
+    /// Linked list (chain) of commit info
     /// </summary>
     public struct LinkedCommitInfo
     {
         /// <summary>
         /// Commit info
         /// </summary>
-        public CommitInfo commitInfo;
+        public CommitInfo CommitInfo;
 
         /// <summary>
-        /// Next task in list
+        /// Next task in commit chain
         /// </summary>
-        public TaskCompletionSource<LinkedCommitInfo> nextTcs;
+        public Task<LinkedCommitInfo> NextTask;
     }
 }

@@ -213,7 +213,7 @@ namespace FASTER.core
         /// <summary>
         /// Error handling
         /// </summary>
-        private ErrorList errorList = new ErrorList();
+        private readonly ErrorList errorList = new ErrorList();
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -1186,7 +1186,7 @@ namespace FASTER.core
                                 IDevice logDevice = null, IDevice objectLogDevice = null)
         {
             AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context,
-                out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
+                out _, devicePageOffset, logDevice, objectLogDevice);
         }
 
         /// <summary>
@@ -1469,7 +1469,7 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
-        static DateTime last = DateTime.Now;
+        // static DateTime last = DateTime.Now;
 
         /// <summary>
         /// IOCompletion callback for page flush

@@ -14,9 +14,10 @@ namespace FASTER.core
     public class CommitFailureException : Exception
     {
         /// <summary>
-        /// Next commit task after failed one
+        /// Commit info and next commit task in chain
         /// </summary>
         public LinkedCommitInfo LinkedCommitInfo { get; private set; }
+
         internal CommitFailureException(LinkedCommitInfo linkedCommitInfo, string message)
             : base(message)
             => LinkedCommitInfo = linkedCommitInfo;

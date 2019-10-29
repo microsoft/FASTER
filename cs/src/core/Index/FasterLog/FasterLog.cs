@@ -26,7 +26,6 @@ namespace FASTER.core
         private readonly LogChecksumType logChecksum;
         private TaskCompletionSource<LinkedCommitInfo> commitTcs 
             = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-        private PendingCommitList pendingCommitList = new PendingCommitList();
 
         /// <summary>
         /// Beginning address of log
@@ -325,8 +324,8 @@ namespace FASTER.core
             while (true)
             {
                 var linkedCommitInfo = await task;
-                if (linkedCommitInfo.commitInfo.UntilAddress < tailAddress)
-                    task = linkedCommitInfo.nextTcs.Task;
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                    task = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -359,8 +358,8 @@ namespace FASTER.core
             while (true)
             {
                 var linkedCommitInfo = await task;
-                if (linkedCommitInfo.commitInfo.UntilAddress < tailAddress)
-                    task = linkedCommitInfo.nextTcs.Task;
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                    task = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -380,10 +379,10 @@ namespace FASTER.core
             while (true)
             {
                 var linkedCommitInfo = await prevCommitTask;
-                if (linkedCommitInfo.commitInfo.UntilAddress < tailAddress)
-                    prevCommitTask = linkedCommitInfo.nextTcs.Task;
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                    prevCommitTask = linkedCommitInfo.NextTask;
                 else
-                    return linkedCommitInfo.nextTcs.Task;
+                    return linkedCommitInfo.NextTask;
             }
         }
 
@@ -476,11 +475,11 @@ namespace FASTER.core
                 catch (CommitFailureException e)
                 {
                     linkedCommitInfo = e.LinkedCommitInfo;
-                    if (logicalAddress >= linkedCommitInfo.commitInfo.FromAddress && logicalAddress < linkedCommitInfo.commitInfo.UntilAddress)
+                    if (logicalAddress >= linkedCommitInfo.CommitInfo.FromAddress && logicalAddress < linkedCommitInfo.CommitInfo.UntilAddress)
                         throw e;
                 }
-                if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
-                    task = linkedCommitInfo.nextTcs.Task;
+                if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
+                    task = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -527,11 +526,11 @@ namespace FASTER.core
                 catch (CommitFailureException e)
                 {
                     linkedCommitInfo = e.LinkedCommitInfo;
-                    if (logicalAddress >= linkedCommitInfo.commitInfo.FromAddress && logicalAddress < linkedCommitInfo.commitInfo.UntilAddress)
+                    if (logicalAddress >= linkedCommitInfo.CommitInfo.FromAddress && logicalAddress < linkedCommitInfo.CommitInfo.UntilAddress)
                         throw e;
                 }
-                if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
-                    task = linkedCommitInfo.nextTcs.Task;
+                if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
+                    task = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -578,11 +577,11 @@ namespace FASTER.core
                 catch (CommitFailureException e)
                 {
                     linkedCommitInfo = e.LinkedCommitInfo;
-                    if (logicalAddress >= linkedCommitInfo.commitInfo.FromAddress && logicalAddress < linkedCommitInfo.commitInfo.UntilAddress)
+                    if (logicalAddress >= linkedCommitInfo.CommitInfo.FromAddress && logicalAddress < linkedCommitInfo.CommitInfo.UntilAddress)
                         throw e;
                 }
-                if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
-                    task = linkedCommitInfo.nextTcs.Task;
+                if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
+                    task = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -683,8 +682,8 @@ namespace FASTER.core
             }
             var lci = new LinkedCommitInfo
             {
-                commitInfo = commitInfo,
-                nextTcs = commitTcs
+                CommitInfo = commitInfo,
+                NextTask = commitTcs.Task
             };
 
             if (commitInfo.ErrorCode == 0)

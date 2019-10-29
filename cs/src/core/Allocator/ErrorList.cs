@@ -2,12 +2,13 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
+using System.Threading;
 
 namespace FASTER.core
 {
     class ErrorList
     {
-        private List<long> errorList;
+        private readonly List<long> errorList;
 
         public ErrorList() => errorList = new List<long>();
 
@@ -33,7 +34,10 @@ namespace FASTER.core
                             errorCode = 1;
                         }
                         else if (errorList[i] < oldFlushedUntilAddress)
-                            done = false; // spin barrier
+                        {
+                            done = false; // spin barrier for other threads during exception
+                            Thread.Yield();
+                        }
                     }
                 }
             }
