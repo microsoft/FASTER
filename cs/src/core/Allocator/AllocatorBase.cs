@@ -211,6 +211,11 @@ namespace FASTER.core
         protected readonly Action<CommitInfo> FlushCallback = null;
 
         /// <summary>
+        /// Error handling
+        /// </summary>
+        private ErrorList errorList = new ErrorList();
+
+        /// <summary>
         /// Observer for records entering read-only region
         /// </summary>
         internal IObserver<IFasterScanIterator<Key, Value>> OnReadOnlyObserver;
@@ -988,8 +993,6 @@ namespace FASTER.core
             return newHeadAddress;
         }
 
-        List<long> errorList = new List<long>();
-
         /// <summary>
         /// Every async flush callback tries to update the flushed until address to the latest value possible
         /// Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
@@ -1016,27 +1019,7 @@ namespace FASTER.core
                     uint errorCode = 0;
                     if (errorList.Count > 0)
                     {
-                        long start = GetPage(oldFlushedUntilAddress);
-                        long end = GetPage(currentFlushedUntilAddress);
-                        if (GetOffsetInPage(currentFlushedUntilAddress) > 0) end++;
-
-                        bool done = false;
-                        while (!done)
-                        {
-                            done = true;
-                            lock (errorList)
-                            {
-                                for (int i = 0; i < errorList.Count; i++)
-                                {
-                                    if (errorList[i] >= start && errorList[i] < end)
-                                    {
-                                        errorCode = 1;
-                                    }
-                                    else if (errorList[i] < start)
-                                        done = false;
-                                }
-                            }
-                        }
+                        errorCode = errorList.CheckAndWait(oldFlushedUntilAddress, currentFlushedUntilAddress);
                     }
                     FlushCallback?.Invoke(
                         new CommitInfo
@@ -1049,19 +1032,7 @@ namespace FASTER.core
 
                     if (errorList.Count > 0)
                     {
-                        long start = GetPage(oldFlushedUntilAddress);
-                        long end = GetPage(currentFlushedUntilAddress);
-                        if (GetOffsetInPage(currentFlushedUntilAddress) > 0) end++;
-                        lock (errorList)
-                        {
-                            for (int i = 0; i < errorList.Count; i++)
-                            {
-                                if (errorList[i] >= start && errorList[i] < end)
-                                {
-                                    errorList.RemoveAt(i);
-                                }
-                            }
-                        }
+                        errorList.RemoveUntil(currentFlushedUntilAddress);
                     }
                 }
             }
@@ -1529,8 +1500,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    lock (errorList)
-                        errorList.Add(result.page);
+                    errorList.Add(result.fromAddress);
                 }
                 Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                 ShiftFlushedUntilAddress();

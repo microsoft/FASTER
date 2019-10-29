@@ -455,13 +455,30 @@ namespace FASTER.core
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                {
+                    // Wait for *some* commit - failure can be ignored
+                    try
+                    {
+                        await task;
+                    }
+                    catch { }
+                }
             }
 
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
-                var linkedCommitInfo = await task;
+                LinkedCommitInfo linkedCommitInfo;
+                try
+                {
+                    linkedCommitInfo = await task;
+                }
+                catch (CommitFailureException e)
+                {
+                    linkedCommitInfo = e.LinkedCommitInfo;
+                    if (logicalAddress >= linkedCommitInfo.commitInfo.FromAddress && logicalAddress < linkedCommitInfo.commitInfo.UntilAddress)
+                        throw e;
+                }
                 if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
                     task = linkedCommitInfo.nextTcs.Task;
                 else
@@ -489,13 +506,30 @@ namespace FASTER.core
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                {
+                    // Wait for *some* commit - failure can be ignored
+                    try
+                    {
+                        await task;
+                    }
+                    catch { }
+                }
             }
 
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
-                var linkedCommitInfo = await task;
+                LinkedCommitInfo linkedCommitInfo;
+                try
+                {
+                    linkedCommitInfo = await task;
+                }
+                catch (CommitFailureException e)
+                {
+                    linkedCommitInfo = e.LinkedCommitInfo;
+                    if (logicalAddress >= linkedCommitInfo.commitInfo.FromAddress && logicalAddress < linkedCommitInfo.commitInfo.UntilAddress)
+                        throw e;
+                }
                 if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
                     task = linkedCommitInfo.nextTcs.Task;
                 else
@@ -523,13 +557,30 @@ namespace FASTER.core
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
                 if (NeedToWait(CommittedUntilAddress, TailAddress))
-                    await task;
+                {
+                    // Wait for *some* commit - failure can be ignored
+                    try
+                    {
+                        await task;
+                    }
+                    catch { }
+                }
             }
 
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
-                var linkedCommitInfo = await task;
+                LinkedCommitInfo linkedCommitInfo;
+                try
+                {
+                    linkedCommitInfo = await task;
+                }
+                catch (CommitFailureException e)
+                {
+                    linkedCommitInfo = e.LinkedCommitInfo;
+                    if (logicalAddress >= linkedCommitInfo.commitInfo.FromAddress && logicalAddress < linkedCommitInfo.commitInfo.UntilAddress)
+                        throw e;
+                }
                 if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
                     task = linkedCommitInfo.nextTcs.Task;
                 else
