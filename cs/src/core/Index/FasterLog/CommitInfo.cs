@@ -12,9 +12,40 @@ namespace FASTER.core
     /// </summary>
     public struct CommitInfo
     {
-        internal long fromAddress;
-        internal long untilAddress;
-        internal uint errorCode;
-        internal TaskCompletionSource<CommitInfo> nextTcs;
+        /// <summary>
+        /// Begin address
+        /// </summary>
+        public long BeginAddress;
+
+        /// <summary>
+        /// From address of commit range
+        /// </summary>
+        public long FromAddress;
+
+        /// <summary>
+        /// Until address of commit range
+        /// </summary>
+        public long UntilAddress;
+
+        /// <summary>
+        /// Error code (0 = success)
+        /// </summary>
+        public uint ErrorCode;
+    }
+
+    /// <summary>
+    /// Linked list of commit info
+    /// </summary>
+    public struct LinkedCommitInfo
+    {
+        /// <summary>
+        /// Commit info
+        /// </summary>
+        public CommitInfo commitInfo;
+
+        /// <summary>
+        /// Next task in list
+        /// </summary>
+        public TaskCompletionSource<LinkedCommitInfo> nextTcs;
     }
 }

@@ -3,6 +3,7 @@
 
 using System.Threading;
 using System.Runtime.InteropServices;
+using System;
 
 namespace FASTER.core
 {
@@ -40,8 +41,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Dequeue token
-        /// true: successful dequeue (caller is owner)
+        /// Dequeue token (caller is/remains owner)
+        /// true: successful dequeue
         /// false: failed dequeue
         /// </summary>
         /// <returns></returns>
@@ -52,12 +53,37 @@ namespace FASTER.core
                 var older = this;
                 var newer = older;
                 newer.count--;
-                if (newer.count == 0)
-                    newer.owner = 0;
 
                 if (Interlocked.CompareExchange(ref this.atomic, newer.atomic, older.atomic) == older.atomic)
                 {
-                    return newer.owner != 0;
+                    return newer.count > 0;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Release queue ownership
+        /// true: successful release
+        /// false: failed release
+        /// </summary>
+        /// <returns></returns>
+        public bool Release()
+        {
+            while (true)
+            {
+                var older = this;
+                var newer = older;
+
+                if (newer.count > 0)
+                    return false;
+
+                if (newer.owner == 0)
+                    throw new Exception("Invalid release by non-owner thread");
+                newer.owner = 0;
+
+                if (Interlocked.CompareExchange(ref this.atomic, newer.atomic, older.atomic) == older.atomic)
+                {
+                    return true;
                 }
             }
         }

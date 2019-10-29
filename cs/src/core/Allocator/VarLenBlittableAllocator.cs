@@ -33,7 +33,7 @@ namespace FASTER.core
         internal readonly IVariableLengthStruct<Key> KeyLength;
         internal readonly IVariableLengthStruct<Value> ValueLength;
 
-        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<long, long, uint> flushCallback = null)
+        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
             values = new byte[BufferSize][];

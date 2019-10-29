@@ -207,7 +207,7 @@ namespace FASTER.core
         /// <summary>
         /// Flush callback
         /// </summary>
-        protected readonly Action<long, long, uint> FlushCallback = null;
+        protected readonly Action<CommitInfo> FlushCallback = null;
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -459,7 +459,7 @@ namespace FASTER.core
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<long, long, uint> flushCallback)
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
         {
             if (evictCallback != null)
             {
@@ -1010,7 +1010,12 @@ namespace FASTER.core
             {
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    FlushCallback?.Invoke(oldFlushedUntilAddress, FlushedUntilAddress, errorCode);
+                    FlushCallback?.Invoke(
+                        new CommitInfo {
+                            BeginAddress = BeginAddress,
+                            FromAddress = oldFlushedUntilAddress,
+                            UntilAddress = FlushedUntilAddress,
+                            ErrorCode = errorCode });
                 }
             }
         }

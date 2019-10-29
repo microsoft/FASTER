@@ -16,9 +16,9 @@ namespace FASTER.core
         /// <summary>
         /// Next commit task after failed one
         /// </summary>
-        public Task<CommitInfo> NextCommitTask { get; private set; }
-        internal CommitFailureException(Task<CommitInfo> nextCommitTask, string message)
+        public LinkedCommitInfo LinkedCommitInfo { get; private set; }
+        internal CommitFailureException(LinkedCommitInfo linkedCommitInfo, string message)
             : base(message)
-            => NextCommitTask = nextCommitTask;
+            => LinkedCommitInfo = linkedCommitInfo;
     }
 }

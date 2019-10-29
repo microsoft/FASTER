@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -23,9 +24,10 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
-        private TaskCompletionSource<CommitInfo> commitTcs 
-            = new TaskCompletionSource<CommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-        
+        private TaskCompletionSource<LinkedCommitInfo> commitTcs 
+            = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private PendingCommitList pendingCommitList = new PendingCommitList();
+
         /// <summary>
         /// Beginning address of log
         /// </summary>
@@ -54,7 +56,7 @@ namespace FASTER.core
         /// <summary>
         /// Task notifying commit completions
         /// </summary>
-        internal Task<CommitInfo> CommitTask => commitTcs.Task;
+        internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
 
         /// <summary>
         /// Create new log instance
@@ -322,9 +324,9 @@ namespace FASTER.core
 
             while (true)
             {
-                var commitInfo = await task;
-                if (commitInfo.untilAddress < tailAddress)
-                    task = commitInfo.nextTcs.Task;
+                var linkedCommitInfo = await task;
+                if (linkedCommitInfo.commitInfo.UntilAddress < tailAddress)
+                    task = linkedCommitInfo.nextTcs.Task;
                 else
                     break;
             }
@@ -356,9 +358,9 @@ namespace FASTER.core
 
             while (true)
             {
-                var commitInfo = await task;
-                if (commitInfo.untilAddress < tailAddress)
-                    task = commitInfo.nextTcs.Task;
+                var linkedCommitInfo = await task;
+                if (linkedCommitInfo.commitInfo.UntilAddress < tailAddress)
+                    task = linkedCommitInfo.nextTcs.Task;
                 else
                     break;
             }
@@ -370,18 +372,18 @@ namespace FASTER.core
         /// from prevCommitTask to current fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask<Task<CommitInfo>> CommitAsync(Task<CommitInfo> prevCommitTask)
+        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask)
         {
             if (prevCommitTask == null) prevCommitTask = commitTcs.Task;
             var tailAddress = CommitInternal();
 
             while (true)
             {
-                var commitInfo = await prevCommitTask;
-                if (commitInfo.untilAddress < tailAddress)
-                    prevCommitTask = commitInfo.nextTcs.Task;
+                var linkedCommitInfo = await prevCommitTask;
+                if (linkedCommitInfo.commitInfo.UntilAddress < tailAddress)
+                    prevCommitTask = linkedCommitInfo.nextTcs.Task;
                 else
-                    return commitInfo.nextTcs.Task;
+                    return linkedCommitInfo.nextTcs.Task;
             }
         }
 
@@ -444,7 +446,7 @@ namespace FASTER.core
         public async ValueTask<long> EnqueueAndWaitForCommitAsync(byte[] entry)
         {
             long logicalAddress;
-            Task<CommitInfo> task;
+            Task<LinkedCommitInfo> task;
 
             // Phase 1: wait for commit to memory
             while (true)
@@ -459,9 +461,9 @@ namespace FASTER.core
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
-                var commitInfo = await task;
-                if (commitInfo.untilAddress < logicalAddress + 1)
-                    task = commitInfo.nextTcs.Task;
+                var linkedCommitInfo = await task;
+                if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
+                    task = linkedCommitInfo.nextTcs.Task;
                 else
                     break;
             }
@@ -478,7 +480,7 @@ namespace FASTER.core
         public async ValueTask<long> EnqueueAndWaitForCommitAsync(ReadOnlyMemory<byte> entry)
         {
             long logicalAddress;
-            Task<CommitInfo> task;
+            Task<LinkedCommitInfo> task;
 
             // Phase 1: wait for commit to memory
             while (true)
@@ -493,9 +495,9 @@ namespace FASTER.core
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
-                var commitInfo = await task;
-                if (commitInfo.untilAddress < logicalAddress + 1)
-                    task = commitInfo.nextTcs.Task;
+                var linkedCommitInfo = await task;
+                if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
+                    task = linkedCommitInfo.nextTcs.Task;
                 else
                     break;
             }
@@ -512,7 +514,7 @@ namespace FASTER.core
         public async ValueTask<long> EnqueueAndWaitForCommitAsync(IReadOnlySpanBatch readOnlySpanBatch)
         {
             long logicalAddress;
-            Task<CommitInfo> task;
+            Task<LinkedCommitInfo> task;
 
             // Phase 1: wait for commit to memory
             while (true)
@@ -527,9 +529,9 @@ namespace FASTER.core
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
-                var commitInfo = await task;
-                if (commitInfo.untilAddress < logicalAddress + 1)
-                    task = commitInfo.nextTcs.Task;
+                var linkedCommitInfo = await task;
+                if (linkedCommitInfo.commitInfo.UntilAddress < logicalAddress + 1)
+                    task = linkedCommitInfo.nextTcs.Task;
                 else
                     break;
             }
@@ -596,40 +598,46 @@ namespace FASTER.core
         /// <summary>
         /// Commit log
         /// </summary>
-        private void CommitCallback(long oldFlushAddress, long flushAddress, uint errorCode)
+        private void CommitCallback(CommitInfo commitInfo)
         {
-            long beginAddress = allocator.BeginAddress;
-            long oldCommittedUntilAddress = 0;
-            TaskCompletionSource<CommitInfo> _commitTcs = default;
+            TaskCompletionSource<LinkedCommitInfo> _commitTcs = default;
 
             // We can only allow serial monotonic synchronous commit
             lock (this)
             {
-                if ((beginAddress > CommittedBeginAddress) || (flushAddress > CommittedUntilAddress))
+                if (CommittedBeginAddress > commitInfo.BeginAddress)
+                    commitInfo.BeginAddress = CommittedBeginAddress;
+                if (CommittedUntilAddress > commitInfo.FromAddress)
+                    commitInfo.FromAddress = CommittedUntilAddress;
+                if (CommittedUntilAddress > commitInfo.UntilAddress)
+                    commitInfo.UntilAddress = CommittedUntilAddress;
+
+                FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
                 {
-                    flushAddress = flushAddress > CommittedUntilAddress ? flushAddress : CommittedUntilAddress;
-                    FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
-                    {
-                        BeginAddress = beginAddress > CommittedBeginAddress ? beginAddress : CommittedBeginAddress,
-                        FlushedUntilAddress = flushAddress
-                    };
+                    BeginAddress = commitInfo.BeginAddress,
+                    FlushedUntilAddress = commitInfo.UntilAddress
+                };
 
-                    logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
-                    CommittedBeginAddress = info.BeginAddress;
-                    oldCommittedUntilAddress = CommittedUntilAddress;
-                    CommittedUntilAddress = info.FlushedUntilAddress;
+                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
+                CommittedBeginAddress = info.BeginAddress;
+                CommittedUntilAddress = info.FlushedUntilAddress;
 
-                    _commitTcs = commitTcs;
-                    if (commitTcs.Task.Status != TaskStatus.Faulted)
-                    {
-                        commitTcs = new TaskCompletionSource<CommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    }
+                _commitTcs = commitTcs;
+                if (commitTcs.Task.Status != TaskStatus.Faulted)
+                {
+                    commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                 }
             }
-            if (errorCode == 0)
-                _commitTcs?.TrySetResult(new CommitInfo { fromAddress = oldCommittedUntilAddress, untilAddress = flushAddress, errorCode = errorCode, nextTcs = commitTcs });
+            var lci = new LinkedCommitInfo
+            {
+                commitInfo = commitInfo,
+                nextTcs = commitTcs
+            };
+
+            if (commitInfo.ErrorCode == 0)
+                _commitTcs?.TrySetResult(lci);
             else
-                _commitTcs.TrySetException(new CommitFailureException(commitTcs.Task, $"Commit of address range [{oldCommittedUntilAddress}-{flushAddress}] failed with error code {errorCode}"));
+                _commitTcs.TrySetException(new CommitFailureException(lci, $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}"));
         }
 
         /// <summary>
@@ -782,7 +790,12 @@ namespace FASTER.core
             {
                 // May need to commit begin address
                 epoch.Suspend();
-                CommitCallback(CommittedUntilAddress, CommittedUntilAddress, 0);
+                var beginAddress = allocator.BeginAddress;
+                if (beginAddress > CommittedBeginAddress)
+                    CommitCallback(new CommitInfo { BeginAddress = beginAddress,
+                        FromAddress = CommittedUntilAddress,
+                        UntilAddress = CommittedUntilAddress,
+                        ErrorCode = 0 });
             }
 
             return tailAddress;
