@@ -135,7 +135,7 @@ namespace FASTER.core
                                 PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                                 MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                                 SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                                MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
+                                MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                             }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
                         readcache.Initialize();
                         ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
@@ -153,7 +153,7 @@ namespace FASTER.core
                                 PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                                 MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                                 SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                                MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
+                                MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                             }, this.comparer, ReadCacheEvict, epoch);
                         readcache.Initialize();
                         ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
@@ -174,7 +174,7 @@ namespace FASTER.core
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = logSettings.ReadCacheSettings.SecondChanceFraction
+                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, serializerSettings, this.comparer, ReadCacheEvict, epoch);
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
