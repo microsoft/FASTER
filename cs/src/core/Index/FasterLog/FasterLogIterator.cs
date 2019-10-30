@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 namespace FASTER.core
 {
@@ -17,6 +18,7 @@ namespace FASTER.core
     public class FasterLogScanIterator : IDisposable
     {
         private readonly int frameSize;
+        private readonly string name;
         private readonly FasterLog fasterLog;
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly long endAddress;
@@ -39,6 +41,9 @@ namespace FASTER.core
         /// </summary>
         public long NextAddress => nextAddress;
 
+        internal static readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators
+            = new ConcurrentDictionary<string, FasterLogScanIterator>();
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -49,8 +54,9 @@ namespace FASTER.core
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
         /// <param name="headerSize"></param>
+        /// <param name="name"></param>
         /// <param name="getMemory"></param>
-        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize)
+        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name)
         {
             this.fasterLog = fasterLog;
             this.allocator = hlog;
@@ -61,8 +67,9 @@ namespace FASTER.core
             if (beginAddress == 0)
                 beginAddress = hlog.GetFirstValidLogicalAddress(0);
 
+            this.name = name;
             this.endAddress = endAddress;
-            currentAddress = -1;
+            currentAddress = beginAddress;
             nextAddress = beginAddress;
 
             if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
@@ -218,6 +225,8 @@ namespace FASTER.core
         public void Dispose()
         {
             frame?.Dispose();
+            if (name != null)
+                PersistedIterators.TryRemove(name, out _);
         }
 
         private unsafe void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)

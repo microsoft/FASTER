@@ -170,6 +170,9 @@ namespace FasterLogSample
                     log.TruncateUntil(iter.NextAddress);
                 }
             }
+
+            // Example of recoverable (named) iterator:
+            // using (iter = log.Scan(log.BeginAddress, long.MaxValue, "foo"))
         }
 
         static async Task AsyncScan()

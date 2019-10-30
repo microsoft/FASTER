@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 
@@ -24,6 +25,10 @@ namespace FASTER.core
         /// </summary>
         public long FlushedUntilAddress;
 
+        /// <summary>
+        /// Persisted iterators
+        /// </summary>
+        public Dictionary<string, long> Iterators;
 
         /// <summary>
         /// Initialize
@@ -58,6 +63,22 @@ namespace FASTER.core
 
             if (checkSum != (BeginAddress ^ FlushedUntilAddress))
                 throw new Exception("Invalid checksum found during commit recovery");
+
+            var count = 0;
+            try
+            {
+                count = reader.ReadInt32();
+            }
+            catch { }
+
+            if (count > 0)
+            {
+                Iterators = new Dictionary<string, long>();
+                for (int i = 0; i < count; i++)
+                {
+                    Iterators.Add(reader.ReadString(), reader.ReadInt64());
+                }
+            }
         }
 
         /// <summary>
@@ -95,8 +116,33 @@ namespace FASTER.core
                     writer.Write(BeginAddress ^ FlushedUntilAddress); // checksum
                     writer.Write(BeginAddress);
                     writer.Write(FlushedUntilAddress);
+                    if (Iterators?.Count > 0)
+                    {
+                        writer.Write(Iterators.Count);
+                        foreach (var kvp in Iterators)
+                        {
+                            writer.Write(kvp.Key);
+                            writer.Write(kvp.Value);
+                        }
+                    }
                 }
                 return ms.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Take snapshot of persisted iterators
+        /// </summary>
+        public void PopulateIterators()
+        {
+            if (FasterLogScanIterator.PersistedIterators.Count > 0)
+            {
+                Iterators = new Dictionary<string, long>();
+
+                foreach (var kvp in FasterLogScanIterator.PersistedIterators)
+                {
+                    Iterators.Add(kvp.Key, kvp.Value.CurrentAddress);
+                }
             }
         }
 

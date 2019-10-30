@@ -4,7 +4,7 @@
 #pragma warning disable 0162
 
 using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -24,6 +24,7 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
+        private readonly Dictionary<string, long> RecoveredIterators;
         private TaskCompletionSource<LinkedCommitInfo> commitTcs 
             = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -79,7 +80,7 @@ namespace FASTER.core
                 logSettings.GetLogSettings(), null, 
                 null, epoch, CommitCallback);
             allocator.Initialize();
-            Restore();
+            Restore(out RecoveredIterators);
         }
 
         /// <summary>
@@ -602,13 +603,30 @@ namespace FASTER.core
         /// <summary>
         /// Pull-based iterator interface for scanning FASTER log
         /// </summary>
-        /// <param name="beginAddress">Begin address for scan</param>
-        /// <param name="endAddress">End address for scan (or long.MaxValue for tailing)</param>
+        /// <param name="beginAddress">Begin address for scan.</param>
+        /// <param name="endAddress">End address for scan (or long.MaxValue for tailing).</param>
+        /// <param name="name">Name of iterator, if we need to persist/recover it (default null - do not persist).</param>
+        /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
         /// <returns></returns>
-        public FasterLogScanIterator Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
         {
-            return new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize);
+            FasterLogScanIterator iter;
+            if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
+                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name);
+            else
+                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name);
+
+            if (name != null)
+            {
+                if (name.Length > 20)
+                    throw new Exception("Max length of iterator name is 20 characters");
+                if (FasterLogScanIterator.PersistedIterators.ContainsKey(name))
+                    Debug.WriteLine("Iterator name exists, overwriting");
+                FasterLogScanIterator.PersistedIterators[name] = iter;
+            }
+
+            return iter;
         }
 
         /// <summary>
@@ -667,6 +685,7 @@ namespace FASTER.core
                     BeginAddress = commitInfo.BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress
                 };
+                info.PopulateIterators();
 
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
                 CommittedBeginAddress = info.BeginAddress;
@@ -695,8 +714,9 @@ namespace FASTER.core
         /// <summary>
         /// Restore log
         /// </summary>
-        private void Restore()
+        private void Restore(out Dictionary<string, long> recoveredIterators)
         {
+            recoveredIterators = null;
             FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
             var commitInfo = logCommitManager.GetCommitMetadata();
 
@@ -709,6 +729,8 @@ namespace FASTER.core
 
             var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
             if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
+
+            recoveredIterators = info.Iterators;
 
             allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
             CommittedUntilAddress = info.FlushedUntilAddress;
@@ -840,10 +862,10 @@ namespace FASTER.core
             }
             else
             {
-                // May need to commit begin address
+                // May need to commit begin address and/or iterators
                 epoch.Suspend();
                 var beginAddress = allocator.BeginAddress;
-                if (beginAddress > CommittedBeginAddress)
+                if (beginAddress > CommittedBeginAddress || FasterLogScanIterator.PersistedIterators.Count > 0)
                     CommitCallback(new CommitInfo { BeginAddress = beginAddress,
                         FromAddress = CommittedUntilAddress,
                         UntilAddress = CommittedUntilAddress,
