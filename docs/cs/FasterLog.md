@@ -1,6 +1,6 @@
 ---
 layout: default
-title: FasterLog - a fast concurrent write-ahead log and tailing iterator
+title: FasterLog persistent log in C#
 nav_order: 3
 permalink: /docs/fasterlog
 ---
