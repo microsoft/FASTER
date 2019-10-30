@@ -26,7 +26,7 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<long> flushCallback = null)
+        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
             values = new byte[BufferSize][];
@@ -335,6 +335,7 @@ namespace FASTER.core
         /// <param name="devicePageOffset"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
+        /// <param name="cts"></param>
         internal void AsyncReadPagesFromDeviceToFrame<TContext>(
                                         long readPageStart,
                                         int numPages,
@@ -344,7 +345,9 @@ namespace FASTER.core
                                         BlittableFrame frame,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
+                                        IDevice device = null,
+                                        IDevice objectLogDevice = null,
+                                        CancellationTokenSource cts = null)
         {
             var usedDevice = device;
             IDevice usedObjlogDevice = objectLogDevice;
@@ -371,7 +374,8 @@ namespace FASTER.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    frame = frame
+                    frame = frame,
+                    cts = cts
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);

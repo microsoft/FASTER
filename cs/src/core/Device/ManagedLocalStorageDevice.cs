@@ -79,14 +79,16 @@ namespace FASTER.core
 
         class ReadCallbackWrapper
         {
+            readonly Stream logHandle;
             readonly IOCompletionCallback callback;
             readonly IAsyncResult asyncResult;
             SectorAlignedMemory memory;
             readonly IntPtr destinationAddress;
             readonly uint readLength;
 
-            public ReadCallbackWrapper(IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, IntPtr destinationAddress, uint readLength)
+            public ReadCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, IntPtr destinationAddress, uint readLength)
             {
+                this.logHandle = logHandle;
                 this.callback = callback;
                 this.asyncResult = asyncResult;
                 this.memory = memory;
@@ -96,34 +98,56 @@ namespace FASTER.core
 
             public unsafe void Callback(IAsyncResult result)
             {
-                fixed (void* source = memory.buffer)
+                uint errorCode = 0;
+                try
                 {
-                    Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
+                    logHandle.EndRead(result);
+                    fixed (void* source = memory.buffer)
+                    {
+                        Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
+                    }
                 }
+                catch
+                {
+                    errorCode = 1;
+                }
+
                 memory.Return();
                 Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                callback(0, 0, ov.UnsafePack(callback, IntPtr.Zero));
+                callback(errorCode, 0, ov.UnsafePack(callback, IntPtr.Zero));
             }
         }
 
         class WriteCallbackWrapper
         {
+            readonly Stream logHandle;
             readonly IOCompletionCallback callback;
             readonly IAsyncResult asyncResult;
             SectorAlignedMemory memory;
 
-            public WriteCallbackWrapper(IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory)
+            public WriteCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory)
             {
                 this.callback = callback;
                 this.asyncResult = asyncResult;
                 this.memory = memory;
+                this.logHandle = logHandle;
             }
 
             public unsafe void Callback(IAsyncResult result)
             {
+                uint errorCode = 0;
+                try
+                {
+                    logHandle.EndWrite(result);
+                }
+                catch
+                {
+                    errorCode = 1;
+                }
+                        
                 memory.Return();
                 Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                callback(0, 0, ov.UnsafePack(callback, IntPtr.Zero));
+                callback(errorCode, 0, ov.UnsafePack(callback, IntPtr.Zero));
             }
         }
 
@@ -146,7 +170,7 @@ namespace FASTER.core
             var memory = pool.Get((int)readLength);
             logHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
             logHandle.BeginRead(memory.buffer, 0, (int)readLength,
-                new ReadCallbackWrapper(callback, asyncResult, memory, destinationAddress, readLength).Callback, null);
+                new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength).Callback, null);
         }
 
         /// <summary>
@@ -174,7 +198,7 @@ namespace FASTER.core
             }
             logHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
             logHandle.BeginWrite(memory.buffer, 0, (int)numBytesToWrite,
-                new WriteCallbackWrapper(callback, asyncResult, memory).Callback, null);
+                new WriteCallbackWrapper(logHandle, callback, asyncResult, memory).Callback, null);
         }
 
         /// <summary>
