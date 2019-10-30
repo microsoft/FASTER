@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -207,7 +208,12 @@ namespace FASTER.core
         /// <summary>
         /// Flush callback
         /// </summary>
-        protected readonly Action<long> FlushCallback = null;
+        protected readonly Action<CommitInfo> FlushCallback = null;
+
+        /// <summary>
+        /// Error handling
+        /// </summary>
+        private readonly ErrorList errorList = new ErrorList();
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -459,7 +465,7 @@ namespace FASTER.core
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<long> flushCallback)
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
         {
             if (evictCallback != null)
             {
@@ -1010,7 +1016,24 @@ namespace FASTER.core
             {
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    FlushCallback?.Invoke(FlushedUntilAddress);
+                    uint errorCode = 0;
+                    if (errorList.Count > 0)
+                    {
+                        errorCode = errorList.CheckAndWait(oldFlushedUntilAddress, currentFlushedUntilAddress);
+                    }
+                    FlushCallback?.Invoke(
+                        new CommitInfo
+                        {
+                            BeginAddress = BeginAddress,
+                            FromAddress = oldFlushedUntilAddress,
+                            UntilAddress = currentFlushedUntilAddress,
+                            ErrorCode = errorCode
+                        });
+
+                    if (errorList.Count > 0)
+                    {
+                        errorList.RemoveUntil(currentFlushedUntilAddress);
+                    }
                 }
             }
         }
@@ -1163,7 +1186,7 @@ namespace FASTER.core
                                 IDevice logDevice = null, IDevice objectLogDevice = null)
         {
             AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context,
-                out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
+                out _, devicePageOffset, logDevice, objectLogDevice);
         }
 
         /// <summary>
@@ -1446,6 +1469,8 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
+        // static DateTime last = DateTime.Now;
+
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>
@@ -1459,12 +1484,25 @@ namespace FASTER.core
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
+            /*
+            if (DateTime.Now - last > TimeSpan.FromSeconds(7))
+            {
+                last = DateTime.Now;
+                errorCode = 1;
+                Console.WriteLine("Disk error");
+            }*/
+            
+
             // Set the page status to flushed
             PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out long old);
+                if (errorCode != 0)
+                {
+                    errorList.Add(result.fromAddress);
+                }
+                Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                 ShiftFlushedUntilAddress();
                 result.Free();
             }
