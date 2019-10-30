@@ -110,14 +110,17 @@ using (iter = log.Scan(log.BeginAddress, 100_000_000))
 ```
 
 Scan using traditional GetNext. Note that GetNext may return false either because we have reached the
-end of iteration, or because we are waiting for a page read to complete.
+end of iteration, or because we are waiting for a page read or commit to complete.
 
 ```cs
-  using (var iter = log.Scan(0, long.MaxValue))
+  using (var iter = log.Scan(0, 100_000_000))
     while (true)
     {
        while (!iter.GetNext(out Span<byte> result))
+       {
+          if (iter.CurrentAddress >= 100_000_000) return;
           await iter.WaitAsyc();
+       }
        // Process record
     }
 ```
