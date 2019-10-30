@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>netcoreapp2.2</TargetFramework>
     <Platforms>x64</Platforms>
+    <LangVersion>preview</LangVersion>
     <RuntimeIdentifiers>win7-x64;linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 

@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Buffers;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -81,12 +82,54 @@ namespace FASTER.core
 
         }
 
+#if DOTNETCORE
+        /// <summary>
+        /// Async enumerable for iterator
+        /// </summary>
+        /// <returns>Entry and entry length</returns>
+        public async IAsyncEnumerable<(byte[], int)> GetAsyncEnumerable()
+        {
+            while (true)
+            {
+                byte[] result;
+                int length;
+                while (!GetNext(out result, out length))
+                {
+                    if (currentAddress >= endAddress)
+                        yield break;
+                    await WaitAsync();
+                }
+                yield return (result, length);
+            }
+        }
+
+        /// <summary>
+        /// Async enumerable for iterator (memory pool based version)
+        /// </summary>
+        /// <returns>Entry and entry length</returns>
+        public async IAsyncEnumerable<(IMemoryOwner<byte>, int)> GetAsyncEnumerable(MemoryPool<byte> pool)
+        {
+            while (true)
+            {
+                IMemoryOwner<byte> result;
+                int length;
+                while (!GetNext(pool, out result, out length))
+                {
+                    if (currentAddress >= endAddress)
+                        yield break;
+                    await WaitAsync();
+                }
+                yield return (result, length);
+            }
+        }
+#endif
+
         /// <summary>
         /// Wait for iteration to be ready to continue
         /// </summary>
         /// <returns></returns>
         public async ValueTask WaitAsync()
-        {
+        { 
             while (true)
             {
                 var commitTask = fasterLog.CommitTask;

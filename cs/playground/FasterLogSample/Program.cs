@@ -38,11 +38,9 @@ namespace FasterLogSample
                 new Thread(new ThreadStart(LogWriterThread)).Start();
 
                 // Threads for scan, reporting, commit
-                var t1 = new Thread(new ThreadStart(ScanThread));
-                var t2 = new Thread(new ThreadStart(ReportThread));
-                var t3 = new Thread(new ThreadStart(CommitThread));
-                t1.Start(); t2.Start(); t3.Start();
-                t1.Join(); t2.Join(); t3.Join();
+                new Thread(new ThreadStart(ScanThread)).Start();
+                new Thread(new ThreadStart(ReportThread)).Start();
+                new Thread(new ThreadStart(CommitThread)).Start();
             }
             else
             {
@@ -64,14 +62,14 @@ namespace FasterLogSample
                     tasks[i] = Task.Run(() => AsyncLogWriter(local));
                 }
 
-                // Threads for scan, reporting, commit
-                var t1 = new Thread(new ThreadStart(ScanThread));
-                var t2 = new Thread(new ThreadStart(ReportThread));
-                var t3 = new Thread(new ThreadStart(CommitThread));
-                t1.Start(); t2.Start(); t3.Start();
-                t1.Join(); t2.Join(); t3.Join();
+                var scan = Task.Run(() => AsyncScan());
+
+                // Threads for reporting, commit
+                new Thread(new ThreadStart(ReportThread)).Start();
+                new Thread(new ThreadStart(CommitThread)).Start();
 
                 Task.WaitAll(tasks);
+                Task.WaitAll(scan);
             }
         }
 
@@ -149,6 +147,8 @@ namespace FasterLogSample
                 {
                     while (!iter.GetNext(out result, out int length))
                     {
+                        // For finite end address, check if iteration ended
+                        // if (iter.CurrentAddress >= endAddress) return; 
                         iter.WaitAsync().GetAwaiter().GetResult();
                     }
 
@@ -156,12 +156,7 @@ namespace FasterLogSample
                     // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length))
 
                     if (Different(result, staticEntry, out int location))
-                    { 
-                        if (result.Length != staticEntry.Length)
-                            throw new Exception("Invalid entry found, expected length " + staticEntry.Length + ", actual length " + result.Length);
-                        else
-                            throw new Exception("Invalid entry found at offset " + location);
-                    }
+                        throw new Exception("Invalid entry found");
 
                     // Re-insert entry with small probability
                     if (r.Next(100) < 10)
@@ -175,6 +170,17 @@ namespace FasterLogSample
                     log.TruncateUntil(iter.NextAddress);
                 }
             }
+        }
+
+        static async Task AsyncScan()
+        {
+            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
+                await foreach ((byte[] result, int length) in iter.GetAsyncEnumerable())
+                {
+                    if (Different(result, staticEntry, out int location))
+                        throw new Exception("Invalid entry found");
+                    log.TruncateUntil(iter.NextAddress);
+                }
         }
 
         static void ReportThread()
