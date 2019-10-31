@@ -22,6 +22,7 @@ namespace FASTER.core
         internal IOCompletionCallback callback;
         internal IDevice objlogDevice;
         internal object frame;
+        internal CancellationTokenSource cts;
 
         /* Used for iteration */
         internal long resumePtr;

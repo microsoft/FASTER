@@ -24,9 +24,10 @@ namespace FASTER.core
         /// <summary>
         /// Perform (synchronous) commit with specified metadata
         /// </summary>
-        /// <param name="address">Address committed until (for information only, not necessary to persist)</param>
+        /// <param name="beginAddress">Committed begin address (for information only, not necessary to persist)</param>
+        /// <param name="untilAddress">Address committed until (for information only, not necessary to persist)</param>
         /// <param name="commitMetadata">Commit metadata</param>
-        public void Commit(long address, byte[] commitMetadata)
+        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
         {
             // Two phase to ensure we write metadata in single Write operation
             using (var ms = new MemoryStream())

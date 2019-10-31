@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -176,6 +177,7 @@ namespace FASTER.core
 
         // Array that indicates the status of each buffer page
         internal readonly FullPageStatus[] PageStatusIndicator;
+        internal readonly PendingFlushList[] PendingFlush;
 
         /// <summary>
         /// Global address of the current tail (next element to be allocated from the circular buffer) 
@@ -206,7 +208,12 @@ namespace FASTER.core
         /// <summary>
         /// Flush callback
         /// </summary>
-        protected readonly Action<long> FlushCallback = null;
+        protected readonly Action<CommitInfo> FlushCallback = null;
+
+        /// <summary>
+        /// Error handling
+        /// </summary>
+        private readonly ErrorList errorList = new ErrorList();
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -458,7 +465,7 @@ namespace FASTER.core
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<long> flushCallback)
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
         {
             if (evictCallback != null)
             {
@@ -514,6 +521,9 @@ namespace FASTER.core
             }
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
+            PendingFlush = new PendingFlushList[BufferSize];
+            for (int i = 0; i < BufferSize; i++)
+                PendingFlush[i] = new PendingFlushList();
 
             device = settings.LogDevice;
             sectorSize = (int)device.SectorSize;
@@ -770,7 +780,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="tailAddress"></param>
         /// <param name="notifyDone"></param>
-        public void ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
+        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
         {
             notifyDone = null;
             tailAddress = GetTailAddress();
@@ -782,7 +792,9 @@ namespace FASTER.core
                 notifyDone = notifyFlushedUntilAddressSemaphore;
                 notifyFlushedUntilAddress = localTailAddress;
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress));
+                return true;
             }
+            return false;
         }
 
         /// <summary>
@@ -806,24 +818,32 @@ namespace FASTER.core
         public void ShiftBeginAddress(long newBeginAddress)
         {
             // First update the begin address
-            Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
+            var b = Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
+            b = b && (oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits);
+
             // Then the head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
+
             // Finally the read-only address
             var r = Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
 
-            // Clean up until begin address
-            epoch.BumpCurrentEpoch(() =>
+            if (h || r || b)
             {
-                if (r)
+                epoch.Resume();
+                // Clean up until begin address
+                epoch.BumpCurrentEpoch(() =>
                 {
-                    Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
-                    Utility.MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
-                }
-                if (h) OnPagesClosed(newBeginAddress);
+                    if (r)
+                    {
+                        Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
+                        Utility.MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
+                    }
+                    if (h) OnPagesClosed(newBeginAddress);
 
-                TruncateUntilAddress(newBeginAddress);
-            });
+                    if (b) TruncateUntilAddress(newBeginAddress);
+                });
+                epoch.Suspend();
+            }
         }
 
         /// <summary>
@@ -1001,7 +1021,25 @@ namespace FASTER.core
             {
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    FlushCallback?.Invoke(FlushedUntilAddress);
+                    uint errorCode = 0;
+                    if (errorList.Count > 0)
+                    {
+                        errorCode = errorList.CheckAndWait(oldFlushedUntilAddress, currentFlushedUntilAddress);
+                    }
+                    FlushCallback?.Invoke(
+                        new CommitInfo
+                        {
+                            BeginAddress = BeginAddress,
+                            FromAddress = oldFlushedUntilAddress,
+                            UntilAddress = currentFlushedUntilAddress,
+                            ErrorCode = errorCode
+                        });
+
+                    if (errorList.Count > 0)
+                    {
+                        errorList.RemoveUntil(currentFlushedUntilAddress);
+                    }
+
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                     {
                         notifyFlushedUntilAddressSemaphore.Release();
@@ -1120,6 +1158,33 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Read record to memory - simple version
+        /// </summary>
+        /// <param name="fromLogical"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="callback"></param>
+        /// <param name="context"></param>
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, ref SimpleReadContext context)
+        {
+            ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
+            ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
+
+            uint alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
+            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
+
+            context.record = bufferPool.Get((int)alignedReadLength);
+            context.record.valid_offset = (int)(fileOffset - alignedFileOffset);
+            context.record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
+            context.record.required_bytes = numBytes;
+
+            device.ReadAsync(alignedFileOffset,
+                        (IntPtr)context.record.aligned_pointer,
+                        alignedReadLength,
+                        callback,
+                        context);
+        }
+
+        /// <summary>
         /// Read pages from specified device
         /// </summary>
         /// <typeparam name="TContext"></typeparam>
@@ -1141,7 +1206,7 @@ namespace FASTER.core
                                 IDevice logDevice = null, IDevice objectLogDevice = null)
         {
             AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context,
-                out CountdownEvent completed, devicePageOffset, logDevice, objectLogDevice);
+                out _, devicePageOffset, logDevice, objectLogDevice);
         }
 
         /// <summary>
@@ -1227,23 +1292,11 @@ namespace FASTER.core
             int numPages = (int)(endPage - startPage);
 
             long offsetInStartPage = GetOffsetInPage(fromAddress);
-            long offsetInEndPage = GetOffsetInPage(untilAddress);
-
+            long offsetInEndPage = GetOffsetInPage(untilAddress);                
 
             // Extra (partial) page being flushed
             if (offsetInEndPage > 0)
                 numPages++;
-
-            // Partial page starting point, need to wait until the
-            // ongoing adjacent flush is completed to ensure correctness
-            if (offsetInStartPage > 0)
-            {
-                while (FlushedUntilAddress < fromAddress)
-                {
-                    epoch.ProtectAndDrain();
-                    Thread.Yield();
-                }
-            }
 
             /* Request asynchronous writes to the device. If waitForPendingFlushComplete
              * is set, then a CountDownEvent is set in the callback handle.
@@ -1275,7 +1328,20 @@ namespace FASTER.core
                         asyncResult.fromAddress = fromAddress;
                 }
 
-                WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+                // Partial page starting point, need to wait until the
+                // ongoing adjacent flush is completed to ensure correctness
+                if (GetOffsetInPage(asyncResult.fromAddress) > 0)
+                {
+                    // Enqueue work in shared queue
+                    var index = GetPageIndexForAddress(asyncResult.fromAddress);
+                    PendingFlush[index].Add(asyncResult);
+                    if (PendingFlush[index].RemoveAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
+                    {
+                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                    }
+                }
+                else
+                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
             }
         }
 
@@ -1423,6 +1489,8 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
+        // static DateTime last = DateTime.Now;
+
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>
@@ -1436,14 +1504,33 @@ namespace FASTER.core
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
+            /*
+            if (DateTime.Now - last > TimeSpan.FromSeconds(7))
+            {
+                last = DateTime.Now;
+                errorCode = 1;
+                Console.WriteLine("Disk error");
+            }*/
+            
+
             // Set the page status to flushed
             PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out long old);
+                if (errorCode != 0)
+                {
+                    errorList.Add(result.fromAddress);
+                }
+                Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                 ShiftFlushedUntilAddress();
                 result.Free();
+            }
+
+            var _flush = FlushedUntilAddress;
+            if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+            {
+                WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
             }
 
             Overlapped.Free(overlap);
@@ -1489,6 +1576,11 @@ namespace FASTER.core
         public virtual void ShallowCopy(ref Value src, ref Value dst)
         {
             dst = src;
+        }
+
+        private string PrettyPrint(long address)
+        {
+            return $"{GetPage(address)}:{GetOffsetInPage(address)}";
         }
     }
 }

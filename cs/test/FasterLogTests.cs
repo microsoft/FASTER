@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
@@ -15,7 +16,7 @@ namespace FASTER.test
     internal class FasterLogTests
     {
         const int entryLength = 100;
-        const int numEntries = 100;
+        const int numEntries = 1000000;
         private FasterLog log;
         private IDevice device;
 
@@ -36,10 +37,9 @@ namespace FASTER.test
         }
 
         [Test]
-        public void FasterLogTest1()
+        public void FasterLogTest1([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
-            log.AcquireThread();
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum });
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -47,9 +47,9 @@ namespace FASTER.test
 
             for (int i = 0; i < numEntries; i++)
             {
-                log.Append(entry);
+                log.Enqueue(entry);
             }
-            log.FlushAndCommit(true);
+            log.Commit(true);
 
             using (var iter = log.Scan(0, long.MaxValue))
             {
@@ -64,16 +64,15 @@ namespace FASTER.test
                 Assert.IsTrue(count == numEntries);
             }
 
-            log.ReleaseThread();
             log.Dispose();
         }
 
         [Test]
-        public async Task FasterLogTest2()
+        public async Task FasterLogTest2([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum });
             byte[] data1 = new byte[10000];
-            for (int i = 00; i < 10000; i++) data1[i] = (byte)i;
+            for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
 
             using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
             {
@@ -83,10 +82,10 @@ namespace FASTER.test
                     var waitingReader = iter.WaitAsync();
                     Assert.IsTrue(!waitingReader.IsCompleted);
 
-                    while (!log.TryAppend(data1, out _)) ;
+                    while (!log.TryEnqueue(data1, out _)) ;
                     Assert.IsFalse(waitingReader.IsCompleted);
 
-                    await log.FlushAndCommitAsync();
+                    await log.CommitAsync();
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
@@ -98,6 +97,113 @@ namespace FASTER.test
                     Assert.IsFalse(next);
                 }
             }
+            log.Dispose();
+        }
+
+        [Test]
+        public async Task FasterLogTest3([Values]LogChecksumType logChecksum)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum });
+            byte[] data1 = new byte[10000];
+            for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
+
+            using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            {
+                var appendResult = log.TryEnqueue(data1, out _);
+                Assert.IsTrue(appendResult);
+                await log.CommitAsync();
+                await iter.WaitAsync();
+                var iterResult = iter.GetNext(out byte[] entry, out _);
+                Assert.IsTrue(iterResult);
+
+                appendResult = log.TryEnqueue(data1, out _);
+                Assert.IsFalse(appendResult);
+                await iter.WaitAsync();
+
+                // Should read the "hole" and return false
+                iterResult = iter.GetNext(out entry, out _);
+                Assert.IsFalse(iterResult);
+
+                // Should wait for next item
+                var task = iter.WaitAsync();
+                Assert.IsFalse(task.IsCompleted);
+
+                appendResult = log.TryEnqueue(data1, out _);
+                Assert.IsTrue(appendResult);
+                await log.CommitAsync();
+
+                await task;
+                iterResult = iter.GetNext(out entry, out _);
+                Assert.IsTrue(iterResult);
+            }
+            log.Dispose();
+        }
+
+        [Test]
+        public async Task FasterLogTest4([Values]LogChecksumType logChecksum)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum });
+            byte[] data1 = new byte[100];
+            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
+
+            for (int i=0; i<100; i++)
+            {
+                log.Enqueue(data1);
+            }
+
+            Assert.IsTrue(log.CommittedUntilAddress == log.BeginAddress);
+            await log.CommitAsync();
+
+            Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
+            Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
+
+            using (var iter = log.Scan(0, long.MaxValue))
+            {
+                // Should read the "hole" and return false
+                var iterResult = iter.GetNext(out byte[] entry, out _);
+                log.TruncateUntil(iter.NextAddress);
+
+                Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
+                Assert.IsTrue(log.CommittedBeginAddress < log.BeginAddress);
+                Assert.IsTrue(iter.NextAddress == log.BeginAddress);
+
+                await log.CommitAsync();
+
+                Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
+                Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
+            }
+            log.Dispose();
+        }
+
+        [Test]
+        public async Task FasterLogTest5([Values]LogChecksumType logChecksum)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum });
+
+            int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
+            bool _disposed = false;
+            var commit = new Thread(() => { while (!_disposed) { log.Commit(true); Thread.Sleep(1); } });
+
+            commit.Start();
+
+            // 65536=page size|headerSize|64=log header
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+            _disposed = true;
+
+            commit.Join();
             log.Dispose();
         }
     }
