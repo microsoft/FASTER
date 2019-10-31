@@ -302,7 +302,7 @@ namespace FASTER.core
                         // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                         try
                         {
-                            await task;
+                            await task.WithCancellationAsync(token);
                         }
                         catch when (!token.IsCancellationRequested) { }
                     }
