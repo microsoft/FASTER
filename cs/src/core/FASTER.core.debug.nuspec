@@ -9,7 +9,7 @@
     <projectUrl>https://github.com/microsoft/FASTER</projectUrl>
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <description>Debug version. FASTER is a fast concurrent key-value store and log for larger-than-memory data.</description>
+    <description>Debug version. FASTER is a fast concurrent persistent log and key-value store for larger-than-memory data.</description>
     <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details.</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
@@ -26,6 +26,7 @@
         <dependency id="System.Memory" version="4.5.3" />
         <dependency id="System.Threading.Tasks.Extensions" version="4.5.3" />
         <dependency id="System.ValueTuple" version="4.5.0" />
+        <dependency id="System.Interactive.Async" version="4.0.0" />
       </group>
     </dependencies>
   </metadata>
