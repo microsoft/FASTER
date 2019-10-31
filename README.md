@@ -40,14 +40,11 @@ NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded se
 
 # Getting Started
 
-Visit our [research website](http://aka.ms/FASTER) for technical details and papers.
+Visit our [research website](http://aka.ms/FASTER) for technical details and papers. For FASTER usage and 
+getting started information, head over to our [GitHub Pages](https://microsoft.github.io/FASTER) website. A 
+detailed guide to getting started with FASTER KV C# is also available in the repository at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER C# binaries are available via [NuGet](https://www.nuget.org/packages/Microsoft.FASTER/).
 
-:new: For FASTER usage and getting started information, head over to our 
-[GitHub Pages](https://microsoft.github.io/FASTER) website. A detailed guide to getting started with FASTER KV
-C# is also available in the repository at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER 
-C# binaries are available via [NuGet](https://www.nuget.org/packages/Microsoft.FASTER/).
-
-:new: You can take a look at the project roadmap [here](https://microsoft.github.io/FASTER/roadmap).
+You can take a look at the project roadmap [here](https://microsoft.github.io/FASTER/roadmap).
 
 # Build and Test
 
