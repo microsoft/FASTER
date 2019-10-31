@@ -87,6 +87,8 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
+            base.Dispose();
+
             if (values != null)
             {
                 for (int i = 0; i < values.Length; i++)
@@ -99,7 +101,6 @@ namespace FASTER.core
             handles = null;
             pointers = null;
             values = null;
-            base.Dispose();
         }
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)

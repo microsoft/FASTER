@@ -29,6 +29,7 @@ namespace FASTER.core
         private readonly LightEpoch epoch;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
+        private bool disposed = false;
         private long currentAddress, nextAddress;
         
         /// <summary>
@@ -224,7 +225,26 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            if (frame != null)
+            {
+                // Wait for ongoing reads to complete/fail
+                for (int i = 0; i < loaded.Length; i++)
+                {
+                    if (loadedPage[i] != -1)
+                    {
+                        try
+                        {
+                            loaded[i].Wait(loadedCancel[i].Token);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            disposed = true;
+
+            // Dispose/unpin the frame from memory
             frame?.Dispose();
+
             if (name != null)
                 PersistedIterators.TryRemove(name, out _);
         }
@@ -281,27 +301,38 @@ namespace FASTER.core
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
-
-            if (errorCode != 0)
+            try
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                result.cts?.Cancel();
-            }
+                var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
-            if (result.freeBuffer1 != null)
-            {
+                if (errorCode != 0)
+                {
+                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                    result.cts?.Cancel();
+                }
+
+                if (result.freeBuffer1 != null)
+                {
+                    if (errorCode == 0)
+                        allocator.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                    result.freeBuffer1.Return();
+                    result.freeBuffer1 = null;
+                }
+
                 if (errorCode == 0)
-                    allocator.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
-                result.freeBuffer1.Return();
-                result.freeBuffer1 = null;
+                    result.handle?.Signal();
+
+                Interlocked.MemoryBarrier();
             }
-
-            if (errorCode == 0)
-                result.handle?.Signal();
-
-            Interlocked.MemoryBarrier();
-            Overlapped.Free(overlap);
+            catch
+            {
+                if (!disposed)
+                    throw;
+            }
+            finally
+            {
+                Overlapped.Free(overlap);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
