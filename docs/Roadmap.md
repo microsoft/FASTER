@@ -73,6 +73,14 @@ Completed items are included to provide the context and progress of the work.
 
 ## Release Notes
 
+#### FASTER v2019.10.31.1
+
+* [x] Support for **FasterLog** as an independent first-class abstraction: [PR](https://github.com/microsoft/FASTER/pull/177)
+* [x] Reduced log memory footprint significantly (min pages in memory reduced to 1)
+* [x] Improved performance of fine-grained epoch protection
+* [x] Support per-entry checksums and persistent iterators in FasterLog
+* [x] Full support for async interface to FasterLog
+
 #### FASTER v2019.8.27.1
 
 * [x] Improved support for varlen blittable allocator (iteration, compaction): [PR](https://github.com/microsoft/FASTER/pull/164)
