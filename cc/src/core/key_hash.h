@@ -23,6 +23,7 @@ struct KeyHash {
 
   KeyHash& operator=(const KeyHash& other) {
     control_ = other.control_;
+    return *this;
   }
 
   /// Truncate the key hash's address to get the page_index into a hash table of specified size.

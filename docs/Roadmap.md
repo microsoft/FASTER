@@ -49,6 +49,11 @@ Completed items are included to provide the context and progress of the work.
 * [x] Support for cloud storage, starting with Azure Page Blobs: [PR](https://github.com/Microsoft/FASTER/pull/147)
 * [x] Support for tiered storage: [PR](https://github.com/Microsoft/FASTER/pull/151)
 * [x] Support for sharded storage: [PR](https://github.com/microsoft/FASTER/pull/162)
+* [x] Support for **FasterLog** as an independent first-class abstraction: [PR](https://github.com/microsoft/FASTER/pull/177)
+* [x] Reduced log memory footprint significantly (min pages in memory reduced to 1)
+* [x] Improved performance of fine-grained epoch protection
+* [x] Support per-entry checksums and persistent iterators in FasterLog
+* [x] Full support for async interface to FasterLog
 
 #### Checkpoint and Recovery
 

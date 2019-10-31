@@ -14,124 +14,13 @@ namespace FasterLogSample
         // Entry length can be between 1 and ((1 << FasterLogSettings.PageSizeBits) - 4)
         const int entryLength = 1 << 10;
         static readonly byte[] staticEntry = new byte[entryLength];
-        static readonly SpanBatch spanBatch = new SpanBatch(10);
         static FasterLog log;
-
-        static void ReportThread()
-        {
-            long lastTime = 0;
-            long lastValue = log.TailAddress;
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
-
-            while (true)
-            {
-                Thread.Sleep(5000);
-                var nowTime = sw.ElapsedMilliseconds;
-                var nowValue = log.TailAddress;
-
-                Console.WriteLine("Throughput: {0} MB/sec, Tail: {1}",
-                    (nowValue - lastValue) / (1000 * (nowTime - lastTime)), nowValue);
-                lastTime = nowTime;
-                lastValue = nowValue;
-            }
-        }
-
-        static void CommitThread()
-        {
-            while (true)
-            {
-                Thread.Sleep(5);
-                log.FlushAndCommit(true);
-
-                // Async version
-                // await Task.Delay(5);
-                // await log.FlushAndCommitAsync();
-            }
-        }
-
-        static void AppendThread()
-        {
-            while (true)
-            {
-                // TryAppend - can be used with throttling/back-off
-                // Accepts byte[] and Span<byte>
-                while (!log.TryAppend(staticEntry, out _)) ;
-
-                // Synchronous blocking append
-                // Accepts byte[] and Span<byte>
-                // log.Append(entry);
-
-                // Batched append - batch must fit on one page
-                // while (!log.TryAppend(spanBatch, out _)) ;
-            }
-        }
-
-        static void ScanThread()
-        {
-            Random r = new Random();
-
-            Thread.Sleep(5000);
-
-            byte[] entry = new byte[entryLength];
-            for (int i = 0; i < entryLength; i++)
-            {
-                entry[i] = (byte)i;
-            }
-
-            var entrySpan = new Span<byte>(entry);
-
-            long lastAddress = 0;
-            Span<byte> result;
-            using (var iter = log.Scan(0, long.MaxValue))
-            {
-                while (true)
-                {
-                    while (!iter.GetNext(out result))
-                    {
-                        Thread.Sleep(1000);
-                    }
-
-                    if (!result.SequenceEqual(entrySpan))
-                    {
-                        if (result.Length != entrySpan.Length)
-                            throw new Exception("Invalid entry found, expected length " + entrySpan.Length + ", actual length " + result.Length);
-                        else
-                            throw new Exception("Invalid entry found at offset " + FindDiff(result, entrySpan));
-                    }
-
-                    // Re-insert entry with small probability
-                    if (r.Next(100) < 10)
-                    {
-                        log.Append(result);
-                    }
-
-                    if (iter.CurrentAddress - lastAddress > 500_000_000)
-                    {
-                        log.TruncateUntil(iter.CurrentAddress);
-                        lastAddress = iter.CurrentAddress;
-                    }
-                }
-            }
-        }
-
-        private static int FindDiff(Span<byte> b1, Span<byte> b2)
-        {
-            for (int i = 0; i < b1.Length; i++)
-            {
-                if (b1[i] != b2[i])
-                {
-                    return i;
-                }
-            }
-            return 0;
-        }
+        static FasterLogScanIterator iter;
 
         /// <summary>
         /// Main program entry point
         /// </summary>
-        /// <param name="args"></param>
-        static void Main(string[] args)
+        static void Main()
         {
             bool sync = true;
             var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
@@ -145,15 +34,13 @@ namespace FasterLogSample
 
             if (sync)
             {
-                // Append thread: create as many as needed
-                new Thread(new ThreadStart(AppendThread)).Start();
+                // Log writer thread: create as many as needed
+                new Thread(new ThreadStart(LogWriterThread)).Start();
 
                 // Threads for scan, reporting, commit
-                var t1 = new Thread(new ThreadStart(ScanThread));
-                var t2 = new Thread(new ThreadStart(ReportThread));
-                var t3 = new Thread(new ThreadStart(CommitThread));
-                t1.Start(); t2.Start(); t3.Start();
-                t1.Join(); t2.Join(); t3.Join();
+                new Thread(new ThreadStart(ScanThread)).Start();
+                new Thread(new ThreadStart(ReportThread)).Start();
+                new Thread(new ThreadStart(CommitThread)).Start();
             }
             else
             {
@@ -172,21 +59,44 @@ namespace FasterLogSample
                 for (int i = 0; i < NumParallelTasks; i++)
                 {
                     int local = i;
-                    tasks[i] = Task.Run(() => AppendAsync(local));
+                    tasks[i] = Task.Run(() => AsyncLogWriter(local));
                 }
 
-                // Threads for scan, reporting, commit
-                var t1 = new Thread(new ThreadStart(ScanThread));
-                var t2 = new Thread(new ThreadStart(ReportThread));
-                var t3 = new Thread(new ThreadStart(CommitThread));
-                t1.Start(); t2.Start(); t3.Start();
-                t1.Join(); t2.Join(); t3.Join();
+                var scan = Task.Run(() => AsyncScan());
+
+                // Threads for reporting, commit
+                new Thread(new ThreadStart(ReportThread)).Start();
+                new Thread(new ThreadStart(CommitThread)).Start();
 
                 Task.WaitAll(tasks);
+                Task.WaitAll(scan);
             }
         }
 
-        static async Task AppendAsync(int id)
+
+        static void LogWriterThread()
+        {
+            while (true)
+            {
+                // TryEnqueue - can be used with throttling/back-off
+                // Accepts byte[] and ReadOnlySpan<byte>
+                while (!log.TryEnqueue(staticEntry, out _)) ;
+
+                // Synchronous blocking enqueue
+                // Accepts byte[] and ReadOnlySpan<byte>
+                // log.Enqueue(entry);
+
+                // Batched enqueue - batch must fit on one page
+                // Add this to class:
+                //   static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10);
+                // while (!log.TryEnqueue(spanBatch, out _)) ;
+            }
+        }
+
+        /// <summary>
+        /// Async version of enqueue
+        /// </summary>
+        static async Task AsyncLogWriter(int id)
         {
             bool batched = false;
 
@@ -194,28 +104,30 @@ namespace FasterLogSample
 
             if (!batched)
             {
-                // Unbatched version - append each item with commit
+                // Single commit version - append each item and wait for commit
                 // Needs high parallelism (NumParallelTasks) for perf
+                // Needs separate commit thread to perform regular commit
+                // Otherwise we commit only at page boundaries
                 while (true)
                 {
                     try
                     {
-                        await log.AppendAsync(staticEntry);
+                        await log.EnqueueAndWaitForCommitAsync(staticEntry);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"{nameof(AppendAsync)}({id}): {ex}");
+                        Console.WriteLine($"{nameof(AsyncLogWriter)}({id}): {ex}");
                     }
                 }
             }
             else
             {
-                // Batched version - we append many entries to memory,
+                // Batched version - we enqueue many entries to memory,
                 // then wait for commit periodically
                 int count = 0;
                 while (true)
                 {
-                    await log.AppendToMemoryAsync(staticEntry);
+                    await log.EnqueueAsync(staticEntry);
                     if (count++ % 100 == 0)
                     {
                         await log.WaitForCommitAsync();
@@ -224,13 +136,132 @@ namespace FasterLogSample
             }
         }
 
-        private struct SpanBatch : ISpanBatch
+        static void ScanThread()
         {
-            private readonly int batchSize;
-            public SpanBatch(int batchSize) => this.batchSize = batchSize;
-            public Span<byte> Get(int index) => staticEntry;
-            public int TotalEntries() => batchSize;
+            Random r = new Random();
+            byte[] result;
+
+            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
+            {
+                while (true)
+                {
+                    while (!iter.GetNext(out result, out int length))
+                    {
+                        // For finite end address, check if iteration ended
+                        // if (iter.CurrentAddress >= endAddress) return; 
+                        iter.WaitAsync().GetAwaiter().GetResult();
+                    }
+
+                    // Memory pool variant:
+                    // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length))
+
+                    if (Different(result, staticEntry, out int location))
+                        throw new Exception("Invalid entry found");
+
+                    // Re-insert entry with small probability
+                    if (r.Next(100) < 10)
+                    {
+                        log.Enqueue(result);
+                    }
+
+                    // Example of random read from given address
+                    // (result, _) = log.ReadAsync(iter.CurrentAddress).GetAwaiter().GetResult();
+
+                    log.TruncateUntil(iter.NextAddress);
+                }
+            }
+
+            // Example of recoverable (named) iterator:
+            // using (iter = log.Scan(log.BeginAddress, long.MaxValue, "foo"))
         }
 
+        static async Task AsyncScan()
+        {
+            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
+                await foreach ((byte[] result, int length) in iter.GetAsyncEnumerable())
+                {
+                    if (Different(result, staticEntry, out int location))
+                        throw new Exception("Invalid entry found");
+                    log.TruncateUntil(iter.NextAddress);
+                }
+        }
+
+        static void ReportThread()
+        {
+            long lastTime = 0;
+            long lastValue = log.TailAddress;
+            long lastIterValue = log.BeginAddress;
+
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
+            while (true)
+            {
+                Thread.Sleep(5000);
+
+                var nowTime = sw.ElapsedMilliseconds;
+                var nowValue = log.TailAddress;
+
+                Console.WriteLine("Append Throughput: {0} MB/sec, Tail: {1}",
+                    (nowValue - lastValue) / (1000 * (nowTime - lastTime)), nowValue);
+                lastValue = nowValue;
+
+                if (iter != null)
+                {
+                    var nowIterValue = iter.CurrentAddress;
+                    Console.WriteLine("Scan Throughput: {0} MB/sec, Iter pos: {1}",
+                        (nowIterValue - lastIterValue) / (1000 * (nowTime - lastTime)), nowIterValue);
+                    lastIterValue = nowIterValue;
+                }
+
+                lastTime = nowTime;
+            }
+        }
+
+        static void CommitThread()
+        {
+            //Task<LinkedCommitInfo> prevCommitTask = null;
+            while (true)
+            {
+                Thread.Sleep(5);
+                log.Commit(true);
+
+                // Async version
+                // await log.CommitAsync();
+
+                // Async version that catches all commit failures in between
+                //try
+                //{
+                //    prevCommitTask = await log.CommitAsync(prevCommitTask);
+                //}
+                //catch (CommitFailureException e)
+                //{
+                //    Console.WriteLine(e);
+                //    prevCommitTask = e.LinkedCommitInfo.nextTcs.Task;
+                //}
+            }
+        }
+
+        private static bool Different(byte[] b1, byte[] b2, out int location)
+        {
+            location = 0;
+            if (b1.Length != b2.Length) return true;
+            for (location = 0; location < b1.Length; location++)
+            {
+                if (b1[location] != b2[location])
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private struct ReadOnlySpanBatch : IReadOnlySpanBatch
+        {
+            private readonly int batchSize;
+            public ReadOnlySpanBatch(int batchSize) => this.batchSize = batchSize;
+            public ReadOnlySpan<byte> Get(int index) => staticEntry;
+            public int TotalEntries() => batchSize;
+        }
     }
 }
