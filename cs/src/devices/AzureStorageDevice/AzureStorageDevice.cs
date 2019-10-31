@@ -25,10 +25,23 @@ namespace FASTER.devices
         private readonly bool deleteOnClose;
 
         // Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
-        private const long MAX_BLOB_SIZE = (long)(2 * 10e8);
+        private const long MAX_BLOB_SIZE = (long) (2 * 10e8);
+
         // Azure Page Blobs have a fixed sector size of 512 bytes.
         private const uint PAGE_BLOB_SECTOR_SIZE = 512;
 
+        public AzureStorageDevice(CloudBlobContainer container, string blobName, bool deleteOnClose = false,
+            long capacity = Devices.CAPACITY_UNSPECIFIED)
+            : base(blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
+        {
+            this.container = container;
+            container.CreateIfNotExists();
+            blobs = new ConcurrentDictionary<int, BlobEntry>();
+            this.blobName = blobName;
+            this.deleteOnClose = deleteOnClose;
+            RecoverBlobs();
+        }
+        
         /// <summary>
         /// Constructs a new AzureStorageDevice instance, backed by Azure Page Blobs
         /// </summary>
@@ -40,17 +53,13 @@ namespace FASTER.devices
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        public AzureStorageDevice(string connectionString, string containerName, string blobName, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
-            : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
+        public AzureStorageDevice(string connectionString, string containerName, string blobName,
+            bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
+            : this(CloudStorageAccount.Parse(connectionString)
+                    .CreateCloudBlobClient()
+                    .GetContainerReference(containerName),
+                blobName, deleteOnClose, capacity)
         {
-            CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);
-            CloudBlobClient client = storageAccount.CreateCloudBlobClient();
-            container = client.GetContainerReference(containerName);
-            container.CreateIfNotExists();
-            blobs = new ConcurrentDictionary<int, BlobEntry>();
-            this.blobName = blobName;
-            this.deleteOnClose = deleteOnClose;
-            RecoverBlobs();
         }
 
         private void RecoverBlobs()
@@ -63,19 +72,20 @@ namespace FASTER.devices
                 if (segmentId != prevSegmentId + 1)
                 {
                     startSegment = segmentId;
-                    
                 }
                 else
                 {
                     endSegment = segmentId;
                 }
+
                 prevSegmentId = segmentId;
             }
 
             for (int i = startSegment; i <= endSegment; i++)
             {
                 bool ret = blobs.TryAdd(i, new BlobEntry(container.GetPageBlobReference(GetSegmentBlobName(i))));
-                Debug.Assert(ret, "Recovery of blobs is single-threaded and should not yield any failure due to concurrency");
+                Debug.Assert(ret,
+                    "Recovery of blobs is single-threaded and should not yield any failure due to concurrency");
             }
         }
 
@@ -113,12 +123,12 @@ namespace FASTER.devices
                     try
                     {
                         pageBlob.EndDelete(ar);
-
                     }
                     catch (Exception)
                     {
                         // Can I do anything else other than printing out an error message?
                     }
+
                     callback(ar);
                 }, result);
             }
@@ -127,18 +137,22 @@ namespace FASTER.devices
         /// <summary>
         /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress,
+            uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // It is up to the allocator to make sure no reads are issued to segments before they are written
-            if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry)) throw new InvalidOperationException("Attempting to read non-existent segments");
+            if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
+                throw new InvalidOperationException("Attempting to read non-existent segments");
 
             // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
 
-            UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength, readLength, FileAccess.Write);
+            UnmanagedMemoryStream stream =
+                new UnmanagedMemoryStream((byte*) destinationAddress, readLength, readLength, FileAccess.Write);
             CloudPageBlob pageBlob = blobEntry.GetPageBlob();
-            pageBlob.BeginDownloadRangeToStream(stream, (Int64)sourceAddress, readLength, ar => {
+            pageBlob.BeginDownloadRangeToStream(stream, (Int64) sourceAddress, readLength, ar =>
+            {
                 try
                 {
                     pageBlob.EndDownloadRangeToStream(ar);
@@ -151,6 +165,7 @@ namespace FASTER.devices
                     // but does not distinguish between them.
                     callback(2, readLength, ovNative);
                 }
+
                 callback(0, readLength, ovNative);
             }, asyncResult);
         }
@@ -158,7 +173,8 @@ namespace FASTER.devices
         /// <summary>
         /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
-        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress,
+            uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
@@ -174,32 +190,38 @@ namespace FASTER.devices
                     // After creation is done, we can call write.
                     entry.CreateAsync(size, pageBlob);
                 }
+
                 // Otherwise, some other thread beat us to it. Okay to use their blobs.
                 blobEntry = blobs[segmentId];
             }
+
             TryWriteAsync(blobEntry, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void TryWriteAsync(BlobEntry blobEntry, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        private void TryWriteAsync(BlobEntry blobEntry, IntPtr sourceAddress, ulong destinationAddress,
+            uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             CloudPageBlob pageBlob = blobEntry.GetPageBlob();
             // If pageBlob is null, it is being created. Attempt to queue the write for the creator to complete after it is done
             if (pageBlob == null
-                && blobEntry.TryQueueAction(p => WriteToBlobAsync(p, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult))) return;
+                && blobEntry.TryQueueAction(p =>
+                    WriteToBlobAsync(p, sourceAddress, destinationAddress, numBytesToWrite, callback,
+                        asyncResult))) return;
 
             // Otherwise, invoke directly.
             WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress,
+            uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
-            UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)sourceAddress, numBytesToWrite);
-            blob.BeginWritePages(stream, (long)destinationAddress, null, ar =>
+            UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*) sourceAddress, numBytesToWrite);
+            blob.BeginWritePages(stream, (long) destinationAddress, null, ar =>
             {
                 try
                 {
@@ -213,6 +235,7 @@ namespace FASTER.devices
                     // but does not distinguish between them.
                     callback(1, numBytesToWrite, ovNative);
                 }
+
                 callback(0, numBytesToWrite, ovNative);
             }, asyncResult);
         }

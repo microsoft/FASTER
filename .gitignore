@@ -193,3 +193,6 @@ packages/
 *.lib
 nativebin/
 /cs/benchmark/Properties/launchSettings.json
+
+# Rider IDE
+.idea/

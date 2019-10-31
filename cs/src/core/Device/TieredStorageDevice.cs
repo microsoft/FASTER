@@ -141,7 +141,6 @@ namespace FASTER.core
                 // Unless the last tier device has unspecified storage capacity, in which case the tiered storage also has unspecified capacity
                 if (device.Capacity == Devices.CAPACITY_UNSPECIFIED)
                 {
-                    Debug.Assert(device == devices[devices.Count - 1], "Only the last tier storage of a tiered storage device can have unspecified capacity");
                     return Devices.CAPACITY_UNSPECIFIED;
                 }
                 result = Math.Max(result, device.Capacity);
