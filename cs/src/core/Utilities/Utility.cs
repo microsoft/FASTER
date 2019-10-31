@@ -2,17 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-using System.Security;
-using System.IO;
 using System.Runtime.CompilerServices;
-using Microsoft.Win32.SafeHandles;
-using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -95,7 +88,7 @@ namespace FASTER.core
         /// <param name="numBytes"></param>
         public unsafe static void Copy(byte* src, byte* dest, int numBytes)
         {
-            for(int i = 0; i < numBytes; i++)
+            for (int i = 0; i < numBytes; i++)
             {
                 *(dest + i) = *(src + i);
             }
@@ -292,5 +285,37 @@ namespace FASTER.core
             return true;
         }
 
+        /// <summary>
+        /// Throws OperationCanceledException if token cancels before the real task completes.
+        /// Doesn't abort the inner task, but allows the calling code to get "unblocked" and react to stuck tasks.
+        /// </summary>
+        internal static Task<T> WithCancellationAsync<T>(this Task<T> task, CancellationToken token, bool useSynchronizationContext = false, bool continueOnCapturedContext = false)
+        {
+            if (!token.CanBeCanceled || task.IsCompleted)
+            {
+                return task;
+            }
+            else if (token.IsCancellationRequested)
+            {
+                return Task.FromCanceled<T>(token);
+            }
+
+            return Inner(task, token, useSynchronizationContext, continueOnCapturedContext);
+
+            static async Task<T> Inner(Task<T> task, CancellationToken token, bool useSynchronizationContext, bool continueOnCapturedContext)
+            {
+                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
+                {
+                    if (task != await Task.WhenAny(task, tcs.Task))
+                    {
+                        token.ThrowIfCancellationRequested();
+                    }
+                }
+
+                // make sure any exceptions in the task get unwrapped and exposed to the caller.
+                return await task.ConfigureAwait(continueOnCapturedContext);
+            }
+        }
     }
 }

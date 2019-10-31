@@ -2,13 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Buffers;
-using System.Collections.Generic;
-using System.Collections.Concurrent;
 
 namespace FASTER.core
 {
@@ -31,7 +31,7 @@ namespace FASTER.core
         private readonly int headerSize;
         private bool disposed = false;
         private long currentAddress, nextAddress;
-        
+
         /// <summary>
         /// Current address
         /// </summary>
@@ -99,7 +99,7 @@ namespace FASTER.core
         /// Async enumerable for iterator
         /// </summary>
         /// <returns>Entry and entry length</returns>
-        public async IAsyncEnumerable<(byte[], int)> GetAsyncEnumerable()
+        public async IAsyncEnumerable<(byte[], int)> GetAsyncEnumerable([EnumeratorCancellation] CancellationToken token = default)
         {
             while (true)
             {
@@ -109,7 +109,7 @@ namespace FASTER.core
                 {
                     if (currentAddress >= endAddress)
                         yield break;
-                    await WaitAsync();
+                    await WaitAsync(token);
                 }
                 yield return (result, length);
             }
@@ -119,7 +119,7 @@ namespace FASTER.core
         /// Async enumerable for iterator (memory pool based version)
         /// </summary>
         /// <returns>Entry and entry length</returns>
-        public async IAsyncEnumerable<(IMemoryOwner<byte>, int)> GetAsyncEnumerable(MemoryPool<byte> pool)
+        public async IAsyncEnumerable<(IMemoryOwner<byte>, int)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
         {
             while (true)
             {
@@ -129,7 +129,7 @@ namespace FASTER.core
                 {
                     if (currentAddress >= endAddress)
                         yield break;
-                    await WaitAsync();
+                    await WaitAsync(token);
                 }
                 yield return (result, length);
             }
@@ -140,22 +140,34 @@ namespace FASTER.core
         /// Wait for iteration to be ready to continue
         /// </summary>
         /// <returns></returns>
-        public async ValueTask WaitAsync()
-        { 
-            while (true)
+        public ValueTask WaitAsync(CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            if (nextAddress < fasterLog.CommittedUntilAddress)
             {
-                var commitTask = fasterLog.CommitTask;
-                if (nextAddress >= fasterLog.CommittedUntilAddress)
+                return new ValueTask();
+            }
+
+            return SlowWaitAsync(this, token);
+
+            // use static local function to guarantee there's no accidental closure getting allocated here
+            static async ValueTask SlowWaitAsync(FasterLogScanIterator @this, CancellationToken token)
+            {
+                while (true)
                 {
-                    // Ignore commit exceptions
-                    try
+                    var commitTask = @this.fasterLog.CommitTask;
+                    if (@this.nextAddress >= @this.fasterLog.CommittedUntilAddress)
                     {
-                        await commitTask;
+                        // Ignore commit exceptions, except when the token is signaled
+                        try
+                        {
+                            await commitTask.WithCancellationAsync(token);
+                        }
+                        catch when (!token.IsCancellationRequested) { }
                     }
-                    catch { }
+                    else
+                        break;
                 }
-                else
-                    break;
             }
         }
 
@@ -257,7 +269,7 @@ namespace FASTER.core
                 {
                     WaitForFrameLoad(currentFrame);
                 }
-                
+
                 allocator.AsyncReadPagesFromDeviceToFrame(currentAddress >> allocator.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame], 0, null, null, loadedCancel[currentFrame]);
                 loadedPage[currentFrame] = currentAddress >> allocator.LogPageSizeBits;
             }
