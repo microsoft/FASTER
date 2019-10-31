@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
+using FASTER.devices;
 
 namespace FasterLogSample
 {
@@ -23,7 +24,9 @@ namespace FasterLogSample
         static void Main()
         {
             bool sync = true;
-            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+//            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            var device = new AzureStorageDevice("DefaultEndpointsProtocol=https;AccountName=fastertest;AccountKey=MCYHYbS4/2CjSckt12wxN6V72gRxfbwUZzKpdfKFQC1ZXeGYr+oMDnmLUhwVAtvXLIIG5yJF68oxhtpoDbWlcg==;EndpointSuffix=core.windows.net",
+                                                 "dev", "foo");
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             // Populate entry being inserted
@@ -203,14 +206,14 @@ namespace FasterLogSample
                 var nowValue = log.TailAddress;
 
                 Console.WriteLine("Append Throughput: {0} MB/sec, Tail: {1}",
-                    (nowValue - lastValue) / (1000 * (nowTime - lastTime)), nowValue);
+                    (double) (nowValue - lastValue) / (1000 * (nowTime - lastTime)), nowValue);
                 lastValue = nowValue;
 
                 if (iter != null)
                 {
                     var nowIterValue = iter.CurrentAddress;
                     Console.WriteLine("Scan Throughput: {0} MB/sec, Iter pos: {1}",
-                        (nowIterValue - lastIterValue) / (1000 * (nowTime - lastTime)), nowIterValue);
+                        (double) (nowIterValue - lastIterValue) / (1000 * (nowTime - lastTime)), nowIterValue);
                     lastIterValue = nowIterValue;
                 }
 
