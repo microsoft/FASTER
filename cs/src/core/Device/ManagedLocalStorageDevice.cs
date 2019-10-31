@@ -107,9 +107,14 @@ namespace FASTER.core
                         Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
                     }
                 }
+                catch (IOException e)
+                {
+                    errorCode = (uint)(e.HResult & 0x0000FFFF);
+                }
                 catch
                 {
-                    errorCode = 1;
+                    // Non-IO exception; assign error code of max value
+                    errorCode = uint.MaxValue;
                 }
 
                 memory.Return();
@@ -140,9 +145,14 @@ namespace FASTER.core
                 {
                     logHandle.EndWrite(result);
                 }
+                catch (IOException e)
+                {
+                    errorCode = (uint)(e.HResult & 0x0000FFFF);
+                }
                 catch
                 {
-                    errorCode = 1;
+                    // Non-IO exception; assign error code of max value
+                    errorCode = uint.MaxValue;
                 }
                         
                 memory.Return();
