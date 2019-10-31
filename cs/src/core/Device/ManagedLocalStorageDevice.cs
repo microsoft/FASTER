@@ -79,6 +79,7 @@ namespace FASTER.core
 
         class ReadCallbackWrapper
         {
+            uint errorCode;
             readonly Stream logHandle;
             readonly IOCompletionCallback callback;
             readonly IAsyncResult asyncResult;
@@ -86,7 +87,7 @@ namespace FASTER.core
             readonly IntPtr destinationAddress;
             readonly uint readLength;
 
-            public ReadCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, IntPtr destinationAddress, uint readLength)
+            public ReadCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, IntPtr destinationAddress, uint readLength, uint errorCode)
             {
                 this.logHandle = logHandle;
                 this.callback = callback;
@@ -94,27 +95,30 @@ namespace FASTER.core
                 this.memory = memory;
                 this.destinationAddress = destinationAddress;
                 this.readLength = readLength;
+                this.errorCode = errorCode;
             }
 
             public unsafe void Callback(IAsyncResult result)
             {
-                uint errorCode = 0;
-                try
+                if (errorCode == 0)
                 {
-                    logHandle.EndRead(result);
-                    fixed (void* source = memory.buffer)
+                    try
                     {
-                        Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
+                        logHandle.EndRead(result);
+                        fixed (void* source = memory.buffer)
+                        {
+                            Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
+                        }
                     }
-                }
-                catch (IOException e)
-                {
-                    errorCode = (uint)(e.HResult & 0x0000FFFF);
-                }
-                catch
-                {
-                    // Non-IO exception; assign error code of max value
-                    errorCode = uint.MaxValue;
+                    catch (IOException e)
+                    {
+                        errorCode = (uint)(e.HResult & 0x0000FFFF);
+                    }
+                    catch
+                    {
+                        // Non-IO exception; assign error code of max value
+                        errorCode = uint.MaxValue;
+                    }
                 }
 
                 memory.Return();
@@ -129,32 +133,36 @@ namespace FASTER.core
             readonly IOCompletionCallback callback;
             readonly IAsyncResult asyncResult;
             SectorAlignedMemory memory;
+            uint errorCode;
 
-            public WriteCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory)
+            public WriteCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, uint errorCode)
             {
                 this.callback = callback;
                 this.asyncResult = asyncResult;
                 this.memory = memory;
                 this.logHandle = logHandle;
+                this.errorCode = errorCode;
             }
 
             public unsafe void Callback(IAsyncResult result)
             {
-                uint errorCode = 0;
-                try
+                if (errorCode == 0)
                 {
-                    logHandle.EndWrite(result);
+                    try
+                    {
+                        logHandle.EndWrite(result);
+                    }
+                    catch (IOException e)
+                    {
+                        errorCode = (uint)(e.HResult & 0x0000FFFF);
+                    }
+                    catch
+                    {
+                        // Non-IO exception; assign error code of max value
+                        errorCode = uint.MaxValue;
+                    }
                 }
-                catch (IOException e)
-                {
-                    errorCode = (uint)(e.HResult & 0x0000FFFF);
-                }
-                catch
-                {
-                    // Non-IO exception; assign error code of max value
-                    errorCode = uint.MaxValue;
-                }
-                        
+                
                 memory.Return();
                 Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
                 callback(errorCode, 0, ov.UnsafePack(callback, IntPtr.Zero));
@@ -176,11 +184,28 @@ namespace FASTER.core
                                      IOCompletionCallback callback, 
                                      IAsyncResult asyncResult)
         {
-            var logHandle = GetOrAddHandle(segmentId);
-            var memory = pool.Get((int)readLength);
-            logHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-            logHandle.BeginRead(memory.buffer, 0, (int)readLength,
-                new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength).Callback, null);
+            ReadCallbackWrapper wrapper = null;
+            SectorAlignedMemory memory = null;
+            Stream logHandle = null;
+
+            try
+            {
+                memory = pool.Get((int)readLength);
+                logHandle = GetOrAddHandle(segmentId);
+                wrapper = new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength, 0);
+                logHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+                logHandle.BeginRead(memory.buffer, 0, (int)readLength, wrapper.Callback, null);
+            }
+            catch (IOException e)
+            {
+                wrapper = new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength, (uint)(e.HResult & 0x0000FFFF));
+                wrapper.Callback(asyncResult);
+            }
+            catch
+            {
+                wrapper = new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength, uint.MaxValue);
+                wrapper.Callback(asyncResult);
+            }
         }
 
         /// <summary>
@@ -199,16 +224,34 @@ namespace FASTER.core
                                       IOCompletionCallback callback, 
                                       IAsyncResult asyncResult)
         {
-            var logHandle = GetOrAddHandle(segmentId);
-            var memory = pool.Get((int)numBytesToWrite);
-
-            fixed (void* destination = memory.buffer)
+            WriteCallbackWrapper wrapper = null;
+            SectorAlignedMemory memory = null; 
+            Stream logHandle = null;
+            
+            try
             {
-                Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                memory = pool.Get((int)numBytesToWrite);
+                logHandle = GetOrAddHandle(segmentId);
+                wrapper = new WriteCallbackWrapper(logHandle, callback, asyncResult, memory, 0);
+
+                fixed (void* destination = memory.buffer)
+                {
+                    Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                }
+                
+                logHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+                logHandle.BeginWrite(memory.buffer, 0, (int)numBytesToWrite, wrapper.Callback, null);
             }
-            logHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-            logHandle.BeginWrite(memory.buffer, 0, (int)numBytesToWrite,
-                new WriteCallbackWrapper(logHandle, callback, asyncResult, memory).Callback, null);
+            catch (IOException e)
+            {
+                wrapper = new WriteCallbackWrapper(logHandle, callback, asyncResult, memory, (uint)(e.HResult & 0x0000FFFF));
+                wrapper.Callback(asyncResult);
+            }
+            catch
+            {
+                wrapper = new WriteCallbackWrapper(logHandle, callback, asyncResult, memory, uint.MaxValue);
+                wrapper.Callback(asyncResult);
+            }
         }
 
         /// <summary>
