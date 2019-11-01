@@ -7,18 +7,32 @@ using Microsoft.Azure.Storage.Blob;
 
 namespace FASTER.devices
 {
+    /// <summary>
+    /// A CommitManager backed by Azure cloud page blobs
+    /// </summary>
     public class AzureStorageCommitManager : ILogCommitManager
     {
         private CloudPageBlob blob;
-
-        // TODO(Tianyu): We have several instances of this, need to put this into a global constant file ore something..
-        private const long MAX_BLOB_SIZE = (long) (2 * 10e8);
         
+        /// <summary>
+        /// Construct a new AzureStorageCommitManager backed by the given page blob
+        /// </summary>
+        /// <param name="blob">
+        /// backing page blob for the commit manager. It is assumed that the blob has already been created
+        /// </param>
         public AzureStorageCommitManager(CloudPageBlob blob)
         {
             this.blob = blob;
         }
         
+        /// <summary>
+        /// Construct a new AzureStorageCommitManager backed by the given page blob
+        /// </summary>
+        /// <param name="connectionString"> connection string for the storage account </param>
+        /// <param name="containerName"> name of the container the blob is in </param>
+        /// <param name="commitFileName">
+        /// name of the blob. It is assumed that the blob has already been created
+        /// </param>
         public AzureStorageCommitManager(string connectionString, string containerName, string commitFileName)
         {
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);
@@ -26,9 +40,9 @@ namespace FASTER.devices
             CloudBlobContainer container = client.GetContainerReference(containerName);
             container.CreateIfNotExists();
             blob = container.GetPageBlobReference(commitFileName);
-            blob.Create(MAX_BLOB_SIZE);
         }
 
+        /// <inheritdoc />
         public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
         {
             using (var ms = new MemoryStream())
@@ -42,7 +56,7 @@ namespace FASTER.devices
             }
         }
 
-        // TODO(Tianyu): This is duplicate from CheckpointManager, should reuse when possible
+        /// <inheritdoc />
         public byte[] GetCommitMetadata()
         {
             return BlobUtil.ReadMetadataFile(blob);

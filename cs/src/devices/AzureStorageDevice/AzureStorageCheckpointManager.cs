@@ -36,7 +36,7 @@ namespace FASTER.devices
         public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             CloudPageBlob metadataBlob =
-                BlobUtil.CreateCloudPageBlobUnsafe(container,
+                BlobUtil.CreateCloudPageBlob(container,
                     AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointMetadataBlobName(indexToken));
             using (var ms = new MemoryStream())
             {
@@ -51,14 +51,14 @@ namespace FASTER.devices
 
             // Use the existence of an empty blob as indication that checkpoint has completed.
             // TODO(Tianyu): Is this efficient?
-            BlobUtil.CreateCloudPageBlobUnsafe(container,
+            BlobUtil.CreateCloudPageBlob(container,
                 AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointCompletionBlobName(indexToken));
         }
 
         public void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             CloudPageBlob metadataBlob =
-                BlobUtil.CreateCloudPageBlobUnsafe(container,
+                BlobUtil.CreateCloudPageBlob(container,
                     AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointMetadataBlobName(logToken));
             using (var ms = new MemoryStream())
             {
@@ -73,7 +73,7 @@ namespace FASTER.devices
 
             // Use the existence of an empty blob as indication that checkpoint has completed.
             // TODO(Tianyu): Is this efficient?
-            BlobUtil.CreateCloudPageBlobUnsafe(container,
+            BlobUtil.CreateCloudPageBlob(container,
                 AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointCompletionBlobName(logToken));
         }
 
