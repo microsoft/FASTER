@@ -351,102 +351,109 @@ namespace FASTER.core
         /// <returns></returns>
         private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out bool epochTaken)
         {
-            physicalAddress = 0;
-            entryLength = 0;
-            epochTaken = false;
-
-            currentAddress = nextAddress;
             while (true)
             {
+                physicalAddress = 0;
+                entryLength = 0;
+                epochTaken = false;
+
+                var _currentAddress = nextAddress;
+                long _nextAddress;
+
                 // Check for boundary conditions
-                if (currentAddress < allocator.BeginAddress)
+                if (_currentAddress < allocator.BeginAddress)
                 {
                     Debug.WriteLine("Iterator address is less than log BeginAddress " + allocator.BeginAddress + ", adjusting iterator address");
-                    currentAddress = allocator.BeginAddress;
+                    _currentAddress = allocator.BeginAddress;
                 }
 
-                if ((currentAddress >= endAddress) || (currentAddress >= fasterLog.CommittedUntilAddress))
+                if ((_currentAddress >= endAddress) || (_currentAddress >= fasterLog.CommittedUntilAddress))
                 {
-                    nextAddress = currentAddress;
                     return false;
                 }
 
-                if (frameSize == 0 && currentAddress < allocator.HeadAddress)
+                if (frameSize == 0 && _currentAddress < allocator.HeadAddress)
                 {
                     throw new Exception("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
-                var currentPage = currentAddress >> allocator.LogPageSizeBits;
-                var offset = currentAddress & allocator.PageSizeMask;
+                var currentPage = _currentAddress >> allocator.LogPageSizeBits;
+                var offset = _currentAddress & allocator.PageSizeMask;
 
                 var headAddress = allocator.HeadAddress;
 
-                if (currentAddress < headAddress)
+                if (_currentAddress < headAddress)
                 {
-                    BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
+                    BufferAndLoad(_currentAddress, currentPage, currentPage % frameSize);
                     physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
                 }
                 else
                 {
                     epoch.Resume();
                     headAddress = allocator.HeadAddress;
-                    if (currentAddress < headAddress) // rare case
+                    if (_currentAddress < headAddress) // rare case
                     {
                         epoch.Suspend();
                         continue;
                     }
 
-                    physicalAddress = allocator.GetPhysicalAddress(currentAddress);
+                    physicalAddress = allocator.GetPhysicalAddress(_currentAddress);
                 }
 
                 // Get and check entry length
                 entryLength = fasterLog.GetLength((byte*)physicalAddress);
                 if (entryLength == 0)
                 {
-                    if (currentAddress >= headAddress)
+                    if (_currentAddress >= headAddress)
                         epoch.Suspend();
 
-                    nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    // We are likely at end of page, skip to next
+                    _nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+
+                    Utility.MonotonicUpdate(ref nextAddress, _nextAddress, out _);
+
                     if (0 != fasterLog.GetChecksum((byte*)physicalAddress))
                     {
-                        var curPage = currentAddress >> allocator.LogPageSizeBits;
+                        var curPage = _currentAddress >> allocator.LogPageSizeBits;
                         throw new Exception("Invalid checksum found during scan, skipping page " + curPage);
                     }
                     else
                     {
-                        // We are likely at end of page, skip to next
-                        currentAddress = nextAddress;
                         continue;
                     }
                 }
 
                 int recordSize = headerSize + Align(entryLength);
-                if ((currentAddress & allocator.PageSizeMask) + recordSize > allocator.PageSize)
+                if ((_currentAddress & allocator.PageSizeMask) + recordSize > allocator.PageSize)
                 {
-                    if (currentAddress >= headAddress)
+                    if (_currentAddress >= headAddress)
                         epoch.Suspend();
-                    nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    _nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    Utility.MonotonicUpdate(ref nextAddress, _nextAddress, out _);
                     throw new Exception("Invalid length of record found: " + entryLength + ", skipping page");
                 }
 
                 // Verify checksum if needed
-                if (currentAddress < headAddress)
+                if (_currentAddress < headAddress)
                 {
                     if (!fasterLog.VerifyChecksum((byte*)physicalAddress, entryLength))
                     {
-                        var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                        var curPage = _currentAddress >> allocator.LogPageSizeBits;
+                        _nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                        Utility.MonotonicUpdate(ref nextAddress, _nextAddress, out _);
                         throw new Exception("Invalid checksum found during scan, skipping page " + curPage);
                     }
                 }
 
-                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
-                    nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                
+                if ((_currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
+                    _nextAddress = (1 + (_currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
                 else
-                    nextAddress = currentAddress + recordSize;
+                    _nextAddress = currentAddress + recordSize;
 
-                epochTaken = currentAddress >= headAddress;
-                return true;
+                epochTaken = _currentAddress >= headAddress;
+                if (Utility.MonotonicUpdate(ref nextAddress, _nextAddress, out _))
+                    return true;
             }
         }
 
