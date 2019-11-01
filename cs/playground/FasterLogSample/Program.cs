@@ -24,9 +24,7 @@ namespace FasterLogSample
         static void Main()
         {
             bool sync = true;
-//            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
-            var device = new AzureStorageDevice("DefaultEndpointsProtocol=https;AccountName=fastertest;AccountKey=MCYHYbS4/2CjSckt12wxN6V72gRxfbwUZzKpdfKFQC1ZXeGYr+oMDnmLUhwVAtvXLIIG5yJF68oxhtpoDbWlcg==;EndpointSuffix=core.windows.net",
-                                                 "dev", "foo");
+            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             // Populate entry being inserted
