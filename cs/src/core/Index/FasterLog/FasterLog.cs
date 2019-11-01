@@ -728,6 +728,9 @@ namespace FASTER.core
             }
 
             var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
+            if (info.BeginAddress > headAddress)
+                headAddress = info.BeginAddress;
+
             if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
 
             recoveredIterators = info.Iterators;
