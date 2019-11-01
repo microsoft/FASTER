@@ -16,7 +16,6 @@ namespace FASTER.devices
         private const long MAX_BLOB_SIZE = (long) (2 * 10e8);
 
         private CloudBlobContainer container;
-        private Dictionary<Guid, CloudPageBlob> stashedBlobHandles;
 
         public AzureStorageCheckpointManager(string connectionString, string containerName)
         {
@@ -24,8 +23,6 @@ namespace FASTER.devices
             CloudBlobClient client = storageAccount.CreateCloudBlobClient();
             container = client.GetContainerReference(containerName);
             container.CreateIfNotExists();
-
-            stashedBlobHandles = new Dictionary<Guid, CloudPageBlob>();
         }
 
         public void InitializeIndexCheckpoint(Guid indexToken)
@@ -43,11 +40,16 @@ namespace FASTER.devices
             CloudPageBlob metadataBlob =
                 CreateCloudPageBlob(
                     AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointMetadataBlobName(indexToken));
-            // TODO(Tianyu): Endianness a concern?
-            byte[] length = BitConverter.GetBytes(commitMetadata.Length);
-            // TODO(Tianyu): Can be more efficient, but whatever
-            metadataBlob.WritePages(new MemoryStream(length), 0);
-            metadataBlob.WritePages(new MemoryStream(commitMetadata), length.Length);
+            using (var ms = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(ms))
+                {
+                    // TODO(Tianyu): Endianness a concern?
+                    writer.Write(commitMetadata.Length);
+                    writer.Write(commitMetadata);
+                }
+                metadataBlob.WritePages(ms, 0);
+            }
 
             // Use the existence of an empty blob as indication that checkpoint has completed.
             // TODO(Tianyu): Is this efficient?
@@ -60,11 +62,16 @@ namespace FASTER.devices
             CloudPageBlob metadataBlob =
                 CreateCloudPageBlob(
                     AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointMetadataBlobName(logToken));
-            // TODO(Tianyu): Endianness a concern?
-            byte[] length = BitConverter.GetBytes(commitMetadata.Length);
-            // TODO(Tianyu): Can be more efficient, but whatever
-            metadataBlob.WritePages(new MemoryStream(length), 0);
-            metadataBlob.WritePages(new MemoryStream(commitMetadata), length.Length);
+            using (var ms = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(ms))
+                {
+                    // TODO(Tianyu): Endianness a concern?
+                    writer.Write(commitMetadata.Length);
+                    writer.Write(commitMetadata);
+                }
+                metadataBlob.WritePages(ms, 0);
+            }
 
             // Use the existence of an empty blob as indication that checkpoint has completed.
             // TODO(Tianyu): Is this efficient?
