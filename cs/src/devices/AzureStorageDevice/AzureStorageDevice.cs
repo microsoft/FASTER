@@ -24,15 +24,9 @@ namespace FASTER.devices
         private readonly string blobName;
         private readonly bool deleteOnClose;
 
-        // Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
-        private const long MAX_BLOB_SIZE = (long) (2 * 10e8);
-
-        // Azure Page Blobs have a fixed sector size of 512 bytes.
-        private const uint PAGE_BLOB_SECTOR_SIZE = 512;
-
         public AzureStorageDevice(CloudBlobContainer container, string blobName, bool deleteOnClose = false,
             long capacity = Devices.CAPACITY_UNSPECIFIED)
-            : base(blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
+            : base(blobName, BlobUtil.PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             this.container = container;
             container.CreateIfNotExists();
@@ -185,7 +179,7 @@ namespace FASTER.devices
                     // If segment size is -1, which denotes absence, we request the largest possible blob. This is okay because
                     // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
                     // how large it can grow to.
-                    var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
+                    var size = segmentSize == -1 ? BlobUtil.MAX_BLOB_SIZE : segmentSize;
                     // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
                     // After creation is done, we can call write.
                     entry.CreateAsync(size, pageBlob);

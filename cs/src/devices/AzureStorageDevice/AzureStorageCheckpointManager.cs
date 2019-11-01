@@ -12,9 +12,7 @@ namespace FASTER.devices
 {
     public class AzureStorageCheckpointManager : ICheckpointManager
     {
-        // Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
-        private const long MAX_BLOB_SIZE = (long) (2 * 10e8);
-
+        
         private CloudBlobContainer container;
 
         public AzureStorageCheckpointManager(string connectionString, string containerName)
@@ -38,7 +36,7 @@ namespace FASTER.devices
         public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             CloudPageBlob metadataBlob =
-                CreateCloudPageBlob(
+                BlobUtil.CreateCloudPageBlobUnsafe(container,
                     AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointMetadataBlobName(indexToken));
             using (var ms = new MemoryStream())
             {
@@ -53,14 +51,14 @@ namespace FASTER.devices
 
             // Use the existence of an empty blob as indication that checkpoint has completed.
             // TODO(Tianyu): Is this efficient?
-            CreateCloudPageBlob(
+            BlobUtil.CreateCloudPageBlobUnsafe(container,
                 AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointCompletionBlobName(indexToken));
         }
 
         public void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             CloudPageBlob metadataBlob =
-                CreateCloudPageBlob(
+                BlobUtil.CreateCloudPageBlobUnsafe(container,
                     AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointMetadataBlobName(logToken));
             using (var ms = new MemoryStream())
             {
@@ -75,7 +73,7 @@ namespace FASTER.devices
 
             // Use the existence of an empty blob as indication that checkpoint has completed.
             // TODO(Tianyu): Is this efficient?
-            CreateCloudPageBlob(
+            BlobUtil.CreateCloudPageBlobUnsafe(container,
                 AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointCompletionBlobName(logToken));
         }
 
@@ -84,7 +82,8 @@ namespace FASTER.devices
             if (container.GetPageBlobReference(
                 AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointCompletionBlobName(indexToken)).Exists())
                 return null;
-            return ReadMetadata(AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointMetadataBlobName(indexToken));
+            return BlobUtil.ReadMetadataFile(container.GetPageBlobReference(
+                AzureStorageCheckpointBlobNamingScheme.GetIndexCheckpointMetadataBlobName(indexToken)));
         }
 
         public byte[] GetLogCommitMetadata(Guid logToken)
@@ -92,8 +91,8 @@ namespace FASTER.devices
             if (container.GetPageBlobReference(
                 AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointCompletionBlobName(logToken)).Exists())
                 return null;
-            return ReadMetadata(
-                AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointMetadataBlobName(logToken));
+            return BlobUtil.ReadMetadataFile(container.GetPageBlobReference(
+                AzureStorageCheckpointBlobNamingScheme.GetHybridLogCheckpointMetadataBlobName(logToken)));
         }
 
         public IDevice GetIndexDevice(Guid indexToken)
@@ -164,35 +163,6 @@ namespace FASTER.devices
             logToken = hybridLogCheckpointMetadataBlobs.OrderByDescending(IndexCheckpointCompletionTime).First();
             
             return true;
-        }
-
-        private CloudPageBlob CreateCloudPageBlob(string name)
-        {
-            CloudPageBlob blob = container.GetPageBlobReference(name);
-            // TODO(Tianyu): Will there ever be a race on this?
-            blob.Create(MAX_BLOB_SIZE);
-            return blob;
-        }
-
-        private int ReadInt32(CloudPageBlob blob, long offset)
-        {
-            byte[] result = new byte[sizeof(Int32)];
-            var read = blob.DownloadRangeToByteArray(result, 0, offset, sizeof(Int32));
-            // TODO(Tianyu): Can read bytes ever be smaller than requested like POSIX? There is certainly
-            // no documentation about the behavior...
-            Debug.Assert(read == sizeof(Int32), "Underfilled read buffer");
-            return BitConverter.ToInt32(result, 0);
-        }
-
-        private byte[] ReadMetadata(string blobName)
-        {
-            // Assuming that the page blob already exists
-            CloudPageBlob blob = container.GetPageBlobReference(blobName);
-            int length = ReadInt32(blob, 0);
-            byte[] result = new byte[length];
-            var downloaded = blob.DownloadRangeToByteArray(result, 0, sizeof(Int32), length);
-            Debug.Assert(downloaded == length, "Underfilled read buffer");
-            return result;
         }
 
         private bool IsIndexCheckpointCompleted(Guid guid)
