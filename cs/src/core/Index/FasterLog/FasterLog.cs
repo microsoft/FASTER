@@ -619,12 +619,25 @@ namespace FASTER.core
         #endregion
 
         /// <summary>
-        /// Truncate the log until, but not including, untilAddress
+        /// Truncate the log until, but not including, untilAddress. **User should ensure
+        /// that the provided address is a valid starting address for some record.** The
+        /// truncation is not persisted until the next commit.
         /// </summary>
-        /// <param name="untilAddress"></param>
+        /// <param name="untilAddress">Until address</param>
         public void TruncateUntil(long untilAddress)
         {
             allocator.ShiftBeginAddress(untilAddress);
+        }
+
+        /// <summary>
+        /// Truncate the log until the start of the page corresponding to untilAddress. This is 
+        /// safer than TruncateUntil, as page starts are always a valid truncation point. The
+        /// truncation is not persisted until the next commit.
+        /// </summary>
+        /// <param name="untilAddress">Until address</param>
+        public void TruncateUntilPageStart(long untilAddress)
+        {
+            allocator.ShiftBeginAddress(untilAddress & allocator.PageSizeMask);
         }
 
         /// <summary>
