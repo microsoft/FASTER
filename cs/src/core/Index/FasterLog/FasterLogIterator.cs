@@ -377,13 +377,13 @@ namespace FASTER.core
                     throw new Exception("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
-                var currentPage = _currentAddress >> allocator.LogPageSizeBits;
-                var offset = _currentAddress & allocator.PageSizeMask;
 
                 var headAddress = allocator.HeadAddress;
 
                 if (_currentAddress < headAddress)
                 {
+                    var currentPage = _currentAddress >> allocator.LogPageSizeBits;
+                    var offset = _currentAddress & allocator.PageSizeMask;
                     BufferAndLoad(_currentAddress, currentPage, currentPage % frameSize);
                     physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
                 }
