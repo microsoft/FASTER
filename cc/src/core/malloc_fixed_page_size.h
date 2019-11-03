@@ -12,16 +12,16 @@
 
 #include "alloc.h"
 #include "light_epoch.h"
+#include "value_control.h"
 
 namespace FASTER {
 namespace core {
 
 /// The allocator used for the hash table's overflow buckets.
 
-/// Address into a fixed page.
-struct FixedPageAddress {
+struct FixedPageAddressLayout
+{
   static constexpr uint64_t kInvalidAddress = 0;
-
   /// A fixed-page address is 8 bytes.
   /// --of which 48 bits are used for the address. (The remaining 16 bits are used by the hash
   /// table, for control bits and the tag.)
@@ -37,80 +37,85 @@ struct FixedPageAddress {
   static constexpr uint64_t kPageBits = kAddressBits - kOffsetBits;
   static constexpr uint64_t kMaxPage = ((uint64_t)1 << kPageBits) - 1;
 
-  FixedPageAddress()
-    : control_{ 0 } {
-  }
-  FixedPageAddress(uint64_t control)
-    : control_{ control } {
+  uint64_t offset_   : kOffsetBits;       // 20 bits
+  uint64_t page_     : kPageBits;         // 28 bits
+  uint64_t reserved_ : 64 - kAddressBits; // 16 bits
+};
+
+/// Address into a fixed page.
+class FixedPageAddress
+  : public value_control<FixedPageAddressLayout, uint64_t, FixedPageAddressLayout::kInvalidAddress>
+{
+public:
+  // temp
+  static constexpr uint64_t kInvalidAddress = FixedPageAddressLayout::kInvalidAddress;
+  static constexpr uint64_t kAddressBits = FixedPageAddressLayout::kAddressBits;
+  static constexpr uint64_t kMaxAddress = FixedPageAddressLayout::kMaxAddress;
+  static constexpr uint64_t kOffsetBits = FixedPageAddressLayout::kOffsetBits;
+  static constexpr uint32_t kMaxOffset = FixedPageAddressLayout::kMaxOffset;
+  static constexpr uint64_t kPageBits = FixedPageAddressLayout::kPageBits;
+  static constexpr uint32_t kMaxPage = FixedPageAddressLayout::kMaxPage;
+
+  using value_control::value_control;
+
+  FixedPageAddress() = default;
+
+  /*explicit */FixedPageAddress(uint64_t control) noexcept
+    : value_control{control}
+  {
+    assert(value().reserved_ == 0);
   }
 
-  bool operator==(const FixedPageAddress& other) const {
-    assert(reserved == 0);
-    assert(other.reserved == 0);
-    return control_ == other.control_;
+  bool operator==(const FixedPageAddress& other) const noexcept
+  {
+    assert(value().reserved_ == 0);
+    assert(other.value().reserved_ == 0);
+    return control() == other.control();
   }
-  bool operator<(const FixedPageAddress& other) const {
-    assert(reserved == 0);
-    assert(other.reserved == 0);
-    return control_ < other.control_;
+  bool operator<(const FixedPageAddress& other) const noexcept
+  {
+    assert(value().reserved_ == 0);
+    assert(other.value().reserved_ == 0);
+    return control() < other.control();
   }
-  bool operator>(const FixedPageAddress& other) const {
-    assert(reserved == 0);
-    assert(other.reserved == 0);
-    return control_ > other.control_;
+  bool operator>(const FixedPageAddress& other) const noexcept
+  {
+    assert(value().reserved_ == 0);
+    assert(other.value().reserved_ == 0);
+    return control() > other.control();
   }
-  bool operator>=(const FixedPageAddress& other) const {
-    assert(reserved == 0);
-    assert(other.reserved == 0);
-    return control_ >= other.control_;
+  bool operator>=(const FixedPageAddress& other) const noexcept
+  {
+    assert(value().reserved_ == 0);
+    assert(other.value().reserved_ == 0);
+    return control() >= other.control();
   }
-  FixedPageAddress operator++() {
-    return FixedPageAddress{ ++control_ };
-  }
-
-  uint32_t offset() const {
-    return static_cast<uint32_t>(offset_);
-  }
-  uint64_t page() const {
-    return page_;
-  }
-  uint64_t control() const {
-    return control_;
+  FixedPageAddress operator++() noexcept
+  {
+    return FixedPageAddress{ ++control_ref() };
   }
 
-  union {
-      struct {
-        uint64_t offset_ : kOffsetBits;        // 20 bits
-        uint64_t page_ : kPageBits;            // 28 bits
-        uint64_t reserved : 64 - kAddressBits; // 16 bits
-      };
-      uint64_t control_;
-    };
+  uint32_t offset() const noexcept
+  {
+    return static_cast<uint32_t>(value().offset_);
+  }
+  uint64_t page() const noexcept
+  {
+    return value().page_;
+  }
 };
 static_assert(sizeof(FixedPageAddress) == 8, "sizeof(FixedPageAddress) != 8");
 
 /// Atomic address into a fixed page.
-class AtomicFixedPageAddress {
- public:
-  AtomicFixedPageAddress(const FixedPageAddress& address)
-    : control_{ address.control_ } {
+class AtomicFixedPageAddress
+  : public value_atomic_control<FixedPageAddress, uint64_t, FixedPageAddressLayout::kInvalidAddress>
+{
+public:
+  using value_atomic_control::value_atomic_control;
+  FixedPageAddress operator++(int) noexcept
+  {
+    return FixedPageAddress{ value_.control_++ };
   }
-
-  /// Atomic access.
-  inline FixedPageAddress load() const {
-    return FixedPageAddress{ control_.load() };
-  }
-  void store(FixedPageAddress value) {
-    control_.store(value.control_);
-  }
-  FixedPageAddress operator++(int) {
-    return FixedPageAddress{ control_++ };
-  }
-
-
- private:
-  /// Atomic access to the address.
-  std::atomic<uint64_t> control_;
 };
 static_assert(sizeof(AtomicFixedPageAddress) == 8, "sizeof(AtomicFixedPageAddress) != 8");
 
@@ -240,10 +245,15 @@ class FixedPageArray {
   /// Followed by [size] std::atomic<> pointers to (page_t) pages. (Not shown here.)
 };
 
-class alignas(Constants::kCacheLineBytes) FreeList {
+// Suppress warning C4324: 'FASTER::core::FreeList': structure was padded due to alignment specifier
+#pragma warning(push)
+#pragma warning(disable : 4324)
+class alignas(Constants::kCacheLineBytes) FreeList
+{
  public:
   std::deque<FreeAddress> free_list;
 };
+#pragma warning(pop)
 
 template <typename T, class D>
 class MallocFixedPageSize {
@@ -280,7 +290,7 @@ class MallocFixedPageSize {
       array_t::Delete(page_array_.load(), true);
     }
     alignment_ = alignment;
-    count_.store(0);
+    count_.store(FixedPageAddress{});
     epoch_ = &epoch;
     disk_ = nullptr;
     pending_checkpoint_writes_ = 0;
@@ -422,7 +432,7 @@ Status MallocFixedPageSize<T, F>::Checkpoint(disk_t& disk, file_t&& file, uint64
     RETURN_NOT_OK(file_.WriteAsync(page_array->Get(idx), idx * kWriteSize, kWriteSize, callback,
                                    context));
   }
-  size = count.control_ * sizeof(item_t);
+  size = count.control() * sizeof(item_t);
   return Status::Ok;
 }
 

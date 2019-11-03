@@ -6,7 +6,7 @@
 namespace FASTER {
 namespace core {
 
-constexpr uint32_t Address::kMaxOffset;
+constexpr uint32_t AddressLayout::kMaxOffset; // ?
 
 }
 } // namespace FASTER::core

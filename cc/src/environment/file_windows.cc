@@ -51,7 +51,6 @@ Status File::Open(DWORD flags, FileCreateDisposition create_disposition, bool* e
     }
   }
   if(file_handle_ == INVALID_HANDLE_VALUE) {
-    auto error = ::GetLastError();
     return Status::IOError;
   }
 
@@ -68,7 +67,6 @@ Status File::Close() {
     bool success = ::CloseHandle(file_handle_);
     file_handle_ = INVALID_HANDLE_VALUE;
     if(!success) {
-      auto error = ::GetLastError();
       return Status::IOError;
     }
   }
@@ -79,7 +77,6 @@ Status File::Close() {
 Status File::Delete() {
   bool success = ::DeleteFileA(filename_.c_str());
   if(!success) {
-    auto error = ::GetLastError();
     return Status::IOError;
   }
   return Status::Ok;
@@ -90,7 +87,6 @@ Status File::GetDeviceAlignment() {
   bool result = ::GetFileInformationByHandleEx(file_handle_,
                 FILE_INFO_BY_HANDLE_CLASS::FileStorageInfo, &info, sizeof(info));
   if(!result) {
-    auto error = ::GetLastError();
     return Status::IOError;
   }
 
@@ -112,8 +108,8 @@ DWORD File::GetCreateDisposition(FileCreateDisposition create_disposition) {
   }
 }
 
-void CALLBACK ThreadPoolIoHandler::IoCompletionCallback(PTP_CALLBACK_INSTANCE instance,
-    PVOID context, PVOID overlapped, ULONG ioResult, ULONG_PTR bytesTransferred, PTP_IO io) {
+void CALLBACK ThreadPoolIoHandler::IoCompletionCallback(PTP_CALLBACK_INSTANCE /*instance*/,
+    PVOID /*context*/, PVOID overlapped, ULONG ioResult, ULONG_PTR bytesTransferred, PTP_IO/* io*/) {
   // context is always nullptr; state is threaded via the OVERLAPPED
   auto callback_context = make_context_unique_ptr<IoCallbackContext>(
                             reinterpret_cast<IoCallbackContext*>(overlapped));
@@ -189,7 +185,7 @@ Status WindowsPtpThreadPool::Schedule(Task task, void* task_parameters) {
   return Status::Ok;
 }
 
-void CALLBACK WindowsPtpThreadPool::TaskStartSpringboard(PTP_CALLBACK_INSTANCE instance,
+void CALLBACK WindowsPtpThreadPool::TaskStartSpringboard(PTP_CALLBACK_INSTANCE /*instance*/,
     PVOID parameter, PTP_WORK work) {
   auto info = make_context_unique_ptr<TaskInfo>(reinterpret_cast<TaskInfo*>(parameter));
   info->task(info->task_parameters);

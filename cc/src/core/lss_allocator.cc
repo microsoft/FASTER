@@ -20,23 +20,27 @@ namespace lss_memory {
 
 static_assert(sizeof(Header) < kBaseAlignment, "Unexpected header size!");
 
-void SegmentAllocator::Free(void* bytes) {
 #ifdef _DEBUG
-  Header* header = reinterpret_cast<Header*>(bytes) - 1;
-  assert(header->offset < kSegmentSize);
-  assert(header->offset + header->size <= kSegmentSize);
-  //  - 0xDA - freed.
-  ::memset(header + 1, 0xDA, header->size);
-#endif
-  Free();
+void SegmentAllocator::Free(void* bytes) {
+    Header* header = reinterpret_cast<Header*>(bytes) - 1;
+    assert(header->offset_ < kSegmentSize);
+    assert(header->offset_ + header->size_ <= kSegmentSize);
+    //  - 0xDA - freed.
+    ::memset(header + 1, 0xDA, header->size_);
+    Free();
 }
+#else
+void SegmentAllocator::Free(void*) {
+    Free();
+}
+#endif
 
 void SegmentAllocator::Seal(uint32_t allocations) {
   SegmentState delta_state{ allocations, 1 };
-  SegmentState old_state{ state.control.fetch_add(delta_state.control) };
-  assert(old_state.allocations == 0);
-  assert(old_state.frees < allocations);
-  if(allocations == old_state.frees + 1) {
+  SegmentState old_state{ state.value_.control_.fetch_add(delta_state.value_.control_) };
+  assert(old_state.allocations() == 0);
+  assert(old_state.frees() < allocations);
+  if(allocations == old_state.frees() + 1) {
     // We were the last to free a block inside this segment, so we must free it.
     this->~SegmentAllocator();
     aligned_free(this);
@@ -45,9 +49,9 @@ void SegmentAllocator::Seal(uint32_t allocations) {
 
 void SegmentAllocator::Free() {
   SegmentState delta_state{ 0, 1 };
-  SegmentState old_state{ state.control.fetch_add(delta_state.control) };
-  assert(old_state.allocations == 0 || old_state.frees < old_state.allocations);
-  if(old_state.allocations == old_state.frees + 1) {
+  SegmentState old_state{ state.value_.control_.fetch_add(delta_state.value_.control_) };
+  assert(old_state.allocations() == 0 || old_state.frees() < old_state.allocations());
+  if(old_state.allocations() == old_state.frees() + 1) {
     // We were the last to free a block inside this segment, so we must free it.
     this->~SegmentAllocator();
     aligned_free(this);
@@ -157,7 +161,7 @@ void* LssAllocator::AllocateAligned(uint32_t size, uint32_t alignment) {
 void LssAllocator::Free(void* bytes) {
   lss_memory::Header* header = reinterpret_cast<lss_memory::Header*>(bytes) - 1;
   uint8_t* block = reinterpret_cast<uint8_t*>(header);
-  uint32_t offset = header->offset + lss_memory::SegmentAllocator::kBufferOffset;
+  uint32_t offset = header->offset_ + lss_memory::SegmentAllocator::kBufferOffset;
   lss_memory::SegmentAllocator* segment_allocator =
     reinterpret_cast<lss_memory::SegmentAllocator*>(block - offset);
   segment_allocator->Free(bytes);

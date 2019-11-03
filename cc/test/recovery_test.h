@@ -42,13 +42,11 @@ TEST(CLASS, MallocFixedPageSize) {
       HashBucket& bucket = allocator.Get(buckets[bucket_idx]);
       for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
         HashBucketEntry expected{ 0 };
-        uint64_t random_num = rng();
-        bool success = bucket.entries[entry_idx].compare_exchange_strong(expected, random_num);
+        bool success = bucket.entries[entry_idx].compare_exchange_strong(expected, HashBucketEntry{rng()});
         ASSERT_TRUE(success);
       }
       HashBucketOverflowEntry expected{ 0 };
-      uint64_t random_num = rng();
-      bool success = bucket.overflow_entry.compare_exchange_strong(expected, random_num);
+      bool success = bucket.overflow_entry.compare_exchange_strong(expected, HashBucketOverflowEntry{rng()});
       ASSERT_TRUE(success);
     }
     //issue call to checkpoint
@@ -83,10 +81,10 @@ TEST(CLASS, MallocFixedPageSize) {
     HashBucket& bucket = allocator.Get(buckets[bucket_idx]);
     for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
       uint64_t random_num = rng2();
-      ASSERT_EQ(random_num, bucket.entries[entry_idx].load().control_);
+      ASSERT_EQ(random_num, bucket.entries[entry_idx].load().control());
     }
     uint64_t random_num = rng2();
-    ASSERT_EQ(random_num, bucket.overflow_entry.load().control_);
+    ASSERT_EQ(random_num, bucket.overflow_entry.load().control());
   }
 
   FixedPageAddress address = recover_allocator.Allocate();
@@ -119,12 +117,12 @@ TEST(CLASS, InternalHashTable) {
       for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
         HashBucketEntry expected{ 0 };
         bool success = table.bucket(bucket_idx).entries[entry_idx].compare_exchange_strong(
-                         expected, rng());
+          expected, HashBucketEntry{rng()});
         ASSERT_TRUE(success);
       }
       HashBucketOverflowEntry expected{ 0 };
       bool success = table.bucket(bucket_idx).overflow_entry.compare_exchange_strong(expected,
-                     rng());
+        HashBucketOverflowEntry{rng()});
       ASSERT_TRUE(success);
     }
 
@@ -157,10 +155,10 @@ TEST(CLASS, InternalHashTable) {
   for(size_t bucket_idx = 0; bucket_idx < kNumBuckets; ++bucket_idx) {
     for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
       uint64_t random_num = rng2();
-      ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).entries[entry_idx].load().control_);
+      ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).entries[entry_idx].load().control());
     }
     uint64_t random_num = rng2();
-    ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).overflow_entry.load().control_);
+    ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).overflow_entry.load().control());
   }
 }
 

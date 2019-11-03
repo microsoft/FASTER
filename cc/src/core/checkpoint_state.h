@@ -23,29 +23,31 @@ class IndexMetadata {
     , table_size{ 0 }
     , num_ht_bytes{ 0 }
     , num_ofb_bytes{ 0 }
-    , ofb_count{ FixedPageAddress::kInvalidAddress }
-    , log_begin_address{ Address::kInvalidAddress }
-    , checkpoint_start_address{ Address::kInvalidAddress } {
-  }
+    , ofb_count{}
+    , log_begin_address{}
+    , checkpoint_start_address{}
+  {}
 
-  inline void Initialize(uint32_t version_, uint64_t size_, Address log_begin_address_,
-                         Address checkpoint_start_address_) {
+  void Initialize(uint32_t version_, uint64_t size_, Address log_begin_address_,
+                         Address checkpoint_start_address_)
+  {
     version = version_;
     table_size = size_;
     log_begin_address = log_begin_address_;
     checkpoint_start_address = checkpoint_start_address_;
     num_ht_bytes = 0;
     num_ofb_bytes = 0;
-    ofb_count = FixedPageAddress::kInvalidAddress;
+    ofb_count = FixedPageAddress{};
   }
-  inline void Reset() {
+  void Reset()
+  {
     version = 0;
     table_size = 0;
     num_ht_bytes = 0;
     num_ofb_bytes = 0;
-    ofb_count = FixedPageAddress::kInvalidAddress;
-    log_begin_address = Address::kInvalidAddress;
-    checkpoint_start_address = Address::kInvalidAddress;
+    ofb_count = FixedPageAddress{};
+    log_begin_address = Address{};
+    checkpoint_start_address = Address{};
   }
 
   uint32_t version;
@@ -83,7 +85,7 @@ class LogMetadata {
     std::memset(monotonic_serial_nums, 0, sizeof(monotonic_serial_nums));
   }
   inline void Reset() {
-    Initialize(false, UINT32_MAX, Address::kInvalidAddress);
+    Initialize(false, UINT32_MAX, Address{AddressLayout::kInvalidAddress});
   }
 
   bool use_snapshot_file;

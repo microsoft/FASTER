@@ -438,7 +438,7 @@ class FileSystemDisk {
   FileSystemDisk(const std::string& root_path, LightEpoch& epoch, bool enablePrivileges = false,
                  bool unbuffered = true, bool delete_on_close = false)
     : root_path_{ NormalizePath(root_path) }
-    , handler_{ 16 /*max threads*/ }
+    , handler_{ Thread::kMaxNumThreads /*max threads*/ }    // originally 16 was here, but this parameter was ignored in QueueIoHandler ctor and Thread::kMaxNumThreads was used instead. So 16 is changed to Thread::kMaxNumThreads to keep original behavior intact.
     , default_file_options_{ unbuffered, delete_on_close }
     , log_{ root_path_ + "log.log", default_file_options_, &epoch} {
     Status result = log_.Open(&handler_);

@@ -43,6 +43,7 @@ class File {
 #ifdef _WIN32
     DWORD bytes_read { 0 };
     ::ReadFile(file_handle_, buf, static_cast<DWORD>(count), &bytes_read, nullptr);
+    UNREFERENCED_PARAMETER(offset);
     return bytes_read;
 #else
     return ::pread(fd_, buf, count, offset);

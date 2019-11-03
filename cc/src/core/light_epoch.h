@@ -23,6 +23,9 @@ namespace core {
 
 class LightEpoch {
  private:
+
+#pragma warning(push)
+#pragma warning(disable : 4324) // suppress "structure was padded due to alignment specifier" warning
   /// Entry in epoch table
   struct alignas(Constants::kCacheLineBytes) Entry {
     Entry()
@@ -35,6 +38,7 @@ class LightEpoch {
     uint32_t reentrant;
     std::atomic<Phase> phase_finished;
   };
+#pragma warning(pop)
   static_assert(sizeof(Entry) == 64, "sizeof(Entry) != 64");
 
   struct EpochAction {

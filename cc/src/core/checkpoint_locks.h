@@ -11,81 +11,88 @@
 #include "alloc.h"
 #include "constants.h"
 #include "key_hash.h"
+#include "value_control.h"
 
 namespace FASTER {
 namespace core {
 
-struct CheckpointLock {
-  CheckpointLock()
-    : control_{ 0 } {
-  }
-  CheckpointLock(uint64_t control)
-    : control_{ control } {
-  }
-  CheckpointLock(uint32_t old_lock_count, uint32_t new_lock_count)
-    : old_lock_count_{ old_lock_count }
-    , new_lock_count_{ new_lock_count } {
-  }
+struct CheckpointLockLayout
+{
+  uint32_t old_lock_count_;
+  uint32_t new_lock_count_;
+};
 
-  union {
-      struct {
-        uint32_t old_lock_count_;
-        uint32_t new_lock_count_;
-      };
-      uint64_t control_;
-    };
+struct CheckpointLock
+  : public value_control<CheckpointLockLayout, uint64_t, 0>
+{
+  using value_control::value_control;
+  
+  //CheckpointLock() = default;
+
+  CheckpointLock(uint32_t old_lock_count, uint32_t new_lock_count) noexcept
+    : value_control{CheckpointLockLayout{old_lock_count, new_lock_count}}
+  {}
+
+  uint32_t oldLockCount() const noexcept { return value().old_lock_count_; }
+  uint32_t newLockCount() const noexcept { return value().new_lock_count_; }
 };
 static_assert(sizeof(CheckpointLock) == 8, "sizeof(CheckpointLock) != 8");
 
-class AtomicCheckpointLock {
+class AtomicCheckpointLock
+  : public value_atomic_control<CheckpointLock, uint64_t, 0>
+{
  public:
-  AtomicCheckpointLock()
-    : control_{ 0 } {
-  }
+   using value_atomic_control::value_atomic_control;
+   
+   //AtomicCheckpointLock() = default;
 
   /// Try to lock the old version of a record.
-  inline bool try_lock_old() {
-    CheckpointLock expected{ control_.load() };
-    while(expected.new_lock_count_ == 0) {
-      CheckpointLock desired{ expected.old_lock_count_ + 1, 0 };
-      if(control_.compare_exchange_strong(expected.control_, desired.control_)) {
+  bool try_lock_old() noexcept
+  {
+    CheckpointLock expected{ load() };
+    while (expected.newLockCount() == 0)
+    {
+      CheckpointLock desired{ expected.oldLockCount() + 1, 0 };
+      if (compare_exchange_strong(expected, desired))
+      {
         return true;
       }
     }
     return false;
   }
-  inline void unlock_old() {
-    control_ -= CheckpointLock{ 1, 0 } .control_;
+  void unlock_old() noexcept
+  {
+    value_.control_ -= CheckpointLock{ 1, 0 }.control(); // TODO: is it actualliy faster than --value_.value_control_.old_lock_count_;?
   }
 
   /// Try to lock the new version of a record.
-  inline bool try_lock_new() {
-    CheckpointLock expected{ control_.load() };
-    while(expected.old_lock_count_ == 0) {
-      CheckpointLock desired{ 0, expected.new_lock_count_ + 1 };
-      if(control_.compare_exchange_strong(expected.control_, desired.control_)) {
+  bool try_lock_new() noexcept
+  {
+    CheckpointLock expected{ value_.control_.load() };
+    while (expected.oldLockCount() == 0)
+    {
+      if (compare_exchange_strong(expected, CheckpointLock{ 0, expected.newLockCount() + 1 }))
+      {
         return true;
       }
     }
     return false;
   }
-  inline void unlock_new() {
-    control_ -= CheckpointLock{ 0, 1 } .control_;
+  void unlock_new() noexcept
+  {
+      value_.control_ -= CheckpointLock{ 0, 1 }.control();
   }
 
-  inline bool old_locked() const {
-    CheckpointLock result{ control_ };
-    return result.old_lock_count_ > 0;
+  bool old_locked() const noexcept
+  {
+    CheckpointLock result{ value_.control_ };
+    return result.oldLockCount() > 0;
   }
-  inline bool new_locked() const {
-    CheckpointLock result{ control_ };
-    return result.new_lock_count_ > 0;
+  bool new_locked() const noexcept
+  {
+    CheckpointLock result{ value_.control_ };
+    return result.newLockCount() > 0;
   }
-
- private:
-  union {
-      std::atomic<uint64_t> control_;
-    };
 };
 static_assert(sizeof(AtomicCheckpointLock) == 8, "sizeof(AtomicCheckpointLock) != 8");
 

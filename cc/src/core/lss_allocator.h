@@ -40,60 +40,80 @@ static constexpr uint32_t kBaseAlignment = 16;
 /// essentially stack allocations; but _DEBUG mode includes it for the benefit of the caller.)
 #ifdef _DEBUG
 struct alignas(8) Header {
-  Header(uint32_t size_, uint32_t offset_)
-    : offset{ offset_ }
-    , size{ size_ } {
+  Header(uint32_t size, uint32_t offset)
+    : offset_{ offset }
+    , size_{ size } {
   }
 
   /// Offset from the head of the segment allocator's buffer to the memory block.
-  uint32_t offset;
+  uint32_t offset_;
 
   /// Size of the memory block.
-  uint32_t size;
+  uint32_t size_;
 };
 static_assert(sizeof(Header) == 8, "Header is not 8 bytes!");
 #else
 struct Header {
-  Header(uint16_t offset_)
-    : offset{ offset_ } {
+  Header(uint16_t offset)
+    : offset_{ offset } {
+  }
+  Header(uint32_t offset)
+      : offset_{ static_cast<decltype(offset_)>(offset) }
+  {
+      assert(offset <= std::numeric_limits<decltype(offset_)>::max());
   }
 
   /// Offset from the head of the segment allocator's buffer to the memory block.
-  uint16_t offset;
+  uint16_t offset_;
 };
 static_assert(sizeof(Header) == 2, "Header is not 2 bytes!");
 #endif
 
 class ThreadAllocator;
 
-class SegmentState {
- public:
-  SegmentState()
-    : control{ 0 } {
-  }
+class SegmentState
+{
+public:
 
-  SegmentState(uint64_t control_)
-    : control{ control_ } {
-  }
+  SegmentState() = default;
 
-  SegmentState(uint32_t allocations_, uint32_t frees_)
-    : frees{ frees_ }
-    , allocations{ allocations_ } {
+  explicit SegmentState(uint64_t control) noexcept
+    : value_{ control }
+  {}
+  SegmentState(uint32_t allocations, uint32_t frees) noexcept
+    : value_{allocations, frees}
+  {}
+  uint32_t frees() const noexcept
+  {
+      return value_.state_.frees_;
   }
-
-  union {
-      struct {
+  uint32_t allocations() const noexcept
+  {
+      return value_.state_.allocations_;
+  }
+  union Value
+  {
+      struct State
+      {
         /// Count of memory blocks freed inside this segment. Incremented on each free. Frees can
         /// take place on any thread.
-        uint32_t frees;
+        uint32_t frees_;
         /// If this segment is sealed, then the count of memory blocks allocated inside this
         /// segment. Otherwise, zero.
-        uint32_t allocations;
+        uint32_t allocations_;
       };
+      State state_;
       /// 64-bit control field, used so that threads can read the allocation count atomically at
       /// the same time they increment the free count atomically.
-      std::atomic<uint64_t> control;
+      std::atomic<uint64_t> control_ = 0;
+
+      Value() = default;
+      Value(uint32_t allocations, uint32_t frees) : state_{frees, allocations}
+      {}
+      explicit Value(uint64_t control) : control_{control}
+      {}
     };
+  Value value_;
 };
 static_assert(sizeof(SegmentState) == 8, "sizeof(SegmentState) != 8");
 static_assert(kSegmentSize < UINT16_MAX / 2, "kSegmentSize too large for offset size!");
@@ -153,6 +173,9 @@ class SegmentAllocator {
   uint8_t buffer[kSegmentSize];
 };
 
+#pragma warning(push)
+#pragma warning(disable : 4324) // suppress "structure was padded due to alignment specifier" warning
+
 /// Allocator for a single thread. Allocates only; frees are directed by the global allocator
 /// object directly to the relevant segment allocator.
 class alignas(64) ThreadAllocator {
@@ -192,6 +215,8 @@ class alignas(64) ThreadAllocator {
   uint32_t allocations_;
 };
 static_assert(sizeof(ThreadAllocator) == 64, "sizeof(ThreadAllocator) != 64.");
+
+#pragma warning(pop)
 
 } // namespace lss_memory
 

@@ -7,44 +7,66 @@
 #include <cstdint>
 #include "address.h"
 #include "auto_ptr.h"
+#include "value_control.h"
 
 namespace FASTER {
 namespace core {
 
+struct RecordInfoLayout
+{
+  uint64_t previous_address_    : 48;
+  uint64_t checkpoint_version_  : 13;
+  uint64_t invalid_             : 1;
+  uint64_t tombstone_           : 1;
+  uint64_t final_bit_           : 1;
+
+  RecordInfoLayout(uint16_t checkpoint_version, bool final_bit, bool tombstone, bool invalid, Address previous_address) noexcept
+    : checkpoint_version_{checkpoint_version}
+    , final_bit_{final_bit}
+    , tombstone_{tombstone}
+    , invalid_{invalid}
+    , previous_address_{previous_address.control()}
+  {}
+};
+
 /// Record header, internal to FASTER.
-class RecordInfo {
- public:
-  RecordInfo(uint16_t checkpoint_version_, bool final_bit_, bool tombstone_, bool invalid_,
-             Address previous_address)
-    : checkpoint_version{ checkpoint_version_ }
-    , final_bit{ final_bit_ }
-    , tombstone{ tombstone_ }
-    , invalid{ invalid_ }
-    , previous_address_{ previous_address.control() } {
+class RecordInfo
+  : public value_control<RecordInfoLayout, uint64_t, 0>
+{
+public:
+  using value_control::value_control;
+   
+  RecordInfo(uint16_t checkpoint_version, bool final_bit, bool tombstone, bool invalid, Address previous_address) noexcept
+    : value_control{RecordInfoLayout{ checkpoint_version, final_bit, tombstone, invalid, previous_address }}
+  {}
+  bool IsNull() const noexcept
+  {
+    return control() == 0;
   }
-
-  RecordInfo(const RecordInfo& other)
-    : control_{ other.control_ } {
+  Address previous_address() const noexcept
+  {
+    return Address{ value().previous_address_ };
   }
-
-  inline bool IsNull() const {
-    return control_ == 0;
+  uint16_t checkpoint_version() const noexcept
+  {
+    return static_cast<uint16_t>(value().checkpoint_version_);
   }
-  inline Address previous_address() const {
-    return Address{ previous_address_ };
+  bool invalid() const noexcept
+  {
+    return static_cast<bool>(value().invalid_);
   }
-
-  union {
-      struct {
-        uint64_t previous_address_ : 48;
-        uint64_t checkpoint_version : 13;
-        uint64_t invalid : 1;
-        uint64_t tombstone : 1;
-        uint64_t final_bit : 1;
-      };
-
-      uint64_t control_;
-    };
+  void set_invalid() noexcept
+  {
+    value().invalid_ = true;
+  }
+  bool tombstone() const noexcept
+  {
+    return static_cast<bool>(value().tombstone_);
+  }
+  bool final_bit() const noexcept
+  {
+    return static_cast<bool>(value().final_bit_);
+  }
 };
 static_assert(sizeof(RecordInfo) == 8, "sizeof(RecordInfo) != 8");
 
@@ -120,7 +142,7 @@ struct Record {
   }
 
   /// Minimum size of a read from disk that is guaranteed to include the record's header, key,
-  // and whatever information the host needs to determine the value size.
+  /// and whatever information the host needs to determine the value size.
   inline constexpr uint32_t min_disk_value_size() const {
     return static_cast<uint32_t>(
              // -- plus size of the Value's header.

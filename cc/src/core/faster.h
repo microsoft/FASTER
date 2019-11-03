@@ -38,6 +38,8 @@ using namespace std::chrono_literals;
 namespace FASTER {
 namespace core {
 
+#pragma warning(push)
+#pragma warning(disable : 4324) // disable warning C4324: 'FASTER::core::ThreadContext': structure was padded due to alignment specifier
 class alignas(Constants::kCacheLineBytes) ThreadContext {
  public:
   ThreadContext()
@@ -67,6 +69,7 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
   ExecutionContext contexts_[2];
   uint8_t cur_;
 };
+#pragma warning(pop)
 static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
 
 /// The FASTER key-value store.
@@ -308,12 +311,14 @@ class FasterKv {
 
 // Implementations.
 template <class K, class V, class D>
-inline Guid FasterKv<K, V, D>::StartSession() {
+inline Guid FasterKv<K, V, D>::StartSession()
+{
   SystemState state = system_state_.load();
-  if(state.phase != Phase::REST) {
+  if (state.phase() != Phase::REST)
+  {
     throw std::runtime_error{ "Can acquire only in REST phase!" };
   }
-  thread_ctx().Initialize(state.phase, state.version, Guid::Create(), 0);
+  thread_ctx().Initialize(state.phase(), state.version(), Guid::Create(), 0);
   Refresh();
   return thread_ctx().guid;
 }
@@ -325,21 +330,23 @@ inline uint64_t FasterKv<K, V, D>::ContinueSession(const Guid& session_id) {
     throw std::invalid_argument{ "Unknown session ID" };
   }
 
-  SystemState state = system_state_.load();
-  if(state.phase != Phase::REST) {
+  const SystemState state = system_state_.load();
+  if(state.phase() != Phase::REST) {
     throw std::runtime_error{ "Can continue only in REST phase!" };
   }
-  thread_ctx().Initialize(state.phase, state.version, session_id, iter->second);
+  thread_ctx().Initialize(state.phase(), state.version(), session_id, iter->second);
   Refresh();
   return iter->second;
 }
 
 template <class K, class V, class D>
-inline void FasterKv<K, V, D>::Refresh() {
+inline void FasterKv<K, V, D>::Refresh()
+{
   epoch_.ProtectAndDrain();
   // We check if we are in normal mode
   SystemState new_state = system_state_.load();
-  if(thread_ctx().phase == Phase::REST && new_state.phase == Phase::REST) {
+  if (thread_ctx().phase == Phase::REST && new_state.phase() == Phase::REST)
+  {
     return;
   }
   HandleSpecialPhases();
@@ -409,23 +416,29 @@ inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash) c
 template <class K, class V, class D>
 inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindTentativeEntry(KeyHash hash,
     HashBucket* bucket,
-    uint8_t version, HashBucketEntry& expected_entry) {
-  expected_entry = HashBucketEntry::kInvalidEntry;
+    uint8_t version, HashBucketEntry& expected_entry)
+{
+  expected_entry = HashBucketEntry{};
   AtomicHashBucketEntry* atomic_entry = nullptr;
   // Try to find a slot that contains the right tag or that's free.
-  while(true) {
+  while (true)
+  {
     // Search through the bucket looking for our key. Last entry is reserved
     // for the overflow pointer.
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+    for (uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx)
+    {
       HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry.unused()) {
-        if(!atomic_entry) {
+      if (entry.unused())
+      {
+        if (!atomic_entry)
+        {
           // Found a free slot; keep track of it, and continue looking for a match.
           atomic_entry = &bucket->entries[entry_idx];
         }
         continue;
       }
-      if(hash.tag() == entry.tag() && !entry.tentative()) {
+      if (hash.tag() == entry.tag() && !entry.tentative())
+      {
         // Found a match. (So, the input hash matches the entry on 14 tag bits +
         // log_2(table size) address bits.) Return it to caller.
         expected_entry = entry;
@@ -434,28 +447,34 @@ inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindTentativeEntry(KeyHash hash
     }
     // Go to next bucket in the chain
     HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-    if(overflow_entry.unused()) {
+    if (overflow_entry.unused())
+    {
       // No more buckets in the chain.
-      if(atomic_entry) {
+      if (atomic_entry)
+      {
         // We found a free slot earlier (possibly inside an earlier bucket).
-        assert(expected_entry == HashBucketEntry::kInvalidEntry);
+        assert(expected_entry.unused());
         return atomic_entry;
       }
       // We didn't find any free slots, so allocate new bucket.
       FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
-      bool success;
-      do {
+      bool success = false;
+      do
+      {
         HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
-        success = bucket->overflow_entry.compare_exchange_strong(overflow_entry,
-                  new_bucket_entry);
-      } while(!success && overflow_entry.unused());
-      if(!success) {
+        success = bucket->overflow_entry.compare_exchange_strong(overflow_entry, new_bucket_entry);
+      }
+      while (!success && overflow_entry.unused());
+      if(!success)
+      {
         // Install failed, undo allocation; use the winner's entry
         overflow_buckets_allocator_[version].FreeAtEpoch(new_bucket_addr, 0);
-      } else {
+      }
+      else
+      {
         // Install succeeded; we have a new bucket on the chain. Return its first slot.
         bucket = &overflow_buckets_allocator_[version].Get(new_bucket_addr);
-        assert(expected_entry == HashBucketEntry::kInvalidEntry);
+        assert(expected_entry.unused());
         return &bucket->entries[0];
       }
     }
@@ -474,7 +493,7 @@ bool FasterKv<K, V, D>::HasConflictingEntry(KeyHash hash, const HashBucket* buck
   while(true) {
     for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
       HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry != HashBucketEntry::kInvalidEntry &&
+      if(entry.valid() &&
           entry.tag() == tag &&
           atomic_entry != &bucket->entries[entry_idx]) {
         // Found a conflict.
@@ -507,20 +526,21 @@ inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindOrCreateEntry(KeyHash hash,
 
     AtomicHashBucketEntry* atomic_entry = FindTentativeEntry(hash, bucket, version,
                                           expected_entry);
-    if(expected_entry != HashBucketEntry::kInvalidEntry) {
+    if (expected_entry.valid())
+    {
       // Found an existing hash bucket entry; nothing further to check.
       return atomic_entry;
     }
     // We have a free slot.
     assert(atomic_entry);
-    assert(expected_entry == HashBucketEntry::kInvalidEntry);
+    assert(expected_entry.unused());
     // Try to install tentative tag in free slot.
     HashBucketEntry entry{ Address::kInvalidAddress, hash.tag(), true };
     if(atomic_entry->compare_exchange_strong(expected_entry, entry)) {
       // See if some other thread is also trying to install this tag.
       if(HasConflictingEntry(hash, bucket, version, atomic_entry)) {
         // Back off and try again.
-        atomic_entry->store(HashBucketEntry::kInvalidEntry);
+        atomic_entry->store(HashBucketEntry{});
       } else {
         // No other thread was trying to install this tag, so we can clear our entry's "tentative"
         // bit.
@@ -741,7 +761,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     // Look through the in-memory portion of the log, to find the first record (if any) whose key
     // matches.
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
-    latest_record_version = record->header.checkpoint_version;
+    latest_record_version = record->header.checkpoint_version();
     if(key != record->key()) {
       address = TraceBackForKeyMatch(key, record->header.previous_address(), head_address);
     }
@@ -806,7 +826,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
     // Multiple keys may share the same hash. Try to find the most recent record with a matching
     // key that we might be able to update in place.
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    latest_record_version = record->header.checkpoint_version;
+    latest_record_version = record->header.checkpoint_version();
     if(key != record->key()) {
       address = TraceBackForKeyMatch(key, record->header.previous_address(), head_address);
     }
@@ -915,7 +935,7 @@ create_record:
     return OperationStatus::SUCCESS;
   } else {
     // Try again.
-    record->header.invalid = true;
+    record->header.set_invalid();
     return InternalUpsert(pending_context);
   }
 }
@@ -950,7 +970,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     // Multiple keys may share the same hash. Try to find the most recent record with a matching
     // key that we might be able to update in place.
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    latest_record_version = record->header.checkpoint_version;
+    latest_record_version = record->header.checkpoint_version();
     if(key != record->key()) {
       address = TraceBackForKeyMatch(key, record->header.previous_address(), head_address);
     }
@@ -1106,7 +1126,7 @@ create_record:
   } else {
     // The block we allocated for the new record caused the head address to advance beyond
     // the old record. Need to obtain the old record from disk.
-    new_record->header.invalid = true;
+    new_record->header.set_invalid();
     if(!retrying) {
       pending_context.go_async(phase, version, address, expected_entry);
     } else {
@@ -1120,7 +1140,7 @@ create_record:
     return OperationStatus::SUCCESS;
   } else {
     // CAS failed; try again.
-    new_record->header.invalid = true;
+    new_record->header.set_invalid();
     if(!retrying) {
       pending_context.go_async(phase, version, address, expected_entry);
     } else {
@@ -1442,7 +1462,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
            OperationStatus::SUCCESS_UNMARK;
   } else {
     // CAS failed; try again.
-    new_record->header.invalid = true;
+    new_record->header.set_invalid();
     pending_context->continue_async(address, expected_entry);
     return OperationStatus::RETRY_NOW;
   }
@@ -1660,7 +1680,7 @@ Status FasterKv<K, V, D>::RecoverFuzzyIndexComplete(bool wait) {
     while(true) {
       for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
         if(bucket->entries[entry_idx].load().tentative()) {
-          bucket->entries[entry_idx].store(HashBucketEntry::kInvalidEntry);
+          bucket->entries[entry_idx].store(HashBucketEntry{});
         }
       }
       // Go to next bucket in the chain
@@ -1846,7 +1866,7 @@ Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_addre
       address += sizeof(record->header);
       continue;
     }
-    if(record->header.invalid) {
+    if(record->header.invalid()) {
       address += record->size();
       continue;
     }
@@ -1856,11 +1876,11 @@ Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_addre
     HashBucket* bucket;
     AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry, bucket);
 
-    if(record->header.checkpoint_version <= checkpoint_.log_metadata.version) {
+    if(record->header.checkpoint_version() <= checkpoint_.log_metadata.version) {
       HashBucketEntry new_entry{ address, hash.tag(), false };
       atomic_entry->store(new_entry);
     } else {
-      record->header.invalid = true;
+      record->header.set_invalid();
       if(record->header.previous_address() < checkpoint_.index_metadata.checkpoint_start_address) {
         HashBucketEntry new_entry{ record->header.previous_address(), hash.tag(), false };
         atomic_entry->store(new_entry);
@@ -1946,7 +1966,7 @@ bool FasterKv<K, V, D>::CleanHashTableBuckets() {
         if(!expected_entry.unused() && expected_entry.address() != Address::kInvalidAddress &&
             expected_entry.address() < begin_address) {
           // The record that this entry points to was truncated; try to delete the entry.
-          atomic_entry.compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
+          atomic_entry.compare_exchange_strong(expected_entry, HashBucketEntry{});
           // If deletion failed, then some other thread must have added a new record to the entry.
         }
       }
@@ -2089,7 +2109,7 @@ void FasterKv<K, V, D>::SplitHashTableBuckets() {
     GlobalMoveToNextState(SystemState{ Action::GrowIndex, Phase::GROW_IN_PROGRESS,
                                        thread_ctx().version });
   } else {
-    while(system_state_.load().phase == Phase::GROW_IN_PROGRESS) {
+    while(system_state_.load().phase() == Phase::GROW_IN_PROGRESS) {
       // Spin until all other threads have finished splitting their chunks.
       std::this_thread::yield();
     }
@@ -2098,22 +2118,22 @@ void FasterKv<K, V, D>::SplitHashTableBuckets() {
 
 template <class K, class V, class D>
 bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
-  SystemState next_state = current_state.GetNextState();
+  const SystemState next_state = current_state.GetNextState();
   if(!system_state_.compare_exchange_strong(current_state, next_state)) {
     return false;
   }
 
-  switch(next_state.action) {
+  switch(next_state.action()) {
   case Action::CheckpointFull:
   case Action::CheckpointIndex:
   case Action::CheckpointHybridLog:
-    switch(next_state.phase) {
+    switch(next_state.phase()) {
     case Phase::PREP_INDEX_CHKPT:
       // This case is handled directly inside Checkpoint[Index]().
       assert(false);
       break;
     case Phase::INDEX_CHKPT:
-      assert(next_state.action != Action::CheckpointHybridLog);
+      assert(next_state.action() != Action::CheckpointHybridLog);
       // Issue async request for fuzzy checkpoint
       assert(!checkpoint_.failed);
       if(CheckpointFuzzyIndex() != Status::Ok) {
@@ -2123,7 +2143,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
     case Phase::PREPARE:
       // Index checkpoint will never reach this state; and CheckpointHybridLog() will handle this
       // case directly.
-      assert(next_state.action == Action::CheckpointFull);
+      assert(next_state.action() == Action::CheckpointFull);
       // INDEX_CHKPT -> PREPARE
       // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
       // (Ensures that recovery won't accidentally reallocate from the ofb.)
@@ -2139,18 +2159,18 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       }
       break;
     case Phase::IN_PROGRESS: {
-      assert(next_state.action != Action::CheckpointIndex);
+      assert(next_state.action() != Action::CheckpointIndex);
       // PREPARE -> IN_PROGRESS
       // Do nothing
       break;
     }
     case Phase::WAIT_PENDING:
-      assert(next_state.action != Action::CheckpointIndex);
+      assert(next_state.action() != Action::CheckpointIndex);
       // IN_PROGRESS -> WAIT_PENDING
       // Do nothing
       break;
     case Phase::WAIT_FLUSH:
-      assert(next_state.action != Action::CheckpointIndex);
+      assert(next_state.action() != Action::CheckpointIndex);
       // WAIT_PENDING -> WAIT_FLUSH
       if(fold_over_snapshot) {
         // Move read-only to tail
@@ -2177,19 +2197,19 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       }
       break;
     case Phase::PERSISTENCE_CALLBACK:
-      assert(next_state.action != Action::CheckpointIndex);
+      assert(next_state.action() != Action::CheckpointIndex);
       // WAIT_FLUSH -> PERSISTENCE_CALLBACK
       break;
     case Phase::REST:
       // PERSISTENCE_CALLBACK -> REST or INDEX_CHKPT -> REST
-      if(next_state.action != Action::CheckpointIndex) {
+      if(next_state.action() != Action::CheckpointIndex) {
         // The checkpoint is done; we can reset the contexts now. (Have to reset contexts before
         // another checkpoint can be started.)
         checkpoint_.CheckpointDone();
         // Free checkpoint locks!
         checkpoint_locks_.Free();
         // Checkpoint is done--no more work for threads to do.
-        system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+        system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version() });
       } else {
         // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the
         // ofb. (Ensures that recovery won't accidentally reallocate from the ofb.)
@@ -2204,7 +2224,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
         // another checkpoint can be started.)
         checkpoint_.CheckpointDone();
         // Checkpoint is done--no more work for threads to do.
-        system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+        system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version() });
         if(index_persistence_callback) {
           // Notify the host that the index checkpoint has completed.
           index_persistence_callback(Status::Ok);
@@ -2218,7 +2238,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
     }
     break;
   case Action::GC:
-    switch(next_state.phase) {
+    switch(next_state.phase()) {
     case Phase::GC_IO_PENDING:
       // This case is handled directly inside ShiftBeginAddress().
       assert(false);
@@ -2234,7 +2254,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       if(gc_.complete_callback) {
         gc_.complete_callback();
       }
-      system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+      system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version() });
       break;
     default:
       // not reached
@@ -2243,7 +2263,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
     }
     break;
   case Action::GrowIndex:
-    switch(next_state.phase) {
+    switch(next_state.phase()) {
     case Phase::GROW_PREPARE:
       // This case is handled directly inside GrowIndex().
       assert(false);
@@ -2256,7 +2276,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       if(grow_.callback) {
         grow_.callback(state_[grow_.new_version].size());
       }
-      system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+      system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version() });
       break;
     default:
       // not reached
@@ -2295,26 +2315,26 @@ void FasterKv<K, V, D>::MarkAllPendingRequests() {
 template <class K, class V, class D>
 void FasterKv<K, V, D>::HandleSpecialPhases() {
   SystemState final_state = system_state_.load();
-  if(final_state.phase == Phase::REST) {
+  if(final_state.phase() == Phase::REST) {
     // Nothing to do; just reset thread context.
     thread_ctx().phase = Phase::REST;
-    thread_ctx().version = final_state.version;
+    thread_ctx().version = final_state.version();
     return;
   }
-  SystemState previous_state{ final_state.action, thread_ctx().phase, thread_ctx().version };
+  SystemState previous_state{ final_state.action(), thread_ctx().phase, thread_ctx().version };
   do {
     // Identify the transition (currentState -> nextState)
     SystemState current_state = (previous_state == final_state) ? final_state :
                                 previous_state.GetNextState();
-    switch(current_state.action) {
+    switch(current_state.action()) {
     case Action::CheckpointFull:
     case Action::CheckpointIndex:
     case Action::CheckpointHybridLog:
-      switch(current_state.phase) {
+      switch(current_state.phase()) {
       case Phase::PREP_INDEX_CHKPT:
-        assert(current_state.action != Action::CheckpointHybridLog);
+        assert(current_state.action() != Action::CheckpointHybridLog);
         // Both from REST -> PREP_INDEX_CHKPT and PREP_INDEX_CHKPT -> PREP_INDEX_CHKPT
-        if(previous_state.phase == Phase::REST) {
+        if(previous_state.phase() == Phase::REST) {
           // Thread ack that we're performing a checkpoint.
           if(epoch_.FinishThreadPhase(Phase::PREP_INDEX_CHKPT)) {
             GlobalMoveToNextState(current_state);
@@ -2322,14 +2342,14 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::INDEX_CHKPT: {
-        assert(current_state.action != Action::CheckpointHybridLog);
+        assert(current_state.action() != Action::CheckpointHybridLog);
         // Both from PREP_INDEX_CHKPT -> INDEX_CHKPT and INDEX_CHKPT -> INDEX_CHKPT
         Status result = CheckpointFuzzyIndexComplete();
         if(result != Status::Pending && result != Status::Ok) {
           checkpoint_.failed = true;
         }
         if(result != Status::Pending) {
-          if(current_state.action == Action::CheckpointIndex) {
+          if(current_state.action() == Action::CheckpointIndex) {
             // This thread is done now.
             thread_ctx().phase = Phase::REST;
             // Thread ack that it is done.
@@ -2344,9 +2364,9 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         break;
       }
       case Phase::PREPARE:
-        assert(current_state.action != Action::CheckpointIndex);
+        assert(current_state.action() != Action::CheckpointIndex);
         // Handle (INDEX_CHKPT -> PREPARE or REST -> PREPARE) and PREPARE -> PREPARE
-        if(previous_state.phase != Phase::PREPARE) {
+        if(previous_state.phase() != Phase::PREPARE) {
           // mark pending requests
           MarkAllPendingRequests();
           // keep a count of number of threads
@@ -2360,9 +2380,9 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::IN_PROGRESS:
-        assert(current_state.action != Action::CheckpointIndex);
+        assert(current_state.action() != Action::CheckpointIndex);
         // Handle PREPARE -> IN_PROGRESS and IN_PROGRESS -> IN_PROGRESS
-        if(previous_state.phase == Phase::PREPARE) {
+        if(previous_state.phase() == Phase::PREPARE) {
           assert(prev_thread_ctx().retry_requests.empty());
           assert(prev_thread_ctx().pending_ios.empty());
           assert(prev_thread_ctx().io_responses.empty());
@@ -2370,7 +2390,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
           // Get a new thread context; keep track of the old one as "previous."
           thread_contexts_[Thread::id()].swap();
           // initialize a new local context
-          thread_ctx().Initialize(Phase::IN_PROGRESS, current_state.version,
+          thread_ctx().Initialize(Phase::IN_PROGRESS, current_state.version(),
                                   prev_thread_ctx().guid, prev_thread_ctx().serial_num);
           // Thread ack that it has swapped contexts.
           if(epoch_.FinishThreadPhase(Phase::IN_PROGRESS)) {
@@ -2379,7 +2399,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::WAIT_PENDING:
-        assert(current_state.action != Action::CheckpointIndex);
+        assert(current_state.action() != Action::CheckpointIndex);
         // Handle IN_PROGRESS -> WAIT_PENDING and WAIT_PENDING -> WAIT_PENDING
         if(!epoch_.HasThreadFinishedPhase(Phase::WAIT_PENDING)) {
           if(prev_thread_ctx().pending_ios.empty() &&
@@ -2392,7 +2412,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::WAIT_FLUSH:
-        assert(current_state.action != Action::CheckpointIndex);
+        assert(current_state.action() != Action::CheckpointIndex);
         // Handle WAIT_PENDING -> WAIT_FLUSH and WAIT_FLUSH -> WAIT_FLUSH
         if(!epoch_.HasThreadFinishedPhase(Phase::WAIT_FLUSH)) {
           bool flushed;
@@ -2412,9 +2432,9 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::PERSISTENCE_CALLBACK:
-        assert(current_state.action != Action::CheckpointIndex);
+        assert(current_state.action() != Action::CheckpointIndex);
         // Handle WAIT_FLUSH -> PERSISTENCE_CALLBACK and PERSISTENCE_CALLBACK -> PERSISTENCE_CALLBACK
-        if(previous_state.phase == Phase::WAIT_FLUSH) {
+        if(previous_state.phase() == Phase::WAIT_FLUSH) {
           // Persistence callback
           if(checkpoint_.hybrid_log_persistence_callback) {
             checkpoint_.hybrid_log_persistence_callback(Status::Ok, prev_thread_ctx().serial_num);
@@ -2433,17 +2453,17 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
       }
       break;
     case Action::GC:
-      switch(current_state.phase) {
+      switch(current_state.phase()) {
       case Phase::GC_IO_PENDING:
         // Handle REST -> GC_IO_PENDING and GC_IO_PENDING -> GC_IO_PENDING.
-        if(previous_state.phase == Phase::REST) {
+        if(previous_state.phase() == Phase::REST) {
           assert(prev_thread_ctx().retry_requests.empty());
           assert(prev_thread_ctx().pending_ios.empty());
           assert(prev_thread_ctx().io_responses.empty());
           // Get a new thread context; keep track of the old one as "previous."
           thread_contexts_[Thread::id()].swap();
           // initialize a new local context
-          thread_ctx().Initialize(Phase::GC_IO_PENDING, current_state.version,
+          thread_ctx().Initialize(Phase::GC_IO_PENDING, current_state.version(),
                                   prev_thread_ctx().guid, prev_thread_ctx().serial_num);
         }
 
@@ -2477,9 +2497,9 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
       }
       break;
     case Action::GrowIndex:
-      switch(current_state.phase) {
+      switch(current_state.phase()) {
       case Phase::GROW_PREPARE:
-        if(previous_state.phase == Phase::REST) {
+        if(previous_state.phase() == Phase::REST) {
           // Thread ack that we're going to grow the hash table.
           if(epoch_.FinishThreadPhase(Phase::GROW_PREPARE)) {
             GlobalMoveToNextState(current_state);
@@ -2496,8 +2516,8 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
       }
       break;
     }
-    thread_ctx().phase = current_state.phase;
-    thread_ctx().version = current_state.version;
+    thread_ctx().phase = current_state.phase();
+    thread_ctx().version = current_state.version();
     previous_state = current_state;
   } while(previous_state != final_state);
 }
@@ -2507,8 +2527,8 @@ bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status resu
                                    void(*hybrid_log_persistence_callback)(Status result,
                                        uint64_t persistent_serial_num), Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
-  SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
-  SystemState desired{ Action::CheckpointFull, Phase::REST, expected.version };
+  SystemState expected{ Action::None, Phase::REST, system_state_.load().version() };
+  SystemState desired{ Action::CheckpointFull, Phase::REST, expected.version() };
   if(!system_state_.compare_exchange_strong(expected, desired)) {
     // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
     return false;
@@ -2521,13 +2541,13 @@ bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status resu
   disk.CreateCprCheckpointDirectory(token);
   // Obtain tail address for fuzzy index checkpoint
   if(!fold_over_snapshot) {
-    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version(), state_[resize_info_.version].size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), true,
                                      hlog.flushed_until_address.load(),
                                      index_persistence_callback,
                                      hybrid_log_persistence_callback);
   } else {
-    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version(), state_[resize_info_.version].size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), false,
                                      Address::kInvalidAddress, index_persistence_callback,
                                      hybrid_log_persistence_callback);
@@ -2543,8 +2563,8 @@ template <class K, class V, class D>
 bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status result),
                                         Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
-  SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
-  SystemState desired{ Action::CheckpointIndex, Phase::REST, expected.version };
+  SystemState expected{ Action::None, Phase::REST, system_state_.load().version() };
+  SystemState desired{ Action::CheckpointIndex, Phase::REST, expected.version() };
   if(!system_state_.compare_exchange_strong(expected, desired)) {
     // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
     return false;
@@ -2554,7 +2574,7 @@ bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status
   // Initialize all contexts
   token = Guid::Create();
   disk.CreateIndexCheckpointDirectory(token);
-  checkpoint_.InitializeIndexCheckpoint(token, desired.version,
+  checkpoint_.InitializeIndexCheckpoint(token, desired.version(),
                                         state_[resize_info_.version].size(),
                                         hlog.begin_address.load(), hlog.GetTailAddress(),
                                         index_persistence_callback);
@@ -2567,8 +2587,8 @@ template <class K, class V, class D>
 bool FasterKv<K, V, D>::CheckpointHybridLog(void(*hybrid_log_persistence_callback)(Status result,
     uint64_t persistent_serial_num), Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
-  SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
-  SystemState desired{ Action::CheckpointHybridLog, Phase::REST, expected.version };
+  SystemState expected{ Action::None, Phase::REST, system_state_.load().version() };
+  const SystemState desired{ Action::CheckpointHybridLog, Phase::REST, expected.version() };
   if(!system_state_.compare_exchange_strong(expected, desired)) {
     // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
     return false;
@@ -2580,10 +2600,10 @@ bool FasterKv<K, V, D>::CheckpointHybridLog(void(*hybrid_log_persistence_callbac
   disk.CreateCprCheckpointDirectory(token);
   // Obtain tail address for fuzzy index checkpoint
   if(!fold_over_snapshot) {
-    checkpoint_.InitializeHybridLogCheckpoint(token, desired.version, true,
+    checkpoint_.InitializeHybridLogCheckpoint(token, desired.version(), true,
         hlog.flushed_until_address.load(), hybrid_log_persistence_callback);
   } else {
-    checkpoint_.InitializeHybridLogCheckpoint(token, desired.version, false,
+    checkpoint_.InitializeHybridLogCheckpoint(token, desired.version(), false,
         Address::kInvalidAddress, hybrid_log_persistence_callback);
   }
   InitializeCheckpointLocks();
@@ -2598,9 +2618,9 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
                                   std::vector<Guid>& session_ids) {
   version = 0;
   session_ids.clear();
-  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
+  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version() };
   if(!system_state_.compare_exchange_strong(expected,
-      SystemState{ Action::Recover, Phase::REST, expected.version })) {
+      SystemState{ Action::Recover, Phase::REST, expected.version() })) {
     return Status::Aborted;
   }
   checkpoint_.InitializeRecover(index_token, hybrid_log_token);
@@ -2651,9 +2671,9 @@ template <class K, class V, class D>
 bool FasterKv<K, V, D>::ShiftBeginAddress(Address address,
     GcState::truncate_callback_t truncate_callback,
     GcState::complete_callback_t complete_callback) {
-  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
+  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version() };
   if(!system_state_.compare_exchange_strong(expected,
-      SystemState{ Action::GC, Phase::REST, expected.version })) {
+      SystemState{ Action::GC, Phase::REST, expected.version() })) {
     // Can't start a GC while an action is already in progress.
     return false;
   }
@@ -2664,20 +2684,20 @@ bool FasterKv<K, V, D>::ShiftBeginAddress(Address address,
                                  (uint64_t)1);
   gc_.Initialize(truncate_callback, complete_callback, num_chunks);
   // Let other threads know to complete their pending I/Os, so that the log can be truncated.
-  system_state_.store(SystemState{ Action::GC, Phase::GC_IO_PENDING, expected.version });
+  system_state_.store(SystemState{ Action::GC, Phase::GC_IO_PENDING, expected.version() });
   return true;
 }
 
 template <class K, class V, class D>
 bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
-  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
+  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version() };
   if(!system_state_.compare_exchange_strong(expected,
-      SystemState{ Action::GrowIndex, Phase::REST, expected.version })) {
+      SystemState{ Action::GrowIndex, Phase::REST, expected.version() })) {
     // An action is already in progress.
-    return false;
+	  return false;
   }
   epoch_.ResetPhaseFinished();
-  uint8_t current_version = resize_info_.version;
+  const uint8_t current_version = resize_info_.version;
   assert(current_version == 0 || current_version == 1);
   uint8_t next_version = 1 - current_version;
   uint64_t num_chunks = std::max(state_[current_version].size() / kGrowHashTableChunkSize,
@@ -2687,7 +2707,7 @@ bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
   state_[next_version].Initialize(state_[current_version].size() * 2, disk.log().alignment());
   overflow_buckets_allocator_[next_version].Initialize(disk.log().alignment(), epoch_);
 
-  SystemState next = SystemState{ Action::GrowIndex, Phase::GROW_PREPARE, expected.version };
+  SystemState next = SystemState{ Action::GrowIndex, Phase::GROW_PREPARE, expected.version() };
   system_state_.store(next);
 
   // Let this thread know it should be growing the index.

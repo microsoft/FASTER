@@ -170,16 +170,19 @@ inline SectorAlignedMemory::~SectorAlignedMemory() {
   }
 }
 
-inline SectorAlignedMemory NativeSectorAlignedBufferPool::Get(uint32_t numRecords) {
+inline SectorAlignedMemory NativeSectorAlignedBufferPool::Get(uint32_t numRecords)
+{
   // How many sectors do we need?
   uint32_t sectors_required = (numRecords * record_size_ + sector_size_ - 1) / sector_size_;
   uint32_t level = Level(sectors_required);
-  uint8_t* buffer;
-  if(queue_[level].try_pop(buffer)) {
+  uint8_t* buffer = nullptr;
+  if (queue_[level].try_pop(buffer))
+  {
     return SectorAlignedMemory{ buffer, level, this };
-  } else {
-    uint8_t* buffer = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size_,
-                      sector_size_ * (1 << level)));
+  }
+  else
+  {
+    buffer = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size_, sector_size_ * (1 << level)));
     return SectorAlignedMemory{ buffer, level, this };
   }
 }

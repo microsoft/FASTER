@@ -69,7 +69,7 @@ class File {
 
   ~File() {
     if(owner_) {
-      Status s = Close();
+      Close();
     }
   }
 
@@ -285,9 +285,7 @@ class QueueIoHandler {
     : io_completion_port_{ INVALID_HANDLE_VALUE } {
   }
   QueueIoHandler(size_t max_threads)
-    : io_completion_port_{ 0 } {
-    io_completion_port_ = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0,
-                          (DWORD)Thread::kMaxNumThreads);
+    : io_completion_port_{ ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, static_cast<DWORD>(max_threads)) } {
   }
 
   /// Move constructor

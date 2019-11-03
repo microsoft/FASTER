@@ -18,20 +18,38 @@
 #include "native_buffer_pool.h"
 #include "recovery_status.h"
 #include "status.h"
+#include "value_control.h"
 
 namespace FASTER {
 namespace core {
 
 /// The log allocator, used by FASTER to store records.
 
-enum class FlushStatus : uint8_t {
-  Flushed,
+enum class FlushStatus : uint8_t
+{
+  Flushed = 0,
   InProgress
 };
 
-enum class CloseStatus : uint8_t {
-  Closed,
+enum class CloseStatus : uint8_t
+{
+  Closed = 0,
   Open
+};
+
+struct FlushCloseStatusLayout
+{
+    FlushStatus flush_;
+    CloseStatus close_;
+
+    FlushCloseStatusLayout()
+      : flush_{FlushStatus::Flushed}
+      , close_{CloseStatus::Closed}
+    {}
+    FlushCloseStatusLayout(FlushStatus flush, CloseStatus close)
+      : flush_{flush}
+      , close_{close}
+    {}
 };
 
 /// Pack flush- and close-status into a single 16-bit value.
@@ -40,191 +58,150 @@ enum class CloseStatus : uint8_t {
 /// --> { InProgress, Open } (when issuing the flush to disk)
 /// --> either { . , Closed} (when moving the head address forward)
 ///     or     { Flushed, . } (when the flush completes).
-struct FlushCloseStatus {
-  FlushCloseStatus()
-    : flush{ FlushStatus::Flushed }
-    , close{ CloseStatus::Closed } {
-  }
+struct FlushCloseStatus
+    : public value_control<FlushCloseStatusLayout, uint16_t, 0>
+{
+  FlushCloseStatus() = default;
 
-  FlushCloseStatus(FlushStatus flush_, CloseStatus close_)
-    : flush{ flush_ }
-    , close{ close_ } {
-  }
-
-  FlushCloseStatus(uint16_t control_)
-    : control{ control_ } {
-  }
+  FlushCloseStatus(FlushStatus flush, CloseStatus close)
+    : value_control{FlushCloseStatusLayout{flush, close}}
+  {}
+  explicit FlushCloseStatus(FlushCloseStatusLayout value)
+    : value_control{value}
+  {}
+  explicit FlushCloseStatus(uint16_t control)
+    : value_control{ control }
+  {}
 
   /// Is the page ready for use?
-  inline bool Ready() const {
-    return flush == FlushStatus::Flushed && close == CloseStatus::Open;
+  bool Ready() const
+  {
+    return
+        value().flush_ == FlushStatus::Flushed &&
+        value().close_ == CloseStatus::Open;
   }
-
-  union {
-      struct {
-        FlushStatus flush;
-        CloseStatus close;
-      };
-      uint16_t control;
-    };
+  FlushStatus flush() const noexcept
+  {
+    return value().flush_;
+  }
+  CloseStatus close() const noexcept
+  {
+    return value().close_;
+  }
 };
 static_assert(sizeof(FlushCloseStatus) == 2, "sizeof(FlushCloseStatus) != 2");
 
 /// Atomic version of FlushCloseStatus. Can set and get flush- and close- status, together,
 /// atomically.
-class AtomicFlushCloseStatus {
- public:
-  AtomicFlushCloseStatus()
-    : status_{} {
-  }
-
-  inline void store(FlushStatus flush, CloseStatus close) {
-    // Sets flush and close statuses, atomically.
-    FlushCloseStatus status{ flush, close };
-    control_.store(status.control);
-  }
-
-  inline FlushCloseStatus load() const {
-    // Gets flush and close statuses, atomically.
-    return FlushCloseStatus{ control_.load() };
-  }
-
-  inline bool compare_exchange_weak(FlushCloseStatus& expected, FlushCloseStatus value) {
-    uint16_t expected_control = expected.control;
-    bool result = control_.compare_exchange_weak(expected_control, value.control);
-    expected.control = expected_control;
-    return result;
-  }
-  inline bool compare_exchange_strong(FlushCloseStatus& expected, FlushCloseStatus value) {
-    uint16_t expected_control = expected.control;
-    bool result = control_.compare_exchange_strong(expected_control, value.control);
-    expected.control = expected_control;
-    return result;
-  }
-
-  union {
-      FlushCloseStatus status_;
-      std::atomic<uint16_t> control_;
-    };
-};
+using AtomicFlushCloseStatus = value_atomic_control<FlushCloseStatus, uint16_t, 0>;
 static_assert(sizeof(AtomicFlushCloseStatus) == 2, "sizeof(FlushCloseStatus) != 2");
 
 struct FullPageStatus {
   FullPageStatus()
     : LastFlushedUntilAddress{ 0 }
-    , status{} {
-  }
+    , status{}
+  {}
 
   AtomicAddress LastFlushedUntilAddress;
   AtomicFlushCloseStatus status;
 };
 static_assert(sizeof(FullPageStatus) == 16, "sizeof(FullPageStatus) != 16");
 
+/// Use 41 bits for offset, which gives us approximately 2 PB of overflow space, for
+/// Reserve().
+struct PageOffsetLayout
+{
+    uint64_t offset_ : 64 - Address::kPageBits;
+    uint64_t page_ : Address::kPageBits;
+};
+
 /// Page and offset of the tail of the log. Can reserve space within the current page or move to a
 /// new page.
-class PageOffset {
+class PageOffset
+    : public value_control<PageOffsetLayout, uint64_t, 0>
+{
  public:
+   using value_control::value_control;
+
   PageOffset(uint32_t page, uint64_t offset)
-    : offset_{ offset }
-    , page_{ page } {
+      : value_control{PageOffsetLayout{offset, page}}
+  {
     assert(page <= Address::kMaxPage);
   }
 
-  PageOffset(uint64_t control)
-    : control_{ control } {
-  }
-
-  PageOffset(const Address& address)
-    : offset_{ address.offset() }
-    , page_{ address.page() } {
-  }
+  explicit PageOffset(const Address& address)
+    : value_control{PageOffsetLayout{address.offset(), address.page()}}
+  {}
 
   /// Accessors.
-  inline uint64_t offset() const {
-    return offset_;
+  uint64_t offset() const noexcept
+  {
+    return value().offset_;
   }
-  inline uint32_t page() const {
-    return static_cast<uint32_t>(page_);
-  }
-  inline uint64_t control() const {
-    return control_;
+  uint32_t page() const noexcept
+  {
+    return static_cast<uint32_t>(value().page_);
   }
 
   /// Conversion operator.
-  inline operator Address() const {
-    assert(offset_ <= Address::kMaxOffset);
-    return Address{ page(), static_cast<uint32_t>(offset()) };
+  operator Address() const noexcept
+  {
+    assert(value().offset_ <= Address::kMaxOffset);
+    return Address{page(), static_cast<uint32_t>(offset())};
   }
-
- private:
-  /// Use 41 bits for offset, which gives us approximately 2 PB of overflow space, for
-  /// Reserve().
-  union {
-      struct {
-        uint64_t offset_ : 64 - Address::kPageBits;
-        uint64_t page_ : Address::kPageBits;
-      };
-      uint64_t control_;
-    };
 };
 static_assert(sizeof(PageOffset) == 8, "sizeof(PageOffset) != 8");
 
 /// Atomic page + offset marker. Can Reserve() space from current page, or move to NewPage().
-class AtomicPageOffset {
+class AtomicPageOffset
+  : public value_atomic_control<PageOffset, uint64_t, 0>
+{
  public:
-  AtomicPageOffset()
-    : control_{ 0 } {
-  }
+  AtomicPageOffset() = default;
 
   AtomicPageOffset(uint32_t page, uint64_t offset)
-    : control_{ PageOffset{ page, offset } .control() } {
+    : value_atomic_control{PageOffset{page, offset}.control()}
+  {}
+  AtomicPageOffset(const Address& address)
+    : value_atomic_control{PageOffset{address}.control()}
+  {
   }
-
-  AtomicPageOffset(const Address& address) {
-    PageOffset page_offset{ address };
-    control_.store(page_offset.control());
-  }
-
   /// Reserve space within the current page. Can overflow the page boundary (so result offset >
   /// Address::kMaxOffset).
-  inline PageOffset Reserve(uint32_t num_slots) {
+  PageOffset Reserve(uint32_t num_slots)
+  {
     assert(num_slots <= Address::kMaxOffset);
-    PageOffset offset{ 0, num_slots };
-    return PageOffset{ control_.fetch_add(offset.control()) };
+    return PageOffset{fetch_add(PageOffset{ 0, num_slots }).control()};
   }
 
   /// Move to the next page. The compare-and-swap can fail. Returns "true" if some thread advanced
   /// the thread; sets "won_cas" = "true" if this thread won the CAS, which means it has been
   /// chosen to set up the new page.
-  inline bool NewPage(uint32_t old_page, bool& won_cas) {
+  bool NewPage(uint32_t old_page, bool& won_cas)
+  {
     assert(old_page < Address::kMaxPage);
     won_cas = false;
     PageOffset expected_page_offset = load();
-    if(old_page != expected_page_offset.page()) {
+    if (old_page != expected_page_offset.page())
+    {
       // Another thread already moved to the new page.
       assert(old_page < expected_page_offset.page());
       return true;
     }
     PageOffset new_page{ old_page + 1, 0 };
-    uint64_t expected = expected_page_offset.control();
     // Try to move to a new page.
-    won_cas = control_.compare_exchange_strong(expected, new_page.control());
-    return PageOffset{ expected } .page() > old_page;
+    won_cas = compare_exchange_strong(expected_page_offset, new_page);
+    return expected_page_offset.page() > old_page;
   }
 
-  inline PageOffset load() const {
-    return PageOffset{ control_.load() };
+  PageOffset load() const
+  {
+    return value_atomic_control::load();
   }
-  inline void store(Address address) {
-    PageOffset page_offset{ address.page(), address.offset() };
-    control_.store(page_offset.control());
+  void store(Address address)
+  {
+    value_atomic_control::store(PageOffset{address});
   }
-
- private:
-  union {
-      /// Atomic access to the page+offset.
-      std::atomic<uint64_t> control_;
-    };
 };
 static_assert(sizeof(AtomicPageOffset) == 8, "sizeof(AtomicPageOffset) != 8");
 
@@ -291,7 +268,7 @@ class PersistentMemoryMalloc {
         pages_[idx] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
         std::memset(pages_[idx], 0, kPageSize);
         // Mark the page as accessible.
-        page_status_[idx].status.store(FlushStatus::Flushed, CloseStatus::Open);
+        page_status_[idx].status.store(FlushCloseStatus{FlushStatus::Flushed, CloseStatus::Open});
       } else {
         pages_[idx] = nullptr;
       }
@@ -323,12 +300,15 @@ class PersistentMemoryMalloc {
       for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
         if(pages_[idx]) {
           aligned_free(pages_[idx]);
+          pages_[idx] = nullptr;
         }
       }
       delete[] pages_;
+      pages_ = nullptr;
     }
     if(page_status_) {
       delete[] page_status_;
+      page_status_ = nullptr;
     }
   }
 
@@ -523,7 +503,7 @@ class PersistentMemoryMalloc {
       current_flushed_until_address = page_last_flushed_address;
       update = true;
       ++page;
-      page_last_flushed_address = PageStatus(page).LastFlushedUntilAddress.load();
+      page_last_flushed_address = PageStatus(page).LastFlushedUntilAddress.load(); // sometimes PageStatus(page).LastFlushedUntilAddress is broken (reserved != 0)
     }
 
     if(update) {
@@ -581,14 +561,15 @@ class PersistentMemoryMalloc {
 
 /// Implementations.
 template <class D>
-inline void PersistentMemoryMalloc<D>::AllocatePage(uint32_t index) {
+inline void PersistentMemoryMalloc<D>::AllocatePage(uint32_t index)
+{
   index = index % buffer_size_;
   if (!pre_allocate_log_) {
     assert(pages_[index] == nullptr);
     pages_[index] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
     std::memset(pages_[index], 0, kPageSize);
     // Mark the page as accessible.
-    page_status_[index].status.store(FlushStatus::Flushed, CloseStatus::Open);
+    page_status_[index].status.store(FlushCloseStatus{FlushStatus::Flushed, CloseStatus::Open});
   }
 }
 
@@ -601,7 +582,7 @@ inline Address PersistentMemoryMalloc<D>::Allocate(uint32_t num_slots, uint32_t&
     // The current page is full. The caller should Refresh() the epoch and wait until
     // NewPage() is successful before trying to Allocate() again.
     closed_page = page_offset.page();
-    return Address::kInvalidAddress;
+    return Address{Address::kInvalidAddress};
   } else {
     assert(Page(page_offset.page()));
     return static_cast<Address>(page_offset);
@@ -696,15 +677,15 @@ void PersistentMemoryMalloc<D>::OnPagesClosed(IAsyncContext* ctxt) {
       FlushCloseStatus old_status = context->allocator->PageStatus(idx).status.load();
       FlushCloseStatus new_status;
       do {
-        new_status = FlushCloseStatus{ old_status.flush, CloseStatus::Closed };
+        new_status = FlushCloseStatus{ old_status.flush(), CloseStatus::Closed };
       } while(!context->allocator->PageStatus(idx).status.compare_exchange_weak(old_status,
               new_status));
 
-      if(old_status.flush == FlushStatus::Flushed) {
+      if(old_status.flush() == FlushStatus::Flushed) {
         // We closed the page after it was flushed, so we are responsible for clearing and
         // reopening it.
         std::memset(context->allocator->Page(idx), 0, kPageSize);
-        context->allocator->PageStatus(idx).status.store(FlushStatus::Flushed, CloseStatus::Open);
+        context->allocator->PageStatus(idx).status.store(FlushCloseStatus{FlushStatus::Flushed, CloseStatus::Open});
       }
     }
   }
@@ -759,15 +740,15 @@ Status PersistentMemoryMalloc<D>::AsyncFlushPages(uint32_t start_page, Address u
     FlushCloseStatus old_status = context->allocator->PageStatus(context->page).status.load();
     FlushCloseStatus new_status;
     do {
-      new_status = FlushCloseStatus{ FlushStatus::Flushed, old_status.close };
+      new_status = FlushCloseStatus{ FlushStatus::Flushed, old_status.close() };
     } while(!context->allocator->PageStatus(context->page).status.compare_exchange_weak(
               old_status, new_status));
-    if(old_status.close == CloseStatus::Closed) {
+    if(old_status.close() == CloseStatus::Closed) {
       // We finished flushing the page after it was closed, so we are responsible for clearing and
       // reopening it.
       std::memset(context->allocator->Page(context->page), 0, kPageSize);
-      context->allocator->PageStatus(context->page).status.store(FlushStatus::Flushed,
-          CloseStatus::Open);
+      context->allocator->PageStatus(context->page).status.store(
+        FlushCloseStatus{FlushStatus::Flushed, CloseStatus::Open});
     }
     context->allocator->ShiftFlushedUntilAddress();
   };
@@ -788,7 +769,7 @@ Status PersistentMemoryMalloc<D>::AsyncFlushPages(uint32_t start_page, Address u
     FlushCloseStatus old_status = PageStatus(flush_page).status.load();
     FlushCloseStatus new_status;
     do {
-      new_status = FlushCloseStatus{ FlushStatus::InProgress, old_status.close };
+      new_status = FlushCloseStatus{ FlushStatus::InProgress, old_status.close() };
     } while(!PageStatus(flush_page).status.compare_exchange_weak(old_status, new_status));
     PageStatus(flush_page).LastFlushedUntilAddress.store(0);
 
@@ -978,7 +959,7 @@ void PersistentMemoryMalloc<D>::RecoveryReset(Address begin_address_, Address he
   }
 
   for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
-    PageStatus(idx).status.store(FlushStatus::Flushed, CloseStatus::Open);
+    PageStatus(idx).status.store(FlushCloseStatus{FlushStatus::Flushed, CloseStatus::Open});
   }
 }
 
