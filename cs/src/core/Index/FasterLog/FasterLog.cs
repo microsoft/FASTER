@@ -382,7 +382,7 @@ namespace FASTER.core
             var task = CommitTask;
             var tailAddress = CommitInternal();
 
-            while (true)
+            while (CommittedUntilAddress < tailAddress)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
@@ -404,7 +404,7 @@ namespace FASTER.core
             if (prevCommitTask == null) prevCommitTask = CommitTask;
             var tailAddress = CommitInternal();
 
-            while (true)
+            while (CommittedUntilAddress < tailAddress)
             {
                 var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
@@ -412,6 +412,8 @@ namespace FASTER.core
                 else
                     return linkedCommitInfo.NextTask;
             }
+
+            return prevCommitTask;
         }
 
         #endregion
