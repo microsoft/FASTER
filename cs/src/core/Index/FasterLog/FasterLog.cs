@@ -344,6 +344,9 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
+            if (CommittedUntilAddress >= tailAddress)
+                return;
+
             while (true)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token);
@@ -492,6 +495,7 @@ namespace FASTER.core
                 }
             }
 
+            // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
@@ -544,6 +548,7 @@ namespace FASTER.core
                 }
             }
 
+            // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             // Phase 2: wait for commit/flush to storage
             while (true)
             {
@@ -596,6 +601,7 @@ namespace FASTER.core
                 }
             }
 
+            // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             // Phase 2: wait for commit/flush to storage
             while (true)
             {

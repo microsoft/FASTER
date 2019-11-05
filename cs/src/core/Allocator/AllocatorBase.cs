@@ -2,11 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Runtime.InteropServices;
 using System.Diagnostics;
-using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -1258,7 +1257,7 @@ namespace FASTER.core
                     asyncResult.maxPtr = readLength;
                     readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
                 }
-                
+
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
@@ -1279,7 +1278,7 @@ namespace FASTER.core
             int numPages = (int)(endPage - startPage);
 
             long offsetInStartPage = GetOffsetInPage(fromAddress);
-            long offsetInEndPage = GetOffsetInPage(untilAddress);                
+            long offsetInEndPage = GetOffsetInPage(untilAddress);
 
             // Extra (partial) page being flushed
             if (offsetInEndPage > 0)
@@ -1513,11 +1512,7 @@ namespace FASTER.core
                     WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                 }
             }
-            catch
-            {
-                if (!disposed)
-                    throw;
-            }
+            catch when (disposed) { }
             finally
             {
                 Overlapped.Free(overlap);
@@ -1546,11 +1541,7 @@ namespace FASTER.core
                     result.Free();
                 }
             }
-            catch
-            {
-                if (!disposed)
-                    throw;
-            }
+            catch when (disposed) { }
             finally
             {
                 Overlapped.Free(overlap);
