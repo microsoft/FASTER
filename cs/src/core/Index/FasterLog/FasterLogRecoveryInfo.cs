@@ -125,6 +125,10 @@ namespace FASTER.core
                             writer.Write(kvp.Value);
                         }
                     }
+                    else
+                    {
+                        writer.Write(0);
+                    }
                 }
                 return ms.ToArray();
             }
