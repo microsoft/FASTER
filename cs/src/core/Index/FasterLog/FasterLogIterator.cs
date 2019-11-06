@@ -42,9 +42,6 @@ namespace FASTER.core
         /// </summary>
         public long NextAddress => nextAddress;
 
-        internal static readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators
-            = new ConcurrentDictionary<string, FasterLogScanIterator>();
-
         /// <summary>
         /// Constructor
         /// </summary>
@@ -258,7 +255,10 @@ namespace FASTER.core
             frame?.Dispose();
 
             if (name != null)
-                PersistedIterators.TryRemove(name, out _);
+                fasterLog.PersistedIterators.TryRemove(name, out _);
+
+            if (Interlocked.Decrement(ref fasterLog.logRefCount) == 0)
+                fasterLog.TrueDispose();
         }
 
         private unsafe void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)

@@ -593,14 +593,6 @@ namespace FASTER.core
         {
             disposed = true;
 
-            TailPageOffset.Page = 0;
-            TailPageOffset.Offset = 0;
-            SafeReadOnlyAddress = 0;
-            ReadOnlyAddress = 0;
-            SafeHeadAddress = 0;
-            HeadAddress = 0;
-            BeginAddress = 1;
-
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
@@ -1065,7 +1057,7 @@ namespace FASTER.core
 
             if (update)
             {
-                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out long oldClosedUntilAddress);
+                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out _);
             }
         }
 

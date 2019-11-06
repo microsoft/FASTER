@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -59,6 +60,18 @@ namespace FASTER.core
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
 
         /// <summary>
+        /// Table of persisted iterators
+        /// </summary>
+        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators 
+            = new ConcurrentDictionary<string, FasterLogScanIterator>();
+
+        /// <summary>
+        /// Numer of references to log, including itself
+        /// Used to determine disposability of log
+        /// </summary>
+        internal int logRefCount = 1;
+
+        /// <summary>
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings"></param>
@@ -88,9 +101,15 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            if (Interlocked.Decrement(ref logRefCount) == 0)
+                TrueDispose();
+        }
+
+        internal void TrueDispose()
+        {
+            commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
             epoch.Dispose();
-            commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
         }
 
         #region Enqueue
@@ -663,11 +682,12 @@ namespace FASTER.core
             {
                 if (name.Length > 20)
                     throw new Exception("Max length of iterator name is 20 characters");
-                if (FasterLogScanIterator.PersistedIterators.ContainsKey(name))
+                if (PersistedIterators.ContainsKey(name))
                     Debug.WriteLine("Iterator name exists, overwriting");
-                FasterLogScanIterator.PersistedIterators[name] = iter;
+                PersistedIterators[name] = iter;
             }
 
+            Interlocked.Increment(ref logRefCount);
             return iter;
         }
 
@@ -728,7 +748,7 @@ namespace FASTER.core
                     BeginAddress = commitInfo.BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress
                 };
-                info.PopulateIterators();
+                info.PopulateIterators(PersistedIterators);
 
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
                 CommittedBeginAddress = info.BeginAddress;
@@ -911,7 +931,7 @@ namespace FASTER.core
                 // May need to commit begin address and/or iterators
                 epoch.Suspend();
                 var beginAddress = allocator.BeginAddress;
-                if (beginAddress > CommittedBeginAddress || FasterLogScanIterator.PersistedIterators.Count > 0)
+                if (beginAddress > CommittedBeginAddress || PersistedIterators.Count > 0)
                     CommitCallback(new CommitInfo
                     {
                         BeginAddress = beginAddress,
