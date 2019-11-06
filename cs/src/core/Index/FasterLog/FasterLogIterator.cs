@@ -98,7 +98,7 @@ namespace FASTER.core
         /// <returns>Entry and entry length</returns>
         public async IAsyncEnumerable<(byte[], int)> GetAsyncEnumerable([EnumeratorCancellation] CancellationToken token = default)
         {
-            while (true)
+            while (!disposed)
             {
                 byte[] result;
                 int length;
@@ -106,7 +106,8 @@ namespace FASTER.core
                 {
                     if (currentAddress >= endAddress)
                         yield break;
-                    await WaitAsync(token);
+                    if (!await WaitAsync(token))
+                        yield break;
                 }
                 yield return (result, length);
             }
@@ -118,7 +119,7 @@ namespace FASTER.core
         /// <returns>Entry and entry length</returns>
         public async IAsyncEnumerable<(IMemoryOwner<byte>, int)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
         {
-            while (true)
+            while (!disposed)
             {
                 IMemoryOwner<byte> result;
                 int length;
@@ -126,7 +127,8 @@ namespace FASTER.core
                 {
                     if (currentAddress >= endAddress)
                         yield break;
-                    await WaitAsync(token);
+                    if (!await WaitAsync(token))
+                        yield break;
                 }
                 yield return (result, length);
             }
@@ -136,34 +138,36 @@ namespace FASTER.core
         /// <summary>
         /// Wait for iteration to be ready to continue
         /// </summary>
-        /// <returns></returns>
-        public ValueTask WaitAsync(CancellationToken token = default)
+        /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown / iterator has reached endAddress)</returns>
+        public ValueTask<bool> WaitAsync(CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
+
+            // if (nextAddress >= this.endAddress)
+            //    return new ValueTask<bool>(false);
+
             if (nextAddress < fasterLog.CommittedUntilAddress)
-            {
-                return new ValueTask();
-            }
+                return new ValueTask<bool>(true);
 
             return SlowWaitAsync(this, token);
 
             // use static local function to guarantee there's no accidental closure getting allocated here
-            static async ValueTask SlowWaitAsync(FasterLogScanIterator @this, CancellationToken token)
+            static async ValueTask<bool> SlowWaitAsync(FasterLogScanIterator @this, CancellationToken token)
             {
                 while (true)
                 {
+                    if (@this.disposed)
+                        return false;
                     var commitTask = @this.fasterLog.CommitTask;
-                    if (@this.nextAddress >= @this.fasterLog.CommittedUntilAddress)
+                    if (@this.nextAddress < @this.fasterLog.CommittedUntilAddress)
+                        return true;
+                    // Ignore commit exceptions, except when the token is signaled
+                    try
                     {
-                        // Ignore commit exceptions, except when the token is signaled
-                        try
-                        {
-                            await commitTask.WithCancellationAsync(token);
-                        }
-                        catch when (!token.IsCancellationRequested) { }
+                        await commitTask.WithCancellationAsync(token);
                     }
-                    else
-                        break;
+                    catch (ObjectDisposedException) { return false; }
+                    catch when (!token.IsCancellationRequested) { }
                 }
             }
         }
@@ -234,29 +238,32 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            if (frame != null)
+            if (!disposed)
             {
-                // Wait for ongoing reads to complete/fail
-                for (int i = 0; i < loaded.Length; i++)
+                if (frame != null)
                 {
-                    if (loadedPage[i] != -1)
+                    // Wait for ongoing reads to complete/fail
+                    for (int i = 0; i < loaded.Length; i++)
                     {
-                        try
+                        if (loadedPage[i] != -1)
                         {
-                            loaded[i].Wait(loadedCancel[i].Token);
+                            try
+                            {
+                                loaded[i].Wait(loadedCancel[i].Token);
+                            }
+                            catch { }
                         }
-                        catch { }
                     }
                 }
+
+                // Dispose/unpin the frame from memory
+                frame?.Dispose();
+
+                if (name != null)
+                    fasterLog.PersistedIterators.TryRemove(name, out _);
+
+                disposed = true;
             }
-            disposed = true;
-
-            // Dispose/unpin the frame from memory
-            frame?.Dispose();
-
-            if (name != null)
-                fasterLog.PersistedIterators.TryRemove(name, out _);
-
             if (Interlocked.Decrement(ref fasterLog.logRefCount) == 0)
                 fasterLog.TrueDispose();
         }
@@ -336,11 +343,7 @@ namespace FASTER.core
 
                 Interlocked.MemoryBarrier();
             }
-            catch
-            {
-                if (!disposed)
-                    throw;
-            }
+            catch when (disposed) { }
             finally
             {
                 Overlapped.Free(overlap);
@@ -370,6 +373,9 @@ namespace FASTER.core
             currentAddress = nextAddress;
             while (true)
             {
+                if (disposed)
+                    return false;
+
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
                 {
