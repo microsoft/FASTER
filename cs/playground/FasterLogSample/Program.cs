@@ -167,7 +167,11 @@ namespace FasterLogSample
                     // Example of random read from given address
                     // (result, _) = log.ReadAsync(iter.CurrentAddress).GetAwaiter().GetResult();
 
+                    // Truncate log until after recently processed entry
                     log.TruncateUntil(iter.NextAddress);
+
+                    // Safer truncate variant: truncate until start of page
+                    // log.TruncateUntilPageStart(iter.NextAddress);
                 }
             }
 

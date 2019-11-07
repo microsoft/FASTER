@@ -83,9 +83,7 @@ class AtomicCheckpointLock {
   }
 
  private:
-  union {
-      std::atomic<uint64_t> control_;
-    };
+  std::atomic<uint64_t> control_;
 };
 static_assert(sizeof(AtomicCheckpointLock) == 8, "sizeof(AtomicCheckpointLock) != 8");
 

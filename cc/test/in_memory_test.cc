@@ -5,6 +5,7 @@
 #include <cstring>
 #include <deque>
 #include <thread>
+#include <utility>
 #include "gtest/gtest.h"
 
 #include "core/faster.h"
@@ -15,6 +16,31 @@
 using namespace FASTER::core;
 using FASTER::test::FixedSizeKey;
 using FASTER::test::SimpleAtomicValue;
+
+class Latch {
+ private:
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool triggered_ = false;
+
+ public:
+  void Wait() {
+    std::unique_lock<std::mutex> lock{ mutex_ };
+    while (!triggered_) {
+      cv_.wait(lock);
+    }
+  }
+
+  void Trigger() {
+    std::unique_lock<std::mutex> lock{ mutex_ };
+    triggered_ = true;
+    cv_.notify_all();
+  }
+
+  void Reset() {
+    triggered_ = false;
+  }
+};
 
 TEST(InMemFaster, UpsertRead) {
   using Key = FixedSizeKey<uint8_t>;
@@ -770,6 +796,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
     thread.join();
   }
 }
+
 TEST(InMemFaster, Rmw) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = SimpleAtomicValue<uint32_t>;
@@ -1601,6 +1628,199 @@ for(size_t idx = 0; idx < kRange; ++idx) {
 }
 
 store.StopSession();
+}
+
+TEST(InMemFaster, ConcurrentDelete) {
+  using KeyData = std::pair<uint64_t, uint64_t>;
+  struct HashFn {
+    inline size_t operator()(const KeyData& key) const {
+      std::hash<uint64_t> hash_fn;
+      return hash_fn(key.first);
+    }
+  };
+
+  using Key = FixedSizeKey<KeyData, HashFn>;
+  using Value = SimpleAtomicValue<int64_t>;
+
+  class RmwContext : public IAsyncContext {
+   private:
+    Key key_;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    explicit RmwContext(const Key& key)
+      : key_{ key }
+    {}
+
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline static constexpr uint32_t value_size() {
+      return Value::size();
+    }
+
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return Value::size();
+    }
+
+    inline void RmwInitial(Value& value) {
+      value.value = 1;
+    }
+
+    inline void RmwCopy(const Value& old_value, Value& value) {
+      value.value = old_value.value * 2 + 1;
+    }
+
+    inline bool RmwAtomic(Value& value) {
+      // Not supported: so that operation would allocate a new entry for the update.
+      return false;
+    }
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+  };
+
+  class DeleteContext : public IAsyncContext {
+   private:
+    Key key_;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    explicit DeleteContext(const Key& key)
+      : key_{ key }
+    {}
+
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline static constexpr uint32_t value_size() {
+      return Value::size();
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+  };
+
+  class ReadContext : public IAsyncContext {
+   private:
+    Key key_;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    int64_t output;
+
+    explicit ReadContext(const Key& key)
+      : key_{ key }
+    {}
+
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline void Get(const Value& value) {
+      // All reads should be atomic (from the mutable tail).
+      ASSERT_TRUE(false);
+    }
+
+    inline void GetAtomic(const Value& value) {
+      output = value.atomic_value.load();
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+  };
+
+  static constexpr size_t kNumOps = 1024;
+  static constexpr size_t kNumThreads = 2;
+
+  Latch latch;
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+
+  auto run_threads = [&latch](std::function<void (size_t)> worker) {
+    latch.Reset();
+    std::deque<std::thread> threads{};
+    for(size_t idx = 0; idx < kNumThreads; ++idx) {
+      threads.emplace_back(worker, idx);
+    }
+
+    latch.Trigger();
+    for(auto& thread : threads) {
+      thread.join();
+    }
+  };
+
+  // Rmw.
+  run_threads([&latch, &store](size_t thread_idx) {
+    latch.Wait();
+    store.StartSession();
+
+    // Update each entry 2 times (1st is insert, 2nd is rmw).
+    for(size_t i = 0; i < 2; ++i) {
+      for(size_t idx = 0; idx < kNumOps; ++idx) {
+        auto callback = [](IAsyncContext* ctxt, Status result) {
+          // In-memory test.
+          ASSERT_TRUE(false);
+        };
+        Key key{ std::make_pair(idx % 7, thread_idx * kNumOps + idx) };
+        RmwContext context{ key };
+        Status result = store.Rmw(context, callback, 1);
+        ASSERT_EQ(Status::Ok, result);
+      }
+    }
+
+    store.StopSession();
+  });
+
+  // Delete.
+  run_threads([&latch, &store](size_t thread_idx) {
+    latch.Wait();
+    store.StartSession();
+
+    for(size_t idx = 0; idx < kNumOps; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+      };
+      Key key{ std::make_pair(idx % 7, thread_idx * kNumOps + idx) };
+      DeleteContext context{ key };
+      Status result = store.Delete(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
+
+    store.StopSession();
+  });
+
+  // Read.
+  run_threads([&latch, &store](size_t thread_idx) {
+    latch.Wait();
+    store.StartSession();
+
+    for(size_t idx = 0; idx < kNumOps; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+      };
+      Key key{ std::make_pair(idx % 7, thread_idx * kNumOps + idx) };
+      ReadContext context{ key };
+      Status result = store.Read(context, callback, 1);
+      ASSERT_EQ(Status::NotFound, result);
+    }
+
+    store.StopSession();
+  });
 }
 
 TEST(InMemFaster, GrowHashTable) {

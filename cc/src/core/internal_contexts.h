@@ -326,6 +326,65 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
   }
 };
 
+/// FASTER's internal Delete() context.
+
+/// An internal Delete() context that has gone async and lost its type information.
+template <class K>
+class AsyncPendingDeleteContext : public PendingContext<K> {
+ public:
+  typedef K key_t;
+ protected:
+  AsyncPendingDeleteContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_)
+    : PendingContext<key_t>(OperationType::Delete, caller_context_, caller_callback_) {
+  }
+  /// The deep copy constructor.
+  AsyncPendingDeleteContext(AsyncPendingDeleteContext& other, IAsyncContext* caller_context)
+    : PendingContext<key_t>(other, caller_context) {
+  }
+ public:
+  /// Get value size for initial value
+  virtual uint32_t value_size() const = 0;
+};
+
+/// A synchronous Delete() context preserves its type information.
+template <class MC>
+class PendingDeleteContext : public AsyncPendingDeleteContext<typename MC::key_t> {
+ public:
+  typedef MC delete_context_t;
+  typedef typename delete_context_t::key_t key_t;
+  typedef typename delete_context_t::value_t value_t;
+  typedef Record<key_t, value_t> record_t;
+
+  PendingDeleteContext(delete_context_t& caller_context_, AsyncCallback caller_callback_)
+    : AsyncPendingDeleteContext<key_t>(caller_context_, caller_callback_) {
+  }
+  /// The deep copy constructor.
+  PendingDeleteContext(PendingDeleteContext& other, IAsyncContext* caller_context_)
+    : AsyncPendingDeleteContext<key_t>(other, caller_context_) {
+  }
+ protected:
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    return IAsyncContext::DeepCopy_Internal(*this, PendingContext<key_t>::caller_context,
+                                            context_copy);
+  }
+ private:
+  const delete_context_t& delete_context() const {
+    return *static_cast<const delete_context_t*>(PendingContext<key_t>::caller_context);
+  }
+  delete_context_t& delete_context() {
+    return *static_cast<delete_context_t*>(PendingContext<key_t>::caller_context);
+  }
+ public:
+  /// Accessors.
+  inline const key_t& key() const final {
+    return delete_context().key();
+  }
+  /// Get value size for initial value
+  inline uint32_t value_size() const final {
+    return delete_context().value_size();
+  }
+};
+
 class AsyncIOContext;
 
 /// Per-thread execution context. (Just the stuff that's checkpointed to disk.)
