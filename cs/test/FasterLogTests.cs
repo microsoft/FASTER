@@ -54,12 +54,12 @@ namespace FASTER.test
             using (var iter = log.Scan(0, long.MaxValue))
             {
                 int count = 0;
-                while (iter.GetNext(out byte[] result, out int length))
+                while (iter.GetNext(out byte[] result, out int length, out long currentAddress))
                 {
                     count++;
                     Assert.IsTrue(result.SequenceEqual(entry));
                     if (count % 100 == 0)
-                        log.TruncateUntil(iter.CurrentAddress);
+                        log.TruncateUntil(iter.NextAddress);
                 }
                 Assert.IsTrue(count == numEntries);
             }
@@ -89,11 +89,11 @@ namespace FASTER.test
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
-                    var curr = iter.GetNext(out byte[] result, out _);
+                    var curr = iter.GetNext(out byte[] result, out _, out _);
                     Assert.IsTrue(curr);
                     Assert.IsTrue(result.SequenceEqual(data1));
 
-                    var next = iter.GetNext(out _, out _);
+                    var next = iter.GetNext(out _, out _, out _);
                     Assert.IsFalse(next);
                 }
             }
@@ -113,7 +113,7 @@ namespace FASTER.test
                 Assert.IsTrue(appendResult);
                 await log.CommitAsync();
                 await iter.WaitAsync();
-                var iterResult = iter.GetNext(out byte[] entry, out _);
+                var iterResult = iter.GetNext(out byte[] entry, out _, out _);
                 Assert.IsTrue(iterResult);
 
                 appendResult = log.TryEnqueue(data1, out _);
@@ -121,7 +121,7 @@ namespace FASTER.test
                 await iter.WaitAsync();
 
                 // Should read the "hole" and return false
-                iterResult = iter.GetNext(out entry, out _);
+                iterResult = iter.GetNext(out entry, out _, out _);
                 Assert.IsFalse(iterResult);
 
                 // Should wait for next item
@@ -133,7 +133,7 @@ namespace FASTER.test
                 await log.CommitAsync();
 
                 await task;
-                iterResult = iter.GetNext(out entry, out _);
+                iterResult = iter.GetNext(out entry, out _, out _);
                 Assert.IsTrue(iterResult);
             }
             log.Dispose();
@@ -160,7 +160,7 @@ namespace FASTER.test
             using (var iter = log.Scan(0, long.MaxValue))
             {
                 // Should read the "hole" and return false
-                var iterResult = iter.GetNext(out byte[] entry, out _);
+                var iterResult = iter.GetNext(out byte[] entry, out _, out _);
                 log.TruncateUntil(iter.NextAddress);
 
                 Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);

@@ -700,7 +700,8 @@ namespace FASTER.core
                 PersistedIterators[name] = iter;
             }
 
-            Interlocked.Increment(ref logRefCount);
+            if (Interlocked.Increment(ref logRefCount) == 1)
+                throw new Exception("Cannot scan disposed log instance");
             return iter;
         }
 
@@ -762,11 +763,16 @@ namespace FASTER.core
                     BeginAddress = commitInfo.BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress
                 };
-                info.PopulateIterators(PersistedIterators);
+
+                // Take snapshot of persisted iterators
+                info.SnapshotIterators(PersistedIterators);
 
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
                 CommittedBeginAddress = info.BeginAddress;
                 CommittedUntilAddress = info.FlushedUntilAddress;
+                
+                // Update completed address for persisted iterators
+                info.CommitIterators(PersistedIterators);
 
                 _commitTcs = commitTcs;
                 // If task is not faulted, create new task

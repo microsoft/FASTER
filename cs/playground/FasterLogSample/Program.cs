@@ -145,7 +145,7 @@ namespace FasterLogSample
             {
                 while (true)
                 {
-                    while (!iter.GetNext(out result, out int length))
+                    while (!iter.GetNext(out result, out int length, out _))
                     {
                         // For finite end address, check if iteration ended
                         // if (iter.CurrentAddress >= endAddress) return; 
@@ -212,7 +212,7 @@ namespace FasterLogSample
 
                 if (iter != null)
                 {
-                    var nowIterValue = iter.CurrentAddress;
+                    var nowIterValue = iter.NextAddress;
                     Console.WriteLine("Scan Throughput: {0} MB/sec, Iter pos: {1}",
                         (nowIterValue - lastIterValue) / (1000 * (nowTime - lastTime)), nowIterValue);
                     lastIterValue = nowIterValue;
