@@ -818,7 +818,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
   if(address >= safe_read_only_address) {
     // Mutable or fuzzy region
     // concurrent read
-    if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
+    if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone()) {
       return OperationStatus::NOT_FOUND;
     }
     pending_context.GetAtomic(hlog.Get(address));
@@ -826,7 +826,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
   } else if(address >= head_address) {
     // Immutable region
     // single-thread read
-    if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
+    if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone()) {
       return OperationStatus::NOT_FOUND;
     }
     pending_context.Get(hlog.Get(address));
@@ -876,7 +876,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
   // The common case
   if(thread_ctx().phase == Phase::REST && address >= read_only_address) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    if(!record->header.tombstone && pending_context.PutAtomic(record)) {
+    if(!record->header.tombstone() && pending_context.PutAtomic(record)) {
       return OperationStatus::SUCCESS;
     } else {
       // Must retry as RCU.
@@ -946,7 +946,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
     }
     // We acquired the necessary locks, so we can update the record's bucket atomically.
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    if(!record->header.tombstone && pending_context.PutAtomic(record)) {
+    if(!record->header.tombstone() && pending_context.PutAtomic(record)) {
       // Host successfully replaced record, atomically.
       return OperationStatus::SUCCESS;
     } else {
@@ -1019,7 +1019,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
   // The common case.
   if(phase == Phase::REST && address >= read_only_address) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    if(!record->header.tombstone && pending_context.RmwAtomic(record)) {
+    if(!record->header.tombstone() && pending_context.RmwAtomic(record)) {
       // In-place RMW succeeded.
       return OperationStatus::SUCCESS;
     } else {
@@ -1100,14 +1100,14 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     }
     // We acquired the necessary locks, so so we can update the record's bucket atomically.
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    if(!record->header.tombstone && pending_context.RmwAtomic(record)) {
+    if(!record->header.tombstone() && pending_context.RmwAtomic(record)) {
       // In-place RMW succeeded.
       return OperationStatus::SUCCESS;
     } else {
       // Must retry as RCU.
       goto create_record;
     }
-  } else if(address >= safe_read_only_address && !reinterpret_cast<record_t*>(hlog.Get(address))->header.tombstone) {
+  } else if(address >= safe_read_only_address && !reinterpret_cast<record_t*>(hlog.Get(address))->header.tombstone()) {
     // Fuzzy Region: Must go pending due to lost-update anomaly
     if(!retrying) {
       pending_context.go_async(phase, version, address, expected_entry);
@@ -1135,7 +1135,7 @@ create_record:
   const record_t* old_record = nullptr;
   if(address >= head_address) {
     old_record = reinterpret_cast<const record_t*>(hlog.Get(address));
-    if(old_record->header.tombstone) {
+    if(old_record->header.tombstone()) {
       old_record = nullptr;
     }
   }
@@ -1297,7 +1297,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
         atomic_entry->compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
       }
     }
-    record->header.tombstone = true;
+    record->header.set_tombstone(true);
     return OperationStatus::SUCCESS;
   }
 
@@ -1553,7 +1553,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRead(ExecutionContext&
     async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
           io_context.caller_context);
     record_t* record = reinterpret_cast<record_t*>(io_context.record.GetValidPointer());
-    if(record->header.tombstone) {
+    if(record->header.tombstone()) {
       return (thread_ctx().version > context.version) ? OperationStatus::NOT_FOUND_UNMARK :
              OperationStatus::NOT_FOUND;
     }
