@@ -384,7 +384,7 @@ inline void FasterKv<K, V, D>::StopSession() {
 template <class K, class V, class D>
 inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash,
     HashBucketEntry& expected_entry) const {
-  expected_entry = HashBucketEntry::kInvalidEntry;
+  expected_entry = HashBucketEntry{};
   // Truncate the hash to get a bucket page_index < state[version].size.
   uint32_t version = resize_info_.version;
   const HashBucket* bucket = &state_[version].bucket(hash);
@@ -1227,7 +1227,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
 
   if(address >= head_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
-    latest_record_version = record->header.checkpoint_version;
+    latest_record_version = record->header.checkpoint_version();
     if(key != record->key()) {
       address = TraceBackForKeyMatch(key, record->header.previous_address(), head_address);
     }
@@ -1294,7 +1294,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
     if(expected_entry.address() == address) {
       Address previous_address = record->header.previous_address();
       if (previous_address < begin_address) {
-        atomic_entry->compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
+        atomic_entry->compare_exchange_strong(expected_entry, HashBucketEntry{});
       }
     }
     record->header.set_tombstone(true);
@@ -1318,7 +1318,7 @@ create_record:
     return OperationStatus::SUCCESS;
   } else {
     // Try again.
-    record->header.invalid = true;
+    record->header.set_invalid();
     return OperationStatus::RETRY_NOW;
   }
 }
