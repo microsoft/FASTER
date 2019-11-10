@@ -105,7 +105,7 @@ public:
       State state_;
       /// 64-bit control field, used so that threads can read the allocation count atomically at
       /// the same time they increment the free count atomically.
-      std::atomic<uint64_t> control_ = 0;
+      std::atomic<uint64_t> control_{0};
 
       Value() = default;
       Value(uint32_t allocations, uint32_t frees) : state_{frees, allocations}
