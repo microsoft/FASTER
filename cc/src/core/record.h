@@ -63,6 +63,10 @@ public:
   {
     return static_cast<bool>(value().tombstone_);
   }
+  void set_tombstone(bool val) noexcept
+  {
+	  value().tombstone_ = val;
+  }
   bool final_bit() const noexcept
   {
     return static_cast<bool>(value().final_bit_);
