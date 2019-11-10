@@ -5,7 +5,11 @@
 
 #include <experimental/filesystem>
 
+#include "test_types.h"
+
 using namespace FASTER;
+using FASTER::test::FixedSizeKey;
+using FASTER::test::SimpleAtomicValue;
 
 /// Disk's log uses 32 MB segments.
 typedef FASTER::device::FileSystemDisk<handler_t, 33554432L> disk_t;
@@ -1151,60 +1155,8 @@ TEST(CLASS, Serial_VariableLengthKey) {
 }
 
 TEST(CLASS, Concurrent_Insert_Small) {
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn{};
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint32_t key_;
-  };
-  static_assert(sizeof(Key) == 4, "sizeof(Key) != 4");
-  static_assert(alignof(Key) == 4, "alignof(Key) != 4");
-
-  class UpsertContext;
-  class ReadContext1;
-  class ReadContext2;
-
-  class Value {
-   public:
-    Value()
-      : val_{ 0 } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext1;
-    friend class ReadContext2;
-
-   private:
-    union {
-      std::atomic<uint32_t> atomic_val_;
-      uint32_t val_;
-    };
-  };
-  static_assert(sizeof(Value) == 4, "sizeof(Value) != 4");
-  static_assert(alignof(Value) == 4, "alignof(Value) != 4");
+  using Key = FixedSizeKey<uint32_t>;
+  using Value = SimpleAtomicValue<uint32_t>;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -1231,10 +1183,10 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
-      value.val_ = val_;
+      value.value = val_;
     }
     inline bool PutAtomic(Value& value) {
-      value.atomic_val_.store(val_);
+      value.atomic_value.store(val_);
       return true;
     }
 
@@ -1307,10 +1259,10 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -1466,10 +1418,10 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -1569,60 +1521,8 @@ TEST(CLASS, Concurrent_Insert_Small) {
 }
 
 TEST(CLASS, Concurrent_Insert_Large) {
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn{};
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint32_t key_;
-  };
-  static_assert(sizeof(Key) == 4, "sizeof(Key) != 4");
-  static_assert(alignof(Key) == 4, "alignof(Key) != 4");
-
-  class UpsertContext;
-  class ReadContext1;
-  class ReadContext2;
-
-  class Value {
-   public:
-    Value()
-      : val_{ 0 } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext1;
-    friend class ReadContext2;
-
-   private:
-    union {
-      std::atomic<uint32_t> atomic_val_;
-      uint32_t val_;
-    };
-  };
-  static_assert(sizeof(Value) == 4, "sizeof(Value) != 4");
-  static_assert(alignof(Value) == 4, "alignof(Value) != 4");
+  using Key = FixedSizeKey<uint32_t>;
+  using Value = SimpleAtomicValue<uint32_t>;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -1649,10 +1549,10 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
-      value.val_ = val_;
+      value.value = val_;
     }
     inline bool PutAtomic(Value& value) {
-      value.atomic_val_.store(val_);
+      value.atomic_value.store(val_);
       return true;
     }
 
@@ -1725,10 +1625,10 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -1882,10 +1782,10 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -1985,59 +1885,8 @@ TEST(CLASS, Concurrent_Insert_Large) {
 }
 
 TEST(CLASS, Concurrent_Update_Small) {
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn{};
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint32_t key_;
-  };
-  static_assert(sizeof(Key) == 4, "sizeof(Key) != 4");
-  static_assert(alignof(Key) == 4, "alignof(Key) != 4");
-
-  class UpsertContext;
-  class ReadContext1;
-  class ReadContext2;
-
-  class Value {
-   public:
-    Value()
-      : val_{ 0 } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext1;
-    friend class ReadContext2;
-
-   private:
-    union {
-      std::atomic<uint32_t> atomic_val_;
-      uint32_t val_;
-    };
-  };
-  static_assert(sizeof(Value) == 4, "sizeof(Value) != 4");
-  static_assert(alignof(Value) == 4, "alignof(Value) != 4");
+  using Key = FixedSizeKey<uint32_t>;
+  using Value = SimpleAtomicValue<uint32_t>;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -2064,10 +1913,10 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
-      value.val_ = val_;
+      value.value = val_;
     }
     inline bool PutAtomic(Value& value) {
-      value.atomic_val_.store(val_);
+      value.atomic_value.store(val_);
       return true;
     }
 
@@ -2140,10 +1989,10 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -2309,10 +2158,10 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -2413,60 +2262,8 @@ TEST(CLASS, Concurrent_Update_Small) {
 }
 
 TEST(CLASS, Concurrent_Update_Large) {
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn{};
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint32_t key_;
-  };
-  static_assert(sizeof(Key) == 4, "sizeof(Key) != 4");
-  static_assert(alignof(Key) == 4, "alignof(Key) != 4");
-
-  class UpsertContext;
-  class ReadContext1;
-  class ReadContext2;
-
-  class Value {
-   public:
-    Value()
-      : val_{ 0 } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext1;
-    friend class ReadContext2;
-
-   private:
-    union {
-      std::atomic<uint32_t> atomic_val_;
-      uint32_t val_;
-    };
-  };
-  static_assert(sizeof(Value) == 4, "sizeof(Value) != 4");
-  static_assert(alignof(Value) == 4, "alignof(Value) != 4");
+  using Key = FixedSizeKey<uint32_t>;
+  using Value = SimpleAtomicValue<uint32_t>;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -2493,10 +2290,10 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
-      value.val_ = val_;
+      value.value = val_;
     }
     inline bool PutAtomic(Value& value) {
-      value.atomic_val_.store(val_);
+      value.atomic_value.store(val_);
       return true;
     }
 
@@ -2577,10 +2374,10 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -2761,10 +2558,10 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -2865,63 +2662,8 @@ TEST(CLASS, Concurrent_Update_Large) {
 }
 
 TEST(CLASS, Concurrent_Rmw_Small) {
-  class RmwContext;
-
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn{};
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-    friend class RmwContext;
-
-   private:
-    uint32_t key_;
-  };
-  static_assert(sizeof(Key) == 4, "sizeof(Key) != 4");
-  static_assert(alignof(Key) == 4, "alignof(Key) != 4");
-
-  class ReadContext1;
-  class ReadContext2;
-
-  class Value {
-   public:
-    Value()
-      : val_{ 0 } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class RmwContext;
-    friend class ReadContext1;
-    friend class ReadContext2;
-
-   private:
-    union {
-      std::atomic<uint32_t> atomic_val_;
-      uint32_t val_;
-    };
-  };
-  static_assert(sizeof(Value) == 4, "sizeof(Value) != 4");
-  static_assert(alignof(Value) == 4, "alignof(Value) != 4");
+  using Key = FixedSizeKey<uint32_t>;
+  using Value = SimpleAtomicValue<uint32_t>;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -2951,13 +2693,13 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void RmwInitial(Value& value) {
-      value.val_ = key_.key_;
+      value.value = key_.key;
     }
     inline void RmwCopy(const value_t& old_value, value_t& value) {
-      value.val_ = old_value.val_ + delta_;
+      value.value = old_value.value + delta_;
     }
     inline bool RmwAtomic(value_t& value) {
-      value.atomic_val_ += delta_;
+      value.atomic_value += delta_;
       return true;
     }
    protected:
@@ -3024,10 +2766,10 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -3204,10 +2946,10 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -3308,63 +3050,8 @@ TEST(CLASS, Concurrent_Rmw_Small) {
 }
 
 TEST(CLASS, Concurrent_Rmw_Large) {
-  class RmwContext;
-
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn{};
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-    friend class RmwContext;
-
-   private:
-    uint32_t key_;
-  };
-  static_assert(sizeof(Key) == 4, "sizeof(Key) != 4");
-  static_assert(alignof(Key) == 4, "alignof(Key) != 4");
-
-  class ReadContext1;
-  class ReadContext2;
-
-  class Value {
-   public:
-    Value()
-      : val_{ 0 } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class RmwContext;
-    friend class ReadContext1;
-    friend class ReadContext2;
-
-   private:
-    union {
-      std::atomic<uint32_t> atomic_val_;
-      uint32_t val_;
-    };
-  };
-  static_assert(sizeof(Value) == 4, "sizeof(Value) != 4");
-  static_assert(alignof(Value) == 4, "alignof(Value) != 4");
+  using Key = FixedSizeKey<uint32_t>;
+  using Value = SimpleAtomicValue<uint32_t>;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -3394,13 +3081,13 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void RmwInitial(Value& value) {
-      value.val_ = key_.key_;
+      value.value = key_.key;
     }
     inline void RmwCopy(const value_t& old_value, value_t& value) {
-      value.val_ = old_value.val_ + delta_;
+      value.value = old_value.value + delta_;
     }
     inline bool RmwAtomic(value_t& value) {
-      value.atomic_val_ += delta_;
+      value.atomic_value += delta_;
       return true;
     }
    protected:
@@ -3468,10 +3155,10 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {
@@ -3675,10 +3362,10 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     inline void Get(const Value& value) {
-      val_ = value.val_;
+      val_ = value.value;
     }
     inline void GetAtomic(const Value& value) {
-      val_ = value.atomic_val_.load();
+      val_ = value.atomic_value.load();
     }
 
     uint64_t val() const {

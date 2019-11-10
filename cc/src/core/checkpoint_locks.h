@@ -62,7 +62,7 @@ class AtomicCheckpointLock
   }
   void unlock_old() noexcept
   {
-    value_.control_ -= CheckpointLock{ 1, 0 }.control(); // TODO: is it actualliy faster than --value_.value_control_.old_lock_count_;?
+    value_.control_ -= CheckpointLock{ 1, 0 }.control(); // TODO: is it actually faster than --value_.value_control_.old_lock_count_;?
   }
 
   /// Try to lock the new version of a record.

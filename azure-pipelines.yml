@@ -5,7 +5,7 @@ variables:
 jobs:
 - job: 'csharpWindows'  
   pool:
-    vmImage: vs2017-win2016    
+    vmImage: windows-latest
   displayName: 'C# (Windows)'
 
   strategy:
