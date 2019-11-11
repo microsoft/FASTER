@@ -148,7 +148,7 @@ namespace FASTER.core
         /// Removes a single segment from the device. This function should not normally be called.
         /// Instead, use <see cref="TruncateUntilAddressAsync(long, AsyncCallback, IAsyncResult)"/>
         /// </summary>
-        /// <param name="segment">index of the segment to remov</param>
+        /// <param name="segment">index of the segment to remove</param>
         void RemoveSegment(int segment);
 
         /* Close */

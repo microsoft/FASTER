@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using Microsoft.Azure.Storage.Blob;
 
 namespace FASTER.devices
@@ -18,7 +19,9 @@ namespace FASTER.devices
         /// <summary>
         /// Azure Page Blobs have a fixed sector size of 512 bytes.
         /// </summary>
-        public const uint PAGE_BLOB_SECTOR_SIZE = 512;
+        public const int PAGE_BLOB_SECTOR_SIZE = 512;
+
+        private const int OneShotReadMaxFileSize = 1024;
         
         /// <summary>
         /// Create a cloud page blob with the given name in the given container
@@ -33,29 +36,37 @@ namespace FASTER.devices
             blob.Create(MAX_BLOB_SIZE);
             return blob;
         }
-
-        private static int ReadInt32(CloudPageBlob blob, long offset)
-        {
-            byte[] result = new byte[sizeof(Int32)];
-            var read = blob.DownloadRangeToByteArray(result, 0, offset, sizeof(Int32));
-            // TODO(Tianyu): Can read bytes ever be smaller than requested like POSIX? There is certainly
-            // no documentation about the behavior...
-            Debug.Assert(read == sizeof(Int32), "Underfilled read buffer");
-            return BitConverter.ToInt32(result, 0);
-        }
-
+        
         /// <summary>
-        /// Read the metadata out of a blob file (stored in the system as length + bytes)
+        /// Read the metadata out of a blob file (stored in the system as length + bytes). It is assumed that the blob
+        /// exists. 
         /// </summary>
         /// <param name="blob">source of the metadata</param>
         /// <returns>metadata bytes</returns>
         public static byte[] ReadMetadataFile(CloudPageBlob blob)
         {
-            // Assuming that the page blob already exists
-            int length = ReadInt32(blob, 0);
+            // Optimization for small metadata file size: we read some maximum length bytes, and if the file size is
+            // smaller than that, we do not have to issue a second read request after reading the length of metadata.
+            byte[] firstRead = new byte[OneShotReadMaxFileSize];
+            var downloaded = blob.DownloadRangeToByteArray(firstRead, 0, 0, OneShotReadMaxFileSize);
+            Debug.Assert(downloaded == OneShotReadMaxFileSize);
+            
+            
+            int length = BitConverter.ToInt32(firstRead, 0);
+            // If file length is less than what we have read, we can return from memory immediately
+            if (length < OneShotReadMaxFileSize - sizeof(int))
+            {
+                // This still copies the array. But since the cost will be dominated by read request to Azure, I am
+                // guessing it does not matter
+                return firstRead.Skip(sizeof(int)).Take(length).ToArray();
+            }
+            
+            // Otherwise, copy over what we have read and read the remaining bytes.
             byte[] result = new byte[length];
-            var downloaded = blob.DownloadRangeToByteArray(result, 0, sizeof(Int32), length);
-            Debug.Assert(downloaded == length, "Underfilled read buffer");
+            int numBytesRead = OneShotReadMaxFileSize - sizeof(int);
+            Array.Copy(firstRead, sizeof(int), result, 0, numBytesRead);
+            downloaded = blob.DownloadRangeToByteArray(result, numBytesRead, OneShotReadMaxFileSize, length - numBytesRead);
+            Debug.Assert(downloaded == length - numBytesRead, "Underfilled read buffer");
             return result;
         }
 

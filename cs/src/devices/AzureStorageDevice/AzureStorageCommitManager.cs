@@ -45,15 +45,17 @@ namespace FASTER.devices
         /// <inheritdoc />
         public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
         {
-            using (var ms = new MemoryStream())
-            {
-                using (var writer = new BinaryWriter(ms))
-                {
-                    writer.Write(commitMetadata.Length);
-                    writer.Write(commitMetadata);
-                }
-                blob.WritePages(ms, 0);
-            }
+            int writeSize = sizeof(int) + commitMetadata.Length;
+            // Writes to PageBlob must be aligned at 512 boundaries, we need to therefore pad up to the closest
+            // multiple of 512 for the write buffer size.
+            int mask = BlobUtil.PAGE_BLOB_SECTOR_SIZE - 1;
+            byte[] alignedByteChunk = new byte[(writeSize + mask) & ~mask]; 
+            
+            Array.Copy(BitConverter.GetBytes(commitMetadata.Length), alignedByteChunk, sizeof(int));
+            Array.Copy(commitMetadata, 0, alignedByteChunk, sizeof(int), commitMetadata.Length);
+            
+            // TODO(Tianyu): We assume this operation is atomic I guess?
+            blob.WritePages(new MemoryStream(alignedByteChunk), 0);
         }
 
         /// <inheritdoc />
