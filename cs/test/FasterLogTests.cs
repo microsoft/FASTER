@@ -146,7 +146,7 @@ namespace FASTER.test
             byte[] data1 = new byte[100];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
-            for (int i=0; i<100; i++)
+            for (int i = 0; i < 100; i++)
             {
                 log.Enqueue(data1);
             }
@@ -205,6 +205,85 @@ namespace FASTER.test
 
             commit.Join();
             log.Dispose();
+        }
+
+        [Test]
+        public async Task FasterLogTest6([Values]LogChecksumType logChecksum)
+        {
+            byte[][] entries = new[] { 37, 183, 251 }.Select(length => Enumerable.Range(1, length).Select(i => (byte)i).ToArray()).ToArray();
+            IDevice device = null;
+            FasterLog log = null;
+
+            CloseAndReopen(ref device, ref log, logChecksum, deleteBeforeOpen: true);
+            ValueTask<long> writeTask1 = log.EnqueueAndWaitForCommitAsync(entries[0], default);
+            log.Commit(false);
+            await writeTask1;
+
+            CloseAndReopen(ref device, ref log, logChecksum);
+            using (var iterator = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            {
+                Assert.IsTrue(iterator.GetNext(out byte[] entry1, out _));
+                Verify(entry1, entries[0]);
+                Assert.IsFalse(iterator.WaitAsync().IsCompleted);
+                ValueTask<long> writeTask2 = log.EnqueueAndWaitForCommitAsync(new ReadOnlySpanBatch(entries.Skip(1).ToArray()), default);
+                log.TruncateUntil(iterator.NextAddress);
+                log.Commit(true);
+                await writeTask2;
+            }
+
+            CloseAndReopen(ref device, ref log, logChecksum);
+            using (var iterator = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            {
+                Assert.IsTrue(iterator.GetNext(out byte[] entry2, out _));
+                Verify(entry2, entries[1]);
+                Assert.IsTrue(iterator.WaitAsync().IsCompletedSuccessfully);
+                log.TruncateUntil(iterator.NextAddress);
+                log.Commit(true);
+            }
+
+            CloseAndReopen(ref device, ref log, logChecksum, deleteBeforeOpen: true);
+            using (var iterator = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            {
+                Assert.IsFalse(iterator.GetNext(out byte[] entry3, out _));
+            }
+
+            CloseAndReopen(ref device, ref log, logChecksum, createNew: false, deleteBeforeOpen: true);
+
+            static void CloseAndReopen(ref IDevice d, ref FasterLog l, LogChecksumType logChecksum, bool createNew = true, bool deleteBeforeOpen = false)
+            {
+                l?.Dispose();
+                d?.Close();
+
+                if (deleteBeforeOpen)
+                {
+                    File.Delete(TestContext.CurrentContext.TestDirectory + $"\\fasterlog6_{logChecksum}.log");
+                    File.Delete(TestContext.CurrentContext.TestDirectory + $"\\fasterlog6_{logChecksum}.log.commit");
+                }
+
+                if (createNew)
+                {
+                    d = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + $"\\fasterlog6_{logChecksum}.log", preallocateFile: true, deleteOnClose: false);
+                    l = new FasterLog(new FasterLogSettings { LogDevice = d, LogChecksum = logChecksum });
+                }
+            }
+
+            static void Verify(byte[] read, byte[] expected)
+            {
+                Assert.AreEqual(read.Length, expected.Length);
+                for (int i = 0; i < read.Length; i++)
+                {
+                    Assert.AreEqual(read[i], expected[i]);
+                }
+            }
+        }
+
+        private class ReadOnlySpanBatch : IReadOnlySpanBatch
+        {
+            private byte[][] entries;
+
+            public ReadOnlySpanBatch(byte[][] entries) => this.entries = entries;
+            public ReadOnlySpan<byte> Get(int index) => entries[index];
+            public int TotalEntries() => entries.Length;
         }
     }
 }
