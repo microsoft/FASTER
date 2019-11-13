@@ -297,7 +297,7 @@ namespace FASTER.core
                 var nextFrame = (currentFrame + i) % frameSize;
 
                 long val;
-                while ((val = nextLoadedPage[nextFrame]) != nextPage || loadedPage[nextFrame] != nextPage)
+                while ((val = nextLoadedPage[nextFrame]) < nextPage || loadedPage[nextFrame] != nextPage)
                 {
                     if (val != nextPage && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], nextPage, val) == val)
                     {
@@ -388,7 +388,13 @@ namespace FASTER.core
                 physicalAddress = 0;
                 entryLength = 0;
                 currentAddress = NextAddress;
-                
+
+                // Check for boundary conditions
+                if (currentAddress < allocator.BeginAddress)
+                {
+                    currentAddress = allocator.BeginAddress;
+                }
+
                 var _currentPage = currentAddress >> allocator.LogPageSizeBits;
                 var _currentFrame = _currentPage % frameSize;
                 var _currentOffset = currentAddress & allocator.PageSizeMask;
@@ -397,12 +403,6 @@ namespace FASTER.core
                 if (disposed)
                     return false;
 
-                // Check for boundary conditions
-                if (currentAddress < allocator.BeginAddress)
-                {
-                    Debug.WriteLine("Iterator address is less than log BeginAddress " + allocator.BeginAddress + ", adjusting iterator address");
-                    currentAddress = allocator.BeginAddress;
-                }
 
                 if ((currentAddress >= endAddress) || (currentAddress >= fasterLog.CommittedUntilAddress))
                 {
@@ -446,7 +446,7 @@ namespace FASTER.core
                     if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _))
                     {
                         epoch.Suspend();
-                        throw new Exception("Invalid length of record found: " + entryLength + ", skipping page");
+                        throw new Exception("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
                     }
                     else
                         continue;
