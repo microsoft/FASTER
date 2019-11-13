@@ -44,11 +44,18 @@ class Latch {
 
 template <typename Callable, typename... Args>
 void run_threads(size_t num_threads, Callable worker, Args... args) {
+  Latch latch;
+  auto run_thread = [&latch, &worker, &args...](size_t idx) {
+    latch.Wait();
+    worker(idx, args...);
+  };
+
   std::deque<std::thread> threads{};
   for(size_t idx = 0; idx < num_threads; ++idx) {
-    threads.emplace_back(worker, idx, args...);
+    threads.emplace_back(run_thread, idx);
   }
 
+  latch.Trigger();
   for(auto& thread : threads) {
     thread.join();
   }
@@ -1669,25 +1676,10 @@ TEST(InMemFaster, ConcurrentDelete) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  Latch latch;
   FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
 
-  auto run_threads = [&latch](std::function<void (size_t)> worker) {
-    latch.Reset();
-    std::deque<std::thread> threads{};
-    for(size_t idx = 0; idx < kNumThreads; ++idx) {
-      threads.emplace_back(worker, idx);
-    }
-
-    latch.Trigger();
-    for(auto& thread : threads) {
-      thread.join();
-    }
-  };
-
   // Rmw.
-  run_threads([&latch, &store](size_t thread_idx) {
-    latch.Wait();
+  run_threads(kNumThreads, [&store](size_t thread_idx) {
     store.StartSession();
 
     // Update each entry 2 times (1st is insert, 2nd is rmw).
@@ -1708,8 +1700,7 @@ TEST(InMemFaster, ConcurrentDelete) {
   });
 
   // Delete.
-  run_threads([&latch, &store](size_t thread_idx) {
-    latch.Wait();
+  run_threads(kNumThreads, [&store](size_t thread_idx) {
     store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
@@ -1727,8 +1718,7 @@ TEST(InMemFaster, ConcurrentDelete) {
   });
 
   // Read.
-  run_threads([&latch, &store](size_t thread_idx) {
-    latch.Wait();
+  run_threads(kNumThreads, [&store](size_t thread_idx) {
     store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
