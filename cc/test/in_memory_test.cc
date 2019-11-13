@@ -42,6 +42,18 @@ class Latch {
   }
 };
 
+template <typename Callable, typename... Args>
+void run_threads(size_t num_threads, Callable worker, Args... args) {
+  std::deque<std::thread> threads{};
+  for(size_t idx = 0; idx < num_threads; ++idx) {
+    threads.emplace_back(worker, idx, args...);
+  }
+
+  for(auto& thread : threads) {
+    thread.join();
+  }
+}
+
 TEST(InMemFaster, UpsertRead) {
   using Key = FixedSizeKey<uint8_t>;
   using Value = SimpleAtomicValue<uint8_t>;
@@ -426,9 +438,10 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  auto upsert_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+
+  auto upsert_worker = [&store](size_t thread_idx) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -436,16 +449,15 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
         ASSERT_TRUE(false);
       };
       UpsertContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx) };
-      Status result = store_->Upsert(context, callback, 1);
+      Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  auto read_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx, uint64_t expected_value) {
-    store_->StartSession();
+  auto read_worker = [&store](size_t thread_idx, uint64_t expected_value) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -453,51 +465,25 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
         ASSERT_TRUE(false);
       };
       ReadContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx) };
-      Status result = store_->Read(context, callback, 1);
+      Status result = store.Read(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(expected_value, context.output_pt1);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
-
   // Insert.
-  std::deque<std::thread> threads{};
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker);
 
   // Read.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 0x1717171717);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 0x1717171717);
 
   // Update.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker);
 
   // Read again.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 0x2a2a2a2a2a2a2a);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 0x2a2a2a2a2a2a2a);
 }
 
 TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
@@ -722,9 +708,10 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  auto upsert_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx, uint32_t value_length) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+
+  auto upsert_worker = [&store](size_t thread_idx, uint32_t value_length) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -732,16 +719,15 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
         ASSERT_TRUE(false);
       };
       UpsertContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx), value_length };
-      Status result = store_->Upsert(context, callback, 1);
+      Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  auto read_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx, uint8_t expected_value) {
-    store_->StartSession();
+  auto read_worker = [&store](size_t thread_idx, uint8_t expected_value) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -749,52 +735,26 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
         ASSERT_TRUE(false);
       };
       ReadContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx) };
-      Status result = store_->Read(context, callback, 1);
+      Status result = store.Read(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(expected_value, context.output_bytes[0]);
       ASSERT_EQ(expected_value, context.output_bytes[1]);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
-
   // Insert.
-  std::deque<std::thread> threads{};
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx, 7);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker, 7);
 
   // Read.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 88);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 88);
 
   // Update.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx, 11);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker, 11);
 
   // Read again.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 88);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 88);
 }
 
 TEST(InMemFaster, Rmw) {
@@ -1036,33 +996,27 @@ TEST(InMemFaster, Rmw_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int64_t incr) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
 
+  auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
+    store.StartSession();
+
+    int64_t incr{ (int64_t) thread_idx * multiplier };
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
       };
       RmwContext context{ idx % kRange, incr };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
-
   // Rmw, increment by 2 * idx.
-  std::deque<std::thread> threads{};
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 2 * idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, 2);
 
   // Read.
   store.StartSession();
@@ -1082,13 +1036,7 @@ TEST(InMemFaster, Rmw_Concurrent) {
   store.StopSession();
 
   // Rmw, decrement by idx.
-  threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, -idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, -1);
 
   // Read again.
   store.StartSession();
@@ -1348,9 +1296,10 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int8_t incr, uint32_t value_length) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+
+  auto rmw_worker = [&store](size_t thread_idx, int8_t incr, uint32_t value_length) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1358,23 +1307,15 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
         ASSERT_TRUE(false);
       };
       RmwContext context{ idx % kRange, incr, value_length };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
-
   // Rmw, increment by 3.
-  std::deque<std::thread> threads{};
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 3, 5);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, 3, 5);
 
   // Read.
   store.StartSession();
@@ -1396,13 +1337,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
   store.StopSession();
 
   // Rmw, decrement by 4.
-  threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, -4, 8);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, -4, 8);
 
   // Read again.
   store.StartSession();
@@ -1427,11 +1362,11 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
 TEST(InMemFaster, Rmw_GrowString_Concurrent) {
   using Key = FixedSizeKey<uint64_t>;
 
-class RmwContext;
-class ReadContext;
+  class RmwContext;
+  class ReadContext;
 
-class Value {
-public:
+  class Value {
+   public:
     Value()
             : length_{ 0 } {
     }
@@ -1443,7 +1378,7 @@ public:
     friend class RmwContext;
     friend class ReadContext;
 
-private:
+   private:
     uint32_t length_;
 
     const char* buffer() const {
@@ -1452,10 +1387,10 @@ private:
     char* buffer() {
       return reinterpret_cast<char*>(this + 1);
     }
-};
+  };
 
-class RmwContext : public IAsyncContext {
-public:
+  class RmwContext : public IAsyncContext {
+   public:
     typedef Key key_t;
     typedef Value value_t;
 
@@ -1495,19 +1430,19 @@ public:
       return false;
     }
 
-protected:
+   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
 
-private:
+   private:
     char letter_;
     Key key_;
-};
+  };
 
-class ReadContext : public IAsyncContext {
-public:
+  class ReadContext : public IAsyncContext {
+   public:
     typedef Key key_t;
     typedef Value value_t;
 
@@ -1538,26 +1473,28 @@ public:
       output_letters[1] = value.buffer()[value.length_ - 1];
     }
 
-protected:
+   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
 
-private:
+   private:
     Key key_;
-public:
+   public:
     uint8_t output_length;
     // Extract two letters of output.
     char output_letters[2];
-};
+  };
 
-static constexpr int8_t kNumThreads = 2;
-static constexpr size_t kNumRmws = 2048;
-static constexpr size_t kRange = 512;
+  static constexpr int8_t kNumThreads = 2;
+  static constexpr size_t kNumRmws = 2048;
+  static constexpr size_t kRange = 512;
 
-auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_, char start_letter){
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+
+  auto rmw_worker = [&store](size_t _, char start_letter){
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1566,28 +1503,20 @@ auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_, cha
       };
       char letter = static_cast<char>(start_letter + idx / kRange);
       RmwContext context{ idx % kRange, letter };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
-};
+    store.StopSession();
+  };
 
-FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+  // Rmw.
+  run_threads(kNumThreads, rmw_worker, 'A');
 
-// Rmw.
-std::deque<std::thread> threads{};
-for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 'A');
-}
-for(auto& thread : threads) {
-    thread.join();
-}
+  // Read.
+  store.StartSession();
 
-// Read.
-store.StartSession();
-
-for(size_t idx = 0; idx < kRange; ++idx) {
+  for(size_t idx = 0; idx < kRange; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
@@ -1598,23 +1527,17 @@ for(size_t idx = 0; idx < kRange; ++idx) {
     ASSERT_EQ(kNumThreads * kNumRmws / kRange, context.output_length);
     ASSERT_EQ('A', context.output_letters[0]);
     ASSERT_EQ('D', context.output_letters[1]);
-}
+  }
 
-store.StopSession();
+  store.StopSession();
 
-// Rmw.
-threads.clear();
-for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 'E');
-}
-for(auto& thread : threads) {
-    thread.join();
-}
+  // Rmw.
+  run_threads(kNumThreads, rmw_worker, 'E');
 
-// Read again.
-store.StartSession();
+  // Read again.
+  store.StartSession();
 
-for(size_t idx = 0; idx < kRange; ++idx) {
+  for(size_t idx = 0; idx < kRange; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
@@ -1625,9 +1548,9 @@ for(size_t idx = 0; idx < kRange; ++idx) {
     ASSERT_EQ(2 * kNumThreads * kNumRmws / kRange, context.output_length);
     ASSERT_EQ('A', context.output_letters[0]);
     ASSERT_EQ('H', context.output_letters[1]);
-}
+  }
 
-store.StopSession();
+  store.StopSession();
 }
 
 TEST(InMemFaster, ConcurrentDelete) {
@@ -1919,70 +1842,40 @@ TEST(InMemFaster, GrowHashTable) {
   static constexpr size_t kNumRmws = 32768;
   static constexpr size_t kRange = 8192;
 
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
   static std::atomic<bool> grow_done{ false };
 
-  auto rmw_worker0 = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int64_t incr) {
-    auto callback = [](uint64_t new_size) {
-      grow_done = true;
-    };
+  auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
+    store.StartSession();
 
-    store_->StartSession();
-
+    int64_t incr{ (int64_t) thread_idx * multiplier };
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
       };
       RmwContext context{ idx % kRange, incr };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    // Double the size of the index.
-    store_->GrowIndex(callback);
-
-    while(!grow_done) {
-      store_->Refresh();
-      std::this_thread::yield();
-    }
-
-    store_->StopSession();
-  };
-
-  auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int64_t incr) {
-    store_->StartSession();
-
-    for(size_t idx = 0; idx < kNumRmws; ++idx) {
-      auto callback = [](IAsyncContext* ctxt, Status result) {
-        // In-memory test.
-        ASSERT_TRUE(false);
-      };
-      RmwContext context{ idx % kRange, incr };
-      Status result = store_->Rmw(context, callback, 1);
-      ASSERT_EQ(Status::Ok, result);
+    if(thread_idx == 0) {
+      // Double the size of the index.
+      store.GrowIndex([](uint64_t new_size) {
+        grow_done = true;
+      });
     }
 
     while(!grow_done) {
-      store_->Refresh();
+      store.Refresh();
       std::this_thread::yield();
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
-
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
 
   // Rmw, increment by 2 * idx.
-  std::deque<std::thread> threads{};
-  threads.emplace_back(rmw_worker0, &store, 0);
-  for(int64_t idx = 1; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 2 * idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, 2);
 
   // Read.
   store.StartSession();
@@ -2003,14 +1896,7 @@ TEST(InMemFaster, GrowHashTable) {
 
   // Rmw, decrement by idx.
   grow_done = false;
-  threads.clear();
-  threads.emplace_back(rmw_worker0, &store, 0);
-  for(int64_t idx = 1; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, -idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, -1);
 
   // Read again.
   store.StartSession();
