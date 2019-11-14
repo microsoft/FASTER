@@ -671,7 +671,7 @@ namespace FASTER.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            allocator.ShiftBeginAddress(untilAddress & allocator.PageSizeMask);
+            allocator.ShiftBeginAddress(untilAddress & ~allocator.PageSizeMask);
         }
 
         /// <summary>

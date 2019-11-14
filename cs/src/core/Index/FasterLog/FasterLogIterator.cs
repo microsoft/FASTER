@@ -297,9 +297,9 @@ namespace FASTER.core
                 var nextFrame = (currentFrame + i) % frameSize;
 
                 long val;
-                while ((val = nextLoadedPage[nextFrame]) < nextPage || loadedPage[nextFrame] != nextPage)
+                while ((val = nextLoadedPage[nextFrame]) < nextPage || loadedPage[nextFrame] < nextPage)
                 {
-                    if (val != nextPage && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], nextPage, val) == val)
+                    if (val < nextPage && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], nextPage, val) == val)
                     {
                         var tmp_i = i;
                         epoch.BumpCurrentEpoch(() =>
