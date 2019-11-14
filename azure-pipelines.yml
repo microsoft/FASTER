@@ -108,7 +108,7 @@ jobs:
       solution: 'cc/build/FASTER.sln'
       msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
 
-  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "in_memory"'
+  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration)'
     workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
 
@@ -136,10 +136,10 @@ jobs:
       make -j
     displayName: 'Compile'
 
-#  - script: |
-#      CTEST_OUTPUT_ON_FAILURE=1 make test
-#    workingDirectory: 'cc/build/Debug'
-#    displayName: 'Run Tests'
+  - script: |
+      make test ARGS="-V -R paging_queue_test"
+    workingDirectory: 'cc/build/Debug'
+    displayName: 'Run Tests'
 
 - job: 'csharpLinux'
   pool:

@@ -5,7 +5,11 @@
 
 #include <experimental/filesystem>
 
+#include "test_types.h"
+
 using namespace FASTER;
+using FASTER::test::FixedSizeKey;
+using FASTER::test::SimpleAtomicValue;
 
 /// Disk's log uses 64 MB segments.
 typedef FASTER::device::FileSystemDisk<handler_t, 67108864L> disk_t;
@@ -289,42 +293,24 @@ TEST(CLASS, UpsertRead_Serial) {
   store.StopSession();
 }
 
+using KeyData = std::pair<uint64_t, uint64_t>;
+struct HashFn {
+  inline size_t operator()(const KeyData& key) const {
+    std::hash<uint64_t> hash_fn;
+    return hash_fn(key.first);
+  }
+};
+using WeakKey = FixedSizeKey<KeyData, HashFn>;
+
+template<>
+std::ostream& print_key<WeakKey>(std::ostream& os, const WeakKey& key) {
+  // noop
+  os << key.key.first;
+  return os;
+}
+
 TEST(CLASS, UpsertRead_Concurrent) {
-  class UpsertContext;
-  class ReadContext;
-
-  class Key {
-   public:
-    Key(uint64_t pt1, uint64_t pt2)
-      : pt1_{ pt1 }
-      , pt2_{ pt2 } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(pt1_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return pt1_ == other.pt1_ &&
-             pt2_ == other.pt2_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return pt1_ != other.pt1_ ||
-             pt2_ != other.pt2_;
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext;
-
-   private:
-    uint64_t pt1_;
-    uint64_t pt2_;
-  };
+  using Key = WeakKey;
 
   class Value {
    public:
@@ -489,7 +475,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
       }
 
       uint64_t key_component = thread_idx * (kNumRecords / kNumThreads) + idx;
-      UpsertContext context{ Key{ key_component, key_component }, val };
+      UpsertContext context{ Key{ std::make_pair(key_component, key_component) }, val };
       Status result = store_->Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
       ++num_writes;
@@ -497,6 +483,15 @@ TEST(CLASS, UpsertRead_Concurrent) {
 
     store_->StopSession();
   };
+  auto print_info = [&store](const char* info) {
+    auto size = store.Size();
+    auto begin_address = store.hlog.begin_address.load();
+    std::cout << info << ": " << size << " ("
+      << begin_address.page() << ":" << begin_address.offset()
+      << ")" << std::endl;
+  };
+
+  print_info("Start");
 
   // Insert.
   std::deque<std::thread> threads{};
@@ -508,6 +503,8 @@ TEST(CLASS, UpsertRead_Concurrent) {
   }
 
   ASSERT_EQ(kNumRecords, num_writes.load());
+
+  print_info("Store initialized");
 
   // Read.
   Guid session_id = store.StartSession();
@@ -524,7 +521,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
       store.Refresh();
     }
 
-    ReadContext context{ Key{ idx, idx }, 25 };
+    ReadContext context{ Key{ std::make_pair(idx, idx) }, 25 };
     Status result = store.Read(context, callback, 1);
     if(result == Status::Ok) {
       ++records_read;
@@ -538,6 +535,8 @@ TEST(CLASS, UpsertRead_Concurrent) {
   ASSERT_TRUE(result);
   ASSERT_EQ(kNumRecords, records_read.load());
 
+  print_info("Store checked (1)");
+
   //// Update.
   num_writes = 0;
   threads.clear();
@@ -549,6 +548,8 @@ TEST(CLASS, UpsertRead_Concurrent) {
   }
 
   ASSERT_EQ(kNumRecords, num_writes.load());
+
+  print_info("Store updated");
 
   // Delete some old copies of records (160 MB) that we no longer need.
   static constexpr uint64_t kNewBeginAddress{ 167772160L };
@@ -569,7 +570,10 @@ TEST(CLASS, UpsertRead_Concurrent) {
     store.CompletePending(false);
   }
 
+  print_info("Store truncated");
+
   // Read again.
+  int records_missing = 0;
   records_read = 0;;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -582,10 +586,13 @@ TEST(CLASS, UpsertRead_Concurrent) {
       store.Refresh();
     }
 
-    ReadContext context{ Key{ idx, idx }, 87 };
+    ReadContext context{ Key{ std::make_pair(idx, idx) }, 87 };
     Status result = store.Read(context, callback, 1);
     if(result == Status::Ok) {
       ++records_read;
+    } else if (result == Status::NotFound) {
+      ++records_missing;
+      // std::cout << "Missing key: " << idx << std::endl;
     } else {
       ASSERT_EQ(Status::Pending, result);
     }
@@ -593,8 +600,14 @@ TEST(CLASS, UpsertRead_Concurrent) {
 
   ASSERT_LT(records_read.load(), kNumRecords);
   result = store.CompletePending(true);
+
+  print_info("Store checked (2)");
+  std::cout << "Records missing: " << records_missing << std::endl;
+
   ASSERT_TRUE(result);
   ASSERT_EQ(kNumRecords, records_read.load());
+
+  ASSERT_EQ(0, records_missing);
 
   store.StopSession();
 }

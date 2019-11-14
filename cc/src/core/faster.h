@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <iostream>
+
 #include <atomic>
 #include <cassert>
 #include <cinttypes>
@@ -32,6 +34,13 @@
 #include "utility.h"
 
 using namespace std::chrono_literals;
+
+template<class Key>
+std::ostream& print_key(std::ostream& os, const Key& key) {
+  // noop
+  os << "<not implemented>";
+  return os;
+}
 
 /// The FASTER key-value store, and related classes.
 
@@ -761,6 +770,8 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
   const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
   if(!atomic_entry) {
     // no record found
+    std::cout << "Key not found (";
+    print_key(std::cout, key) << "): bucket not found" << std::endl;
     return OperationStatus::NOT_FOUND;
   }
 
@@ -799,6 +810,8 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     // Mutable or fuzzy region
     // concurrent read
     if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
+      std::cout << "Key not found (";
+      print_key(std::cout, key) << "): entry is deleted" << std::endl;
       return OperationStatus::NOT_FOUND;
     }
     pending_context.GetAtomic(hlog.Get(address));
@@ -807,6 +820,8 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     // Immutable region
     // single-thread read
     if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
+      std::cout << "Key not found (";
+      print_key(std::cout, key) << "): entry is deleted" << std::endl;
       return OperationStatus::NOT_FOUND;
     }
     pending_context.Get(hlog.Get(address));
@@ -817,6 +832,12 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     return OperationStatus::RECORD_ON_DISK;
   } else {
     // No record found
+    std::cout << "Key not found (";
+    print_key(std::cout, key) << "): entry's address ("
+      << address.page() << ":" << address.offset()
+      << ") is below begind_address ("
+      << begin_address.page() << ":" << begin_address.offset() << ")"
+      << std::endl;
     return OperationStatus::NOT_FOUND;
   }
 }
