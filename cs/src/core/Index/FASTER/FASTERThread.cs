@@ -19,7 +19,7 @@ namespace FASTER.core
     {
         internal Guid InternalAcquire()
         {
-            epoch.Acquire();
+            epoch.Resume();
             threadCtx.InitializeThread();
             Phase phase = _systemState.phase;
             if (phase != Phase.REST)
@@ -118,7 +118,7 @@ namespace FASTER.core
             }
             Debug.Assert(ctx.phase == Phase.REST);
 
-            epoch.Release();
+            epoch.Suspend();
         }
 
         internal void InitContext(FasterExecutionContext ctx, Guid token)

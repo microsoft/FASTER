@@ -19,7 +19,7 @@ FasterLog commits at page boundaries. You can also force-commit the log as frequ
 5ms. The typical use cases of FasterLog are captured in our extremely detailed commented sample [here](https://github.com/microsoft/FASTER/blob/master/cs/playground/FasterLogSample/Program.cs). FasterLog
 works with .NET Standard 2.0, and can be used on a broad range of machines and devices.
 
-## Create the Log
+## Creating the Log
 
 ```cs
   var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
@@ -31,7 +31,9 @@ based on the FASTER `IDevice` abstraction, and we have various device implementa
 commit information is frequently written into a file in the same path, called 'hlog.log.commit'. There are 
 other settings that can be provided, discussed later in this document.
 
-## Enqueue Operation
+## Operations on FasterLog
+
+### Enqueue
 
 An enqueue operation over FasterLog is the action of inserting an entry into the log, in memory. By itself, it
 does not guarantee persistence (persistence is achieved using commit, discussed next). FasterLog supports highly
@@ -52,7 +54,7 @@ long Enqueue(byte[] entry)
 bool TryEnqueue(byte[] entry, out long logicalAddress)
 async ValueTask<long> EnqueueAsync(byte[] entry)
 ```
-## Commit Operation
+### Commit
 
 By default, FasterLog commits data every time a page gets filled up. We usually need to commit more frequently
 than this, for e.g., every 5ms or immediately after an item is enqueued. This is achieved by the `Commit`
@@ -64,7 +66,7 @@ void Commit(bool spinWait = false)
 async ValueTask CommitAsync()
 ```
 
-## Wait-for-Commit Operation
+### Wait-for-Commit
 
 FasterLog supports the `WaitForCommit` operation, that will wait until the most recent enqueue (or all enqueues 
 until a specified log address) has been committed successfully. The operation itself does not issue a commit 
@@ -76,7 +78,7 @@ void WaitForCommit(long untilAddress = 0) // spin-wait
 async ValueTask WaitForCommitAsync(long untilAddress = 0)
 ```
 
-## Helper Operation: enqueue and wait for commit
+### Helper: enqueue and wait for commit
 
 For ease of use, we provide helper methods that enqueue an entry and returns only after the entry
 has been committed to storage.
@@ -93,7 +95,7 @@ operation from enqueues, so that they can benefit from the performance boost of 
 * await EnqueueAsync
 * await CommitAsync
 
-## Iteration Operation
+### Iteration
 
 FasterLog supports scan (iteration) over the log. You can have multiple simultaneous iterators active
 over the log at the same time. You specify a begin and end address for the scan. An example of
@@ -143,7 +145,7 @@ using (var iter = log.Scan(0, long.MaxValue, name: "foo", recover: false))
 ```
 
 
-## Truncation
+### Log Head Truncation
 
 FasterLog support log head truncation, until any prefix of the log. Truncation updates the log begin address and
 deletes truncated parts of the log from disk, if applicable. A truncation is persisted via commit, similar 
@@ -153,7 +155,7 @@ to tail address commit. Here is an example, where we truncate the log to limit i
   log.TruncateUntil(log.CommittedUntilAddress - 100_000_000_000L);
 ```
 
-## Random Reads
+### Random Read
 
 You can issue random reads on any valid address in the log. This is useful to build, for example, an index over the
 log. The user is responsible for requesting a valid address that points to the beginning of a valid entry in the
