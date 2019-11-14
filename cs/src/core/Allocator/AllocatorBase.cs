@@ -573,7 +573,7 @@ namespace FASTER.core
         public void Acquire()
         {
             if (ownedEpoch)
-                epoch.Acquire();
+                epoch.Resume();
         }
 
         /// <summary>
@@ -582,7 +582,7 @@ namespace FASTER.core
         public void Release()
         {
             if (ownedEpoch)
-                epoch.Release();
+                epoch.Suspend();
         }
 
         /// <summary>
