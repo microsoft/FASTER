@@ -289,11 +289,16 @@ namespace FASTER.core
                 fasterLog.TrueDispose();
         }
 
-        private unsafe bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame)
+        private unsafe bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress)
         {
             for (int i=0; i<frameSize; i++)
             {
                 var nextPage = currentPage + i;
+
+                // Cannot load page if its not fully written to storage
+                if (headAddress < (nextPage + 1) << allocator.LogPageSizeBits)
+                    continue;
+
                 var nextFrame = (currentFrame + i) % frameSize;
 
                 long val;
@@ -411,7 +416,7 @@ namespace FASTER.core
 
                 if (currentAddress < _headAddress)
                 {
-                    if (BufferAndLoad(currentAddress, _currentPage, _currentFrame))
+                    if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress))
                         continue;
                     physicalAddress = frame.GetPhysicalAddress(_currentFrame, _currentOffset);
                 }
