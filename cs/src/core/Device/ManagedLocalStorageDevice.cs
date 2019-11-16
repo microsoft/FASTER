@@ -12,6 +12,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
+
     /// <summary>
     /// Managed device using .NET streams
     /// </summary>
@@ -19,7 +20,7 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
-        private readonly ConcurrentDictionary<int, Stream> logHandles;
+        private readonly ConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)> logHandles;
         private SectorAlignedBufferPool pool;
 
         /// <summary>
@@ -37,7 +38,7 @@ namespace FASTER.core
 
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
-            logHandles = new ConcurrentDictionary<int, Stream>();
+            logHandles = new ConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)>();
             if (recoverDevice)
                 RecoverFiles();
         }
@@ -162,7 +163,7 @@ namespace FASTER.core
                         errorCode = uint.MaxValue;
                     }
                 }
-                
+
                 memory.Return();
                 Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
                 callback(errorCode, 0, ov.UnsafePack(callback, IntPtr.Zero));
@@ -178,33 +179,44 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, 
-                                     IntPtr destinationAddress, 
+        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
+                                     IntPtr destinationAddress,
                                      uint readLength,
-                                     IOCompletionCallback callback, 
+                                     IOCompletionCallback callback,
                                      IAsyncResult asyncResult)
         {
             ReadCallbackWrapper wrapper = null;
             SectorAlignedMemory memory = null;
-            Stream logHandle = null;
+            Stream logReadHandle = null;
+            int offset = -1;
+            FixedPool<Stream> streampool = null;
 
             try
             {
                 memory = pool.Get((int)readLength);
-                logHandle = GetOrAddHandle(segmentId);
-                wrapper = new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength, 0);
-                logHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-                logHandle.BeginRead(memory.buffer, 0, (int)readLength, wrapper.Callback, null);
+                streampool = GetOrAddHandle(segmentId).Item1;
+                (logReadHandle, offset) = streampool.Get();
+                wrapper = new ReadCallbackWrapper(logReadHandle, callback, asyncResult, memory, destinationAddress, readLength, 0);
+                lock (logReadHandle)
+                {
+                    logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+                    logReadHandle.BeginRead(memory.buffer, 0, (int)readLength, wrapper.Callback, null);
+                }
             }
             catch (IOException e)
             {
-                wrapper = new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength, (uint)(e.HResult & 0x0000FFFF));
+                wrapper = new ReadCallbackWrapper(logReadHandle, callback, asyncResult, memory, destinationAddress, readLength, (uint)(e.HResult & 0x0000FFFF));
                 wrapper.Callback(asyncResult);
             }
             catch
             {
-                wrapper = new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength, uint.MaxValue);
+                wrapper = new ReadCallbackWrapper(logReadHandle, callback, asyncResult, memory, destinationAddress, readLength, uint.MaxValue);
                 wrapper.Callback(asyncResult);
+            }
+            finally
+            {
+                if (offset >= 0)
+                    streampool?.Return(offset);
             }
         }
 
@@ -217,40 +229,51 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void WriteAsync(IntPtr sourceAddress, 
+        public override unsafe void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
-                                      ulong destinationAddress, 
-                                      uint numBytesToWrite, 
-                                      IOCompletionCallback callback, 
+                                      ulong destinationAddress,
+                                      uint numBytesToWrite,
+                                      IOCompletionCallback callback,
                                       IAsyncResult asyncResult)
         {
             WriteCallbackWrapper wrapper = null;
-            SectorAlignedMemory memory = null; 
-            Stream logHandle = null;
-            
+            SectorAlignedMemory memory = null;
+            Stream logWriteHandle = null;
+            int offset = -1;
+            FixedPool<Stream> streampool = null;
+
             try
             {
                 memory = pool.Get((int)numBytesToWrite);
-                logHandle = GetOrAddHandle(segmentId);
-                wrapper = new WriteCallbackWrapper(logHandle, callback, asyncResult, memory, 0);
+                streampool = GetOrAddHandle(segmentId).Item2;
+                (logWriteHandle, offset) = streampool.Get();
+                wrapper = new WriteCallbackWrapper(logWriteHandle, callback, asyncResult, memory, 0);
 
                 fixed (void* destination = memory.buffer)
                 {
                     Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
                 }
-                
-                logHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-                logHandle.BeginWrite(memory.buffer, 0, (int)numBytesToWrite, wrapper.Callback, null);
+
+                lock (logWriteHandle)
+                {
+                    logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+                    logWriteHandle.BeginWrite(memory.buffer, 0, (int)numBytesToWrite, wrapper.Callback, null);
+                }
             }
             catch (IOException e)
             {
-                wrapper = new WriteCallbackWrapper(logHandle, callback, asyncResult, memory, (uint)(e.HResult & 0x0000FFFF));
+                wrapper = new WriteCallbackWrapper(logWriteHandle, callback, asyncResult, memory, (uint)(e.HResult & 0x0000FFFF));
                 wrapper.Callback(asyncResult);
             }
             catch
             {
-                wrapper = new WriteCallbackWrapper(logHandle, callback, asyncResult, memory, uint.MaxValue);
+                wrapper = new WriteCallbackWrapper(logWriteHandle, callback, asyncResult, memory, uint.MaxValue);
                 wrapper.Callback(asyncResult);
+            }
+            finally
+            {
+                if (offset >= 0)
+                    streampool?.Return(offset);
             }
         }
 
@@ -260,9 +283,10 @@ namespace FASTER.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            if (logHandles.TryRemove(segment, out Stream logHandle))
+            if (logHandles.TryRemove(segment, out (FixedPool<Stream>, FixedPool<Stream>) logHandle))
             {
-                logHandle.Dispose();
+                logHandle.Item1.Dispose();
+                logHandle.Item2.Dispose();
                 File.Delete(GetSegmentName(segment));
             }
         }
@@ -285,7 +309,10 @@ namespace FASTER.core
         public override void Close()
         {
             foreach (var logHandle in logHandles.Values)
-                logHandle.Dispose();
+            {
+                logHandle.Item1.Dispose();
+                logHandle.Item2.Dispose();
+            }
             pool.Free();
         }
 
@@ -316,26 +343,48 @@ namespace FASTER.core
             return _sectorSize;
         }
 
-        private Stream CreateHandle(int segmentId)
+        private Stream CreateReadHandle(int segmentId)
         {
-            FileOptions fo = FileOptions.WriteThrough;
-            fo |= FileOptions.Asynchronous;
+            const int FILE_FLAG_NO_BUFFERING = 0x20000000;
+            FileOptions fo =
+                (FileOptions)FILE_FLAG_NO_BUFFERING |
+                FileOptions.WriteThrough | FileOptions.Asynchronous;
             if (deleteOnClose)
                 fo |= FileOptions.DeleteOnClose;
 
-            var logHandle = new FileStream(
+            var logReadHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.ReadWrite, FileShare.ReadWrite, 4096, fo);
-                
-            if (preallocateFile && segmentSize != -1)
-                SetFileSize(FileName, logHandle, segmentSize);
+                FileAccess.Read, FileShare.ReadWrite, 512, fo);
 
-            return logHandle;
+            return logReadHandle;
         }
 
-        private Stream GetOrAddHandle(int _segmentId)
+        private Stream CreateWriteHandle(int segmentId)
         {
-            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
+            const int FILE_FLAG_NO_BUFFERING = 0x20000000;
+            FileOptions fo =
+                (FileOptions)FILE_FLAG_NO_BUFFERING |
+                FileOptions.WriteThrough | FileOptions.Asynchronous;
+            if (deleteOnClose)
+                fo |= FileOptions.DeleteOnClose;
+
+            var logWriteHandle = new FileStream(
+                GetSegmentName(segmentId), FileMode.OpenOrCreate,
+                FileAccess.Write, FileShare.ReadWrite, 512, fo);
+
+            if (preallocateFile && segmentSize != -1)
+                SetFileSize(FileName, logWriteHandle, segmentSize);
+
+            return logWriteHandle;
+        }
+
+        private (FixedPool<Stream>, FixedPool<Stream>) GetOrAddHandle(int _segmentId)
+        {
+            return logHandles.GetOrAdd(_segmentId,
+                (
+                new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)),
+                new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId))
+                ));
         }
 
         /// <summary>
