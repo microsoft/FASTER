@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -566,9 +565,6 @@ namespace FASTER.core
 
             TailPageOffset.Page = (int)(firstValidAddress >> LogPageSizeBits);
             TailPageOffset.Offset = (int)(firstValidAddress & PageSizeMask);
-
-            flush.TryAdd(FlushedUntilAddress, true);
-
         }
 
         /// <summary>
@@ -1105,9 +1101,6 @@ namespace FASTER.core
             Debug.WriteLine("ReadOnly Address: {0}", ReadOnlyAddress);
             Debug.WriteLine("Safe ReadOnly Address: {0}", SafeReadOnlyAddress);
             Debug.WriteLine("Tail Address: {0}", tailAddress);
-
-            flush.TryAdd(FlushedUntilAddress, true);
-
         }
 
         /// <summary>
@@ -1322,11 +1315,6 @@ namespace FASTER.core
                     PendingFlush[index].Add(asyncResult);
                     if (PendingFlush[index].RemoveAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                     {
-                        if (!flush.ContainsKey(request.fromAddress)) // && !flush.ContainsKey(request.fromAddress + 512))
-                        {
-                            throw new Exception("Invalid flush");
-                        }
-
                         WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                     }
                 }
@@ -1334,8 +1322,6 @@ namespace FASTER.core
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
             }
         }
-
-        ConcurrentDictionary<long, bool> flush = new ConcurrentDictionary<long, bool>();
 
         /// <summary>
         /// Flush pages asynchronously
@@ -1501,11 +1487,6 @@ namespace FASTER.core
                 // Set the page status to flushed
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
 
-                if (GetOffsetInPage(result.untilAddress) > 0 && GetOffsetInPage(result.untilAddress) < PageSize)
-                {
-                    flush.TryAdd(result.untilAddress, true);
-                }
-
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
                     if (errorCode != 0)
@@ -1520,10 +1501,6 @@ namespace FASTER.core
                 var _flush = FlushedUntilAddress;
                 if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
                 {
-                    if (!flush.ContainsKey(request.fromAddress)) // && !flush.ContainsKey(request.fromAddress + 512))
-                    {
-                        throw new Exception("Invalid flush");
-                    }
                     WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                 }
             }

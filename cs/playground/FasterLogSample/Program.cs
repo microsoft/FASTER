@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -30,8 +31,13 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-             //var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
-            var device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
+            IDevice device;
+
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
+            else
+                device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
@@ -225,7 +231,7 @@ namespace FasterLogSample
             //Task<LinkedCommitInfo> prevCommitTask = null;
             while (true)
             {
-                Thread.Sleep(1);
+                Thread.Sleep(5);
                 log.Commit(true);
 
                 // Async version
