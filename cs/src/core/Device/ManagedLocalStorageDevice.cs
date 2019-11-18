@@ -209,11 +209,12 @@ namespace FASTER.core
                 streampool = GetOrAddHandle(segmentId).Item1;
                 (logReadHandle, offset) = streampool.Get();
                 wrapper = new ReadCallbackWrapper(logReadHandle, callback, asyncResult, memory, destinationAddress, readLength, 0);
-                lock (logReadHandle)
+                // lock (logReadHandle)
                 {
                     logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-                    logReadHandle.BeginRead(memory.buffer, 0, (int)readLength, wrapper.Callback, null);
+                    logReadHandle.Read(memory.buffer, 0, (int)readLength);
                 }
+                wrapper.Callback(asyncResult);
             }
             catch (IOException e)
             {
@@ -400,7 +401,7 @@ namespace FASTER.core
 #if DOTNETCORE
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                // Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
+                Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
             }
 #endif
 
