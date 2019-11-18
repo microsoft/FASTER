@@ -400,7 +400,7 @@ namespace FASTER.core
 #if DOTNETCORE
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
+                // Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
             }
 #endif
 
