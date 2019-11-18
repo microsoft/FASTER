@@ -30,7 +30,8 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            // var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            var device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
@@ -224,7 +225,7 @@ namespace FasterLogSample
             //Task<LinkedCommitInfo> prevCommitTask = null;
             while (true)
             {
-                Thread.Sleep(5);
+                Thread.Sleep(1);
                 log.Commit(true);
 
                 // Async version

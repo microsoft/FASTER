@@ -156,6 +156,13 @@ namespace FASTER.core
                     try
                     {
                         logHandle.EndWrite(result);
+#if DOTNETCORE
+                        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                        {
+                            ((FileStream)logHandle).Flush(true);
+                        }
+#endif
+
                     }
                     catch (IOException e)
                     {
@@ -363,7 +370,7 @@ namespace FASTER.core
 #if DOTNETCORE
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                Syscall.fcntl((int)logReadHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE);
+                Syscall.fcntl((int)logReadHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
             }
 #endif
 
@@ -386,7 +393,7 @@ namespace FASTER.core
 #if DOTNETCORE
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE);
+                Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
             }
 #endif
 
@@ -400,8 +407,8 @@ namespace FASTER.core
         {
 #pragma warning disable IDE0067 // Dispose objects before losing scope
             return logHandles.GetOrAdd(_segmentId,
-            (new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)),
-             new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId))));
+            (new FixedPool<Stream>(1, () => CreateReadHandle(_segmentId)),
+             new FixedPool<Stream>(1, () => CreateWriteHandle(_segmentId))));
 #pragma warning restore IDE0067 // Dispose objects before losing scope
         }
 
