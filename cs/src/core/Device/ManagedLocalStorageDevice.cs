@@ -166,13 +166,6 @@ namespace FASTER.core
                 Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
             }
 
-            var offs = destinationAddress & ((1L << 22) - 1);
-            if (offs > 0)
-            {
-                if ((long)destinationAddress > until)
-                    throw new Exception();
-            }
-
             logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
             logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite)
                 .ContinueWith(t =>
@@ -201,7 +194,6 @@ namespace FASTER.core
                     }
 #endif
 
-                    Utility.MonotonicUpdate(ref until, (long) (destinationAddress + numBytesToWrite), out _);
                     Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
                     callback(errorCode, numBytesToWrite, ov.UnsafePack(callback, IntPtr.Zero));
                 }
@@ -214,8 +206,6 @@ namespace FASTER.core
             if (offset >= 0) streampool?.Return(offset);
 #endif
         }
-
-        long until = 0;
 
         /// <summary>
         /// <see cref="IDevice.RemoveSegment(int)"/>
@@ -340,8 +330,8 @@ namespace FASTER.core
         {
 #pragma warning disable IDE0067 // Dispose objects before losing scope
             return logHandles.GetOrAdd(_segmentId,
-            (new FixedPool<Stream>(1, () => CreateReadHandle(_segmentId)),
-             new FixedPool<Stream>(1, () => CreateWriteHandle(_segmentId))));
+            (new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)),
+             new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId))));
 #pragma warning restore IDE0067 // Dispose objects before losing scope
         }
 

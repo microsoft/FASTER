@@ -37,7 +37,7 @@ namespace FASTER.core
             IDevice logDevice;
 
 #if DOTNETCORE
-            if (true) // (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 logDevice = new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, capacity, recoverDevice);
             }
