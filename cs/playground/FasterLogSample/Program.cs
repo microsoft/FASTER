@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -30,7 +31,13 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            IDevice device;
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+            else
+                device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
+
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
@@ -150,7 +157,7 @@ namespace FasterLogSample
 
             while (true)
             {
-                while (!iter.GetNext(out result, out int length, out _))
+                while (!iter.GetNext(out result, out _, out _))
                 {
                     // For finite end address, check if iteration ended
                     // if (iter.CurrentAddress >= endAddress) return; 
@@ -158,7 +165,7 @@ namespace FasterLogSample
                 }
 
                 // Memory pool variant:
-                // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length))
+                // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length, out long currentAddress)
 
                 if (Different(result, staticEntry))
                     throw new Exception("Invalid entry found");
