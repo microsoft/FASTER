@@ -271,8 +271,8 @@ namespace FASTER.core
                     logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
                     logWriteHandle.Write(memory.buffer, 0, (int)numBytesToWrite);
                     ((FileStream)logWriteHandle).Flush(true);
-                    wrapper.Callback(asyncResult);
                 }
+                wrapper.Callback(asyncResult);
             }
             catch (IOException e)
             {
