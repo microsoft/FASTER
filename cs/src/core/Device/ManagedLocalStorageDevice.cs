@@ -109,7 +109,8 @@ namespace FASTER.core
                 {
                     try
                     {
-                        logHandle.EndRead(result);
+                        /*
+                        logHandle.EndRead(result);*/
                         fixed (void* source = memory.buffer)
                         {
                             Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
