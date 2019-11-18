@@ -155,14 +155,15 @@ namespace FASTER.core
                 {
                     try
                     {
-                        logHandle.EndWrite(result);
+
+/*                        logHandle.EndWrite(result);
 #if DOTNETCORE
                         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                         {
                             ((FileStream)logHandle).Flush(true);
                         }
 #endif
-
+*/
                     }
                     catch (IOException e)
                     {
@@ -268,7 +269,9 @@ namespace FASTER.core
                 lock (logWriteHandle)
                 {
                     logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-                    logWriteHandle.BeginWrite(memory.buffer, 0, (int)numBytesToWrite, wrapper.Callback, null);
+                    logWriteHandle.Write(memory.buffer, 0, (int)numBytesToWrite);
+                    ((FileStream)logWriteHandle).Flush(true);
+                    wrapper.Callback(asyncResult);
                 }
             }
             catch (IOException e)
