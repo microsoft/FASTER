@@ -231,7 +231,7 @@ namespace FasterLogSample
             //Task<LinkedCommitInfo> prevCommitTask = null;
             while (true)
             {
-                Thread.Sleep(5);
+                Thread.Sleep(1);
                 log.Commit(true);
 
                 // Async version

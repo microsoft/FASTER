@@ -191,10 +191,13 @@ namespace FASTER.core
                         }
                     }
                     memory.Return();
+
+                    // Sequentialize all writes on non-windows
 #if DOTNETCORE
                     if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
                         ((FileStream)logWriteHandle).Flush(true);
+                        if (offset >= 0) streampool?.Return(offset);
                     }
 #endif
 
@@ -204,8 +207,12 @@ namespace FASTER.core
                 }
                 );
 
-            if (offset >= 0)
-                streampool?.Return(offset);
+#if DOTNETCORE
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (offset >= 0) streampool?.Return(offset);
+#else
+            if (offset >= 0) streampool?.Return(offset);
+#endif
         }
 
         long until = 0;
