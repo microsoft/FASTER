@@ -150,7 +150,7 @@ namespace FasterLogSample
 
             while (true)
             {
-                while (!iter.GetNext(out result, out int length, out _))
+                while (!iter.GetNext(out result, out _, out _))
                 {
                     // For finite end address, check if iteration ended
                     // if (iter.CurrentAddress >= endAddress) return; 
@@ -158,7 +158,7 @@ namespace FasterLogSample
                 }
 
                 // Memory pool variant:
-                // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length))
+                // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length, out long currentAddress)
 
                 if (Different(result, staticEntry))
                     throw new Exception("Invalid entry found");

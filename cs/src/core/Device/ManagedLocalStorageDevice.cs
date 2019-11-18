@@ -10,6 +10,10 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
+#if DOTNETCORE
+using Mono.Unix.Native;
+#endif
+
 namespace FASTER.core
 {
 
@@ -21,7 +25,7 @@ namespace FASTER.core
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
         private readonly ConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)> logHandles;
-        private SectorAlignedBufferPool pool;
+        private readonly SectorAlignedBufferPool pool;
 
         /// <summary>
         /// 
@@ -84,7 +88,7 @@ namespace FASTER.core
             readonly Stream logHandle;
             readonly IOCompletionCallback callback;
             readonly IAsyncResult asyncResult;
-            SectorAlignedMemory memory;
+            readonly SectorAlignedMemory memory;
             readonly IntPtr destinationAddress;
             readonly uint readLength;
 
@@ -133,7 +137,7 @@ namespace FASTER.core
             readonly Stream logHandle;
             readonly IOCompletionCallback callback;
             readonly IAsyncResult asyncResult;
-            SectorAlignedMemory memory;
+            readonly SectorAlignedMemory memory;
             uint errorCode;
 
             public WriteCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, uint errorCode)
@@ -356,6 +360,13 @@ namespace FASTER.core
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
                 FileAccess.Read, FileShare.ReadWrite, 512, fo);
 
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Syscall.fcntl((int)logReadHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE);
+            }
+#endif
+
             return logReadHandle;
         }
 
@@ -372,30 +383,36 @@ namespace FASTER.core
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
                 FileAccess.Write, FileShare.ReadWrite, 512, fo);
 
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE);
+            }
+#endif
+
             if (preallocateFile && segmentSize != -1)
-                SetFileSize(FileName, logWriteHandle, segmentSize);
+            SetFileSize(logWriteHandle, segmentSize);
 
             return logWriteHandle;
         }
 
         private (FixedPool<Stream>, FixedPool<Stream>) GetOrAddHandle(int _segmentId)
         {
+#pragma warning disable IDE0067 // Dispose objects before losing scope
             return logHandles.GetOrAdd(_segmentId,
-                (
-                new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)),
-                new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId))
-                ));
+            (new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)),
+             new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId))));
+#pragma warning restore IDE0067 // Dispose objects before losing scope
         }
 
-        /// <summary>
-        /// Sets file size to the specified value.
-        /// Does not reset file seek pointer to original location.
-        /// </summary>
-        /// <param name="filename"></param>
-        /// <param name="logHandle"></param>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        private bool SetFileSize(string filename, Stream logHandle, long size)
+            /// <summary>
+            /// Sets file size to the specified value.
+            /// Does not reset file seek pointer to original location.
+            /// </summary>
+            /// <param name="logHandle"></param>
+            /// <param name="size"></param>
+            /// <returns></returns>
+            private bool SetFileSize(Stream logHandle, long size)
         {
             logHandle.SetLength(size);
             return true;
