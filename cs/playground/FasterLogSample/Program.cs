@@ -30,7 +30,7 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            // var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
+             //var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
             var device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 

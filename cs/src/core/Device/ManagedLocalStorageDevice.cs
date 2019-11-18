@@ -361,8 +361,10 @@ namespace FASTER.core
         {
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
-                (FileOptions)FILE_FLAG_NO_BUFFERING |
-                FileOptions.WriteThrough | FileOptions.Asynchronous;
+                //(FileOptions)FILE_FLAG_NO_BUFFERING |
+                //FileOptions.WriteThrough | 
+                //FileOptions.Asynchronous |
+                FileOptions.None;
             if (deleteOnClose)
                 fo |= FileOptions.DeleteOnClose;
 
@@ -384,8 +386,10 @@ namespace FASTER.core
         {
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
-                (FileOptions)FILE_FLAG_NO_BUFFERING |
-                FileOptions.WriteThrough | FileOptions.Asynchronous;
+                //(FileOptions)FILE_FLAG_NO_BUFFERING |
+                //FileOptions.WriteThrough | 
+                //FileOptions.Asynchronous |
+                FileOptions.None;
             if (deleteOnClose)
                 fo |= FileOptions.DeleteOnClose;
 
