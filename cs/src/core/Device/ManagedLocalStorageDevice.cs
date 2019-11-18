@@ -266,7 +266,7 @@ namespace FASTER.core
                     Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
                 }
 
-                lock (logWriteHandle)
+                // lock (logWriteHandle)
                 {
                     logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
                     logWriteHandle.Write(memory.buffer, 0, (int)numBytesToWrite);
