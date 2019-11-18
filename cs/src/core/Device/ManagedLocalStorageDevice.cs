@@ -166,6 +166,11 @@ namespace FASTER.core
                 Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
             }
 
+            var off1 = destinationAddress & ((1L << 22) - 1);
+            if (off1 > 0)
+            {
+                Console.WriteLine("Issuing Write from {0}", destinationAddress);
+            }
             logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
             logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite)
                 .ContinueWith(t =>
@@ -190,9 +195,15 @@ namespace FASTER.core
                     if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
                         ((FileStream)logWriteHandle).Flush(true);
-                        if (offset >= 0) streampool?.Return(offset);
+                        // if (offset >= 0) streampool?.Return(offset);
                     }
 #endif
+
+                    var off2 = (destinationAddress + numBytesToWrite) & ((1L << 22) - 1);
+                    if (off2 > 0)
+                    {
+                        Console.WriteLine("Completed write until {0}", destinationAddress + numBytesToWrite);
+                    }
 
                     Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
                     callback(errorCode, numBytesToWrite, ov.UnsafePack(callback, IntPtr.Zero));
@@ -200,7 +211,7 @@ namespace FASTER.core
                 );
 
 #if DOTNETCORE
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            // if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 if (offset >= 0) streampool?.Return(offset);
 #else
             if (offset >= 0) streampool?.Return(offset);
