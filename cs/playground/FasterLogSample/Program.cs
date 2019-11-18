@@ -33,11 +33,11 @@ namespace FasterLogSample
 
             IDevice device;
 
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
-            else
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
-            
+            else
+                device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
+
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
@@ -231,7 +231,7 @@ namespace FasterLogSample
             //Task<LinkedCommitInfo> prevCommitTask = null;
             while (true)
             {
-                Thread.Sleep(1);
+                Thread.Sleep(5);
                 log.Commit(true);
 
                 // Async version
