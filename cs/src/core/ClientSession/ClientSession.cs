@@ -189,7 +189,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeResumeThread()
         {
-            fht.epoch.Acquire();
+            fht.epoch.Resume();
             fht.InternalRefresh(ctx);
         }
 
@@ -199,7 +199,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeSuspendThread()
         {
-            fht.epoch.Release();
+            fht.epoch.Suspend();
         }
 
     }
