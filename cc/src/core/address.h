@@ -8,6 +8,8 @@
 #include <cassert>
 #include <cstdint>
 
+#include "debug.h"
+
 namespace FASTER {
 namespace core {
 
@@ -82,11 +84,17 @@ class Address {
     return control_ <= other.control_;
   }
   inline bool operator>(const Address& other) const {
+    if (reserved_ != 0) {
+      print_backtrace();
+    }
     assert(reserved_ == 0);
     assert(other.reserved_ == 0);
     return control_ > other.control_;
   }
   inline bool operator>=(const Address& other) const {
+    if (reserved_ != 0) {
+      print_backtrace();
+    }
     assert(reserved_ == 0);
     assert(other.reserved_ == 0);
     return control_ >= other.control_;

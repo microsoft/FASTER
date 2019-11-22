@@ -63,6 +63,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set (FASTER_LINK_LIBS
   faster
 )
+if(WIN32)
+  set(FASTER_LINK_LIBS ${FASTER_LINK_LIBS} dbghelp)
+endif()
 
 # Set the link libraries to for test compilation
 set (FASTER_TEST_LINK_LIBS ${FASTER_LINK_LIBS} gtest)
