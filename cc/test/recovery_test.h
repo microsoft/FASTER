@@ -50,9 +50,10 @@ TEST(CLASS, MallocFixedPageSize) {
         bool success = bucket.entries[entry_idx].compare_exchange_strong(expected, random_num);
         ASSERT_TRUE(success);
       }
-      HashBucketOverflowEntry expected{ 0 };
+      HashBucketOverflowEntry expected{};
       uint64_t random_num = rng();
-      bool success = bucket.overflow_entry.compare_exchange_strong(expected, random_num);
+      bool success = bucket.overflow_entry
+        .compare_exchange_strong(expected, HashBucketOverflowEntry::from_code(random_num));
       ASSERT_TRUE(success);
     }
     //issue call to checkpoint
@@ -126,9 +127,9 @@ TEST(CLASS, InternalHashTable) {
                          expected, rng());
         ASSERT_TRUE(success);
       }
-      HashBucketOverflowEntry expected{ 0 };
-      bool success = table.bucket(bucket_idx).overflow_entry.compare_exchange_strong(expected,
-                     rng());
+      HashBucketOverflowEntry expected{};
+      bool success = table.bucket(bucket_idx).overflow_entry
+        .compare_exchange_strong(expected, HashBucketOverflowEntry::from_code(rng()));
       ASSERT_TRUE(success);
     }
 

@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
-#include <thread>
 
 #include "address.h"
 #include "constants.h"
@@ -108,24 +107,26 @@ class AtomicHashBucketEntry {
 
 /// Entry stored in a hash bucket that points to the next overflow bucket (if any).
 struct HashBucketOverflowEntry {
-  HashBucketOverflowEntry()
-    : control_{ 0 } {
-  }
-  HashBucketOverflowEntry(FixedPageAddress address)
-    : address_{ address.control() }
-    , unused_{ 0 } {
-  }
-  HashBucketOverflowEntry(const HashBucketOverflowEntry& other)
-    : control_{ other.control_ } {
-  }
-  HashBucketOverflowEntry(uint64_t code)
+ private:
+  explicit HashBucketOverflowEntry(uint64_t code)
     : control_{ code } {
   }
 
-  inline HashBucketOverflowEntry& operator=(const HashBucketOverflowEntry& other) {
-    control_ = other.control_;
-    return *this;
+ public:
+
+  explicit HashBucketOverflowEntry(FixedPageAddress address)
+    : address_{ address.control() }
+    , unused_{ 0 } {
   }
+
+  inline static HashBucketOverflowEntry from_code(uint64_t code) {
+    return HashBucketOverflowEntry{ code };
+  }
+
+  HashBucketOverflowEntry() = default;
+  HashBucketOverflowEntry(const HashBucketOverflowEntry& other) = default;
+  inline HashBucketOverflowEntry& operator=(const HashBucketOverflowEntry& other) = default;
+
   inline bool operator ==(const HashBucketOverflowEntry& other) const {
     return control_ == other.control_;
   }
@@ -156,32 +157,27 @@ class AtomicHashBucketOverflowEntry {
   static constexpr uint64_t kLocked = (uint64_t)1 << 63;
 
  public:
-  AtomicHashBucketOverflowEntry(const HashBucketOverflowEntry& entry)
-    : control_{ entry.control_ } {
+  explicit AtomicHashBucketOverflowEntry(const HashBucketOverflowEntry& entry)
+    : control_{ entry } {
   }
   /// Default constructor
-  AtomicHashBucketOverflowEntry()
-    : control_{ HashBucketEntry::kInvalidEntry } {
-  }
+  AtomicHashBucketOverflowEntry() = default;
 
   /// Atomic access.
   inline HashBucketOverflowEntry load() const {
     return HashBucketOverflowEntry{ control_.load() };
   }
   inline void store(const HashBucketOverflowEntry& desired) {
-    control_.store(desired.control_);
+    control_.store(desired);
   }
   inline bool compare_exchange_strong(HashBucketOverflowEntry& expected,
                                       HashBucketOverflowEntry desired) {
-    uint64_t expected_control = expected.control_;
-    bool result = control_.compare_exchange_strong(expected_control, desired.control_);
-    expected = HashBucketOverflowEntry{ expected_control };
-    return result;
+    return control_.compare_exchange_strong(expected, desired);
   }
 
  private:
   /// Atomic address to the hash bucket entry.
-  std::atomic<uint64_t> control_;
+  std::atomic<HashBucketOverflowEntry> control_;
 };
 
 /// A bucket consisting of 7 hash bucket entries, plus one hash bucket overflow entry. Fits in
