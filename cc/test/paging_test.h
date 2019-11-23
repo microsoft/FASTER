@@ -304,7 +304,6 @@ using WeakKey = FixedSizeKey<KeyData, HashFn>;
 
 template<>
 std::ostream& print_key<WeakKey>(std::ostream& os, const WeakKey& key) {
-  // noop
   os << key.key.first;
   return os;
 }

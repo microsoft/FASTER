@@ -141,29 +141,29 @@ jobs:
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests'
 
-- job: 'csharpLinux'
-  pool:
-    vmImage: ubuntu-16.04
-  displayName: 'C# (Linux)'
+# - job: 'csharpLinux'
+#   pool:
+#     vmImage: ubuntu-16.04
+#   displayName: 'C# (Linux)'
 
-  steps:
-  - task: NuGetToolInstaller@0
-    inputs:
-      versionSpec: '4.8.2'
+#   steps:
+#   - task: NuGetToolInstaller@0
+#     inputs:
+#       versionSpec: '4.8.2'
 
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solution)'
+#   - task: NuGetCommand@2
+#     inputs:
+#       restoreSolution: '$(solution)'
 
-  - task: DotNetCoreInstaller@0
-    displayName: 'Install'
-    inputs:
-      packageType: 'sdk'
-      version: '2.2.401'
+#   - task: DotNetCoreInstaller@0
+#     displayName: 'Install'
+#     inputs:
+#       packageType: 'sdk'
+#       version: '2.2.401'
 
-  - script: |
-      mono --version
-      msbuild /version
-      msbuild /t:restore $(solution)
-      msbuild /p:Configuration=Release $(solution)
-    displayName: 'Build'
+#   - script: |
+#       mono --version
+#       msbuild /version
+#       msbuild /t:restore $(solution)
+#       msbuild /p:Configuration=Release $(solution)
+#     displayName: 'Build'
