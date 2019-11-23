@@ -137,7 +137,7 @@ jobs:
     displayName: 'Compile'
 
   - script: |
-      make test ARGS="-V -R paging_queue_test"
+      make test ARGS="-V"
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests'
 
