@@ -591,7 +591,6 @@ TEST(CLASS, UpsertRead_Concurrent) {
       ++records_read;
     } else if (result == Status::NotFound) {
       ++records_missing;
-      // std::cout << "Missing key: " << idx << std::endl;
     } else {
       ASSERT_EQ(Status::Pending, result);
     }
@@ -1001,6 +1000,7 @@ TEST(CLASS, Rmw_Concurrent) {
   std::experimental::filesystem::create_directories("logs");
 
   // 8 pages!
+  {
   FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
 
   // Initial RMW.
@@ -1038,4 +1038,7 @@ TEST(CLASS, Rmw_Concurrent) {
   for(auto& thread : threads) {
     thread.join();
   }
+  std::cout << "run finished" << std::endl;
+  }
+  std::cout << "test finished" << std::endl;
 }

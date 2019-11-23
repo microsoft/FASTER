@@ -56,6 +56,9 @@ class Address {
   }
   Address(uint64_t control)
     : control_{ control } {
+    if(reserved_ != 0) {
+      print_backtrace();
+    }
     assert(reserved_ == 0);
   }
 
