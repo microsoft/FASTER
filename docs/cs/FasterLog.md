@@ -138,8 +138,7 @@ completed. Users update the `CompletedUntilAddress` as follows:
 iter.CompleteUntil(long address);
 ```
 
-The specified address needs to be a valid log address, similar to the `TruncateUntil` call on the log, described 
-earlier.
+The specified address needs to be a valid log address, similar to the `TruncateUntil` call on the log (described below).
 
 You can persist iterators (or more precisely, their `CompletedUntilAddress`) as part of a commit by simply naming 
 them during their creation. On recovery, if an iterator with the specified name exists, it will be initialized with
