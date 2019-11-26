@@ -106,7 +106,7 @@ Scan using `IAsyncEnumerable`:
 
 ```cs
 using (iter = log.Scan(log.BeginAddress, 100_000_000))
-    await foreach ((byte[] result, int length) in iter.GetAsyncEnumerable())
+    await foreach ((byte[] result, int length, long currentAddress) in iter.GetAsyncEnumerable())
     {
        // Process record
     }
@@ -119,9 +119,9 @@ end of iteration, or because we are waiting for a page read or commit to complet
   using (var iter = log.Scan(0, 100_000_000))
     while (true)
     {
-       while (!iter.GetNext(out Span<byte> result))
+       while (!iter.GetNext(out byte[] result, out int entryLength, out long currentAddress))
        {
-          if (iter.CurrentAddress >= 100_000_000) return;
+          if (currentAddress >= 100_000_000) return;
           await iter.WaitAsyc();
        }
        // Process record
@@ -275,6 +275,7 @@ async ValueTask<long> EnqueueAndWaitForCommitAsync(IReadOnlySpanBatch readOnlySp
 
 // Truncate log (from head)
 
+void TruncateUntilPageStart(long untilAddress)
 void TruncateUntil(long untilAddress)
 
 // Scan interface
@@ -283,8 +284,9 @@ FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = nul
 
 // FasterLogScanIterator interface
 
-bool GetNext(out byte[] entry, out int entryLength)
-bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength)
+void CompleteUntil(long address)
+bool GetNext(out byte[] entry, out int entryLength, out long currentAddress)
+bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress)
 async ValueTask WaitAsync()
 
 // IAsyncEnumerable interface to FasterLogScanIterator
