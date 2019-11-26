@@ -160,7 +160,7 @@ namespace FasterLogSample
                 while (!iter.GetNext(out result, out _, out _))
                 {
                     // For finite end address, check if iteration ended
-                    // if (iter.CurrentAddress >= endAddress) return; 
+                    // if (currentAddress >= endAddress) return; 
                     iter.WaitAsync().GetAwaiter().GetResult();
                 }
 
@@ -186,7 +186,7 @@ namespace FasterLogSample
 
         static async Task AsyncScan()
         {
-            await foreach ((byte[] result, int length) in iter.GetAsyncEnumerable())
+            await foreach ((byte[] result, int length, long currentAddress) in iter.GetAsyncEnumerable())
             {
                 if (Different(result, staticEntry))
                     throw new Exception("Invalid entry found");
