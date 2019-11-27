@@ -290,8 +290,8 @@ bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryL
 async ValueTask WaitAsync()
 
 // IAsyncEnumerable interface to FasterLogScanIterator
-async IAsyncEnumerable<(byte[], int)> GetAsyncEnumerable()
-async IAsyncEnumerable<(IMemoryOwner<byte>, int)> GetAsyncEnumerable(MemoryPool<byte> pool)
+async IAsyncEnumerable<(byte[], int, long)> GetAsyncEnumerable()
+async IAsyncEnumerable<(IMemoryOwner<byte>, int, long)> GetAsyncEnumerable(MemoryPool<byte> pool)
 
 // Random read
 
