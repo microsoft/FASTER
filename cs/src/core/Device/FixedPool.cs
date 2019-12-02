@@ -26,7 +26,7 @@ namespace FASTER.core
         {
             while (true)
             {
-                for (int i=0; i<size; i++)
+                for (int i = 0; i < size; i++)
                 {
                     if (disposed)
                         throw new Exception("Disposed");
@@ -36,7 +36,16 @@ namespace FASTER.core
                     {
                         if (Interlocked.CompareExchange(ref owners[i], 2, val) == val)
                         {
-                            items[i] = creator();
+                            try
+                            {
+                                items[i] = creator();
+                            }
+                            catch
+                            {
+                                Interlocked.Exchange(ref owners[i], val);
+                                throw;
+                            }
+
                             return (items[i], i);
                         }
                     }
