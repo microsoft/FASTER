@@ -18,7 +18,7 @@ namespace FASTER.core
     {
         internal Guid InternalAcquire()
         {
-            epoch.Acquire();
+            epoch.Resume();
             overflowBucketsAllocator.Acquire();
             threadCtx.InitializeThread();
             prevThreadCtx.InitializeThread();
@@ -35,7 +35,7 @@ namespace FASTER.core
 
         internal long InternalContinue(Guid guid)
         {
-            epoch.Acquire();
+            epoch.Resume();
             overflowBucketsAllocator.Acquire();
             threadCtx.InitializeThread();
             prevThreadCtx.InitializeThread();
@@ -116,7 +116,7 @@ namespace FASTER.core
             Debug.Assert(threadCtx.Value.phase == Phase.REST);
             threadCtx.DisposeThread();
             prevThreadCtx.DisposeThread();
-            epoch.Release();
+            epoch.Suspend();
             overflowBucketsAllocator.Release();
         }
 

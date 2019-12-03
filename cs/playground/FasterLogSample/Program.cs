@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -24,8 +25,6 @@ namespace FasterLogSample
         static void Main()
         {
             bool sync = true;
-            var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             // Populate entry being inserted
             for (int i = 0; i < entryLength; i++)
@@ -33,44 +32,60 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            if (sync)
-            {
-                // Log writer thread: create as many as needed
-                new Thread(new ThreadStart(LogWriterThread)).Start();
+            IDevice device;
 
-                // Threads for scan, reporting, commit
-                new Thread(new ThreadStart(ScanThread)).Start();
-                new Thread(new ThreadStart(ReportThread)).Start();
-                new Thread(new ThreadStart(CommitThread)).Start();
-            }
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
             else
+                device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
+
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+
+            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
             {
-                // Async version of demo: expect lower performance
-                // particularly for small payload sizes
-
-                const int NumParallelTasks = 10_000;
-                ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);
-                TaskScheduler.UnobservedTaskException += (object sender, UnobservedTaskExceptionEventArgs e) =>
+                if (sync)
                 {
-                    Console.WriteLine($"Unobserved task exception: {e.Exception}");
-                    e.SetObserved();
-                };
+                    // Log writer thread: create as many as needed
+                    new Thread(new ThreadStart(LogWriterThread)).Start();
+                    
+                    // Threads for iterator scan: create as many as needed
+                    new Thread(() => ScanThread()).Start();
 
-                Task[] tasks = new Task[NumParallelTasks];
-                for (int i = 0; i < NumParallelTasks; i++)
-                {
-                    int local = i;
-                    tasks[i] = Task.Run(() => AsyncLogWriter(local));
+                    // Threads for reporting, commit
+                    new Thread(new ThreadStart(ReportThread)).Start();
+                    var t = new Thread(new ThreadStart(CommitThread));
+                    t.Start();
+                    t.Join();
                 }
+                else
+                {
+                    // Async version of demo: expect lower performance
+                    // particularly for small payload sizes
 
-                var scan = Task.Run(() => AsyncScan());
+                    const int NumParallelTasks = 10_000;
+                    ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);
+                    TaskScheduler.UnobservedTaskException += (object sender, UnobservedTaskExceptionEventArgs e) =>
+                    {
+                        Console.WriteLine($"Unobserved task exception: {e.Exception}");
+                        e.SetObserved();
+                    };
 
-                // Threads for reporting, commit
-                new Thread(new ThreadStart(ReportThread)).Start();
-                new Thread(new ThreadStart(CommitThread)).Start();
+                    Task[] tasks = new Task[NumParallelTasks];
+                    for (int i = 0; i < NumParallelTasks; i++)
+                    {
+                        int local = i;
+                        tasks[i] = Task.Run(() => AsyncLogWriter(local));
+                    }
 
-                Task.WaitAll(tasks);
-                Task.WaitAll(scan);
+                    var scan = Task.Run(() => AsyncScan());
+
+                    // Threads for reporting, commit
+                    new Thread(new ThreadStart(ReportThread)).Start();
+                    new Thread(new ThreadStart(CommitThread)).Start();
+
+                    Task.WaitAll(tasks);
+                    Task.WaitAll(scan);
+                }
             }
         }
 
@@ -139,37 +154,31 @@ namespace FasterLogSample
 
         static void ScanThread()
         {
-            Random r = new Random();
             byte[] result;
 
-            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
+            while (true)
             {
-                while (true)
+                while (!iter.GetNext(out result, out _, out _))
                 {
-                    while (!iter.GetNext(out result, out int length))
-                    {
-                        // For finite end address, check if iteration ended
-                        // if (iter.CurrentAddress >= endAddress) return; 
-                        iter.WaitAsync().GetAwaiter().GetResult();
-                    }
-
-                    // Memory pool variant:
-                    // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length))
-
-                    if (Different(result, staticEntry, out int location))
-                        throw new Exception("Invalid entry found");
-
-                    // Re-insert entry with small probability
-                    if (r.Next(100) < 10)
-                    {
-                        log.Enqueue(result);
-                    }
-
-                    // Example of random read from given address
-                    // (result, _) = log.ReadAsync(iter.CurrentAddress).GetAwaiter().GetResult();
-
-                    log.TruncateUntil(iter.NextAddress);
+                    // For finite end address, check if iteration ended
+                    // if (currentAddress >= endAddress) return; 
+                    iter.WaitAsync().GetAwaiter().GetResult();
                 }
+
+                // Memory pool variant:
+                // iter.GetNext(pool, out IMemoryOwner<byte> resultMem, out int length, out long currentAddress)
+
+                if (Different(result, staticEntry))
+                    throw new Exception("Invalid entry found");
+
+                // Example of random read from given address
+                // (result, _) = log.ReadAsync(iter.CurrentAddress).GetAwaiter().GetResult();
+
+                // Truncate until start of most recently read page
+                log.TruncateUntilPageStart(iter.NextAddress);
+
+                // Truncate log until after most recently read entry
+                // log.TruncateUntil(iter.NextAddress);
             }
 
             // Example of recoverable (named) iterator:
@@ -178,13 +187,12 @@ namespace FasterLogSample
 
         static async Task AsyncScan()
         {
-            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
-                await foreach ((byte[] result, int length) in iter.GetAsyncEnumerable())
-                {
-                    if (Different(result, staticEntry, out int location))
-                        throw new Exception("Invalid entry found");
-                    log.TruncateUntil(iter.NextAddress);
-                }
+            await foreach ((byte[] result, int length, long currentAddress) in iter.GetAsyncEnumerable())
+            {
+                if (Different(result, staticEntry))
+                    throw new Exception("Invalid entry found");
+                log.TruncateUntilPageStart(iter.NextAddress);
+            }
         }
 
         static void ReportThread()
@@ -209,7 +217,7 @@ namespace FasterLogSample
 
                 if (iter != null)
                 {
-                    var nowIterValue = iter.CurrentAddress;
+                    var nowIterValue = iter.NextAddress;
                     Console.WriteLine("Scan Throughput: {0} MB/sec, Iter pos: {1}",
                         (double) (nowIterValue - lastIterValue) / (1000 * (nowTime - lastTime)), nowIterValue);
                     lastIterValue = nowIterValue;
@@ -243,18 +251,9 @@ namespace FasterLogSample
             }
         }
 
-        private static bool Different(byte[] b1, byte[] b2, out int location)
+        private static bool Different(ReadOnlySpan<byte> b1, ReadOnlySpan<byte> b2)
         {
-            location = 0;
-            if (b1.Length != b2.Length) return true;
-            for (location = 0; location < b1.Length; location++)
-            {
-                if (b1[location] != b2[location])
-                {
-                    return true;
-                }
-            }
-            return false;
+            return !b1.SequenceEqual(b2);
         }
 
         private struct ReadOnlySpanBatch : IReadOnlySpanBatch

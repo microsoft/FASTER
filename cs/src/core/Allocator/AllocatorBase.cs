@@ -2,11 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Runtime.InteropServices;
 using System.Diagnostics;
-using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -574,7 +573,7 @@ namespace FASTER.core
         public void Acquire()
         {
             if (ownedEpoch)
-                epoch.Acquire();
+                epoch.Resume();
         }
 
         /// <summary>
@@ -583,7 +582,7 @@ namespace FASTER.core
         public void Release()
         {
             if (ownedEpoch)
-                epoch.Release();
+                epoch.Suspend();
         }
 
         /// <summary>
@@ -592,14 +591,6 @@ namespace FASTER.core
         public virtual void Dispose()
         {
             disposed = true;
-
-            TailPageOffset.Page = 0;
-            TailPageOffset.Offset = 0;
-            SafeReadOnlyAddress = 0;
-            ReadOnlyAddress = 0;
-            SafeHeadAddress = 0;
-            HeadAddress = 0;
-            BeginAddress = 1;
 
             if (ownedEpoch)
                 epoch.Dispose();
@@ -1065,7 +1056,7 @@ namespace FASTER.core
 
             if (update)
             {
-                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out long oldClosedUntilAddress);
+                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out _);
             }
         }
 
@@ -1258,7 +1249,7 @@ namespace FASTER.core
                     asyncResult.maxPtr = readLength;
                     readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
                 }
-                
+
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
@@ -1279,7 +1270,7 @@ namespace FASTER.core
             int numPages = (int)(endPage - startPage);
 
             long offsetInStartPage = GetOffsetInPage(fromAddress);
-            long offsetInEndPage = GetOffsetInPage(untilAddress);                
+            long offsetInEndPage = GetOffsetInPage(untilAddress);
 
             // Extra (partial) page being flushed
             if (offsetInEndPage > 0)
@@ -1513,11 +1504,7 @@ namespace FASTER.core
                     WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                 }
             }
-            catch
-            {
-                if (!disposed)
-                    throw;
-            }
+            catch when (disposed) { }
             finally
             {
                 Overlapped.Free(overlap);
@@ -1546,11 +1533,7 @@ namespace FASTER.core
                     result.Free();
                 }
             }
-            catch
-            {
-                if (!disposed)
-                    throw;
-            }
+            catch when (disposed) { }
             finally
             {
                 Overlapped.Free(overlap);

@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -125,6 +126,10 @@ namespace FASTER.core
                             writer.Write(kvp.Value);
                         }
                     }
+                    else
+                    {
+                        writer.Write(0);
+                    }
                 }
                 return ms.ToArray();
             }
@@ -133,15 +138,31 @@ namespace FASTER.core
         /// <summary>
         /// Take snapshot of persisted iterators
         /// </summary>
-        public void PopulateIterators()
+        /// <param name="persistedIterators">Persisted iterators</param>
+        public void SnapshotIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
         {
-            if (FasterLogScanIterator.PersistedIterators.Count > 0)
+            if (persistedIterators.Count > 0)
             {
                 Iterators = new Dictionary<string, long>();
 
-                foreach (var kvp in FasterLogScanIterator.PersistedIterators)
+                foreach (var kvp in persistedIterators)
                 {
-                    Iterators.Add(kvp.Key, kvp.Value.CurrentAddress);
+                    Iterators.Add(kvp.Key, kvp.Value.CompletedUntilAddress);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Update iterators after persistence
+        /// </summary>
+        /// <param name="persistedIterators">Persisted iterators</param>
+        public void CommitIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
+        {
+            if (Iterators?.Count > 0)
+            {
+                foreach (var kvp in Iterators)
+                {
+                    persistedIterators[kvp.Key].CompletedUntilAddress = kvp.Value;
                 }
             }
         }

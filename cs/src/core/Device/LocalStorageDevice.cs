@@ -95,28 +95,37 @@ namespace FASTER.core
                                      IOCompletionCallback callback, 
                                      IAsyncResult asyncResult)
         {
-            var logHandle = GetOrAddHandle(segmentId);
-
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
 
-            bool result = Native32.ReadFile(logHandle,
-                                            destinationAddress,
-                                            readLength,
-                                            out uint bytesRead,
-                                            ovNative);
-
-            if (!result)
+            try
             {
-                int error = Marshal.GetLastWin32Error();
-                if (error != Native32.ERROR_IO_PENDING)
+                var logHandle = GetOrAddHandle(segmentId);
+
+                bool result = Native32.ReadFile(logHandle,
+                                                destinationAddress,
+                                                readLength,
+                                                out uint bytesRead,
+                                                ovNative);
+
+                if (!result)
                 {
-                    Overlapped.Unpack(ovNative);
-                    Overlapped.Free(ovNative);
-                    throw new Exception("Error reading from log file: " + error);
+                    int error = Marshal.GetLastWin32Error();
+                    if (error != Native32.ERROR_IO_PENDING)
+                    {
+                        throw new IOException("Error reading from log file", error);
+                    }
                 }
+            }
+            catch (IOException e)
+            {
+                callback((uint)(e.HResult & 0x0000FFFF), 0, ovNative);
+            }
+            catch
+            {
+                callback(uint.MaxValue, 0, ovNative);
             }
         }
 
@@ -136,28 +145,37 @@ namespace FASTER.core
                                       IOCompletionCallback callback, 
                                       IAsyncResult asyncResult)
         {
-            var logHandle = GetOrAddHandle(segmentId);
-            
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             ovNative->OffsetLow = unchecked((int)(destinationAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)((destinationAddress >> 32) & 0xFFFFFFFF));
 
-            bool result = Native32.WriteFile(logHandle,
-                                    sourceAddress,
-                                    numBytesToWrite,
-                                    out uint bytesWritten,
-                                    ovNative);
-
-            if (!result)
+            try
             {
-                int error = Marshal.GetLastWin32Error();
-                if (error != Native32.ERROR_IO_PENDING)
+                var logHandle = GetOrAddHandle(segmentId);
+
+                bool result = Native32.WriteFile(logHandle,
+                                        sourceAddress,
+                                        numBytesToWrite,
+                                        out uint bytesWritten,
+                                        ovNative);
+
+                if (!result)
                 {
-                    Overlapped.Unpack(ovNative);
-                    Overlapped.Free(ovNative);
-                    throw new Exception("Error writing to log file: " + error);
+                    int error = Marshal.GetLastWin32Error();
+                    if (error != Native32.ERROR_IO_PENDING)
+                    {
+                        throw new IOException("Error writing to log file", error);
+                    }
                 }
+            }
+            catch (IOException e)
+            {
+                callback((uint)(e.HResult & 0x0000FFFF), 0, ovNative);
+            }
+            catch
+            {
+                callback(uint.MaxValue, 0, ovNative);
             }
         }
 

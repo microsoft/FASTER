@@ -10,8 +10,13 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
+#if DOTNETCORE
+using Mono.Unix.Native;
+#endif
+
 namespace FASTER.core
 {
+
     /// <summary>
     /// Managed device using .NET streams
     /// </summary>
@@ -19,8 +24,8 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
-        private readonly ConcurrentDictionary<int, Stream> logHandles;
-        private SectorAlignedBufferPool pool;
+        private readonly ConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)> logHandles;
+        private readonly SectorAlignedBufferPool pool;
 
         /// <summary>
         /// 
@@ -37,7 +42,7 @@ namespace FASTER.core
 
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
-            logHandles = new ConcurrentDictionary<int, Stream>();
+            logHandles = new ConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)>();
             if (recoverDevice)
                 RecoverFiles();
         }
@@ -74,85 +79,8 @@ namespace FASTER.core
             // No need to populate map because logHandles use Open or create on files.
         }
 
-
-
-
-        class ReadCallbackWrapper
-        {
-            readonly Stream logHandle;
-            readonly IOCompletionCallback callback;
-            readonly IAsyncResult asyncResult;
-            SectorAlignedMemory memory;
-            readonly IntPtr destinationAddress;
-            readonly uint readLength;
-
-            public ReadCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory, IntPtr destinationAddress, uint readLength)
-            {
-                this.logHandle = logHandle;
-                this.callback = callback;
-                this.asyncResult = asyncResult;
-                this.memory = memory;
-                this.destinationAddress = destinationAddress;
-                this.readLength = readLength;
-            }
-
-            public unsafe void Callback(IAsyncResult result)
-            {
-                uint errorCode = 0;
-                try
-                {
-                    logHandle.EndRead(result);
-                    fixed (void* source = memory.buffer)
-                    {
-                        Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
-                    }
-                }
-                catch
-                {
-                    errorCode = 1;
-                }
-
-                memory.Return();
-                Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                callback(errorCode, 0, ov.UnsafePack(callback, IntPtr.Zero));
-            }
-        }
-
-        class WriteCallbackWrapper
-        {
-            readonly Stream logHandle;
-            readonly IOCompletionCallback callback;
-            readonly IAsyncResult asyncResult;
-            SectorAlignedMemory memory;
-
-            public WriteCallbackWrapper(Stream logHandle, IOCompletionCallback callback, IAsyncResult asyncResult, SectorAlignedMemory memory)
-            {
-                this.callback = callback;
-                this.asyncResult = asyncResult;
-                this.memory = memory;
-                this.logHandle = logHandle;
-            }
-
-            public unsafe void Callback(IAsyncResult result)
-            {
-                uint errorCode = 0;
-                try
-                {
-                    logHandle.EndWrite(result);
-                }
-                catch
-                {
-                    errorCode = 1;
-                }
-                        
-                memory.Return();
-                Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                callback(errorCode, 0, ov.UnsafePack(callback, IntPtr.Zero));
-            }
-        }
-
         /// <summary>
-        /// 
+        /// Read async
         /// </summary>
         /// <param name="segmentId"></param>
         /// <param name="sourceAddress"></param>
@@ -160,17 +88,52 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, 
-                                     IntPtr destinationAddress, 
+        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
+                                     IntPtr destinationAddress,
                                      uint readLength,
-                                     IOCompletionCallback callback, 
+                                     IOCompletionCallback callback,
                                      IAsyncResult asyncResult)
         {
-            var logHandle = GetOrAddHandle(segmentId);
-            var memory = pool.Get((int)readLength);
-            logHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-            logHandle.BeginRead(memory.buffer, 0, (int)readLength,
-                new ReadCallbackWrapper(logHandle, callback, asyncResult, memory, destinationAddress, readLength).Callback, null);
+            SectorAlignedMemory memory = null;
+            Stream logReadHandle = null;
+            int offset = -1;
+            FixedPool<Stream> streampool = null;
+
+            memory = pool.Get((int)readLength);
+            streampool = GetOrAddHandle(segmentId).Item1;
+            (logReadHandle, offset) = streampool.Get();
+
+            logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+            logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength)
+                .ContinueWith(t =>
+                {
+                    uint errorCode = 0;
+                    if (!t.IsFaulted)
+                    {
+                        fixed (void* source = memory.buffer)
+                        {
+                            Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
+                        }
+                    }
+                    else
+                    {
+                        if (t.Exception.InnerException is IOException)
+                        {
+                            var e = t.Exception.InnerException as IOException;
+                            errorCode = (uint)(e.HResult & 0x0000FFFF);
+                        }
+                        else
+                        {
+                            errorCode = uint.MaxValue;
+                        }
+                    }
+                    memory.Return();
+                    Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
+                    callback(errorCode, (uint)t.Result, ov.UnsafePack(callback, IntPtr.Zero));
+                }
+                );
+            if (offset >= 0)
+                streampool?.Return(offset);
         }
 
         /// <summary>
@@ -182,23 +145,66 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void WriteAsync(IntPtr sourceAddress, 
+        public override unsafe void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
-                                      ulong destinationAddress, 
-                                      uint numBytesToWrite, 
-                                      IOCompletionCallback callback, 
+                                      ulong destinationAddress,
+                                      uint numBytesToWrite,
+                                      IOCompletionCallback callback,
                                       IAsyncResult asyncResult)
         {
-            var logHandle = GetOrAddHandle(segmentId);
-            var memory = pool.Get((int)numBytesToWrite);
+            SectorAlignedMemory memory = null;
+            Stream logWriteHandle = null;
+            int offset = -1;
+            FixedPool<Stream> streampool = null;
+
+            memory = pool.Get((int)numBytesToWrite);
+            streampool = GetOrAddHandle(segmentId).Item2;
+            (logWriteHandle, offset) = streampool.Get();
 
             fixed (void* destination = memory.buffer)
             {
                 Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
             }
-            logHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-            logHandle.BeginWrite(memory.buffer, 0, (int)numBytesToWrite,
-                new WriteCallbackWrapper(logHandle, callback, asyncResult, memory).Callback, null);
+
+            logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+            logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite)
+                .ContinueWith(t =>
+                {
+                    uint errorCode = 0;
+                    if (t.IsFaulted)
+                    {
+                        if (t.Exception.InnerException is IOException)
+                        {
+                            var e = t.Exception.InnerException as IOException;
+                            errorCode = (uint)(e.HResult & 0x0000FFFF);
+                        }
+                        else
+                        {
+                            errorCode = uint.MaxValue;
+                        }
+                    }
+                    memory.Return();
+
+                    // Sequentialize all writes on non-windows
+#if DOTNETCORE
+                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        ((FileStream)logWriteHandle).Flush(true);
+                        if (offset >= 0) streampool?.Return(offset);
+                    }
+#endif
+
+                    Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
+                    callback(errorCode, numBytesToWrite, ov.UnsafePack(callback, IntPtr.Zero));
+                }
+                );
+
+#if DOTNETCORE
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (offset >= 0) streampool?.Return(offset);
+#else
+            if (offset >= 0) streampool?.Return(offset);
+#endif
         }
 
         /// <summary>
@@ -207,9 +213,10 @@ namespace FASTER.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            if (logHandles.TryRemove(segment, out Stream logHandle))
+            if (logHandles.TryRemove(segment, out (FixedPool<Stream>, FixedPool<Stream>) logHandle))
             {
-                logHandle.Dispose();
+                logHandle.Item1.Dispose();
+                logHandle.Item2.Dispose();
                 File.Delete(GetSegmentName(segment));
             }
         }
@@ -232,7 +239,10 @@ namespace FASTER.core
         public override void Close()
         {
             foreach (var logHandle in logHandles.Values)
-                logHandle.Dispose();
+            {
+                logHandle.Item1.Dispose();
+                logHandle.Item2.Dispose();
+            }
             pool.Free();
         }
 
@@ -263,37 +273,76 @@ namespace FASTER.core
             return _sectorSize;
         }
 
-        private Stream CreateHandle(int segmentId)
+        private Stream CreateReadHandle(int segmentId)
         {
-            FileOptions fo = FileOptions.WriteThrough;
-            fo |= FileOptions.Asynchronous;
+            const int FILE_FLAG_NO_BUFFERING = 0x20000000;
+            FileOptions fo =
+                (FileOptions)FILE_FLAG_NO_BUFFERING |
+                FileOptions.WriteThrough | 
+                FileOptions.Asynchronous |
+                FileOptions.None;
             if (deleteOnClose)
                 fo |= FileOptions.DeleteOnClose;
 
-            var logHandle = new FileStream(
+            var logReadHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.ReadWrite, FileShare.ReadWrite, 4096, fo);
-                
-            if (preallocateFile && segmentSize != -1)
-                SetFileSize(FileName, logHandle, segmentSize);
+                FileAccess.Read, FileShare.ReadWrite, 512, fo);
 
-            return logHandle;
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Syscall.fcntl((int)logReadHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
+            }
+#endif
+
+            return logReadHandle;
         }
 
-        private Stream GetOrAddHandle(int _segmentId)
+        private Stream CreateWriteHandle(int segmentId)
         {
-            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
+            const int FILE_FLAG_NO_BUFFERING = 0x20000000;
+            FileOptions fo =
+                (FileOptions)FILE_FLAG_NO_BUFFERING |
+                FileOptions.WriteThrough | 
+                FileOptions.Asynchronous |
+                FileOptions.None;
+            if (deleteOnClose)
+                fo |= FileOptions.DeleteOnClose;
+
+            var logWriteHandle = new FileStream(
+                GetSegmentName(segmentId), FileMode.OpenOrCreate,
+                FileAccess.Write, FileShare.ReadWrite, 512, fo);
+
+#if DOTNETCORE
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
+            }
+#endif
+
+            if (preallocateFile && segmentSize != -1)
+            SetFileSize(logWriteHandle, segmentSize);
+
+            return logWriteHandle;
+        }
+
+        private (FixedPool<Stream>, FixedPool<Stream>) GetOrAddHandle(int _segmentId)
+        {
+#pragma warning disable IDE0067 // Dispose objects before losing scope
+            return logHandles.GetOrAdd(_segmentId,
+            (new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)),
+             new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId))));
+#pragma warning restore IDE0067 // Dispose objects before losing scope
         }
 
         /// <summary>
         /// Sets file size to the specified value.
         /// Does not reset file seek pointer to original location.
         /// </summary>
-        /// <param name="filename"></param>
         /// <param name="logHandle"></param>
         /// <param name="size"></param>
         /// <returns></returns>
-        private bool SetFileSize(string filename, Stream logHandle, long size)
+        private bool SetFileSize(Stream logHandle, long size)
         {
             logHandle.SetLength(size);
             return true;

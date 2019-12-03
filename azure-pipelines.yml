@@ -3,7 +3,7 @@ variables:
   RunAzureTests: 'yes'
 
 jobs:
-- job: 'csharpWindows'  
+- job: 'csharpWindows'
   pool:
     vmImage: windows-latest
   displayName: 'C# (Windows)'
@@ -23,12 +23,12 @@ jobs:
       x64-Release:
         buildPlatform: 'x64'
         buildConfiguration: 'Release'
-  
+
   steps:
   - task: NuGetToolInstaller@0
     inputs:
-      versionSpec: '4.8.2' 
-    
+      versionSpec: '4.8.2'
+
   - task: NuGetCommand@2
     inputs:
       restoreSolution: '$(solution)'
@@ -38,7 +38,7 @@ jobs:
       solution: '$(solution)'
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-     
+
   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
     displayName: 'Download Azure Storage Emulator'
 
@@ -80,9 +80,9 @@ jobs:
       testRunner: VSTest
       testResultsFiles: '**/*.trx'
 
-- job: 'cppWindows'  
+- job: 'cppWindows'
   pool:
-    vmImage: vs2017-win2016    
+    vmImage: vs2017-win2016
   displayName: 'C++ (Windows)'
 
   strategy:
@@ -94,7 +94,7 @@ jobs:
       x64-Release:
         buildPlatform: 'x64'
         buildConfiguration: 'Release'
-  
+
   steps:
   - task: CMake@1
     displayName: 'CMake .. -G"Visual Studio 15 2017 Win64"'
@@ -116,14 +116,14 @@ jobs:
   pool:
     vmImage: ubuntu-16.04
   displayName: 'C++ (Linux)'
-  
+
   steps:
   - script: |
       sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
       sudo apt update
       sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
     displayName: 'Install depdendencies'
-  
+
   - script: |
       export CXX='g++-7'
       cd cc
@@ -136,6 +136,11 @@ jobs:
       make -j
     displayName: 'Compile'
 
+#  - script: |
+#      CTEST_OUTPUT_ON_FAILURE=1 make test
+#    workingDirectory: 'cc/build/Debug'
+#    displayName: 'Run Tests'
+
 - job: 'csharpLinux'
   pool:
     vmImage: ubuntu-16.04
@@ -144,8 +149,8 @@ jobs:
   steps:
   - task: NuGetToolInstaller@0
     inputs:
-      versionSpec: '4.8.2' 
-    
+      versionSpec: '4.8.2'
+
   - task: NuGetCommand@2
     inputs:
       restoreSolution: '$(solution)'
