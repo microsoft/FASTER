@@ -139,7 +139,7 @@ namespace FASTER.core
         /// Take snapshot of persisted iterators
         /// </summary>
         /// <param name="persistedIterators">Persisted iterators</param>
-        public void PopulateIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
+        public void SnapshotIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
         {
             if (persistedIterators.Count > 0)
             {
@@ -147,7 +147,22 @@ namespace FASTER.core
 
                 foreach (var kvp in persistedIterators)
                 {
-                    Iterators.Add(kvp.Key, kvp.Value.CurrentAddress);
+                    Iterators.Add(kvp.Key, kvp.Value.CompletedUntilAddress);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Update iterators after persistence
+        /// </summary>
+        /// <param name="persistedIterators">Persisted iterators</param>
+        public void CommitIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
+        {
+            if (Iterators?.Count > 0)
+            {
+                foreach (var kvp in Iterators)
+                {
+                    persistedIterators[kvp.Key].CompletedUntilAddress = kvp.Value;
                 }
             }
         }
