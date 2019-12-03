@@ -23,10 +23,6 @@ class RecordInfo {
     , previous_address_{ previous_address.control() } {
   }
 
-  RecordInfo(const RecordInfo& other)
-    : control_{ other.control_ } {
-  }
-
   RecordInfo(const uint64_t other)
     : control_{ other } {
   }
@@ -51,32 +47,6 @@ class RecordInfo {
     };
 };
 static_assert(sizeof(RecordInfo) == 8, "sizeof(RecordInfo) != 8");
-
-
-/// Atomic record header.
-class AtomicRecordInfo {
- public:
-  AtomicRecordInfo(const RecordInfo& entry)
-    : control_{ entry.control_ } {
-  }
-
-  /// Atomic access.
-  inline RecordInfo load() const {
-    return RecordInfo{ control_.load() };
-  }
-  inline void store(const RecordInfo& desired) {
-    control_.store(desired.control_);
-  }
-  inline bool compare_exchange_strong(RecordInfo& expected, RecordInfo desired) {
-    uint64_t expected_control = expected.control_;
-    bool result = control_.compare_exchange_strong(expected_control, desired.control_);
-    expected = RecordInfo{ expected_control };
-    return result;
-  }
-
- private:
-  std::atomic<uint64_t> control_;
-};
 
 /// A record stored in the log. The log starts at 0 (mod 64), and consists of Records, one after
 /// the other. Each record's header is 8 bytes.
