@@ -950,12 +950,12 @@ create_record:
   HashBucketEntry updated_entry{ new_address, hash.tag(), false };
 
   if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
-	// Installed the new record in the hash table.
-	return OperationStatus::SUCCESS;
+    // Installed the new record in the hash table.
+    return OperationStatus::SUCCESS;
   } else {
     // Try again.
-	record->header.invalid = true;
-	return InternalUpsert(pending_context);
+    record->header.invalid = true;
+    return InternalUpsert(pending_context);
   }
 }
 

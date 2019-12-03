@@ -23,8 +23,8 @@ class RecordInfo {
     , previous_address_{ previous_address.control() } {
   }
 
-  RecordInfo(const uint64_t other)
-    : control_{ other } {
+  RecordInfo(const RecordInfo& other)
+	  : control_{ other.control_ } {
   }
 
   inline bool IsNull() const {
