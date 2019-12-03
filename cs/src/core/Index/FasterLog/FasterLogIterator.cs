@@ -97,42 +97,44 @@ namespace FASTER.core
         /// <summary>
         /// Async enumerable for iterator
         /// </summary>
-        /// <returns>Entry and entry length</returns>
-        public async IAsyncEnumerable<(byte[], int)> GetAsyncEnumerable([EnumeratorCancellation] CancellationToken token = default)
+        /// <returns>Entry, entry length, entry address</returns>
+        public async IAsyncEnumerable<(byte[], int, long)> GetAsyncEnumerable([EnumeratorCancellation] CancellationToken token = default)
         {
             while (!disposed)
             {
                 byte[] result;
                 int length;
-                while (!GetNext(out result, out length, out long currentAddress))
+                long currentAddress;
+                while (!GetNext(out result, out length, out currentAddress))
                 {
                     if (currentAddress >= endAddress)
                         yield break;
                     if (!await WaitAsync(token))
                         yield break;
                 }
-                yield return (result, length);
+                yield return (result, length, currentAddress);
             }
         }
 
         /// <summary>
         /// Async enumerable for iterator (memory pool based version)
         /// </summary>
-        /// <returns>Entry and entry length</returns>
-        public async IAsyncEnumerable<(IMemoryOwner<byte>, int)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
+        /// <returns>Entry, entry length, entry address</returns>
+        public async IAsyncEnumerable<(IMemoryOwner<byte>, int, long)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
         {
             while (!disposed)
             {
                 IMemoryOwner<byte> result;
                 int length;
-                while (!GetNext(pool, out result, out length, out long currentAddress))
+                long currentAddress;
+                while (!GetNext(pool, out result, out length, out currentAddress))
                 {
                     if (currentAddress >= endAddress)
                         yield break;
                     if (!await WaitAsync(token))
                         yield break;
                 }
-                yield return (result, length);
+                yield return (result, length, currentAddress);
             }
         }
 #endif
