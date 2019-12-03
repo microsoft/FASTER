@@ -24,7 +24,7 @@ class RecordInfo {
   }
 
   RecordInfo(const RecordInfo& other)
-	  : control_{ other.control_ } {
+    : control_{ other.control_ } {
   }
 
   inline bool IsNull() const {
