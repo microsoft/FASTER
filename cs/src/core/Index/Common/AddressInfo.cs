@@ -9,34 +9,29 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// AddressInfo struct
+    /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public unsafe struct AddressInfo
     {
-        public const int kAddressBitOffset = 48;
+        private const int kMultiplierBits = 1;
+        private static readonly int kTotalBits = sizeof(IntPtr) * 8;
+        private static readonly int kAddressBits = 42*kTotalBits/64;
+        private static readonly int kSizeBits = kTotalBits - kAddressBits - kMultiplierBits;
+        private static readonly long kSizeMaskInWord = ((1L << kSizeBits) - 1) << kAddressBits;
+        private static readonly long kSizeMaskInInteger = (1L << kSizeBits) - 1;
+        private static readonly long kMultiplierMaskInWord = ((1L << kMultiplierBits) - 1) << (kAddressBits + kSizeBits);
+        private const long kMultiplierMaskInInteger = (1L << kMultiplierBits) - 1;
+        private static readonly long kAddressMask = (1L << kAddressBits) - 1;
 
-        public const int kSizeBits = 13;
-
-        public const int kSizeShiftInWord = 49;
-
-        public const long kSizeMaskInWord = ((1L << kSizeBits) - 1) << kSizeShiftInWord;
-
-        public const long kSizeMaskInInteger = (1L << kSizeBits) - 1;
-
-        public const long kAddressMask = (1L << kAddressBitOffset) - 1;
-
-        public const long kDiskBitMask = (1L << kAddressBitOffset);
-
-        public const int kTotalSizeInBytes = sizeof(long);
-
-        public const int kTotalBits = kTotalSizeInBytes * 8;
 
         [FieldOffset(0)]
-        private long word;
+        private IntPtr word;
 
-        public static void WriteInfo(AddressInfo* info, long address, bool isDiskAddress = false, int size = 0)
+        public static void WriteInfo(AddressInfo* info, long address, long size)
         {
-            info->word = default(long);
-            info->IsDiskAddress = isDiskAddress;
+            info->word = default(IntPtr);
             info->Address = address;
             info->Size = size;
         }
@@ -46,36 +41,35 @@ namespace FASTER.core
             return "RecordHeader Word = " + info->word;
         }
 
-        public bool IsDiskAddress
+        public long Size
         {
             get
             {
-                return (word & kDiskBitMask) > 0;
-            }
-
-            set
-            {
-                if (value)
-                {
-                    word |= kDiskBitMask;
-                }
-                else
-                {
-                    word &= ~kDiskBitMask;
-                }
-            }
-        }
-
-        public int Size
-        {
-            get
-            {
-                return (int)(((word & kSizeMaskInWord) >> kSizeShiftInWord) & kSizeMaskInInteger);
+                int multiplier = (int)((((long)word & kMultiplierMaskInWord) >> (kAddressBits + kSizeBits)) & kMultiplierMaskInInteger);
+                return (multiplier == 0 ? 512 : 1<<20)*((((long)word & kSizeMaskInWord) >> kAddressBits) & kSizeMaskInInteger);
             }
             set
             {
-                word &= ~kSizeMaskInWord;
-                word |= ((value & kSizeMaskInInteger) << kSizeShiftInWord);
+                int multiplier = 0;
+                int val = (int)(value >> 9);
+                if ((value & ((1<<9)-1)) != 0) val++;
+
+                if (val >= (1 << kSizeBits))
+                {
+                    val = (int)(value >> 20);
+                    if ((value & ((1<<20) - 1)) != 0) val++;
+                    multiplier = 1;
+                    if (val >= (1 << kSizeBits))
+                    {
+                        throw new Exception("Unsupported object size: " + value);
+                    }
+                }
+                var _word = (long)word;
+                _word &= ~kSizeMaskInWord;
+                _word &= ~kMultiplierMaskInWord;
+                _word |= (val & kSizeMaskInInteger) << kAddressBits;
+                _word |= (multiplier & kMultiplierMaskInInteger) << (kAddressBits + kSizeBits);
+                word = (IntPtr)_word;
             }
         }
 
@@ -83,19 +77,19 @@ namespace FASTER.core
         {
             get
             {
-                return (word & kAddressMask);
+                return (long)word & kAddressMask;
             }
             set
             {
-                word &= ~kAddressMask;
-                word |= (value & kAddressMask);
+                var _word = (long)word;
+                _word &= ~kAddressMask;
+                _word |= (value & kAddressMask);
+                word = (IntPtr)_word;
+                if (value != Address)
+                {
+                    throw new Exception("Overflow in AddressInfo" + ((kAddressBits < 64) ? " - consider running the program in x64 mode for larger address space support" : ""));
+                }
             }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength()
-        {
-            return kTotalSizeInBytes;
         }
     }
 }

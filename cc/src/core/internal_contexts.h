@@ -260,7 +260,10 @@ class AsyncPendingRmwContext : public PendingContext<K> {
   virtual void RmwCopy(const void* old_rec, void* rec) = 0;
   /// in-place update.
   virtual bool RmwAtomic(void* rec) = 0;
+  /// Get value size for initial value or in-place update
   virtual uint32_t value_size() const = 0;
+  /// Get value size for RCU
+  virtual uint32_t value_size(const void* old_rec) const = 0;
 };
 
 /// A synchronous Rmw() context preserves its type information.
@@ -312,8 +315,73 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
     record_t* record = reinterpret_cast<record_t*>(rec);
     return rmw_context().RmwAtomic(record->value());
   }
+  /// Get value size for initial value or in-place update
   inline constexpr uint32_t value_size() const final {
     return rmw_context().value_size();
+  }
+  /// Get value size for RCU
+  inline constexpr uint32_t value_size(const void* old_rec) const final {
+    const record_t* old_record = reinterpret_cast<const record_t*>(old_rec);
+    return rmw_context().value_size(old_record->value());
+  }
+};
+
+/// FASTER's internal Delete() context.
+
+/// An internal Delete() context that has gone async and lost its type information.
+template <class K>
+class AsyncPendingDeleteContext : public PendingContext<K> {
+ public:
+  typedef K key_t;
+ protected:
+  AsyncPendingDeleteContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_)
+    : PendingContext<key_t>(OperationType::Delete, caller_context_, caller_callback_) {
+  }
+  /// The deep copy constructor.
+  AsyncPendingDeleteContext(AsyncPendingDeleteContext& other, IAsyncContext* caller_context)
+    : PendingContext<key_t>(other, caller_context) {
+  }
+ public:
+  /// Get value size for initial value
+  virtual uint32_t value_size() const = 0;
+};
+
+/// A synchronous Delete() context preserves its type information.
+template <class MC>
+class PendingDeleteContext : public AsyncPendingDeleteContext<typename MC::key_t> {
+ public:
+  typedef MC delete_context_t;
+  typedef typename delete_context_t::key_t key_t;
+  typedef typename delete_context_t::value_t value_t;
+  typedef Record<key_t, value_t> record_t;
+
+  PendingDeleteContext(delete_context_t& caller_context_, AsyncCallback caller_callback_)
+    : AsyncPendingDeleteContext<key_t>(caller_context_, caller_callback_) {
+  }
+  /// The deep copy constructor.
+  PendingDeleteContext(PendingDeleteContext& other, IAsyncContext* caller_context_)
+    : AsyncPendingDeleteContext<key_t>(other, caller_context_) {
+  }
+ protected:
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    return IAsyncContext::DeepCopy_Internal(*this, PendingContext<key_t>::caller_context,
+                                            context_copy);
+  }
+ private:
+  const delete_context_t& delete_context() const {
+    return *static_cast<const delete_context_t*>(PendingContext<key_t>::caller_context);
+  }
+  delete_context_t& delete_context() {
+    return *static_cast<delete_context_t*>(PendingContext<key_t>::caller_context);
+  }
+ public:
+  /// Accessors.
+  inline const key_t& key() const final {
+    return delete_context().key();
+  }
+  /// Get value size for initial value
+  inline uint32_t value_size() const final {
+    return delete_context().value_size();
   }
 };
 

@@ -12,63 +12,70 @@ using System.Threading.Tasks;
 
 namespace SumStore
 {
-    public interface IFasterRecoveryTest
-    {
-        void Populate();
-        void Continue();
-        void RecoverAndTest(Guid indexToken, Guid hybridLogToken);
-    }
     public class Program
     {
-        static unsafe void Main(string[] args)
+        static void Main(string[] args)
         {
             if (args.Length == 0)
             {
-                Console.WriteLine("Usage: SumStore.exe [single|concurrent|test] [populate|recover|continue] [guid]");
+                Console.WriteLine("Usage:");
+                Console.WriteLine("Concurrency Test:\n  SumStore.exe concurrency_test #threads");
+                Console.WriteLine("Recovery Test:\n  SumStore.exe recovery #threads populate");
+                Console.WriteLine("  SumStore.exe recovery_test #threads continue");
+                Console.WriteLine("  SumStore.exe recovery_test #threads recover");
+                Console.WriteLine("  SumStore.exe recovery_test #threads recover single_guid");
+                Console.WriteLine("  SumStore.exe recovery_test #threads recover index_guid hlog_guid");
                 return;
             }
-            if (!Directory.Exists("logs"))
-                Directory.CreateDirectory("logs");
-
+            
             int nextArg = 0;
-            var test = default(IFasterRecoveryTest);
             var type = args[nextArg++];
-            if(type == "single")
+            int threadCount = int.Parse(args[nextArg++]);
+
+            if (type == "concurrency_test")
             {
-                test = new SingleThreadedRecoveryTest();
+                var ctest = new ConcurrencyTest(threadCount);
+                ctest.Populate();
+                return;
             }
-            else if(type == "concurrent")
+
+            if (type != "recovery_test" || args.Length < 3)
             {
-                int threadCount = int.Parse(args[nextArg++]);
-                test = new ConcurrentRecoveryTest(threadCount);
+                throw new Exception("Invalid test");
             }
-            else if(type == "test")
-            {
-                int threadCount = int.Parse(args[nextArg++]);
-                test = new ConcurrentTest(threadCount);
-            }
-            else
-            {
-                Debug.Assert(false);
-            }
+
+            RecoveryTest test = new RecoveryTest(threadCount);
 
             var task = args[nextArg++];
             if (task == "populate")
             {
                 test.Populate();
             }
-            else if(task == "recover")
+            else if (task == "recover")
             {
-                Guid version = Guid.Parse(args[nextArg++]);
-                test.RecoverAndTest(version, version);
+                switch (args.Length - nextArg)
+                {
+                    case 0:
+                        test.RecoverLatest();
+                        break;
+                    case 1:
+                        var version = Guid.Parse(args[nextArg++]);
+                        test.Recover(version, version);
+                        break;
+                    case 2:
+                        test.Recover(Guid.Parse(args[nextArg++]), Guid.Parse(args[nextArg++]));
+                        break;
+                    default:
+                        throw new Exception("Invalid input");
+                }
             }
-            else if(task == "continue")
+            else if (task == "continue")
             {
                 test.Continue();
             }
             else
             {
-                Debug.Assert(false);
+                throw new Exception("Invalid test");
             }
         }
     }

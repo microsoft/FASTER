@@ -49,7 +49,7 @@ namespace NestedTypesTest
 #endif
                 , MyFunctions>
                 (128, new MyFunctions(),
-                new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 10 }
+                new LogSettings { LogDevice = log, MemorySizeBits = 29 }
                 );
 
             h.StartSession();

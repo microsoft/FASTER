@@ -4,6 +4,7 @@
 using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -16,33 +17,67 @@ namespace FASTER.core
     /// </summary>
     public class LocalStorageDevice : StorageDeviceBase
     {
-        private readonly bool preallocateSegment;
+        private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
-        private readonly ConcurrentDictionary<int, SafeFileHandle> logHandles;
-        private readonly SafeFileHandle singleLogHandle;
+        private readonly bool disableFileBuffering;
+        private readonly SafeConcurrentDictionary<int, SafeFileHandle> logHandles;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="filename"></param>
-        /// <param name="segmentSize"></param>
-        /// <param name="preallocateSegment"></param>
-        /// <param name="singleSegment"></param>
+        /// <param name="filename">File name (or prefix) with path</param>
+        /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        public LocalStorageDevice(
-            string filename, long segmentSize = -1,
-            bool preallocateSegment = false, bool singleSegment = true, bool deleteOnClose = false)
-            : base(filename, segmentSize, GetSectorSize(filename))
+        /// <param name="disableFileBuffering"></param>
+        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
+        public LocalStorageDevice(string filename,
+                                  bool preallocateFile = false,
+                                  bool deleteOnClose = false,
+                                  bool disableFileBuffering = true,
+                                  long capacity = Devices.CAPACITY_UNSPECIFIED,
+                                  bool recoverDevice = false)
+            : base(filename, GetSectorSize(filename), capacity)
+        
         {
             Native32.EnableProcessPrivileges();
-
-            this.preallocateSegment = preallocateSegment;
+            this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
+            this.disableFileBuffering = disableFileBuffering;
+            logHandles = new SafeConcurrentDictionary<int, SafeFileHandle>();
+            if (recoverDevice)
+                RecoverFiles();
+        }
 
-            if (singleSegment)
-                singleLogHandle = CreateHandle(0);
-            else
-                logHandles = new ConcurrentDictionary<int, SafeFileHandle>();
+        private void RecoverFiles()
+        {
+            FileInfo fi = new FileInfo(FileName); // may not exist
+            DirectoryInfo di = fi.Directory;
+            if (!di.Exists) return;
+
+            string bareName = fi.Name;
+
+            List<int> segids = new List<int>();
+            foreach (FileInfo item in di.GetFiles(bareName + "*"))
+            {
+                segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
+            }
+            segids.Sort();
+
+            int prevSegmentId = -1;
+            foreach (int segmentId in segids)
+            {
+                if (segmentId != prevSegmentId + 1)
+                {
+                    startSegment = segmentId;
+                }
+                else
+                {
+                    endSegment = segmentId;
+                }
+                prevSegmentId = segmentId;
+            }
+            // No need to populate map because logHandles use Open or create on files.
         }
 
         /// <summary>
@@ -60,33 +95,37 @@ namespace FASTER.core
                                      IOCompletionCallback callback, 
                                      IAsyncResult asyncResult)
         {
-            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
-
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
 
-            bool result = Native32.ReadFile(logHandle,
-                                            destinationAddress,
-                                            readLength,
-                                            out uint bytesRead,
-                                            ovNative);
-
-            if (!result)
+            try
             {
-                int error = Marshal.GetLastWin32Error();
-                if (error != Native32.ERROR_IO_PENDING)
+                var logHandle = GetOrAddHandle(segmentId);
+
+                bool result = Native32.ReadFile(logHandle,
+                                                destinationAddress,
+                                                readLength,
+                                                out uint bytesRead,
+                                                ovNative);
+
+                if (!result)
                 {
-                    Overlapped.Unpack(ovNative);
-                    Overlapped.Free(ovNative);
-                    throw new Exception("Error reading from log file: " + error);
+                    int error = Marshal.GetLastWin32Error();
+                    if (error != Native32.ERROR_IO_PENDING)
+                    {
+                        throw new IOException("Error reading from log file", error);
+                    }
                 }
             }
-            else
+            catch (IOException e)
             {
-                // On synchronous completion, issue callback directly
-                callback(0, bytesRead, ovNative);
+                callback((uint)(e.HResult & 0x0000FFFF), 0, ovNative);
+            }
+            catch
+            {
+                callback(uint.MaxValue, 0, ovNative);
             }
         }
 
@@ -106,73 +145,97 @@ namespace FASTER.core
                                       IOCompletionCallback callback, 
                                       IAsyncResult asyncResult)
         {
-            var logHandle = singleLogHandle ?? GetOrAddHandle(segmentId);
-            
             Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
             NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             ovNative->OffsetLow = unchecked((int)(destinationAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)((destinationAddress >> 32) & 0xFFFFFFFF));
 
-            bool result = Native32.WriteFile(logHandle,
-                                    sourceAddress,
-                                    numBytesToWrite,
-                                    out uint bytesWritten,
-                                    ovNative);
-
-            if (!result)
+            try
             {
-                int error = Marshal.GetLastWin32Error();
-                if (error != Native32.ERROR_IO_PENDING)
+                var logHandle = GetOrAddHandle(segmentId);
+
+                bool result = Native32.WriteFile(logHandle,
+                                        sourceAddress,
+                                        numBytesToWrite,
+                                        out uint bytesWritten,
+                                        ovNative);
+
+                if (!result)
                 {
-                    Overlapped.Unpack(ovNative);
-                    Overlapped.Free(ovNative);
-                    throw new Exception("Error writing to log file: " + error);
+                    int error = Marshal.GetLastWin32Error();
+                    if (error != Native32.ERROR_IO_PENDING)
+                    {
+                        throw new IOException("Error writing to log file", error);
+                    }
                 }
             }
-            else
+            catch (IOException e)
             {
-                // On synchronous completion, issue callback directly
-                callback(0, bytesWritten, ovNative);
+                callback((uint)(e.HResult & 0x0000FFFF), 0, ovNative);
+            }
+            catch
+            {
+                callback(uint.MaxValue, 0, ovNative);
             }
         }
 
-
         /// <summary>
-        /// 
+        /// <see cref="IDevice.RemoveSegment(int)"/>
         /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
+        /// <param name="segment"></param>
+        public override void RemoveSegment(int segment)
         {
-            if (singleLogHandle != null)
-                throw new InvalidOperationException("Cannot delete segment range");
-
-            for (int i=fromSegment; i<toSegment; i++)
+            if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
             {
-                if (logHandles.TryRemove(i, out SafeFileHandle logHandle))
-                {
-                    logHandle.Dispose();
-                    Native32.DeleteFileW(GetSegmentName(i));
-                }
+                logHandle.Dispose();
+                Native32.DeleteFileW(GetSegmentName(segment));
             }
         }
 
         /// <summary>
-        /// 
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+        {
+            RemoveSegment(segment);
+            callback(result);
+        }
+
+        // It may be somewhat inefficient to use the default async calls from the base class when the underlying
+        // method is inherently synchronous. But just for delete (which is called infrequently and off the 
+        // critical path) such inefficiency is probably negligible.
+
+        /// <summary>
+        /// Close device
         /// </summary>
         public override void Close()
         {
-            if (singleLogHandle != null)
-                singleLogHandle.Dispose();
-            else
-                foreach (var logHandle in logHandles.Values)
-                    logHandle.Dispose();
+            foreach (var logHandle in logHandles.Values)
+                logHandle.Dispose();
         }
 
-
-        private string GetSegmentName(int segmentId)
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name="segmentId"></param>
+        /// <returns></returns>
+        protected string GetSegmentName(int segmentId)
         {
             return FileName + "." + segmentId;
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="_segmentId"></param>
+        /// <returns></returns>
+        // Can be used to pre-load handles, e.g., after a checkpoint
+        protected SafeFileHandle GetOrAddHandle(int _segmentId)
+        {
+            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
         }
 
         private static uint GetSectorSize(string filename)
@@ -196,9 +259,19 @@ namespace FASTER.core
             uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
             uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
 
-            fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+            if (this.disableFileBuffering)
+            {
+                fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+            }
+
             if (deleteOnClose)
+            {
                 fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
+
+                // FILE_SHARE_DELETE allows multiple FASTER instances to share a single log directory and each can specify deleteOnClose.
+                // This will allow the files to persist until all handles across all instances have been closed.
+                fileShare = fileShare | Native32.FILE_SHARE_DELETE;
+            }
 
             var logHandle = Native32.CreateFileW(
                 GetSegmentName(segmentId),
@@ -206,8 +279,14 @@ namespace FASTER.core
                 IntPtr.Zero, fileCreation,
                 fileFlags, IntPtr.Zero);
 
-            if (preallocateSegment)
-                SetFileSize(FileName, logHandle, SegmentSize);
+            if (logHandle.IsInvalid)
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw new IOException($"Error creating log file for {GetSegmentName(segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
+            }
+
+            if (preallocateFile)
+                SetFileSize(FileName, logHandle, segmentSize);
 
             try
             {
@@ -220,16 +299,11 @@ namespace FASTER.core
             return logHandle;
         }
 
-        private SafeFileHandle GetOrAddHandle(int _segmentId)
-        {
-            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
-        }
-
         /// Sets file size to the specified value.
         /// Does not reset file seek pointer to original location.
         private bool SetFileSize(string filename, SafeFileHandle logHandle, long size)
         {
-            if (SegmentSize <= 0)
+            if (segmentSize <= 0)
                 return false;
 
             if (Native32.EnableVolumePrivileges(filename, logHandle))

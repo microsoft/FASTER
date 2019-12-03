@@ -90,6 +90,9 @@ TEST(CLASS, UpsertRead_Serial) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
       value.gen_ = 0;
@@ -187,7 +190,7 @@ TEST(CLASS, UpsertRead_Serial) {
 
   Guid session_id = store.StartSession();
 
-  constexpr size_t kNumRecords = 300000;
+  constexpr size_t kNumRecords = 250000;
 
   // Insert.
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
@@ -369,6 +372,9 @@ TEST(CLASS, UpsertRead_Concurrent) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
       value.gen_ = 0;
@@ -463,8 +469,8 @@ TEST(CLASS, UpsertRead_Concurrent) {
   // 8 pages!
   FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
 
-  static constexpr size_t kNumRecords = 300000;
-  static constexpr size_t kNumThreads = 16;
+  static constexpr size_t kNumRecords = 250000;
+  static constexpr size_t kNumThreads = 2;
 
   static std::atomic<uint64_t> num_writes{ 0 };
 
@@ -665,6 +671,9 @@ TEST(CLASS, Rmw) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     inline void RmwInitial(Value& value) {
       value.counter_ = incr_;
       val_ = value.counter_;
@@ -702,7 +711,7 @@ TEST(CLASS, Rmw) {
 
   Guid session_id = store.StartSession();
 
-  constexpr size_t kNumRecords = 300000;
+  constexpr size_t kNumRecords = 200000;
 
   // Initial RMW.
   static std::atomic<uint64_t> records_touched{ 0 };
@@ -836,6 +845,9 @@ TEST(CLASS, Rmw_Concurrent) {
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
     inline void RmwInitial(Value& value) {
       value.counter_ = incr_;
     }
@@ -896,8 +908,8 @@ TEST(CLASS, Rmw_Concurrent) {
     uint64_t counter;
   };
 
-  static constexpr size_t kNumRecords = 300000;
-  static constexpr size_t kNumThreads = 8;
+  static constexpr size_t kNumRecords = 150000;
+  static constexpr size_t kNumThreads = 2;
 
   auto rmw_worker = [](FasterKv<Key, Value, disk_t>* store_, uint64_t incr) {
     Guid session_id = store_->StartSession();

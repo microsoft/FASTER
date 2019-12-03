@@ -222,6 +222,9 @@ class RmwContext : public IAsyncContext {
   inline static constexpr uint32_t value_size() {
     return sizeof(value_t);
   }
+  inline static constexpr uint32_t value_size(const value_t& old_value) {
+    return sizeof(value_t);
+  }
 
   /// Initial, non-atomic, and atomic RMW methods.
   inline void RmwInitial(value_t& value) {
@@ -589,8 +592,7 @@ void run_benchmark(store_t* store, size_t num_threads) {
 }
 
 void run(Workload workload, size_t num_threads) {
-  // FASTER store has a hash table with approx. kInitCount / 2 entries, a log of size 16 GB,
-  // and a null device (it's in-memory only).
+  // FASTER store has a hash table with approx. kInitCount / 2 entries and a log of size 16 GB
   size_t init_size = next_power_of_two(kInitCount / 2);
   store_t store{ init_size, 17179869184, "storage" };
 

@@ -11,35 +11,74 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV : FasterBase, IFasterKV
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+        where Key : new()
+        where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Guid InternalAcquire()
         {
+            epoch.Resume();
+            overflowBucketsAllocator.Acquire();
+            threadCtx.InitializeThread();
+            prevThreadCtx.InitializeThread();
             Phase phase = _systemState.phase;
             if (phase != Phase.REST)
             {
                 throw new Exception("Can acquire only in REST phase!");
             }
             Guid guid = Guid.NewGuid();
-            InitLocalContext(ref threadCtx, guid);
+            InitLocalContext(guid);
             InternalRefresh();
-            return threadCtx.guid;
+            return threadCtx.Value.guid;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long InternalContinue(Guid guid)
         {
-            if (_hybridLogCheckpoint.info.continueTokens != null)
+            epoch.Resume();
+            overflowBucketsAllocator.Acquire();
+            threadCtx.InitializeThread();
+            prevThreadCtx.InitializeThread();
+            if (_recoveredSessions != null)
             {
-                if (_hybridLogCheckpoint.info.continueTokens.TryGetValue(guid, out long serialNum))
+                if (_recoveredSessions.TryGetValue(guid, out long serialNum))
                 {
-                    return serialNum;
+                    // We have recovered the corresponding session. 
+                    // Now obtain the session by first locking the rest phase
+                    var currentState = SystemState.Copy(ref _systemState);
+                    if(currentState.phase == Phase.REST)
+                    {
+                        var intermediateState = SystemState.Make(Phase.INTERMEDIATE, currentState.version);
+                        if(MakeTransition(currentState,intermediateState))
+                        {
+                            // No one can change from REST phase
+                            if(_recoveredSessions.TryRemove(guid, out serialNum))
+                            {
+                                // We have atomically removed session details. 
+                                // No one else can continue this session
+                                InitLocalContext(guid);
+                                threadCtx.Value.serialNum = serialNum;
+                                InternalRefresh();
+                            }
+                            else
+                            {
+                                // Someone else continued this session
+                                serialNum = -1;
+                                Debug.WriteLine("Session already continued by another thread!");
+                            }
+
+                            MakeTransition(intermediateState, currentState);
+                            return serialNum;
+                        }
+                    }
+
+                    // Need to try again when in REST
+                    Debug.WriteLine("Can continue only in REST phase");
+                    return -1;
                 }
             }
 
-            Debug.WriteLine("Unable to continue session " + guid.ToString());
+            Debug.WriteLine("No recovered sessions!");
             return -1;
         }
 
@@ -50,7 +89,7 @@ namespace FASTER.core
 
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref _systemState);
-            if (threadCtx.phase == Phase.REST && newPhaseInfo.phase == Phase.REST)
+            if (threadCtx.Value.phase == Phase.REST && newPhaseInfo.phase == Phase.REST)
             {
                 return;
             }
@@ -58,50 +97,53 @@ namespace FASTER.core
             // Moving to non-checkpointing phases
             if (newPhaseInfo.phase == Phase.GC || newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
             {
-                threadCtx.phase = newPhaseInfo.phase;
+                threadCtx.Value.phase = newPhaseInfo.phase;
                 return;
             }
 
             HandleCheckpointingPhases();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRelease()
         {
-            Debug.Assert(threadCtx.retryRequests.Count == 0 &&
-                    threadCtx.ioPendingRequests.Count == 0);
-            if (prevThreadCtx != default(ExecutionContext))
+            Debug.Assert(threadCtx.Value.retryRequests.Count == 0 &&
+                    threadCtx.Value.ioPendingRequests.Count == 0);
+            if (prevThreadCtx.Value != default(FasterExecutionContext))
             {
-                Debug.Assert(prevThreadCtx.retryRequests.Count == 0 &&
-                    prevThreadCtx.ioPendingRequests.Count == 0);
+                Debug.Assert(prevThreadCtx.Value.retryRequests.Count == 0 &&
+                    prevThreadCtx.Value.ioPendingRequests.Count == 0);
             }
-            Debug.Assert(threadCtx.phase == Phase.REST);
-            epoch.Release();
+            Debug.Assert(threadCtx.Value.phase == Phase.REST);
+            threadCtx.DisposeThread();
+            prevThreadCtx.DisposeThread();
+            epoch.Suspend();
+            overflowBucketsAllocator.Release();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitLocalContext(ref ExecutionContext context, Guid token)
+        internal void InitLocalContext(Guid token)
         {
-            context = new ExecutionContext
-            {
-                phase = _systemState.phase,
-                version = _systemState.version,
-                markers = new bool[8],
-                serialNum = 0,
-                totalPending = 0,
-                guid = token,
-                retryRequests = new Queue<PendingContext>(),
-                readyResponses = new BlockingCollection<AsyncIOContext>(),
-                ioPendingRequests = new Dictionary<long, PendingContext>()
-            };
+            var ctx = 
+                new FasterExecutionContext
+                {
+                    phase = Phase.REST,
+                    version = _systemState.version,
+                    markers = new bool[8],
+                    serialNum = 0,
+                    totalPending = 0,
+                    guid = token,
+                    retryRequests = new Queue<PendingContext>(),
+                    readyResponses = new BlockingCollection<AsyncIOContext<Key, Value>>(),
+                    ioPendingRequests = new Dictionary<long, PendingContext>()
+                };
 
             for(int i = 0; i < 8; i++)
             {
-                context.markers[i] = false;
+                ctx.markers[i] = false;
             }
+
+            threadCtx.Value = ctx;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool InternalCompletePending(bool wait = false)
         {
             do
@@ -109,42 +151,47 @@ namespace FASTER.core
                 bool done = true;
 
                 #region Previous pending requests
-                if (threadCtx.phase == Phase.IN_PROGRESS
+                if (threadCtx.Value.phase == Phase.IN_PROGRESS
                     ||
-                    threadCtx.phase == Phase.WAIT_PENDING)
+                    threadCtx.Value.phase == Phase.WAIT_PENDING)
                 {
-                    CompleteIOPendingRequests(prevThreadCtx);
+                    CompleteIOPendingRequests(prevThreadCtx.Value);
                     Refresh();
-                    CompleteRetryRequests(prevThreadCtx);
+                    CompleteRetryRequests(prevThreadCtx.Value);
 
-                    done &= (prevThreadCtx.ioPendingRequests.Count == 0);
-                    done &= (prevThreadCtx.retryRequests.Count == 0);
+                    done &= (prevThreadCtx.Value.ioPendingRequests.Count == 0);
+                    done &= (prevThreadCtx.Value.retryRequests.Count == 0);
                 }
                 #endregion
 
-                if (!(threadCtx.phase == Phase.IN_PROGRESS
+                if (!(threadCtx.Value.phase == Phase.IN_PROGRESS
                       || 
-                      threadCtx.phase == Phase.WAIT_PENDING))
+                      threadCtx.Value.phase == Phase.WAIT_PENDING))
                 {
-                    CompleteIOPendingRequests(threadCtx);
+                    CompleteIOPendingRequests(threadCtx.Value);
                 }
                 InternalRefresh();
-                CompleteRetryRequests(threadCtx);
+                CompleteRetryRequests(threadCtx.Value);
 
-                done &= (threadCtx.ioPendingRequests.Count == 0);
-                done &= (threadCtx.retryRequests.Count == 0);
+                done &= (threadCtx.Value.ioPendingRequests.Count == 0);
+                done &= (threadCtx.Value.retryRequests.Count == 0);
 
                 if (done)
                 {
                     return true;
+                }
+
+                if (wait)
+                {
+                    // Yield before checking again
+                    Thread.Yield();
                 }
             } while (wait);
 
             return false;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompleteRetryRequests(ExecutionContext context)
+        internal void CompleteRetryRequests(FasterExecutionContext context)
         {
             int count = context.retryRequests.Count;
             for (int i = 0; i < count; i++)
@@ -154,28 +201,30 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompleteIOPendingRequests(ExecutionContext context)
+        internal void CompleteIOPendingRequests(FasterExecutionContext context)
         {
-            while (context.readyResponses.TryTake(out AsyncIOContext request))
+            if (context.readyResponses.Count == 0) return;
+
+            while (context.readyResponses.TryTake(out AsyncIOContext<Key, Value> request))
             {
                 InternalContinuePendingRequestAndCallback(context, request);
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRetryRequestAndCallback(
-                                    ExecutionContext ctx,
+                                    FasterExecutionContext ctx,
                                     PendingContext pendingContext)
         {
             var status = default(Status);
             var internalStatus = default(OperationStatus);
+            ref Key key = ref pendingContext.key.Get();
+            ref Value value = ref pendingContext.value.Get();
 
             #region Entry latch operation
             var handleLatches = false;
-            if ((ctx.version < threadCtx.version) // Thread has already shifted to (v+1)
+            if ((ctx.version < threadCtx.Value.version) // Thread has already shifted to (v+1)
                 ||
-                (threadCtx.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+                (threadCtx.Value.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
             {
                 handleLatches = true;
             }
@@ -188,9 +237,14 @@ namespace FASTER.core
                     internalStatus = InternalRetryPendingRMW(ctx, ref pendingContext);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(pendingContext.key, 
-                                                    pendingContext.value, 
-                                                    pendingContext.userContext, 
+                    internalStatus = InternalUpsert(ref key, 
+                                                    ref value, 
+                                                    ref pendingContext.userContext, 
+                                                    ref pendingContext);
+                    break;
+                case OperationType.DELETE:
+                    internalStatus = InternalDelete(ref key,
+                                                    ref pendingContext.userContext,
                                                     ref pendingContext);
                     break;
                 case OperationType.READ:
@@ -212,18 +266,22 @@ namespace FASTER.core
             if (status == Status.OK || status == Status.NOTFOUND)
             {
                 if (handleLatches)
-                    ReleaseSharedLatch(pendingContext.key);
+                    ReleaseSharedLatch(key);
 
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
-                        Functions.RMWCompletionCallback(pendingContext.key,
-                                                pendingContext.input,
+                        functions.RMWCompletionCallback(ref key,
+                                                ref pendingContext.input,
                                                 pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
-                        Functions.UpsertCompletionCallback(pendingContext.key,
-                                                 pendingContext.value,
+                        functions.UpsertCompletionCallback(ref key,
+                                                 ref value,
+                                                 pendingContext.userContext);
+                        break;
+                    case OperationType.DELETE:
+                        functions.DeleteCompletionCallback(ref key,
                                                  pendingContext.userContext);
                         break;
                     default:
@@ -233,15 +291,14 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalContinuePendingRequestAndCallback(
-                                    ExecutionContext ctx,
-                                    AsyncIOContext request)
+                                    FasterExecutionContext ctx,
+                                    AsyncIOContext<Key, Value> request)
         {
             var handleLatches = false;
-            if ((ctx.version < threadCtx.version) // Thread has already shifted to (v+1)
+            if ((ctx.version < threadCtx.Value.version) // Thread has already shifted to (v+1)
                 ||
-                (threadCtx.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+                (threadCtx.Value.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
             {
                 handleLatches = true;
             }
@@ -250,6 +307,7 @@ namespace FASTER.core
             {
                 var status = default(Status);
                 var internalStatus = default(OperationStatus);
+                ref Key key = ref pendingContext.key.Get();
 
                 // Remove from pending dictionary
                 ctx.ioPendingRequests.Remove(request.id);
@@ -263,19 +321,8 @@ namespace FASTER.core
                 {
                     internalStatus = InternalContinuePendingRMW(ctx, request, ref pendingContext); ;
                 }
-                
-                // Delete key, value, record
-                if (Key.HasObjectsToSerialize())
-                {
-                    var physicalAddress = (long)request.record.GetValidPointer();
-                    Key.Free(Layout.GetKey(physicalAddress));
-                }
-                if (Value.HasObjectsToSerialize())
-                {
-                    var physicalAddress = (long)request.record.GetValidPointer();
-                    Value.Free(Layout.GetValue(physicalAddress));
-                }
-                request.record.Return();
+
+                request.Dispose();
 
                 // Handle operation status
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -291,24 +338,25 @@ namespace FASTER.core
                 if(status == Status.OK || status == Status.NOTFOUND)
                 {
                     if (handleLatches)
-                        ReleaseSharedLatch(pendingContext.key);
+                        ReleaseSharedLatch(key);
 
                     if (pendingContext.type == OperationType.READ)
                     {
-                        Functions.ReadCompletionCallback(pendingContext.key, 
-                                                         pendingContext.input, 
-                                                         pendingContext.output, 
+                        functions.ReadCompletionCallback(ref key, 
+                                                         ref pendingContext.input, 
+                                                         ref pendingContext.output, 
                                                          pendingContext.userContext,
                                                          status);
                     }
                     else
                     {
-                        Functions.RMWCompletionCallback(pendingContext.key,
-                                                        pendingContext.input,
+                        functions.RMWCompletionCallback(ref key,
+                                                        ref pendingContext.input,
                                                         pendingContext.userContext,
                                                         status);
                     }
                 }
+                pendingContext.Dispose();
             }
         }
 

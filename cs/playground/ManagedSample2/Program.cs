@@ -16,9 +16,8 @@ namespace ManagedSample2
         {
             // This sample uses structs, but via the safe API (no pointers)
 
-            var fht = FasterFactory.Create
-                <KeyStruct, ValueStruct, InputStruct, OutputStruct, 
-                Empty, CustomFunctions>
+            var fht = new FasterKV
+                <KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, CustomFunctions>
                 (128, new CustomFunctions());
 
             fht.StartSession();

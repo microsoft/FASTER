@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "SumStore": {
+      "commandName": "Project",
+      "commandLineArgs": "concurrency_test 2"
+    }
+  }
+}

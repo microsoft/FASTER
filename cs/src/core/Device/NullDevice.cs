@@ -14,7 +14,7 @@ namespace FASTER.core
         /// <summary>
         /// 
         /// </summary>
-        public NullDevice() : base("null", 1L << 30, 512)
+        public NullDevice() : base("null", 512, Devices.CAPACITY_UNSPECIFIED)
         {
         }
 
@@ -62,16 +62,24 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// 
+        /// <see cref="IDevice.RemoveSegment(int)"/>
         /// </summary>
-        /// <param name="fromSegment"></param>
-        /// <param name="toSegment"></param>
-        public override void DeleteSegmentRange(int fromSegment, int toSegment)
+        /// <param name="segment"></param>
+        public override void RemoveSegment(int segment)
         {
+            // No-op
         }
 
         /// <summary>
-        /// 
+        /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <param name="callback"></param>
+        /// <param name="result"></param>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result) => callback(result);
+
+        /// <summary>
+        /// <see cref="IDevice.Close"/>
         /// </summary>
         public override void Close()
         {

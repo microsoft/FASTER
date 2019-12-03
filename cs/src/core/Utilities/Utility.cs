@@ -2,36 +2,23 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-using System.Security;
-using System.IO;
 using System.Runtime.CompilerServices;
-using Microsoft.Win32.SafeHandles;
-using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Empty type
     /// </summary>
-    public unsafe struct Empty
+    public struct Empty
     {
         /// <summary>
-        /// Move to context
+        /// Default
         /// </summary>
-        /// <param name="empty"></param>
-        /// <returns></returns>
-        public static Empty* MoveToContext(Empty* empty)
-        {
-            return empty;
-        }
+        public static readonly Empty Default = default(Empty);
     }
-
 
     /// <summary>
     /// FASTER utility functions
@@ -39,30 +26,42 @@ namespace FASTER.core
     public static class Utility
     {
         /// <summary>
-        /// Helper function used to check if two byte arrays are equal
+        /// Get size of type
         /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dest"></param>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="value"></param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe static bool IsEqual(byte* src, byte* dest)
+        internal static unsafe int GetSize<T>(this T value)
         {
-            if (*(int*)src == *(int*)dest)
-            {
-                for (int i = 0; i < *(int*)src; i++)
-                {
-                    if (*(src + 4 + i) != *(dest + 4 + i))
-                    {
-                        return false;
-                    }
-                }
-                return true;
-            }
-            return false;
+            T[] arr = new T[2];
+            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
         }
 
         /// <summary>
-        /// Helper function used to check if two byte arrays of given length are equal
+        /// Is type blittable
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        internal static bool IsBlittable<T>()
+        {
+            if (default(T) == null)
+                return false;
+
+            try
+            {
+                var tmp = new T[1];
+                var h = GCHandle.Alloc(tmp, GCHandleType.Pinned);
+                h.Free();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Check if two byte arrays of given length are equal
         /// </summary>
         /// <param name="src"></param>
         /// <param name="dst"></param>
@@ -89,7 +88,7 @@ namespace FASTER.core
         /// <param name="numBytes"></param>
         public unsafe static void Copy(byte* src, byte* dest, int numBytes)
         {
-            for(int i = 0; i < numBytes; i++)
+            for (int i = 0; i < numBytes; i++)
             {
                 *(dest + i) = *(src + i);
             }
@@ -115,7 +114,6 @@ namespace FASTER.core
             return (long)Rotr64((ulong)local_rand_hash, 45);
         }
 
-
         /// <summary>
         /// Get 64-bit hash code for a byte array
         /// </summary>
@@ -131,17 +129,52 @@ namespace FASTER.core
             ulong hashState = (ulong)len;
 
             for (int i = 0; i < cbBuf; i++, pwString++)
-                hashState = magicno * hashState + (ulong)*pwString;
+                hashState = magicno * hashState + *pwString;
 
             if ((len & 1) > 0)
             {
-                char* pC = (char*)pwString;
-                hashState = magicno * hashState + (ulong)*pC;
+                byte* pC = (byte*)pwString;
+                hashState = magicno * hashState + *pC;
             }
 
             return (long)Rotr64(magicno * hashState, 4);
         }
-    
+
+        /// <summary>
+        /// Compute XOR of all provided bytes
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="length"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe ulong XorBytes(byte* src, int length)
+        {
+            ulong result = 0;
+            byte* curr = src;
+            byte* end = src + length;
+            while (curr + 4 * sizeof(ulong) <= end)
+            {
+                result ^= *(ulong*)curr;
+                result ^= *(1 + (ulong*)curr);
+                result ^= *(2 + (ulong*)curr);
+                result ^= *(3 + (ulong*)curr);
+                curr += 4 * sizeof(ulong);
+            }
+            while (curr + sizeof(ulong) <= end)
+            {
+                result ^= *(ulong*)curr;
+                curr += sizeof(ulong);
+            }
+            while (curr + 1 <= end)
+            {
+                result ^= *curr;
+                curr++;
+            }
+
+            return result;
+        }
+
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ulong Rotr64(ulong x, int n)
         {
@@ -216,6 +249,73 @@ namespace FASTER.core
             a *= 0xc2b2ae35;
             a ^= a >> 16;
             return (int)a;
+        }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="variable">The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns> if oldValue less than newValue </returns>
+        public static bool MonotonicUpdate(ref long variable, long newValue, out long oldValue)
+        {
+            do
+            {
+                oldValue = variable;
+                if (oldValue >= newValue) return false;
+            } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="variable">The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns>if oldValue less than or equal to newValue</returns>
+        public static bool MonotonicUpdate(ref int variable, int newValue, out int oldValue)
+        {
+            do
+            {
+                oldValue = variable;
+                if (oldValue >= newValue) return false;
+            } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
+        /// <summary>
+        /// Throws OperationCanceledException if token cancels before the real task completes.
+        /// Doesn't abort the inner task, but allows the calling code to get "unblocked" and react to stuck tasks.
+        /// </summary>
+        internal static Task<T> WithCancellationAsync<T>(this Task<T> task, CancellationToken token, bool useSynchronizationContext = false, bool continueOnCapturedContext = false)
+        {
+            if (!token.CanBeCanceled || task.IsCompleted)
+            {
+                return task;
+            }
+            else if (token.IsCancellationRequested)
+            {
+                return Task.FromCanceled<T>(token);
+            }
+
+            return Inner(task, token, useSynchronizationContext, continueOnCapturedContext);
+
+            static async Task<T> Inner(Task<T> task, CancellationToken token, bool useSynchronizationContext, bool continueOnCapturedContext)
+            {
+                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
+                {
+                    if (task != await Task.WhenAny(task, tcs.Task))
+                    {
+                        token.ThrowIfCancellationRequested();
+                    }
+                }
+
+                // make sure any exceptions in the task get unwrapped and exposed to the caller.
+                return await task.ConfigureAwait(continueOnCapturedContext);
+            }
         }
     }
 }

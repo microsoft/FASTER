@@ -53,6 +53,8 @@ namespace FASTER.core
         internal const uint FILE_FLAG_DELETE_ON_CLOSE = 0x04000000;
         internal const uint FILE_FLAG_NO_BUFFERING = 0x20000000;
         internal const uint FILE_FLAG_OVERLAPPED = 0x40000000;
+
+        internal const uint FILE_SHARE_DELETE = 0x00000004;
         #endregion
 
         #region io functions
@@ -319,6 +321,11 @@ namespace FASTER.core
             }
 
             return true;
+        }
+
+        internal static int MakeHRFromErrorCode(int errorCode)
+        {
+            return unchecked(((int)0x80070000) | errorCode);
         }
         #endregion
     }

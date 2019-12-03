@@ -20,7 +20,7 @@ namespace FASTER.test.recovery.sumstore
         const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private ICustomFaster fht;
+        private FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
         private string test_path;
         private Guid token;
         private IDevice log;
@@ -30,23 +30,24 @@ namespace FASTER.test.recovery.sumstore
         {
             if (test_path == null)
             {
-                test_path = Path.GetTempPath() + Path.GetRandomFileName();
+                test_path = TestContext.CurrentContext.TestDirectory + "\\" + Path.GetRandomFileName();
                 if (!Directory.Exists(test_path))
                     Directory.CreateDirectory(test_path);
             }
 
-            log = FasterFactory.CreateLogDevice(test_path + "\\hlog");
+            log = Devices.CreateLogDevice(test_path + "\\FullRecoveryTests.log");
 
-            fht = 
-                FasterFactory.Create
-                <AdId, NumClicks, Input, Output, Empty, Functions, ICustomFaster>
-                (keySpace, new LogSettings { LogDevice = log }, new CheckpointSettings { CheckpointDir = test_path });
+            fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
+                (keySpace, new Functions(), 
+                new LogSettings { LogDevice = log },
+                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot }
+                );
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
+            fht.Dispose();
             fht = null;
             log.Close();
             DeleteDirectory(test_path);
@@ -77,15 +78,15 @@ namespace FASTER.test.recovery.sumstore
         public void RecoveryTest1()
         {
             Populate();
+            fht.Dispose();
+            fht = null;
             log.Close();
             Setup();
             RecoverAndTest(token, token);
         }
 
-        public unsafe void Populate()
+        public void Populate()
         {
-            Empty context;
-
             // Prepare the dataset
             var inputArray = new Input[numOps];
             for (int i = 0; i < numOps; i++)
@@ -99,34 +100,31 @@ namespace FASTER.test.recovery.sumstore
 
             // Prpcess the batch of input data
             bool first = true;
-            fixed (Input* input = inputArray)
+            for (int i = 0; i < numOps; i++)
             {
-                for (int i = 0; i < numOps; i++)
+                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+
+                if ((i+1) % checkpointInterval == 0)
                 {
-                    fht.RMW(&((input + i)->adId), input + i, &context, i);
+                    if (first)
+                        while (!fht.TakeFullCheckpoint(out token))
+                            fht.Refresh();
+                    else
+                        while (!fht.TakeFullCheckpoint(out Guid nextToken))
+                            fht.Refresh();
 
-                    if ((i+1) % checkpointInterval == 0)
-                    {
-                        if (first)
-                            while (!fht.TakeFullCheckpoint(out token))
-                                fht.Refresh();
-                        else
-                            while (!fht.TakeFullCheckpoint(out Guid nextToken))
-                                fht.Refresh();
+                    fht.CompleteCheckpoint(true);
 
-                        fht.CompleteCheckpoint(true);
+                    first = false;
+                }
 
-                        first = false;
-                    }
-
-                    if (i % completePendingInterval == 0)
-                    {
-                        fht.CompletePending(false);
-                    }
-                    else if (i % refreshInterval == 0)
-                    {
-                        fht.Refresh();
-                    }
+                if (i % completePendingInterval == 0)
+                {
+                    fht.CompletePending(false);
+                }
+                else if (i % refreshInterval == 0)
+                {
+                    fht.Refresh();
                 }
             }
 
@@ -137,13 +135,12 @@ namespace FASTER.test.recovery.sumstore
             fht.StopSession();
         }
 
-        public unsafe void RecoverAndTest(Guid cprVersion, Guid indexVersion)
+        public void RecoverAndTest(Guid cprVersion, Guid indexVersion)
         {
             // Recover
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            Empty context;
             var inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
@@ -154,13 +151,15 @@ namespace FASTER.test.recovery.sumstore
             // Register with thread
             fht.StartSession();
 
+            Input input = default(Input);
+            Output output = default(Output);
+
             // Issue read requests
-            fixed (Input* input = inputArray)
+            for (var i = 0; i < numUniqueKeys; i++)
             {
-                for (var i = 0; i < numUniqueKeys; i++)
-                {
-                    fht.Read(&((input + i)->adId), null, (Output*)&((input + i)->numClicks), &context, i);
-                }
+                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                Assert.IsTrue(status == Status.OK);
+                inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
@@ -169,12 +168,9 @@ namespace FASTER.test.recovery.sumstore
             // Release
             fht.StopSession();
 
-            // Set checkpoint directory
-            Config.CheckpointDirectory = test_path;
-
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion);
+            checkpointInfo.Recover(cprVersion, new LocalCheckpointManager(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

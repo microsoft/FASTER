@@ -14,241 +14,97 @@ using System.Diagnostics;
 
 namespace FASTER.test.recovery.sumstore
 {
-    public unsafe struct AdId
+    public struct AdId : IFasterEqualityComparer<AdId>
     {
-        public const int physicalSize = sizeof(long);
         public long adId;
 
-        public static long GetHashCode(AdId* key)
+        public long GetHashCode64(ref AdId key)
         {
-            return Utility.GetHashCode(*((long*)key));
+            return Utility.GetHashCode(key.adId);
         }
-        public static bool Equals(AdId* k1, AdId* k2)
+        public bool Equals(ref AdId k1, ref AdId k2)
         {
-            return k1->adId == k2->adId;
+            return k1.adId == k2.adId;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(AdId* key)
-        {
-            return physicalSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Copy(AdId* src, AdId* dst)
-        {
-            dst->adId = src->adId;
-        }
-
-        public static AdId* MoveToContext(AdId* value)
-        {
-            return value;
-        }
-        #region Serialization
-        public static bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public static void Serialize(AdId* key, Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public static void Deserialize(AdId* key, Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        public static void Free(AdId* key)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
     }
 
-    public unsafe struct Input
+    public struct Input
     {
         public AdId adId;
         public NumClicks numClicks;
-
-        public static Input* MoveToContext(Input* value)
-        {
-            return value;
-        }
-
     }
 
-    public unsafe struct NumClicks
+    public struct NumClicks
     {
-        public const int physicalSize = sizeof(long);
         public long numClicks;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLength(NumClicks* input)
-        {
-            return physicalSize;
-        }
-
-        public static void Copy(NumClicks* src, NumClicks* dst)
-        {
-            dst->numClicks = src->numClicks;
-        }
-
-        // Shared read/write capabilities on value
-        public static void AcquireReadLock(NumClicks* value)
-        {
-        }
-
-        public static void ReleaseReadLock(NumClicks* value)
-        {
-        }
-
-        public static void AcquireWriteLock(NumClicks* value)
-        {
-        }
-
-        public static void ReleaseWriteLock(NumClicks* value)
-        {
-        }
-
-        public static NumClicks* MoveToContext(NumClicks* value)
-        {
-            return value;
-        }
-
-        #region Serialization
-        public static bool HasObjectsToSerialize()
-        {
-            return false;
-        }
-
-        public static void Serialize(NumClicks* key, Stream toStream)
-        {
-            throw new InvalidOperationException();
-        }
-
-        public static void Deserialize(NumClicks* key, Stream fromStream)
-        {
-            throw new InvalidOperationException();
-        }
-        public static void Free(NumClicks* key)
-        {
-            throw new InvalidOperationException();
-        }
-        #endregion
     }
 
-    public unsafe struct Output
+    public struct Output
     {
         public NumClicks value;
-
-        public static Output* MoveToContext(Output* value)
-        {
-            return value;
-        }
-
     }
 
-    public unsafe interface ICustomFaster
+    public class Functions : IFunctions<AdId, NumClicks, Input, Output, Empty>
     {
-        /* Thread-related operations */
-        Guid StartSession();
-        long ContinueSession(Guid guid);
-        void StopSession();
-        void Refresh();
-        bool TakeFullCheckpoint(out Guid token);
-        bool TakeIndexCheckpoint(out Guid token);
-        bool TakeHybridLogCheckpoint(out Guid token);
-        void Recover(Guid fullcheckpointToken);
-        void Recover(Guid indexToken, Guid hybridLogToken);
-        bool CompleteCheckpoint(bool wait);
-
-        /* Store Interface */
-        Status Read(AdId* key, Input* input, Output* output, Empty* context, long lsn);
-        Status Upsert(AdId* key, NumClicks* value, Empty* context, long lsn);
-        Status RMW(AdId* key, Input* input, Empty* context, long lsn);
-        bool CompletePending(bool wait);
-        bool ShiftBeginAddress(long untilAddress);
-
-        /* Statistics */
-        long LogTailAddress { get; }
-        long LogReadOnlyAddress { get; }
-        void DumpDistribution();
-    }
-
-    public unsafe class Functions
-    {
-        public static void RMWCompletionCallback(AdId* key, Input* input, Empty* ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref Input input, Empty ctx, Status status)
         {
         }
 
-        public static void ReadCompletionCallback(AdId* key, Input* input, Output* output, Empty* ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 
-        public static void UpsertCompletionCallback(AdId* key, NumClicks* input, Empty* ctx)
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
         {
         }
 
-        public static void PersistenceCallback(long thread_id, long serial_num)
+        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
         {
-            Console.WriteLine("Thread {0} reports persistence until {1}", thread_id, serial_num);
+        }
+
+        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        {
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
         }
 
         // Read functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleReader(AdId* key, Input* input, NumClicks* value, Output* dst)
+        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
-            NumClicks.Copy(value, (NumClicks*)dst);
+            dst.value = value;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentReader(AdId* key, Input* input, NumClicks* value, Output* dst)
+        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
-            NumClicks.AcquireReadLock(value);
-            NumClicks.Copy(value, (NumClicks*)dst);
-            NumClicks.ReleaseReadLock(value);
+            dst.value = value;
         }
 
         // Upsert functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SingleWriter(AdId* key, NumClicks* src, NumClicks* dst)
+        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
-            NumClicks.Copy(src, dst);
+            dst = src;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ConcurrentWriter(AdId* key, NumClicks* src, NumClicks* dst)
+        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
-            NumClicks.AcquireWriteLock(dst);
-            NumClicks.Copy(src, dst);
-            NumClicks.ReleaseWriteLock(dst);
+            dst = src;
+            return true;
         }
 
         // RMW functions
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int InitialValueLength(AdId* key, Input* input)
+        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
-            return NumClicks.GetLength(default(NumClicks*));
+            value = input.numClicks;
         }
 
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitialUpdater(AdId* key, Input* input, NumClicks* value)
+        public bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
         {
-            NumClicks.Copy(&input->numClicks, value);
+            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+            return true;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InPlaceUpdater(AdId* key, Input* input, NumClicks* value)
+        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
         {
-            Interlocked.Add(ref value->numClicks, input->numClicks.numClicks);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void CopyUpdater(AdId* key, Input* input, NumClicks* oldValue, NumClicks* newValue)
-        {
-            newValue->numClicks += oldValue->numClicks + input->numClicks.numClicks;
+            newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }
     }
 }

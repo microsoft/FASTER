@@ -105,14 +105,14 @@ namespace FASTER.core
         [FieldOffset(0)]
         private long word;
 
-        public static void WriteInfo(RecordInfo* info, int checkpointVersion, bool final, bool tombstone, bool invalidBit, long previousAddress)
+        public static void WriteInfo(ref RecordInfo info, int checkpointVersion, bool final, bool tombstone, bool invalidBit, long previousAddress)
         {
-            info->word = default(long);
-            info->Final = final;
-            info->Tombstone = tombstone;
-            info->Invalid = invalidBit;
-            info->PreviousAddress = previousAddress;
-            info->Version = checkpointVersion;
+            info.word = default(long);
+            info.Final = final;
+            info.Tombstone = tombstone;
+            info.Invalid = invalidBit;
+            info.PreviousAddress = previousAddress;
+            info.Version = checkpointVersion;
         }
         
 

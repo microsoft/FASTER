@@ -8,11 +8,8 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Linq.Expressions;
-using System.IO;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -20,24 +17,14 @@ namespace FASTER.core
     /// Memory allocator for objects
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public unsafe class MallocFixedPageSize<T>
+    public unsafe class MallocFixedPageSize<T> : IDisposable
     {
         private const bool ForceUnpinnedAllocation = false;
-
-        /// <summary>
-        /// Static instance that returns logical addresses
-        /// </summary>
-        public static MallocFixedPageSize<T> Instance = new MallocFixedPageSize<T>();
-
-        /// <summary>
-        /// Static instance that returns physical addresses
-        /// </summary>
-        public static MallocFixedPageSize<T> PhysicalInstance = new MallocFixedPageSize<T>(true);
 
         private const int PageSizeBits = 16;
         private const int PageSize = 1 << PageSizeBits;
         private const int PageSizeMask = PageSize - 1;
-        private const int LevelSizeBits = 18;
+        private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
         private const int LevelSizeMask = LevelSize - 1;
 
@@ -60,15 +47,27 @@ namespace FASTER.core
 
         private CountdownEvent checkpointEvent;
 
-        [ThreadStatic]
-        private static Queue<FreeItem> freeList;
+        private readonly LightEpoch epoch;
+        private readonly bool ownedEpoch;
+
+        private FastThreadLocal<Queue<FreeItem>> freeList;
 
         /// <summary>
         /// Create new instance
         /// </summary>
         /// <param name="returnPhysicalAddress"></param>
-        public MallocFixedPageSize(bool returnPhysicalAddress = false)
+        /// <param name="epoch"></param>
+        public MallocFixedPageSize(bool returnPhysicalAddress = false, LightEpoch epoch = null)
         {
+            freeList = new FastThreadLocal<Queue<FreeItem>>();
+            if (epoch == null)
+            {
+                this.epoch = new LightEpoch();
+                ownedEpoch = true;
+            }
+            else
+                this.epoch = epoch;
+
             values[0] = new T[PageSize];
 
 #if !(CALLOC)
@@ -186,8 +185,12 @@ namespace FASTER.core
             {
                 values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
             }
-            if (freeList == null) freeList = new Queue<FreeItem>();
-            freeList.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
+
+            freeList.InitializeThread();
+
+            if (freeList.Value == null)
+                freeList.Value = new Queue<FreeItem>();
+            freeList.Value.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
         }
 
         private const int kAllocateChunkSize = 16;
@@ -305,14 +308,15 @@ namespace FASTER.core
         /// <returns></returns>
         public long Allocate()
         {
-            if (freeList == null)
+            freeList.InitializeThread();
+            if (freeList.Value == null)
             {
-                freeList = new Queue<FreeItem>();
+                freeList.Value = new Queue<FreeItem>();
             }
-            if (freeList.Count > 0)
+            if (freeList.Value.Count > 0)
             {
-                if (freeList.Peek().removal_epoch <= LightEpoch.Instance.SafeToReclaimEpoch)
-                    return freeList.Dequeue().removed_item;
+                if (freeList.Value.Peek().removal_epoch <= epoch.SafeToReclaimEpoch)
+                    return freeList.Value.Dequeue().removed_item;
 
                 //if (freeList.Count % 64 == 0)
                 //    LightEpoch.Instance.BumpCurrentEpoch();
@@ -420,6 +424,26 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Acquire thread
+        /// </summary>
+        public void Acquire()
+        {
+            if (ownedEpoch)
+                epoch.Resume();
+            freeList.InitializeThread();
+        }
+
+        /// <summary>
+        /// Release thread
+        /// </summary>
+        public void Release()
+        {
+            if (ownedEpoch)
+                epoch.Suspend();
+            freeList.DisposeThread();
+        }
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -434,6 +458,9 @@ namespace FASTER.core
             values = null;
             values0 = null;
             count = 0;
+            if (ownedEpoch)
+                epoch.Dispose();
+            freeList.Dispose();
         }
 
 
@@ -443,10 +470,11 @@ namespace FASTER.core
         /// Public facing persistence API
         /// </summary>
         /// <param name="device"></param>
+        /// <param name="start_offset"></param>
         /// <param name="numBytes"></param>
-        public void TakeCheckpoint(IDevice device, out ulong numBytes)
+        public void TakeCheckpoint(IDevice device, ulong start_offset, out ulong numBytes)
         {
-            BeginCheckpoint(device, 0UL, out numBytes);
+            BeginCheckpoint(device, start_offset, out numBytes);
         }
 
         /// <summary>
@@ -477,12 +505,16 @@ namespace FASTER.core
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
+
+            int sectorSize = (int)device.SectorSize;
             numBytesWritten = 0;
             for (int i = 0; i < numLevels; i++)
             {
                 OverflowPagesFlushAsyncResult result = default(OverflowPagesFlushAsyncResult);
-                device.WriteAsync(pointers[i], offset + numBytesWritten, alignedPageSize, AsyncFlushCallback, result);
-                numBytesWritten += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
+                uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
+
+                device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                numBytesWritten += writeSize;
             }
         }
 
@@ -502,6 +534,7 @@ namespace FASTER.core
             finally
             {
                 checkpointEvent.Signal();
+                Overlapped.Free(overlap);
             }
         }
 
@@ -531,9 +564,10 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="buckets"></param>
         /// <param name="numBytes"></param>
-        public void Recover(IDevice device, int buckets, ulong numBytes)
+        /// <param name="offset"></param>
+        public void Recover(IDevice device, ulong offset, int buckets, ulong numBytes)
         {
-            BeginRecovery(device, 0UL, buckets, numBytes, out ulong numBytesRead);
+            BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead);
         }
 
         /// <summary>
@@ -608,6 +642,7 @@ namespace FASTER.core
             finally
             {
                 Interlocked.Decrement(ref numLevelsToBeRecovered);
+                Overlapped.Free(overlap);
             }
         }
         #endregion

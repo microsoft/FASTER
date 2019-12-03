@@ -4,7 +4,6 @@
 #pragma warning disable 0162
 
 //#define DASHBOARD
-//#define USE_CODEGEN
 
 using FASTER.core;
 using System;
@@ -16,7 +15,7 @@ using System.Threading;
 
 namespace FASTER.benchmark
 {
-    public unsafe class FASTER_YcsbBenchmark
+    public class FASTER_YcsbBenchmark
     {
         public enum Op : ulong
         {
@@ -25,7 +24,7 @@ namespace FASTER.benchmark
             ReadModifyWrite = 2
         }
 
-        const bool kUseSyntheticData = true;
+        const bool kUseSyntheticData = false;
         const bool kUseSmallData = false;
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
@@ -37,20 +36,13 @@ namespace FASTER.benchmark
         Key[] init_keys_;
 
         Key[] txn_keys_;
-        Key* txn_keys_ptr;
 
         long idx_ = 0;
 
         Input[] input_;
-        Input* input_ptr;
         readonly IDevice device;
 
-#if USE_CODEGEN
-        IFasterKV
-#else
-        FasterKV
-#endif
-            store;
+        FasterKV<Key, Value, Input, Output, Empty, Functions> store;
 
         long total_ops_done = 0;
 
@@ -86,14 +78,10 @@ namespace FASTER.benchmark
             freq = Stopwatch.Frequency;
 #endif
 
-            device = FasterFactory.CreateLogDevice("C:\\data\\hlog");
+            device = Devices.CreateLogDevice("C:\\data\\hlog");
 
-#if USE_CODEGEN
-            store = FasterFactory.Create<Key, Value, Input, Output, Context, Functions, IFasterKV>
-#else
-            store = new FasterKV
-#endif
-                (kMaxKey / 2, device, null);
+            store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
+                (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device });
         }
 
         private void RunYcsb(int thread_idx)
@@ -108,7 +96,11 @@ namespace FASTER.benchmark
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
+
             Value value = default(Value);
+            Input input = default(Input);
+            Output output = default(Output);
+
             long reads_done = 0;
             long writes_done = 0;
 
@@ -131,9 +123,7 @@ namespace FASTER.benchmark
                     chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 }
 
-                var local_txn_keys_ptr = txn_keys_ptr + chunk_idx;
-
-                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !done; ++idx, ++local_txn_keys_ptr)
+                for (long idx = chunk_idx; idx < chunk_idx + kChunkSize && !done; ++idx)
                 {
                     Op op;
                     int r = (int)rng.Generate(100);
@@ -158,13 +148,13 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(local_txn_keys_ptr, &value, null, 1);
+                                store.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                Status result = store.Read(local_txn_keys_ptr, null, (Output*)&value, null, 1);
+                                Status result = store.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++reads_done;
@@ -173,7 +163,7 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = store.RMW(local_txn_keys_ptr, input_ptr + (idx & 0x7), null, 1);
+                                Status result = store.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++writes_done;
@@ -213,17 +203,15 @@ namespace FASTER.benchmark
 
         public unsafe void Run()
         {
+            Native32.AffinitizeThreadShardedNuma((uint)0, 2);
+
             RandomGenerator rng = new RandomGenerator();
 
             LoadData();
 
             input_ = new Input[8];
             for (int i = 0; i < 8; i++)
-            {
                 input_[i].value = i;
-            }
-            GCHandle handle = GCHandle.Alloc(input_, GCHandleType.Pinned);
-            input_ptr = (Input*)handle.AddrOfPinnedObject();
 
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
@@ -255,12 +243,12 @@ namespace FASTER.benchmark
             sw.Stop();
             Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
 
-            long startTailAddress = store.LogTailAddress;
+            long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
 
 
             idx_ = 0;
-            store.DumpDistribution();
+            Console.WriteLine(store.DumpDistribution());
 
             Console.WriteLine("Executing experiment.");
 
@@ -308,7 +296,7 @@ namespace FASTER.benchmark
 #endif
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
-            long endTailAddress = store.LogTailAddress;
+            long endTailAddress = store.Log.TailAddress;
             Console.WriteLine("End tail address = " + endTailAddress);
 
             Console.WriteLine("Total " + total_ops_done + " ops done " + " in " + seconds + " secs.");
@@ -351,8 +339,7 @@ namespace FASTER.benchmark
                         }
                     }
 
-                    Key key = init_keys_[idx];
-                    store.Upsert(&key, &value, null, 1);
+                    store.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -448,7 +435,7 @@ namespace FASTER.benchmark
 
         #region Load Data
 
-        private void LoadDataFromFile(string filePath)
+        private unsafe void LoadDataFromFile(string filePath)
         {
             string init_filename = filePath + "\\load_" + distribution + "_250M_raw.dat";
             string txn_filename = filePath + "\\run_" + distribution + "_250M_1000M_raw.dat";
@@ -470,9 +457,9 @@ namespace FASTER.benchmark
                 {
                     stream.Position = offset;
                     int size = stream.Read(chunk, 0, kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
+                    for (int idx = 0; idx < size; idx += 8)
                     {
-                        init_keys_[count] = *((Key*)(chunk_ptr + idx));
+                        init_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
                     }
                     if (size == kFileChunkSize)
@@ -502,8 +489,6 @@ namespace FASTER.benchmark
                 Console.WriteLine("loading txns from " + txn_filename + " into memory...");
 
                 txn_keys_ = new Key[kTxnCount];
-                GCHandle handle2 = GCHandle.Alloc(txn_keys_, GCHandleType.Pinned);
-                txn_keys_ptr = (Key*)handle2.AddrOfPinnedObject();
 
                 count = 0;
                 long offset = 0;
@@ -512,9 +497,9 @@ namespace FASTER.benchmark
                 {
                     stream.Position = offset;
                     int size = stream.Read(chunk, 0, kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += Key.kSizeInBytes)
+                    for (int idx = 0; idx < size; idx += 8)
                     {
-                        txn_keys_[count] = *((Key*)(chunk_ptr + idx));
+                        txn_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
                     }
                     if (size == kFileChunkSize)
@@ -581,8 +566,6 @@ namespace FASTER.benchmark
             RandomGenerator generator = new RandomGenerator();
 
             txn_keys_ = new Key[kTxnCount];
-            GCHandle handle2 = GCHandle.Alloc(txn_keys_, GCHandleType.Pinned);
-            txn_keys_ptr = (Key*)handle2.AddrOfPinnedObject();
 
             for (int idx = 0; idx < kTxnCount; idx++)
             {
