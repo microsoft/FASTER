@@ -240,13 +240,13 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, IOCompletionCallback callback, 
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             // We are writing to separate device, so use fresh segment offsets
             WriteAsync(flushPage,
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)pageSize, callback, asyncResult, 
-                        device, objectLogDevice, flushPage, new long[SegmentBufferSize]);
+                        device, objectLogDevice, flushPage, localSegmentOffsets);
         }
 
 

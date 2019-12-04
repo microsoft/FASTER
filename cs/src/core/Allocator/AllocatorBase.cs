@@ -352,7 +352,9 @@ namespace FASTER.core
         /// <param name="result"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+        /// <param name="localSegmentOffsets"></param>
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+
         /// <summary>
         /// Read objects to memory (async)
         /// </summary>
@@ -1366,6 +1368,7 @@ namespace FASTER.core
         public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
         {
             int totalNumPages = (int)(endPage - startPage);
+            var localSegmentOffsets = new long[SegmentBufferSize];
             completed = new CountdownEvent(totalNumPages);
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
@@ -1382,7 +1385,7 @@ namespace FASTER.core
                     pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
 
                 // Intended destination is flushPage
-                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice);
+                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
             }
         }
 
