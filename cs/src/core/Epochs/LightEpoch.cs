@@ -152,6 +152,27 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Take care of pending drains after epoch suspend
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SuspendDrain()
+        {
+            while (drainCount > 0)
+            {
+                for (int index = 1; index <= kTableSize; ++index)
+                {
+                    int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                    if (0 != entry_epoch)
+                    {
+                        return;
+                    }
+                }
+                Resume();
+                Suspend();
+            }
+        }
+
+        /// <summary>
         /// Check and invoke trigger actions that are ready
         /// </summary>
         /// <param name="nextEpoch">Next epoch</param>
@@ -182,7 +203,7 @@ namespace FASTER.core
         /// Thread acquires its epoch entry
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Acquire()
+        private void Acquire()
         {
             if (threadEntryIndex == kInvalidIndex)
                 threadEntryIndex = ReserveEntryForThread();
@@ -194,7 +215,7 @@ namespace FASTER.core
         /// Thread releases its epoch entry
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Release()
+        private void Release()
         {
             int entry = threadEntryIndex;
             (*(tableAligned + entry)).localCurrentEpoch = 0;
@@ -215,6 +236,7 @@ namespace FASTER.core
         public void Suspend()
         {
             Release();
+            if (drainCount > 0) SuspendDrain();
         }
 
         /// <summary>
