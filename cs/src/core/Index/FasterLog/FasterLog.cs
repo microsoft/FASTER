@@ -701,7 +701,7 @@ namespace FASTER.core
             }
 
             if (Interlocked.Increment(ref logRefCount) == 1)
-                throw new Exception("Cannot scan disposed log instance");
+                throw new FasterException("Cannot scan disposed log instance");
             return iter;
         }
 

@@ -29,7 +29,7 @@ namespace FASTER.core
                 for (int i = 0; i < size; i++)
                 {
                     if (disposed)
-                        throw new Exception("Disposed");
+                        throw new FasterException("Disposed");
 
                     var val = owners[i];
                     if (val == 0)
