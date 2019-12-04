@@ -275,6 +275,6 @@ namespace FASTER.test.recovery.objects
         public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, MyContext ctx) { }
         public void RMWCompletionCallback(ref MyKey key, ref MyInput input, MyContext ctx, Status status) { }
         public void DeleteCompletionCallback(ref MyKey key, MyContext ctx) { }
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint) { }
     }
 }
