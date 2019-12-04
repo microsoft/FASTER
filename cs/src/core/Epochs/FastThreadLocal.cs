@@ -39,7 +39,7 @@ namespace FASTER.core
                     return;
                 }
             }
-            throw new Exception("Unsupported number of simultaneous instances");
+            throw new FasterException("Unsupported number of simultaneous instances");
         }
 
         public void InitializeThread()

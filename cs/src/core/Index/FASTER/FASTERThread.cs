@@ -24,7 +24,7 @@ namespace FASTER.core
             Phase phase = _systemState.phase;
             if (phase != Phase.REST)
             {
-                throw new Exception("Can acquire only in REST phase!");
+                throw new FasterException("Can acquire only in REST phase!");
             }
             Guid guid = Guid.NewGuid();
             threadCtx.Value = new FasterExecutionContext();
@@ -328,7 +328,7 @@ namespace FASTER.core
                                                     ref pendingContext, currentCtx);
                     break;
                 case OperationType.READ:
-                    throw new Exception("Cannot happen!");
+                    throw new FasterException("Cannot happen!");
             }
             
 
@@ -365,7 +365,7 @@ namespace FASTER.core
                                                  pendingContext.userContext);
                         break;
                     default:
-                        throw new Exception("Operation type not allowed for retry");
+                        throw new FasterException("Operation type not allowed for retry");
                 }
                 
             }

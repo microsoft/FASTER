@@ -114,7 +114,7 @@ namespace FASTER.core
                 checkpointSettings = new CheckpointSettings();
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
-                throw new Exception("Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
+                throw new FasterException("Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
 
             checkpointManager = checkpointSettings.CheckpointManager ?? new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
 

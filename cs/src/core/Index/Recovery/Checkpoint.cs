@@ -170,7 +170,7 @@ namespace FASTER.core
                                         break;
                                     }
                                 default:
-                                    throw new Exception();
+                                    throw new FasterException();
                             }
 
                             ObtainCurrentTailAddress(ref _indexCheckpoint.info.startLogicalAddress);
@@ -182,7 +182,7 @@ namespace FASTER.core
                         {
                             if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
                             {
-                                throw new Exception("Index checkpoint with read cache is not supported");
+                                throw new FasterException("Index checkpoint with read cache is not supported");
                             }
                             TakeIndexFuzzyCheckpoint();
 
@@ -205,13 +205,13 @@ namespace FASTER.core
                                     {
                                         if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
                                         {
-                                            throw new Exception("Index checkpoint with read cache is not supported");
+                                            throw new FasterException("Index checkpoint with read cache is not supported");
                                         }
                                         TakeIndexFuzzyCheckpoint();
                                         break;
                                     }
                                 default:
-                                    throw new Exception();
+                                    throw new FasterException();
                             }
 
                             ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.startLogicalAddress);
@@ -370,7 +370,7 @@ namespace FASTER.core
                                         break;
                                     }
                                 default:
-                                    throw new Exception();
+                                    throw new FasterException();
                             }
 
                             MakeTransition(intermediateState, nextState);

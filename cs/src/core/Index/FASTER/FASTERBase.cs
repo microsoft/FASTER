@@ -754,7 +754,7 @@ namespace FASTER.core
                             var x = default(HashBucketEntry);
                             x.word = b.bucket_entries[bucket_entry];
                             if (tags.Contains(x.Tag) && !x.Tentative)
-                                throw new Exception("Duplicate tag found in index");
+                                throw new FasterException("Duplicate tag found in index");
                             tags.Add(x.Tag);
                             ++cnt;
                             ++total_record_count;

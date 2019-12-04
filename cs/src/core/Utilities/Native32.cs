@@ -171,7 +171,7 @@ namespace FASTER.core
 
             if (SetThreadGroupAffinity(thread, ref groupAffinityThread, ref oldAffinityThread) == 0)
             {
-                throw new Exception("Unable to affinitize thread");
+                throw new FasterException("Unable to affinitize thread");
             }
         }
 
