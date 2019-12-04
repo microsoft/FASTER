@@ -116,12 +116,12 @@ namespace FASTER.core
 
                 if (currentAddress < hlog.BeginAddress)
                 {
-                    throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
+                    throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
                 if (frameSize == 0 && currentAddress < hlog.HeadAddress)
                 {
-                    throw new Exception("Iterator address is less than log HeadAddress in memory-scan mode");
+                    throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
