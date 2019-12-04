@@ -294,7 +294,7 @@ namespace FASTER.core
             }
             catch (Exception e)
             {
-                throw new Exception("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
+                throw new FasterException("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
             }
             return logHandle;
         }

@@ -187,7 +187,7 @@ namespace FASTER.core
                     // Use user delegate to allocate memory
                     entry = getMemory(entryLength);
                     if (entry.Length < entryLength)
-                        throw new Exception("Byte array provided has invalid length");
+                        throw new FasterException("Byte array provided has invalid length");
                 }
                 else
                 {
@@ -314,7 +314,7 @@ namespace FASTER.core
                 loadedPage[frame] = -1;
                 loadedCancel[frame] = new CancellationTokenSource();
                 nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-                throw new Exception("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
+                throw new FasterException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
             }
         }
 
@@ -391,7 +391,7 @@ namespace FASTER.core
 
                 if (frameSize == 0 && currentAddress < allocator.HeadAddress)
                 {
-                    throw new Exception("Iterator address is less than log HeadAddress in memory-scan mode");
+                    throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
                 var currentPage = currentAddress >> allocator.LogPageSizeBits;
@@ -428,7 +428,7 @@ namespace FASTER.core
                     if (0 != fasterLog.GetChecksum((byte*)physicalAddress))
                     {
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        throw new Exception("Invalid checksum found during scan, skipping page " + curPage);
+                        throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
                     }
                     else
                     {
@@ -444,7 +444,7 @@ namespace FASTER.core
                     if (currentAddress >= headAddress)
                         epoch.Suspend();
                     nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-                    throw new Exception("Invalid length of record found: " + entryLength + ", skipping page");
+                    throw new FasterException("Invalid length of record found: " + entryLength + ", skipping page");
                 }
 
                 // Verify checksum if needed
@@ -454,7 +454,7 @@ namespace FASTER.core
                     {
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
                         nextAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-                        throw new Exception("Invalid checksum found during scan, skipping page " + curPage);
+                        throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
                     }
                 }
 

@@ -694,7 +694,7 @@ namespace FASTER.core
             if (name != null)
             {
                 if (name.Length > 20)
-                    throw new Exception("Max length of iterator name is 20 characters");
+                    throw new FasterException("Max length of iterator name is 20 characters");
                 if (PersistedIterators.ContainsKey(name))
                     Debug.WriteLine("Iterator name exists, overwriting");
                 PersistedIterators[name] = iter;
@@ -913,7 +913,7 @@ namespace FASTER.core
                 length = GetLength(ptr);
                 if (!VerifyChecksum(ptr, length))
                 {
-                    throw new Exception("Checksum failed for read");
+                    throw new FasterException("Checksum failed for read");
                 }
                 result = getMemory != null ? getMemory(length) : new byte[length];
                 fixed (byte* bp = result)
