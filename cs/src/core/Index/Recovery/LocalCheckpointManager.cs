@@ -181,7 +181,7 @@ namespace FASTER.core
             var latestICFolder = indexCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
             if (latestICFolder == null || !Guid.TryParse(latestICFolder.Name, out indexToken))
             {
-                throw new Exception("No valid index checkpoint to recover from");
+                throw new FasterException("No valid index checkpoint to recover from");
             }
 
 
@@ -198,7 +198,7 @@ namespace FASTER.core
             var latestHLCFolder = hlogCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
             if (latestHLCFolder == null || !Guid.TryParse(latestHLCFolder.Name, out logToken))
             {
-                throw new Exception("No valid hybrid log checkpoint to recover from");
+                throw new FasterException("No valid hybrid log checkpoint to recover from");
             }
             return true;
         }

@@ -57,13 +57,13 @@ namespace FASTER.core
             }
             catch (Exception e)
             {
-                throw new Exception("Unable to recover from previous commit. Inner exception: " + e.ToString());
+                throw new FasterException("Unable to recover from previous commit. Inner exception: " + e.ToString());
             }
             if (version != 0)
-                throw new Exception("Invalid version found during commit recovery");
+                throw new FasterException("Invalid version found during commit recovery");
 
             if (checkSum != (BeginAddress ^ FlushedUntilAddress))
-                throw new Exception("Invalid checksum found during commit recovery");
+                throw new FasterException("Invalid checksum found during commit recovery");
 
             var count = 0;
             try
@@ -91,7 +91,7 @@ namespace FASTER.core
         {
             var metadata = logCommitManager.GetCommitMetadata();
             if (metadata == null)
-                throw new Exception("Invalid log commit metadata during recovery");
+                throw new FasterException("Invalid log commit metadata during recovery");
 
             Initialize(new BinaryReader(new MemoryStream(metadata)));
         }

@@ -1211,7 +1211,7 @@ namespace FASTER.core
                         HashBucket.ReleaseExclusiveLatch(bucket);
                         break;
                     case LatchOperation.ReleaseShared:
-                        throw new Exception("Should not release shared latch here!");
+                        throw new FasterException("Should not release shared latch here!");
                     default:
                         break;
                 }
@@ -1952,7 +1952,7 @@ namespace FASTER.core
 
             if (!Utility.IsPowerOfTwo(numChunks))
             {
-                throw new Exception("Invalid number of chunks: " + numChunks);
+                throw new FasterException("Invalid number of chunks: " + numChunks);
             }
 
             for (int i = offset; i < offset + numChunks; i++)
@@ -2021,7 +2021,7 @@ namespace FASTER.core
 
             if (!Utility.IsPowerOfTwo(numChunks))
             {
-                throw new Exception("Invalid number of chunks: " + numChunks);
+                throw new FasterException("Invalid number of chunks: " + numChunks);
             }
             for (int i = offset; i < offset + numChunks; i++)
             {

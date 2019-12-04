@@ -146,7 +146,7 @@ namespace FASTER.core
         public ref T Get(long index)
         {
             if (this.ReturnPhysicalAddress)
-                throw new Exception("Physical pointer returned by allocator: de-reference pointer to get records instead of calling Get");
+                throw new FasterException("Physical pointer returned by allocator: de-reference pointer to get records instead of calling Get");
 
             return ref values
                 [index >> PageSizeBits]
@@ -163,7 +163,7 @@ namespace FASTER.core
         public void Set(long index, ref T value)
         {
             if (this.ReturnPhysicalAddress)
-                throw new Exception("Physical pointer returned by allocator: de-reference pointer to set records instead of calling Set (otherwise, set ForceUnpinnedAllocation to true)");
+                throw new FasterException("Physical pointer returned by allocator: de-reference pointer to set records instead of calling Set (otherwise, set ForceUnpinnedAllocation to true)");
 
             values
                 [index >> PageSizeBits]
