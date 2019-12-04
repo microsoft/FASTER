@@ -52,10 +52,10 @@ namespace FASTER.test.recovery.objects
 
 
         [Test]
-        public void ObjectRecoveryTest1()
+        public void ObjectRecoveryTest1([Values]CheckpointType checkpointType)
         {
 
-            Prepare(out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> h, out MyContext context);
+            Prepare(checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> h, out MyContext context);
 
             h.StartSession();
 
@@ -70,7 +70,7 @@ namespace FASTER.test.recovery.objects
 
             Destroy(log, objlog, h);
 
-            Prepare(out logPath, out objPath, out log, out objlog, out h, out context);
+            Prepare(checkpointType, out logPath, out objPath, out log, out objlog, out h, out context);
 
             h.Recover();
 
@@ -81,7 +81,7 @@ namespace FASTER.test.recovery.objects
             Destroy(log, objlog, h);
         }
 
-        private void Prepare(out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> h, out MyContext context)
+        private void Prepare(CheckpointType checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> h, out MyContext context)
         {
             logPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests.log");
             objPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests_HEAP.log");
@@ -101,7 +101,7 @@ namespace FASTER.test.recovery.objects
                 new CheckpointSettings()
                 {
                     CheckpointDir = Path.Combine(FasterFolderPath, "check-points"),
-                    CheckPointType = CheckpointType.Snapshot
+                    CheckPointType = checkpointType
                 },
                 new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
              );
