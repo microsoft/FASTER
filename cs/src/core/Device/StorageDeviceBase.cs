@@ -100,7 +100,7 @@ namespace FASTER.core
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
-                    throw new Exception("Invalid segment size: " + segmentSize);
+                    throw new FasterException("Invalid segment size: " + segmentSize);
                 segmentSizeBits = 64;
                 segmentSizeMask = ~0UL;
             }
