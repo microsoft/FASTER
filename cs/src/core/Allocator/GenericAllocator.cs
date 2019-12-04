@@ -48,12 +48,12 @@ namespace FASTER.core
 
             if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
-                throw new Exception("Key is not blittable, but no serializer specified via SerializerSettings");
+                throw new FasterException("Key is not blittable, but no serializer specified via SerializerSettings");
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
-                throw new Exception("Value is not blittable, but no serializer specified via SerializerSettings");
+                throw new FasterException("Value is not blittable, but no serializer specified via SerializerSettings");
             }
 
             values = new Record<Key, Value>[BufferSize][];
@@ -64,7 +64,7 @@ namespace FASTER.core
             if ((settings.LogDevice as NullDevice == null) && (KeyHasObjects() || ValueHasObjects()))
             {
                 if (objectLogDevice == null)
-                    throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
+                    throw new FasterException("Objects in key/value, but object log not provided during creation of FASTER instance");
             }
         }
 
@@ -240,13 +240,13 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, IOCompletionCallback callback, 
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             // We are writing to separate device, so use fresh segment offsets
             WriteAsync(flushPage,
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)pageSize, callback, asyncResult, 
-                        device, objectLogDevice, flushPage, new long[SegmentBufferSize]);
+                        device, objectLogDevice, flushPage, localSegmentOffsets);
         }
 
 
@@ -559,7 +559,7 @@ namespace FASTER.core
             Debug.Assert(startptr % sectorSize == 0);
 
             if (size > int.MaxValue)
-                throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
+                throw new FasterException("Unable to read object page, total size greater than 2GB: " + size);
 
             var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
             var objBuffer = bufferPool.Get((int)alignedLength);
@@ -872,7 +872,7 @@ namespace FASTER.core
 
                 // We are limited to a 2GB size per key-value
                 if (endAddress-startAddress > int.MaxValue)
-                    throw new Exception("Size of key-value exceeds max of 2GB: " + (endAddress - startAddress));
+                    throw new FasterException("Size of key-value exceeds max of 2GB: " + (endAddress - startAddress));
 
                 AsyncGetFromDisk(startAddress, (int)(endAddress - startAddress), ctx, ctx.record);
                 return false;

@@ -18,14 +18,14 @@ namespace FASTER.core
     {
         internal Guid InternalAcquire()
         {
-            epoch.Acquire();
+            epoch.Resume();
             overflowBucketsAllocator.Acquire();
             threadCtx.InitializeThread();
             prevThreadCtx.InitializeThread();
             Phase phase = _systemState.phase;
             if (phase != Phase.REST)
             {
-                throw new Exception("Can acquire only in REST phase!");
+                throw new FasterException("Can acquire only in REST phase!");
             }
             Guid guid = Guid.NewGuid();
             InitLocalContext(guid);
@@ -35,7 +35,7 @@ namespace FASTER.core
 
         internal long InternalContinue(Guid guid)
         {
-            epoch.Acquire();
+            epoch.Resume();
             overflowBucketsAllocator.Acquire();
             threadCtx.InitializeThread();
             prevThreadCtx.InitializeThread();
@@ -116,7 +116,7 @@ namespace FASTER.core
             Debug.Assert(threadCtx.Value.phase == Phase.REST);
             threadCtx.DisposeThread();
             prevThreadCtx.DisposeThread();
-            epoch.Release();
+            epoch.Suspend();
             overflowBucketsAllocator.Release();
         }
 
@@ -248,7 +248,7 @@ namespace FASTER.core
                                                     ref pendingContext);
                     break;
                 case OperationType.READ:
-                    throw new Exception("Cannot happen!");
+                    throw new FasterException("Cannot happen!");
             }
             
 
@@ -285,7 +285,7 @@ namespace FASTER.core
                                                  pendingContext.userContext);
                         break;
                     default:
-                        throw new Exception("Operation type not allowed for retry");
+                        throw new FasterException("Operation type not allowed for retry");
                 }
                 
             }

@@ -11,7 +11,7 @@ namespace FASTER.core
     /// <summary>
     /// Exception thrown when commit fails
     /// </summary>
-    public class CommitFailureException : Exception
+    public class CommitFailureException : FasterException
     {
         /// <summary>
         /// Commit info and next commit task in chain

@@ -671,7 +671,7 @@ namespace FASTER.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            allocator.ShiftBeginAddress(untilAddress & allocator.PageSizeMask);
+            allocator.ShiftBeginAddress(untilAddress & ~allocator.PageSizeMask);
         }
 
         /// <summary>
@@ -694,13 +694,14 @@ namespace FASTER.core
             if (name != null)
             {
                 if (name.Length > 20)
-                    throw new Exception("Max length of iterator name is 20 characters");
+                    throw new FasterException("Max length of iterator name is 20 characters");
                 if (PersistedIterators.ContainsKey(name))
                     Debug.WriteLine("Iterator name exists, overwriting");
                 PersistedIterators[name] = iter;
             }
 
-            Interlocked.Increment(ref logRefCount);
+            if (Interlocked.Increment(ref logRefCount) == 1)
+                throw new FasterException("Cannot scan disposed log instance");
             return iter;
         }
 
@@ -762,11 +763,16 @@ namespace FASTER.core
                     BeginAddress = commitInfo.BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress
                 };
-                info.PopulateIterators(PersistedIterators);
+
+                // Take snapshot of persisted iterators
+                info.SnapshotIterators(PersistedIterators);
 
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
                 CommittedBeginAddress = info.BeginAddress;
                 CommittedUntilAddress = info.FlushedUntilAddress;
+                
+                // Update completed address for persisted iterators
+                info.CommitIterators(PersistedIterators);
 
                 _commitTcs = commitTcs;
                 // If task is not faulted, create new task
@@ -913,7 +919,7 @@ namespace FASTER.core
                 length = GetLength(ptr);
                 if (!VerifyChecksum(ptr, length))
                 {
-                    throw new Exception("Checksum failed for read");
+                    throw new FasterException("Checksum failed for read");
                 }
                 result = getMemory != null ? getMemory(length) : new byte[length];
                 fixed (byte* bp = result)

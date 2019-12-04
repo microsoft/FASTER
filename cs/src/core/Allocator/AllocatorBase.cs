@@ -352,7 +352,9 @@ namespace FASTER.core
         /// <param name="result"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice);
+        /// <param name="localSegmentOffsets"></param>
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+
         /// <summary>
         /// Read objects to memory (async)
         /// </summary>
@@ -517,11 +519,11 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new Exception("Segment must be at least of page size");
+                throw new FasterException("Segment must be at least of page size");
 
             if (BufferSize < 1)
             {
-                throw new Exception("Log buffer must be of size at least 1 page");
+                throw new FasterException("Log buffer must be of size at least 1 page");
             }
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
@@ -573,7 +575,7 @@ namespace FASTER.core
         public void Acquire()
         {
             if (ownedEpoch)
-                epoch.Acquire();
+                epoch.Resume();
         }
 
         /// <summary>
@@ -582,7 +584,7 @@ namespace FASTER.core
         public void Release()
         {
             if (ownedEpoch)
-                epoch.Release();
+                epoch.Suspend();
         }
 
         /// <summary>
@@ -706,7 +708,7 @@ namespace FASTER.core
         public long TryAllocate(int numSlots = 1)
         {
             if (numSlots > PageSize)
-                throw new Exception("Entry does not fit on page");
+                throw new FasterException("Entry does not fit on page");
 
             PageOffset localTailPageOffset = default(PageOffset);
 
@@ -893,7 +895,7 @@ namespace FASTER.core
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)
                     {
-                        throw new Exception($"Closed address {ClosedUntilAddress} exceeds flushed address {FlushedUntilAddress}");
+                        throw new FasterException($"Closed address {ClosedUntilAddress} exceeds flushed address {FlushedUntilAddress}");
                     }
                 }
             }
@@ -1366,6 +1368,7 @@ namespace FASTER.core
         public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out CountdownEvent completed)
         {
             int totalNumPages = (int)(endPage - startPage);
+            var localSegmentOffsets = new long[SegmentBufferSize];
             completed = new CountdownEvent(totalNumPages);
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
@@ -1382,7 +1385,7 @@ namespace FASTER.core
                     pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
 
                 // Intended destination is flushPage
-                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice);
+                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
             }
         }
 

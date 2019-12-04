@@ -91,7 +91,7 @@ namespace FASTER.core
             // Check if the two checkpoints are compatible for recovery
             if (!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
             {
-                throw new Exception("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
+                throw new FasterException("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
             }
 
             // Set new system state after recovery
