@@ -78,7 +78,7 @@ namespace FASTER.core
                     return false;
 
                 if (newer.owner == 0)
-                    throw new Exception("Invalid release by non-owner thread");
+                    throw new FasterException("Invalid release by non-owner thread");
                 newer.owner = 0;
 
                 if (Interlocked.CompareExchange(ref this.atomic, newer.atomic, older.atomic) == older.atomic)

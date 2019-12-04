@@ -193,7 +193,7 @@ namespace FASTER.core
                     // Use user delegate to allocate memory
                     entry = getMemory(entryLength);
                     if (entry.Length < entryLength)
-                        throw new Exception("Byte array provided has invalid length");
+                        throw new FasterException("Byte array provided has invalid length");
                 }
                 else
                 {
@@ -336,7 +336,7 @@ namespace FASTER.core
                 loadedPage[currentFrame] = -1;
                 loadedCancel[currentFrame] = new CancellationTokenSource();
                 Utility.MonotonicUpdate(ref NextAddress, (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits, out _);
-                throw new Exception("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
+                throw new FasterException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
             }
             epoch.Resume();
             return true;
@@ -440,7 +440,7 @@ namespace FASTER.core
                     {
                         epoch.Suspend();
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        throw new Exception("Invalid checksum found during scan, skipping page " + curPage);
+                        throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
                     }
                     else
                         continue;
@@ -453,7 +453,7 @@ namespace FASTER.core
                     if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _))
                     {
                         epoch.Suspend();
-                        throw new Exception("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
+                        throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
                     }
                     else
                         continue;
@@ -469,7 +469,7 @@ namespace FASTER.core
                         if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _))
                         {
                             epoch.Suspend();
-                            throw new Exception("Invalid checksum found during scan, skipping page " + curPage);
+                            throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
                         }
                         else
                             continue;

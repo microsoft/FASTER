@@ -33,7 +33,7 @@ namespace FASTER.core
                     }
                 }
             } while (retries++ < maxRetries);
-            throw new Exception("Unable to add item to list");
+            throw new FasterException("Unable to add item to list");
         }
 
         public bool RemoveAdjacent(long address, out PageAsyncFlushResult<Empty> request)

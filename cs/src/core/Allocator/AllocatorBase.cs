@@ -517,11 +517,11 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new Exception("Segment must be at least of page size");
+                throw new FasterException("Segment must be at least of page size");
 
             if (BufferSize < 1)
             {
-                throw new Exception("Log buffer must be of size at least 1 page");
+                throw new FasterException("Log buffer must be of size at least 1 page");
             }
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
@@ -706,7 +706,7 @@ namespace FASTER.core
         public long TryAllocate(int numSlots = 1)
         {
             if (numSlots > PageSize)
-                throw new Exception("Entry does not fit on page");
+                throw new FasterException("Entry does not fit on page");
 
             PageOffset localTailPageOffset = default(PageOffset);
 
@@ -893,7 +893,7 @@ namespace FASTER.core
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)
                     {
-                        throw new Exception($"Closed address {ClosedUntilAddress} exceeds flushed address {FlushedUntilAddress}");
+                        throw new FasterException($"Closed address {ClosedUntilAddress} exceeds flushed address {FlushedUntilAddress}");
                     }
                 }
             }
