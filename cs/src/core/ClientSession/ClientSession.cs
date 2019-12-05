@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
@@ -71,7 +72,7 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
-            var status = fht.Read(ref key, ref input, ref output, userContext, serialNo, ctx);
+            var status = fht.ContextRead(ref key, ref input, ref output, userContext, serialNo, ctx);
             if (supportAsync) UnsafeSuspendThread();
             return status;
         }
@@ -88,7 +89,7 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
-            var status = fht.Upsert(ref key, ref desiredValue, userContext, serialNo, ctx);
+            var status = fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx);
             if (supportAsync) UnsafeSuspendThread();
             return status;
         }
@@ -105,7 +106,7 @@ namespace FASTER.core
         public Status RMW(ref Key key, ref Input input, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
-            var status = fht.RMW(ref key, ref input, userContext, serialNo, ctx);
+            var status = fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx);
             if (supportAsync) UnsafeSuspendThread();
             return status;
         }
@@ -121,9 +122,42 @@ namespace FASTER.core
         public Status Delete(ref Key key, Context userContext, long serialNo)
         {
             if (supportAsync) UnsafeResumeThread();
-            var status = fht.Delete(ref key, userContext, serialNo);
+            var status = fht.ContextDelete(ref key, userContext, serialNo, ctx);
             if (supportAsync) UnsafeSuspendThread();
             return status;
+        }
+
+        /// <summary>
+        /// Experimental feature
+        /// Checks whether specified record is present in memory
+        /// (between HeadAddress and tail, or between fromAddress
+        /// and tail)
+        /// </summary>
+        /// <param name="key">Key of the record.</param>
+        /// <param name="fromAddress">Look until this address</param>
+        /// <returns>Status</returns>
+        internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
+        {
+            return fht.InternalContainsKeyInMemory(ref key, ctx, fromAddress);
+        }
+
+        /// <summary>
+        /// Get list of pending requests (for current session)
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerable<long> GetPendingRequests()
+        {
+            foreach (var kvp in ctx.prevCtx?.ioPendingRequests)
+                yield return kvp.Value.serialNum;
+
+            foreach (var val in ctx.prevCtx?.retryRequests)
+                yield return val.serialNum;
+
+            foreach (var kvp in ctx.ioPendingRequests)
+                yield return kvp.Value.serialNum;
+
+            foreach (var val in ctx.retryRequests)
+                yield return val.serialNum;
         }
 
         /// <summary>
@@ -157,29 +191,6 @@ namespace FASTER.core
         {
             if (!supportAsync) throw new NotSupportedException();
             await fht.CompletePendingAsync(this);
-        }
-
-        /// <summary>
-        /// Complete the ongoing checkpoint (if any)
-        /// </summary>
-        /// <param name="spinWait"></param>
-        /// <returns></returns>
-        public bool CompleteCheckpoint(bool spinWait = false)
-        {
-            if (supportAsync) UnsafeResumeThread();
-            var result = fht.CompleteCheckpoint(spinWait);
-            if (supportAsync) UnsafeSuspendThread();
-            return result;
-        }
-
-        /// <summary>
-        /// Complete the ongoing checkpoint (if any)
-        /// </summary>
-        /// <returns></returns>
-        public async ValueTask CompleteCheckpointAsync()
-        {
-            if (!supportAsync) throw new NotSupportedException();
-            await fht.CompleteCheckpointAsync(ctx, this);
         }
 
         /// <summary>

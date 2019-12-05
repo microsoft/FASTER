@@ -8,9 +8,10 @@ namespace FASTER.core
     /// <summary>
     /// Interface to FASTER key-value store
     /// </summary>
-    public interface IFasterKV<Key, Value, Input, Output, Context> : IDisposable
+    public interface IFasterKV<Key, Value, Input, Output, Context, Functions> : IDisposable
         where Key : new()
         where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         #region Session Operations
 
@@ -175,25 +176,14 @@ namespace FASTER.core
         string DumpDistribution();
 
         /// <summary>
-        /// Experimental feature
-        /// Check if FASTER contains key in memory (between HeadAddress 
-        /// and tail), or between the specified fromAddress (after 
-        /// HeadAddress) and tail
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="fromAddress"></param>
-        /// <returns></returns>
-        Status ContainsKeyInMemory(ref Key key, long fromAddress = -1);
-
-        /// <summary>
         /// Get accessor for FASTER hybrid log
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+        LogAccessor<Key, Value, Input, Output, Context, Functions> Log { get; }
 
         /// <summary>
         /// Get accessor for FASTER read cache
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+        LogAccessor<Key, Value, Input, Output, Context, Functions> ReadCache { get; }
 
         #endregion
     }

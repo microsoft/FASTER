@@ -12,49 +12,29 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        internal Guid InternalAcquire()
-        {
-            epoch.Resume();
-            threadCtx.InitializeThread();
-            Phase phase = _systemState.phase;
-            if (phase != Phase.REST)
-            {
-                throw new FasterException("Can acquire only in REST phase!");
-            }
-            Guid guid = Guid.NewGuid();
-            threadCtx.Value = new FasterExecutionContext();
-            InitContext(threadCtx.Value, guid);
-
-            threadCtx.Value.prevCtx = new FasterExecutionContext();
-            InitContext(threadCtx.Value.prevCtx, guid);
-            threadCtx.Value.prevCtx.version--;
-            InternalRefresh(threadCtx.Value);
-            return threadCtx.Value.guid;
-        }
-
         internal CommitPoint InternalContinue(Guid guid, out FasterExecutionContext ctx)
         {
             ctx = null;
 
             if (_recoveredSessions != null)
             {
-                if (_recoveredSessions.TryGetValue(guid, out CommitPoint cp))
+                if (_recoveredSessions.TryGetValue(guid, out _))
                 {
                     // We have recovered the corresponding session. 
                     // Now obtain the session by first locking the rest phase
                     var currentState = SystemState.Copy(ref _systemState);
-                    if(currentState.phase == Phase.REST)
+                    if (currentState.phase == Phase.REST)
                     {
                         var intermediateState = SystemState.Make(Phase.INTERMEDIATE, currentState.version);
-                        if(MakeTransition(currentState,intermediateState))
+                        if (MakeTransition(currentState, intermediateState))
                         {
                             // No one can change from REST phase
-                            if(_recoveredSessions.TryRemove(guid, out cp))
+                            if (_recoveredSessions.TryRemove(guid, out CommitPoint cp))
                             {
                                 // We have atomically removed session details. 
                                 // No one else can continue this session
@@ -100,7 +80,7 @@ namespace FASTER.core
             }
 
             // Moving to non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.GC || newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
+            if (newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
             {
                 ctx.phase = newPhaseInfo.phase;
                 return;
@@ -109,24 +89,13 @@ namespace FASTER.core
             HandleCheckpointingPhases(ctx);
         }
 
-        internal void InternalRelease(FasterExecutionContext ctx)
-        {
-            Debug.Assert(ctx.retryRequests.Count == 0 && ctx.ioPendingRequests.Count == 0);
-            if (ctx.prevCtx != null)
-            {
-                Debug.Assert(ctx.prevCtx.retryRequests.Count == 0 && ctx.prevCtx.ioPendingRequests.Count == 0);
-            }
-            Debug.Assert(ctx.phase == Phase.REST);
-
-            epoch.Suspend();
-        }
 
         internal void InitContext(FasterExecutionContext ctx, Guid token)
         {
             ctx.phase = Phase.REST;
             ctx.version = _systemState.version;
             ctx.markers = new bool[8];
-            ctx.serialNum = 0;
+            ctx.serialNum = -1;
             ctx.guid = token;
 
             if (RelaxedCPR)
@@ -232,7 +201,7 @@ namespace FASTER.core
             }
         }
 
-        internal void CompleteRetryRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default(CancellationToken))
+        internal void CompleteRetryRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             int count = opCtx.retryRequests.Count;
 
@@ -257,7 +226,7 @@ namespace FASTER.core
             }
         }
 
-        internal async ValueTask CompleteIOPendingRequestsAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default(CancellationToken))
+        internal async ValueTask CompleteIOPendingRequestsAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
         {
             while (opCtx.ioPendingRequests.Count > 0)
             {
@@ -290,7 +259,6 @@ namespace FASTER.core
                                     FasterExecutionContext currentCtx,
                                     PendingContext pendingContext)
         {
-            var status = default(Status);
             var internalStatus = default(OperationStatus);
             ref Key key = ref pendingContext.key.Get();
             ref Value value = ref pendingContext.value.Get();
@@ -330,8 +298,9 @@ namespace FASTER.core
                 case OperationType.READ:
                     throw new FasterException("Cannot happen!");
             }
-            
 
+
+            Status status;
             // Handle operation status
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -390,13 +359,12 @@ namespace FASTER.core
 
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out PendingContext pendingContext))
             {
-                var status = default(Status);
-                var internalStatus = default(OperationStatus);
                 ref Key key = ref pendingContext.key.Get();
 
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
 
+                OperationStatus internalStatus;
                 // Issue the continue command
                 if (pendingContext.type == OperationType.READ)
                 {
@@ -409,6 +377,7 @@ namespace FASTER.core
 
                 request.Dispose();
 
+                Status status;
                 // Handle operation status
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
@@ -420,7 +389,7 @@ namespace FASTER.core
                 }
 
                 // If done, callback user code
-                if(status == Status.OK || status == Status.NOTFOUND)
+                if (status == Status.OK || status == Status.NOTFOUND)
                 {
                     if (handleLatches)
                         ReleaseSharedLatch(key);

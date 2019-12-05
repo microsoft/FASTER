@@ -14,7 +14,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -134,11 +134,6 @@ namespace FASTER.core
                                 goto CreatePendingContext; // Pivot thread
                             }
                             break; // Normal processing
-                        }
-                    case Phase.GC:
-                        {
-                            GarbageCollectBuckets(hash, sessionCtx);
-                            break;
                         }
                     default:
                         {
@@ -1870,8 +1865,6 @@ namespace FASTER.core
 
         private void HeavyEnter(long hash, Phase phase)
         {
-            if (phase == Phase.GC)
-                GarbageCollectBuckets(hash, null);
             if (phase == Phase.PREPARE_GROW)
             {
                 // We spin-wait as a simplification
@@ -1931,83 +1924,6 @@ namespace FASTER.core
             }
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
-        }
-        #endregion
-
-        #region Garbage Collection
-        private long[] gcStatus;
-        private long numPendingChunksToBeGCed;
-
-        private void GarbageCollectBuckets(long hash, FasterExecutionContext currentCtx, bool force = false)
-        {
-            if (numPendingChunksToBeGCed == 0)
-            {
-                InternalRefresh(currentCtx);
-                return;
-            }
-
-            long masked_bucket_index = hash & state[resizeInfo.version].size_mask;
-            int offset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);
-
-            int numChunks = (int)(state[resizeInfo.version].size / Constants.kSizeofChunk);
-            if (numChunks == 0) numChunks = 1; // at least one chunk
-
-            if (!Utility.IsPowerOfTwo(numChunks))
-            {
-                throw new FasterException("Invalid number of chunks: " + numChunks);
-            }
-
-            for (int i = offset; i < offset + numChunks; i++)
-            {
-                if (0 == Interlocked.CompareExchange(ref gcStatus[i & (numChunks - 1)], 1, 0))
-                {
-                    int version = resizeInfo.version;
-                    long chunkSize = state[version].size / numChunks;
-                    long ptr = chunkSize * (i & (numChunks - 1));
-
-                    HashBucket* src_start = state[version].tableAligned + ptr;
-                    // CleanBucket(src_start, chunkSize);
-
-                    // GC for chunk is done
-                    gcStatus[i & (numChunks - 1)] = 2;
-
-                    if (Interlocked.Decrement(ref numPendingChunksToBeGCed) == 0)
-                    {
-                        long context = 0;
-                        GlobalMoveToNextState(_systemState, SystemState.Make(Phase.REST, _systemState.version), ref context);
-                        return;
-                    }
-                    if (!force)
-                        break;
-
-                    InternalRefresh(currentCtx);
-                }
-            }
-        }
-
-        private void CleanBucket(HashBucket* _src_start, long chunkSize)
-        {
-            HashBucketEntry entry = default(HashBucketEntry);
-
-            for (int i = 0; i < chunkSize; i++)
-            {
-                var src_start = _src_start + i;
-
-                do
-                {
-                    for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
-                    {
-                        entry.word = *(((long*)src_start) + index);
-                        if (entry.Address != Constants.kInvalidAddress && entry.Address != Constants.kTempInvalidAddress && entry.Address < hlog.BeginAddress)
-                        {
-                            Interlocked.CompareExchange(ref *(((long*)src_start) + index), Constants.kInvalidAddress, entry.word);
-                        }
-                    }
-
-                    if (*(((long*)src_start) + Constants.kOverflowBucketIndex) == 0) break;
-                    src_start = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
-                } while (true);
-            }
         }
         #endregion
 

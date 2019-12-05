@@ -36,9 +36,9 @@ namespace FASTER.core
         private GCHandle tableHandle;
         private Entry* tableAligned;
 
-        private static Entry[] threadIndex;
+        private static readonly Entry[] threadIndex;
         private static GCHandle threadIndexHandle;
-        private static Entry* threadIndexAligned;
+        private static readonly Entry* threadIndexAligned;
 
         /// <summary>
         /// List of action, epoch pairs containing actions to performed 
@@ -435,24 +435,27 @@ namespace FASTER.core
 
         /// <summary>
         /// Mechanism for threads to mark some activity as completed until
-        /// some version by this thread, and check if all active threads 
-        /// have completed the same activity until that version.
+        /// some version by this thread
         /// </summary>
         /// <param name="markerIdx">ID of activity</param>
         /// <param name="version">Version</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool MarkAndCheckIsComplete(int markerIdx, int version)
+        public void Mark(int markerIdx, int version)
         {
-            int entry = threadEntryIndex;
-            if (kInvalidIndex == entry)
-            {
-                Debug.WriteLine("New Thread entered during CPR");
-                Debug.Assert(false);
-            }
+            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = version;
+        }
 
-            (*(tableAligned + entry)).markers[markerIdx] = version;
-
+        /// <summary>
+        /// Check if all active threads have completed the some
+        /// activity until given version.
+        /// </summary>
+        /// <param name="markerIdx">ID of activity</param>
+        /// <param name="version">Version</param>
+        /// <returns>Whether complete</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CheckIsComplete(int markerIdx, int version)
+        {
             // check if all threads have reported complete
             for (int index = 1; index <= kTableSize; ++index)
             {

@@ -54,8 +54,8 @@ namespace FASTER.test.async
             }
 
             NumClicks value;
-            AdInput inputArg = default(AdInput);
-            Output output = default(Output);
+            AdInput inputArg = default;
+            Output output = default;
 
             var s0 = fht1.StartClientSession(); // leave dormant
 
@@ -70,9 +70,9 @@ namespace FASTER.test.async
             fht1.TakeFullCheckpoint(out Guid token); // does not require session
 
             var s2 = fht1.StartClientSession();
-            await s2.CompleteCheckpointAsync();
+            await fht1.CompleteCheckpointAsync();
 
-            s2.Dispose();
+            s2.Dispose(); // should receive persistence callback
             s1.Dispose(); // should receive persistence callback
             s0.Dispose(); // should receive persistence callback
             fht1.Dispose();

@@ -58,7 +58,7 @@ namespace FASTER.core
         }
     }
 
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -291,8 +291,8 @@ namespace FASTER.core
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
 
-            using (var s = new StreamReader(new MemoryStream(metadata)))
-                Initialize(s);
+            using StreamReader s = new StreamReader(new MemoryStream(metadata));
+            Initialize(s);
         }
 
         /// <summary>
@@ -300,7 +300,7 @@ namespace FASTER.core
         /// </summary>
         public void Reset()
         {
-            Initialize(default(Guid), -1);
+            Initialize(default, -1);
         }
 
         /// <summary>
@@ -308,41 +308,39 @@ namespace FASTER.core
         /// </summary>
         public byte[] ToByteArray()
         {
-            using (var ms = new MemoryStream())
+            using MemoryStream ms = new MemoryStream();
+            using (StreamWriter writer = new StreamWriter(ms))
             {
-                using (StreamWriter writer = new StreamWriter(ms))
+                writer.WriteLine(guid);
+                writer.WriteLine(useSnapshotFile);
+                writer.WriteLine(version);
+                writer.WriteLine(flushedLogicalAddress);
+                writer.WriteLine(startLogicalAddress);
+                writer.WriteLine(finalLogicalAddress);
+                writer.WriteLine(headAddress);
+                writer.WriteLine(beginAddress);
+
+                writer.WriteLine(checkpointTokens.Count);
+                foreach (var kvp in checkpointTokens)
                 {
-                    writer.WriteLine(guid);
-                    writer.WriteLine(useSnapshotFile);
-                    writer.WriteLine(version);
-                    writer.WriteLine(flushedLogicalAddress);
-                    writer.WriteLine(startLogicalAddress);
-                    writer.WriteLine(finalLogicalAddress);
-                    writer.WriteLine(headAddress);
-                    writer.WriteLine(beginAddress);
+                    writer.WriteLine(kvp.Key);
+                    writer.WriteLine(kvp.Value.UntilSerialNo);
+                    writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
+                    foreach (long item in kvp.Value.ExcludedSerialNos)
+                        writer.WriteLine(item);
+                }
 
-                    writer.WriteLine(checkpointTokens.Count);
-                    foreach (var kvp in checkpointTokens)
+                // Write object log segment offsets
+                writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
+                if (objectLogSegmentOffsets != null)
+                {
+                    for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
                     {
-                        writer.WriteLine(kvp.Key);
-                        writer.WriteLine(kvp.Value.UntilSerialNo);
-                        writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
-                        foreach (long item in kvp.Value.ExcludedSerialNos)
-                            writer.WriteLine(item);
-                    }
-
-                    // Write object log segment offsets
-                    writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
-                    if (objectLogSegmentOffsets != null)
-                    {
-                        for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
-                        {
-                            writer.WriteLine(objectLogSegmentOffsets[i]);
-                        }
+                        writer.WriteLine(objectLogSegmentOffsets[i]);
                     }
                 }
-                return ms.ToArray();
             }
+            return ms.ToArray();
         }
 
         /// <summary>
@@ -447,27 +445,25 @@ namespace FASTER.core
             var metadata = checkpointManager.GetIndexCommitMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
-            using (var s = new StreamReader(new MemoryStream(metadata)))
-                Initialize(s);
+            using StreamReader s = new StreamReader(new MemoryStream(metadata));
+            Initialize(s);
         }
 
         public byte[] ToByteArray()
         {
-            using (var ms = new MemoryStream())
+            using MemoryStream ms = new MemoryStream();
+            using (var writer = new StreamWriter(ms))
             {
-                using (var writer = new StreamWriter(ms))
-                {
 
-                    writer.WriteLine(token);
-                    writer.WriteLine(table_size);
-                    writer.WriteLine(num_ht_bytes);
-                    writer.WriteLine(num_ofb_bytes);
-                    writer.WriteLine(num_buckets);
-                    writer.WriteLine(startLogicalAddress);
-                    writer.WriteLine(finalLogicalAddress);
-                }
-                return ms.ToArray();
+                writer.WriteLine(token);
+                writer.WriteLine(table_size);
+                writer.WriteLine(num_ht_bytes);
+                writer.WriteLine(num_ofb_bytes);
+                writer.WriteLine(num_buckets);
+                writer.WriteLine(startLogicalAddress);
+                writer.WriteLine(finalLogicalAddress);
             }
+            return ms.ToArray();
         }
 
         public void DebugPrint()
@@ -482,7 +478,7 @@ namespace FASTER.core
         }
         public void Reset()
         {
-            token = default(Guid);
+            token = default;
             table_size = 0;
             num_ht_bytes = 0;
             num_ofb_bytes = 0;

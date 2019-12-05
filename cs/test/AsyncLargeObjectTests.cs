@@ -64,7 +64,7 @@ namespace FASTER.test.async
         [TestCase(CheckpointType.Snapshot)]
         public async Task LargeObjectTest(CheckpointType checkpointType)
         {
-            MyInput input = default(MyInput);
+            MyInput input = default;
             MyLargeOutput output = new MyLargeOutput();
 
             log = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.log");
@@ -79,7 +79,6 @@ namespace FASTER.test.async
 
             int maxSize = 100;
             int numOps = 5000;
-            Guid token;
 
             using (var s = fht1.StartClientSession())
             {
@@ -90,11 +89,11 @@ namespace FASTER.test.async
                     var value = new MyLargeValue(1 + r.Next(maxSize));
                     s.Upsert(ref mykey, ref value, Empty.Default, 0);
                 }
-
-                fht1.TakeFullCheckpoint(out token);
-
-                await s.CompleteCheckpointAsync();
             }
+
+            fht1.TakeFullCheckpoint(out Guid token);
+            await fht1.CompleteCheckpointAsync();
+
             fht1.Dispose();
             log.Close();
             objlog.Close();

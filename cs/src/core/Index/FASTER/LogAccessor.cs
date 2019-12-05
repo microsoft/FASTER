@@ -17,11 +17,13 @@ namespace FASTER.core
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public class LogAccessor<Key, Value, Input, Output, Context> : IObservable<IFasterScanIterator<Key, Value>>
+    /// <typeparam name="Functions"></typeparam>
+    public class LogAccessor<Key, Value, Input, Output, Context, Functions> : IObservable<IFasterScanIterator<Key, Value>>
         where Key : new()
         where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private readonly IFasterKV<Key, Value, Input, Output, Context> fht;
+        private readonly FasterKV<Key, Value, Input, Output, Context, Functions> fht;
         private readonly AllocatorBase<Key, Value> allocator;
 
         /// <summary>
@@ -29,7 +31,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(IFasterKV<Key, Value, Input, Output, Context> fht, AllocatorBase<Key, Value> allocator)
+        public LogAccessor(FasterKV<Key, Value, Input, Output, Context, Functions> fht, AllocatorBase<Key, Value> allocator)
         {
             this.fht = fht;
             this.allocator = allocator;
@@ -105,7 +107,7 @@ namespace FASTER.core
         /// </summary>
         class LogSubscribeDisposable : IDisposable
         {
-            private AllocatorBase<Key, Value> allocator;
+            private readonly AllocatorBase<Key, Value> allocator;
 
             public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator)
             {
@@ -183,11 +185,10 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         public void Compact(long untilAddress)
         {
-            var variableLengthStructSettings = default(VariableLengthStructSettings<Key, Value>);
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
                 var functions = new LogVariableCompactFunctions(varLen);
-                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
                     keyLength = varLen.KeyLength,
                     valueLength = varLen.ValueLength,
@@ -220,9 +221,9 @@ namespace FASTER.core
                     ref var value = ref iter1.GetValue();
 
                     if (recordInfo.Tombstone)
-                        tempKv.Delete(ref key, default(Context), 0);
+                        tempKv.Delete(ref key, default, 0);
                     else
-                        tempKv.Upsert(ref key, ref value, default(Context), 0);
+                        tempKv.Upsert(ref key, ref value, default, 0);
 
                     if (++cnt % 1000 == 0)
                     {
@@ -249,7 +250,7 @@ namespace FASTER.core
                     if (!recordInfo.Tombstone)
                     {
                         if (fht.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
-                            fht.Upsert(ref key, ref value, default(Context), 0);
+                            fht.Upsert(ref key, ref value, default, 0);
                     }
                     if (++cnt % 1000 == 0)
                     {
@@ -283,7 +284,7 @@ namespace FASTER.core
                         ref var key = ref iter2.GetKey();
                         ref var value = ref iter2.GetValue();
 
-                        tempKv.Delete(ref key, default(Context), 0);
+                        tempKv.Delete(ref key, default, 0);
 
                         if (++cnt % 1000 == 0)
                         {
@@ -298,7 +299,7 @@ namespace FASTER.core
 
         private class LogVariableCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
-            private VariableLengthBlittableAllocator<Key, Value> allocator;
+            private readonly VariableLengthBlittableAllocator<Key, Value> allocator;
 
             public LogVariableCompactFunctions(VariableLengthBlittableAllocator<Key, Value> allocator)
             {
