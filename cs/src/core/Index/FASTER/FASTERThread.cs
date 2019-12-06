@@ -90,12 +90,12 @@ namespace FASTER.core
         }
 
 
-        internal void InitContext(FasterExecutionContext ctx, Guid token)
+        internal void InitContext(FasterExecutionContext ctx, Guid token, long lsn = -1)
         {
             ctx.phase = Phase.REST;
             ctx.version = _systemState.version;
             ctx.markers = new bool[8];
-            ctx.serialNum = -1;
+            ctx.serialNum = lsn;
             ctx.guid = token;
 
             if (RelaxedCPR)
@@ -288,12 +288,12 @@ namespace FASTER.core
                     internalStatus = InternalUpsert(ref key, 
                                                     ref value, 
                                                     ref pendingContext.userContext, 
-                                                    ref pendingContext, currentCtx);
+                                                    ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.DELETE:
                     internalStatus = InternalDelete(ref key,
                                                     ref pendingContext.userContext,
-                                                    ref pendingContext, currentCtx);
+                                                    ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.READ:
                     throw new FasterException("Cannot happen!");

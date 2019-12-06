@@ -34,17 +34,16 @@ namespace FASTER.test.async
             fht1 = new FasterKV
                 <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
-
 
             int numOps = 5000;
             var inputArray = new AdId[numOps];
@@ -57,9 +56,9 @@ namespace FASTER.test.async
             AdInput inputArg = default;
             Output output = default;
 
-            var s0 = fht1.StartClientSession(); // leave dormant
-
+            var s0 = fht1.StartClientSession();
             var s1 = fht1.StartClientSession();
+            var s2 = fht1.StartClientSession();
 
             for (int key = 0; key < numOps; key++)
             {
@@ -67,14 +66,24 @@ namespace FASTER.test.async
                 s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
             }
 
-            fht1.TakeFullCheckpoint(out Guid token); // does not require session
+            for (int key = 0; key < numOps; key++)
+            {
+                value.numClicks = key;
+                s2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, key);
+            }
 
-            var s2 = fht1.StartClientSession();
+            // does not require session
+            fht1.TakeFullCheckpoint(out Guid token);
             await fht1.CompleteCheckpointAsync();
 
-            s2.Dispose(); // should receive persistence callback
-            s1.Dispose(); // should receive persistence callback
-            s0.Dispose(); // should receive persistence callback
+            s2.CompletePending(true);
+
+            fht1.TakeFullCheckpoint(out token);
+            await fht1.CompleteCheckpointAsync();
+
+            s2.Dispose();
+            s1.Dispose();
+            s0.Dispose();
             fht1.Dispose();
 
             fht2.Recover(token); // sync, does not require session

@@ -39,6 +39,7 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -65,7 +66,7 @@ namespace FASTER.core
                                     ref Input input,
                                     ref Output output,
                                     ref Context userContext,
-                                    ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                                    ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -200,7 +201,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -232,7 +233,7 @@ namespace FASTER.core
                             AsyncIOContext<Key, Value> request,
                             ref PendingContext pendingContext, FasterExecutionContext currentCtx)
         {
-            Debug.Assert(pendingContext.version == ctx.version);
+            Debug.Assert(RelaxedCPR || pendingContext.version == ctx.version);
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
@@ -267,7 +268,7 @@ namespace FASTER.core
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext, FasterExecutionContext currentCtx)
         {
-            Debug.Assert(pendingContext.version == opCtx.version);
+            Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
 
             var recordSize = default(int);
             var bucket = default(HashBucket*);
@@ -373,6 +374,7 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -397,7 +399,7 @@ namespace FASTER.core
         internal OperationStatus InternalUpsert(
                             ref Key key, ref Value value,
                             ref Context userContext,
-                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -592,7 +594,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -615,7 +617,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, sessionCtx);
+                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, sessionCtx, lsn);
             }
             else
             {
@@ -637,6 +639,7 @@ namespace FASTER.core
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -665,7 +668,7 @@ namespace FASTER.core
         internal OperationStatus InternalRMW(
                                    ref Key key, ref Input input,
                                    ref Context userContext,
-                                   ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                                   ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
             var recordSize = default(int);
             var bucket = default(HashBucket*);
@@ -926,7 +929,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -949,7 +952,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, sessionCtx);
+                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, sessionCtx, lsn);
             }
             else
             {
@@ -1374,6 +1377,7 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -1398,7 +1402,7 @@ namespace FASTER.core
         internal OperationStatus InternalDelete(
                             ref Key key,
                             ref Context userContext,
-                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -1634,7 +1638,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -1657,7 +1661,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalDelete(ref key, ref userContext, ref pendingContext, sessionCtx);
+                return InternalDelete(ref key, ref userContext, ref pendingContext, sessionCtx, lsn);
             }
             else
             {
@@ -1784,18 +1788,18 @@ namespace FASTER.core
                                                       ref pendingContext.input,
                                                       ref pendingContext.output,
                                                       ref pendingContext.userContext,
-                                                      ref pendingContext, currentCtx); // incorrect
+                                                      ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref pendingContext.key.Get(),
                                                         ref pendingContext.value.Get(),
                                                         ref pendingContext.userContext,
-                                                        ref pendingContext, currentCtx); // incorrect
+                                                        ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.DELETE:
                         internalStatus = InternalDelete(ref pendingContext.key.Get(),
                                                         ref pendingContext.userContext,
-                                                        ref pendingContext, currentCtx); // incorrect
+                                                        ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.RMW:
                         internalStatus = InternalRetryPendingRMW(currentCtx, ref pendingContext, currentCtx);

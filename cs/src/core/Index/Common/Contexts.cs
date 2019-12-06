@@ -144,10 +144,6 @@ namespace FASTER.core
         /// </summary>
         public int version;
         /// <summary>
-        /// Number of threads
-        /// </summary>
-        public int numThreads;
-        /// <summary>
         /// Flushed logical address
         /// </summary>
         public long flushedLogicalAddress;
@@ -167,10 +163,6 @@ namespace FASTER.core
         /// Begin address
         /// </summary>
         public long beginAddress;
-        /// <summary>
-        /// Guid array
-        /// </summary>
-        public Guid[] guids;
 
         /// <summary>
         /// Commit tokens per guid restored during Continue
@@ -197,12 +189,10 @@ namespace FASTER.core
             guid = token;
             useSnapshotFile = 0;
             version = _version;
-            numThreads = 0;
             flushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
             headAddress = 0;
-            guids = new Guid[LightEpoch.kTableSize + 1];
 
             continueTokens = new ConcurrentDictionary<Guid, CommitPoint>();
             checkpointTokens = new ConcurrentDictionary<Guid, CommitPoint>();
@@ -216,7 +206,6 @@ namespace FASTER.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            guids = new Guid[LightEpoch.kTableSize + 1];
             continueTokens = new ConcurrentDictionary<Guid, CommitPoint>();
 
             string value = reader.ReadLine();
@@ -244,12 +233,12 @@ namespace FASTER.core
             beginAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            numThreads = int.Parse(value);
+            var numSessions = int.Parse(value);
 
-            for (int i = 0; i < numThreads; i++)
+            for (int i = 0; i < numSessions; i++)
             {
                 value = reader.ReadLine();
-                guids[i] = Guid.Parse(value);
+                var guid = Guid.Parse(value);
                 value = reader.ReadLine();
                 var serialno = long.Parse(value);
 
@@ -258,7 +247,7 @@ namespace FASTER.core
                 for (int j = 0; j < exclusionCount; j++)
                     exclusions.Add(long.Parse(reader.ReadLine()));
 
-                continueTokens.TryAdd(guids[i], new CommitPoint
+                continueTokens.TryAdd(guid, new CommitPoint
                     {
                         UntilSerialNo = serialno,
                         ExcludedSerialNos = exclusions
@@ -356,7 +345,7 @@ namespace FASTER.core
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
             Debug.WriteLine("Head Address: {0}", headAddress);
             Debug.WriteLine("Begin Address: {0}", beginAddress);
-            Debug.WriteLine("Num sessions recovered: {0}", numThreads);
+            Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
             Debug.WriteLine("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens)
             {

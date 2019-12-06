@@ -106,12 +106,15 @@ namespace FASTER.core
                 if (toCtx.version < version)
                 {
                     CopyContext(fromCtx, toCtx);
-                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid,
-                        new CommitPoint
-                        {
-                            UntilSerialNo = toCtx.serialNum,
-                            ExcludedSerialNos = toCtx.excludedSerialNos
-                        });
+                    if (toCtx.serialNum != -1)
+                    {
+                        _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid,
+                            new CommitPoint
+                            {
+                                UntilSerialNo = toCtx.serialNum,
+                                ExcludedSerialNos = toCtx.excludedSerialNos
+                            });
+                    }
                     return true;
                 }
             }
@@ -198,12 +201,6 @@ namespace FASTER.core
                                     {
                                         AcquireSharedLatchesForAllPendingRequests(ctx);
                                     }
-
-                                    var idx = Interlocked.Increment(ref _hybridLogCheckpoint.info.numThreads);
-                                    idx -= 1;
-
-                                    _hybridLogCheckpoint.info.guids[idx] = ctx.guid;
-
                                     ctx.markers[EpochPhaseIdx.Prepare] = true;
                                 }
                                 epoch.Mark(EpochPhaseIdx.Prepare, currentState.version);
@@ -234,7 +231,7 @@ namespace FASTER.core
                                 if (!_ctx.markers[EpochPhaseIdx.InProgress])
                                 {
                                     AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
-                                    InitContext(ctx, ctx.prevCtx.guid);
+                                    InitContext(ctx, ctx.prevCtx.guid, ctx.prevCtx.serialNum);
 
                                     // Has to be prevCtx, not ctx
                                     ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
@@ -341,13 +338,16 @@ namespace FASTER.core
                             {
                                 if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                                 {
-                                    // Thread local action
-                                    functions.CheckpointCompletionCallback(ctx.guid,
-                                        new CommitPoint
-                                        {
-                                            UntilSerialNo = ctx.prevCtx.serialNum,
-                                            ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                                        });
+                                    if (ctx.prevCtx.serialNum != -1)
+                                    {
+                                        // Thread local action
+                                        functions.CheckpointCompletionCallback(ctx.guid,
+                                            new CommitPoint
+                                            {
+                                                UntilSerialNo = ctx.prevCtx.serialNum,
+                                                ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
+                                            });
+                                    }
                                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                                 }
                                 epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, currentState.version);

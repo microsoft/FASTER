@@ -301,7 +301,7 @@ namespace FASTER.core
         internal Status ContextRead(ref Key key, ref Input input, ref Output output, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -319,7 +319,7 @@ namespace FASTER.core
         internal Status ContextUpsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx, serialNo);
             Status status;
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -338,7 +338,7 @@ namespace FASTER.core
         internal Status ContextRMW(ref Key key, ref Input input, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -356,7 +356,7 @@ namespace FASTER.core
         internal Status ContextDelete(ref Key key, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalDelete(ref key, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalDelete(ref key, ref context, ref pcontext, sessionCtx, serialNo);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
