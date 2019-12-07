@@ -14,13 +14,11 @@ namespace SumStore
         const long numUniqueKeys = (1 << 22);
         const long keySpace = (1L << 14);
         const long numOps = (1L << 20);
-        const long refreshInterval = (1 << 8);
         const long completePendingInterval = (1 << 12);
-        const long checkpointInterval = (1 << 22);
         readonly int threadCount;
         int numActiveThreads;
-        FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
-        BlockingCollection<Input[]> inputArrays;
+        readonly FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+        readonly BlockingCollection<Input[]> inputArrays;
         readonly long[] threadNumOps;
 
         public ConcurrencyTest(int threadCount)
@@ -47,7 +45,7 @@ namespace SumStore
             for (int idx = 0; idx < threadCount; ++idx)
             {
                 int x = idx;
-                workers[idx] = new Thread(() => CreateInputArrays(x));
+                workers[idx] = new Thread(() => CreateInputArrays());
             }
 
             // Start threads.
@@ -63,7 +61,7 @@ namespace SumStore
             }
         }
 
-        private void CreateInputArrays(int threadId)
+        private void CreateInputArrays()
         {
             var inputArray = new Input[numOps];
             for (int i = 0; i < numOps; i++)
@@ -112,36 +110,31 @@ namespace SumStore
             }
 
             // Register thread with the store
-            fht.StartSession();
+            var session = fht.NewSession();
 
             Interlocked.Increment(ref numActiveThreads);
 
             // Process the batch of input data
-            var random = new Random(threadId + 1);
-            threadNumOps[threadId] = (numOps / 2); // + random.Next() % (numOps / 4);
+            threadNumOps[threadId] = numOps / 2;
             
             for (long i = 0; i < threadNumOps[threadId]; i++)
             {
-                var status = fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                var status = session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if (status != Status.OK && status != Status.NOTFOUND)
                     throw new Exception();
 
                 if (i % completePendingInterval == 0)
                 {
-                    fht.CompletePending(false);
-                }
-                else if (i % refreshInterval == 0)
-                {
-                    fht.Refresh();
+                    session.CompletePending(false);
                 }
             }
 
             // Make sure operations are completed
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Deregister thread from FASTER
-            fht.StopSession();
+            session.Dispose();
 
             Console.WriteLine("Populate successful on thread {0}", threadId);
         }
@@ -157,14 +150,14 @@ namespace SumStore
             }
 
             // Register with thread
-            fht.StartSession();
+            var session = fht.NewSession();
 
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                Input input = default(Input);
-                Output output = default(Output);
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                Input input = default;
+                Output output = default;
+                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 if (status == Status.PENDING)
                     throw new NotImplementedException();
 
@@ -172,10 +165,10 @@ namespace SumStore
             }
 
             // Complete all pending requests
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Release
-            fht.StopSession();
+            session.Dispose();
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

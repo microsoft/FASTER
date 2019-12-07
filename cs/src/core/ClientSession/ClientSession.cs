@@ -43,9 +43,9 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Get session Guid
+        /// Get session ID
         /// </summary>
-        public Guid ID { get { return ctx.guid; } }
+        public string ID { get { return ctx.guid; } }
 
         /// <summary>
         /// Dispose session

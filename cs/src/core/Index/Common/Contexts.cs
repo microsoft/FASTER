@@ -36,7 +36,7 @@ namespace FASTER.core
     {
         public int version;
         public long serialNum;
-        public Guid guid;
+        public string guid;
 
         public void Write(StreamWriter writer)
         {
@@ -50,9 +50,7 @@ namespace FASTER.core
             string value = reader.ReadLine();
             version = int.Parse(value);
 
-            value = reader.ReadLine();
-            guid = Guid.Parse(value);
-
+            guid = reader.ReadLine();
             value = reader.ReadLine();
             serialNum = long.Parse(value);
         }
@@ -165,14 +163,14 @@ namespace FASTER.core
         public long beginAddress;
 
         /// <summary>
-        /// Commit tokens per guid restored during Continue
+        /// Commit tokens per session restored during Continue
         /// </summary>
-        public ConcurrentDictionary<Guid, CommitPoint> continueTokens;
+        public ConcurrentDictionary<string, CommitPoint> continueTokens;
 
         /// <summary>
-        /// Commit tokens per guid created during Checkpoint
+        /// Commit tokens per session created during Checkpoint
         /// </summary>
-        public ConcurrentDictionary<Guid, CommitPoint> checkpointTokens;
+        public ConcurrentDictionary<string, CommitPoint> checkpointTokens;
 
         /// <summary>
         /// Object log segment offsets
@@ -194,8 +192,8 @@ namespace FASTER.core
             finalLogicalAddress = 0;
             headAddress = 0;
 
-            continueTokens = new ConcurrentDictionary<Guid, CommitPoint>();
-            checkpointTokens = new ConcurrentDictionary<Guid, CommitPoint>();
+            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
+            checkpointTokens = new ConcurrentDictionary<string, CommitPoint>();
 
             objectLogSegmentOffsets = null;
         }
@@ -206,7 +204,7 @@ namespace FASTER.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            continueTokens = new ConcurrentDictionary<Guid, CommitPoint>();
+            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
 
             string value = reader.ReadLine();
             guid = Guid.Parse(value);
@@ -237,8 +235,7 @@ namespace FASTER.core
 
             for (int i = 0; i < numSessions; i++)
             {
-                value = reader.ReadLine();
-                var guid = Guid.Parse(value);
+                var guid = reader.ReadLine();
                 value = reader.ReadLine();
                 var serialno = long.Parse(value);
 

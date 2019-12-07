@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
@@ -20,9 +21,24 @@ namespace FASTER.core
         private FastThreadLocal<FasterExecutionContext> threadCtx;
 
         /// <summary>
+        /// Dispose FASTER instance - legacy items
+        /// </summary>
+        private void LegacyDispose()
+        {
+            threadCtx?.Dispose();
+        }
+
+        private bool InLegacySession()
+        {
+            return threadCtx != null;
+        }
+
+
+        /// <summary>
         /// Legacy API: Start session with FASTER - call once per thread before using FASTER
         /// </summary>
         /// <returns></returns>
+        [Obsolete("Use NewSession() instead.")]
         public Guid StartSession()
         {
             if (threadCtx == null)
@@ -36,11 +52,12 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns></returns>
+        [Obsolete("Use ResumeSession() instead.")]
         public CommitPoint ContinueSession(Guid guid)
         {
             StartSession();
 
-            var cp = InternalContinue(guid, out FasterExecutionContext ctx);
+            var cp = InternalContinue(guid.ToString(), out FasterExecutionContext ctx);
             threadCtx.Value = ctx;
 
             return cp;
@@ -49,6 +66,7 @@ namespace FASTER.core
         /// <summary>
         ///  Legacy API: Stop session with FASTER
         /// </summary>
+        [Obsolete("Use and dispose NewSession() instead.")]
         public void StopSession()
         {
             InternalRelease(this.threadCtx.Value);
@@ -57,6 +75,7 @@ namespace FASTER.core
         /// <summary>
         ///  Legacy API: Refresh epoch (release memory pins)
         /// </summary>
+        [Obsolete("Use NewSession(), where Refresh() is not required by default.")]
         public void Refresh()
         {
             InternalRefresh(threadCtx.Value);
@@ -68,6 +87,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="wait">Whether we spin-wait for pending operations to complete</param>
         /// <returns>Whether all pending operations have completed</returns>
+        [Obsolete("Use NewSession() and invoke CompletePending() on the session.")]
         public bool CompletePending(bool wait = false)
         {
             return InternalCompletePending(threadCtx.Value, wait);
@@ -82,6 +102,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke Read() on the session.")]
         public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
         {
             return ContextRead(ref key, ref input, ref output, context, serialNo, threadCtx.Value);
@@ -95,6 +116,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke Upsert() on the session.")]
         public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
         {
             return ContextUpsert(ref key, ref value, context, serialNo, threadCtx.Value);
@@ -108,6 +130,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke RMW() on the session.")]
         public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
         {
             return ContextRMW(ref key, ref input, context, serialNo, threadCtx.Value);
@@ -123,43 +146,10 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke Delete() on the session.")]
         public Status Delete(ref Key key, Context context, long serialNo)
         {
             return ContextDelete(ref key, context, serialNo, threadCtx.Value);
-        }
-
-        /// <summary>
-        /// Experimental feature
-        /// Checks whether specified record is present in memory
-        /// (between HeadAddress and tail, or between fromAddress
-        /// and tail)
-        /// </summary>
-        /// <param name="key">Key of the record.</param>
-        /// <param name="fromAddress">Look until this address</param>
-        /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
-        {
-            return InternalContainsKeyInMemory(ref key, threadCtx.Value, fromAddress);
-        }
-
-        /// <summary>
-        /// Legacy API: Get list of pending requests (for thread-local session)
-        /// </summary>
-        /// <returns></returns>
-        public IEnumerable<long> GetPendingRequests()
-        {
-
-            foreach (var kvp in threadCtx.Value.prevCtx?.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-
-            foreach (var val in threadCtx.Value.prevCtx?.retryRequests)
-                yield return val.serialNum;
-
-            foreach (var kvp in threadCtx.Value.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-
-            foreach (var val in threadCtx.Value.retryRequests)
-                yield return val.serialNum;
         }
 
         /// <summary>
@@ -167,50 +157,30 @@ namespace FASTER.core
         /// </summary>
         /// <param name="wait">Spin-wait for completion</param>
         /// <returns></returns>
+        [Obsolete("Use NewSession() and CompleteCheckpointAsync() instead.")]
         public bool CompleteCheckpoint(bool wait = false)
         {
-            if (threadCtx == null)
+            if (!InLegacySession())
             {
-                // the thread does not have an active session
-                // we can wait until system state becomes REST
-                do
-                {
-                    if (_systemState.phase == Phase.REST)
-                    {
-                        return true;
-                    }
-                } while (wait);
+                CompleteCheckpointAsync().GetAwaiter().GetResult();
+                return true;
             }
-            else
+
+            // the thread has an active legacy session
+            // so we need to constantly complete pending 
+            // and refresh (done inside CompletePending)
+            // for the checkpoint to be proceed
+            do
             {
-                // the thread does has an active session and 
-                // so we need to constantly complete pending 
-                // and refresh (done inside CompletePending)
-                // for the checkpoint to be proceed
-                do
+                CompletePending();
+                if (_systemState.phase == Phase.REST)
                 {
                     CompletePending();
-                    if (_systemState.phase == Phase.REST)
-                    {
-                        CompletePending();
-                        return true;
-                    }
-                } while (wait);
-            }
+                    return true;
+                }
+            } while (wait);
+
             return false;
-        }
-
-        /// <summary>
-        /// Dispose FASTER instance - legacy items
-        /// </summary>
-        private void LegacyDispose()
-        {
-            threadCtx?.Dispose();
-        }
-
-        private bool InLegacySession()
-        {
-            return threadCtx != null;
         }
 
         private Guid InternalAcquire()
@@ -224,13 +194,13 @@ namespace FASTER.core
             }
             Guid guid = Guid.NewGuid();
             threadCtx.Value = new FasterExecutionContext();
-            InitContext(threadCtx.Value, guid);
+            InitContext(threadCtx.Value, guid.ToString());
 
             threadCtx.Value.prevCtx = new FasterExecutionContext();
-            InitContext(threadCtx.Value.prevCtx, guid);
+            InitContext(threadCtx.Value.prevCtx, guid.ToString());
             threadCtx.Value.prevCtx.version--;
             InternalRefresh(threadCtx.Value);
-            return threadCtx.Value.guid;
+            return guid;
         }
 
         private void InternalRelease(FasterExecutionContext ctx)
@@ -244,6 +214,5 @@ namespace FASTER.core
 
             epoch.Suspend();
         }
-
     }
 }

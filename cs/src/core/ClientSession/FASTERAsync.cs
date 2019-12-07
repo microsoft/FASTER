@@ -12,6 +12,15 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// The FASTER key-value store
+    /// </summary>
+    /// <typeparam name="Key">Key</typeparam>
+    /// <typeparam name="Value">Value</typeparam>
+    /// <typeparam name="Input">Input</typeparam>
+    /// <typeparam name="Output">Output</typeparam>
+    /// <typeparam name="Context">Context</typeparam>
+    /// <typeparam name="Functions">Functions</typeparam>
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()

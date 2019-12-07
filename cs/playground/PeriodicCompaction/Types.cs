@@ -113,7 +113,7 @@ namespace PeriodicCompaction
             throw new NotImplementedException();
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
             throw new NotImplementedException();
         }

@@ -51,9 +51,6 @@ namespace FASTER.core
     }
 
 
-    /// <summary>
-    /// Partial class for recovery code in FASTER
-    /// </summary>
     public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()

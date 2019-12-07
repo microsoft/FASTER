@@ -84,8 +84,9 @@ namespace FASTER.core
             ShiftReadOnlyAddress(newHeadAddress, wait);
 
             // Then shift head address
+            fht.epoch.Resume();
             var updatedHeadAddress = allocator.ShiftHeadAddress(newHeadAddress);
-
+            fht.epoch.Suspend();
             return updatedHeadAddress >= newHeadAddress;
         }
 
@@ -127,11 +128,12 @@ namespace FASTER.core
         /// <param name="wait">Wait to ensure shift is complete (may involve page flushing)</param>
         public void ShiftReadOnlyAddress(long newReadOnlyAddress, bool wait)
         {
+            fht.epoch.Resume();
             allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
+            fht.epoch.Suspend();
 
             // Wait for flush to complete
-            while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress)
-                fht.Refresh();
+            while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) ;
         }
 
         /// <summary>
@@ -205,13 +207,13 @@ namespace FASTER.core
         private void Compact<T>(T functions, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
             where T : IFunctions<Key, Value, Input, Output, Context>
         {
+            var fhtSession = fht.NewSession();
+
             var originalUntilAddress = untilAddress;
 
             var tempKv = new FasterKV<Key, Value, Input, Output, Context, T>
                 (fht.IndexSize, functions, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
-            tempKv.StartSession();
-
-            int cnt = 0;
+            var tempKvSession = tempKv.NewSession();
 
             using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
             {
@@ -221,25 +223,18 @@ namespace FASTER.core
                     ref var value = ref iter1.GetValue();
 
                     if (recordInfo.Tombstone)
-                        tempKv.Delete(ref key, default, 0);
+                        tempKvSession.Delete(ref key, default, 0);
                     else
-                        tempKv.Upsert(ref key, ref value, default, 0);
-
-                    if (++cnt % 1000 == 0)
-                    {
-                        fht.Refresh();
-                        tempKv.Refresh();
-                    }
+                        tempKvSession.Upsert(ref key, ref value, default, 0);
                 }
             }
 
             // TODO: Scan until SafeReadOnlyAddress
             long scanUntil = untilAddress;
-            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKv);
+            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
 
             // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
 
-            cnt = 0;
             using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
             {
                 while (iter3.GetNext(out RecordInfo recordInfo))
@@ -249,51 +244,37 @@ namespace FASTER.core
 
                     if (!recordInfo.Tombstone)
                     {
-                        if (fht.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
-                            fht.Upsert(ref key, ref value, default, 0);
-                    }
-                    if (++cnt % 1000 == 0)
-                    {
-                        fht.Refresh();
-                        tempKv.Refresh();
+                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
+                            fhtSession.Upsert(ref key, ref value, default, 0);
                     }
                     if (scanUntil < fht.Log.SafeReadOnlyAddress)
                     {
-                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKv);
+                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
                     }
                 }
             }
-            tempKv.StopSession();
+            fhtSession.Dispose();
+            tempKvSession.Dispose();
             tempKv.Dispose();
 
             ShiftBeginAddress(originalUntilAddress);
         }
 
-        private void LogScanForValidity<T>(ref long untilAddress, ref long scanUntil, ref FasterKV<Key, Value, Input, Output, Context, T> tempKv)
+        private void LogScanForValidity<T>(ref long untilAddress, ref long scanUntil, ref ClientSession<Key, Value, Input, Output, Context, T> tempKvSession)
             where T : IFunctions<Key, Value, Input, Output, Context>
         {
             while (scanUntil < fht.Log.SafeReadOnlyAddress)
             {
                 untilAddress = scanUntil;
                 scanUntil = fht.Log.SafeReadOnlyAddress;
-                int cnt = 0;
-                using (var iter2 = fht.Log.Scan(untilAddress, scanUntil))
+                using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
+                while (iter2.GetNext(out RecordInfo recordInfo))
                 {
-                    while (iter2.GetNext(out RecordInfo recordInfo))
-                    {
-                        ref var key = ref iter2.GetKey();
-                        ref var value = ref iter2.GetValue();
+                    ref var key = ref iter2.GetKey();
+                    ref var value = ref iter2.GetValue();
 
-                        tempKv.Delete(ref key, default, 0);
-
-                        if (++cnt % 1000 == 0)
-                        {
-                            fht.Refresh();
-                            tempKv.Refresh();
-                        }
-                    }
+                    tempKvSession.Delete(ref key, default, 0);
                 }
-                fht.Refresh();
             }
         }
 
@@ -306,7 +287,7 @@ namespace FASTER.core
                 this.allocator = allocator;
             }
 
-            public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint) { }
+            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
             {
@@ -332,7 +313,7 @@ namespace FASTER.core
 
         private class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
-            public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint) { }
+            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }

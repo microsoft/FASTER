@@ -52,7 +52,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="sessionId">Session ID reporting persistence</param>
         /// <param name="commitPoint">Commit point descriptor</param>
-        void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint);
+        void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint);
 
         /// <summary>
         /// Initial update for RMW

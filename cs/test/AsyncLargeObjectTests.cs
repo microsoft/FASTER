@@ -80,7 +80,7 @@ namespace FASTER.test.async
             int maxSize = 100;
             int numOps = 5000;
 
-            using (var s = fht1.StartClientSession())
+            using (var s = fht1.NewSession())
             {
                 Random r = new Random(33);
                 for (int key = 0; key < numOps; key++)
@@ -109,7 +109,7 @@ namespace FASTER.test.async
                 );
 
             fht2.Recover(token);
-            using (var s2 = fht2.StartClientSession())
+            using (var s2 = fht2.NewSession())
             {
                 for (int keycnt = 0; keycnt < numOps; keycnt++)
                 {

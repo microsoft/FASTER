@@ -41,7 +41,7 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest1()
         {
-            using (var session = fht.StartClientSession())
+            using (var session = fht.NewSession())
             {
                 InputStruct input = default(InputStruct);
                 OutputStruct output = default(OutputStruct);
@@ -70,8 +70,8 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest2()
         {
-            using (var session1 = fht.StartClientSession())
-            using (var session2 = fht.StartClientSession())
+            using (var session1 = fht.NewSession())
+            using (var session2 = fht.NewSession())
             {
                 InputStruct input = default(InputStruct);
                 OutputStruct output = default(OutputStruct);
@@ -117,7 +117,7 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest3()
         {
-            using (var session = fht.StartClientSession())
+            using (var session = fht.NewSession())
             {
                 Task.CompletedTask.ContinueWith((t) =>
                 {
@@ -148,8 +148,8 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest4()
         {
-            using (var session1 = fht.StartClientSession())
-            using (var session2 = fht.StartClientSession())
+            using (var session1 = fht.NewSession())
+            using (var session2 = fht.NewSession())
             {
                 var t1 = Task.CompletedTask.ContinueWith((t) =>
                 {
@@ -208,7 +208,7 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest5()
         {
-            var session = fht.StartClientSession();
+            var session = fht.NewSession();
             var id = session.ID;
 
             InputStruct input = default(InputStruct);
@@ -234,7 +234,7 @@ namespace FASTER.test.async
 
             session.Dispose();
 
-            session = fht.StartClientSession();
+            session = fht.NewSession();
 
             var key2 = new KeyStruct { kfield1 = 17, kfield2 = 18 };
             var value2 = new ValueStruct { vfield1 = 27, vfield2 = 28 };

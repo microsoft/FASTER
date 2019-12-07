@@ -32,13 +32,11 @@ namespace FASTER.test
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            fht.StartSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -47,35 +45,39 @@ namespace FASTER.test
         [Test]
         public void ObjectInMemWriteRead()
         {
+            using var session = fht.NewSession();
+
             var key1 = new MyKey { key = 9999999 };
             var value = new MyValue { value = 23 };
 
             MyInput input = null;
             MyOutput output = new MyOutput();
 
-            fht.Upsert(ref key1, ref value, Empty.Default, 0);
-            fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            session.Read(ref key1, ref input, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == value.value);
         }
 
         [Test]
         public void ObjectInMemWriteRead2()
         {
+            using var session = fht.NewSession();
+
             var key1 = new MyKey { key = 8999998 };
             var input1 = new MyInput { value = 23 };
             MyOutput output = new MyOutput();
 
-            fht.RMW(ref key1, ref input1, Empty.Default, 0);
+            session.RMW(ref key1, ref input1, Empty.Default, 0);
 
             var key2 = new MyKey { key = 8999999 };
             var input2 = new MyInput { value = 24 };
-            fht.RMW(ref key2, ref input2, Empty.Default, 0);
+            session.RMW(ref key2, ref input2, Empty.Default, 0);
 
-            fht.Read(ref key1, ref input1, ref output, Empty.Default, 0);
+            session.Read(ref key1, ref input1, ref output, Empty.Default, 0);
 
             Assert.IsTrue(output.value.value == input1.value);
 
-            fht.Read(ref key2, ref input2, ref output, Empty.Default, 0);
+            session.Read(ref key2, ref input2, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == input2.value);
 
         }
@@ -84,22 +86,24 @@ namespace FASTER.test
         [Test]
         public void ObjectDiskWriteRead()
         {
+            using var session = fht.NewSession();
+
             for (int i = 0; i < 2000; i++)
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default, 0);
                 // fht.ShiftReadOnlyAddress(fht.LogTailAddress);
             }
 
             var key2 = new MyKey { key = 23 };
             var input = new MyInput();
             MyOutput g1 = new MyOutput();
-            var status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -109,11 +113,11 @@ namespace FASTER.test
             Assert.IsTrue(g1.value.value == 23);
 
             key2 = new MyKey { key = 99999 };
-            status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -125,9 +129,9 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                status = fht.RMW(ref key1, ref input, Empty.Default, 0);
+                status = session.RMW(ref key1, ref input, Empty.Default, 0);
                 if (status == Status.PENDING)
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
             }
 
             for (int i = 0; i < 2000; i++)
@@ -136,9 +140,9 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
                 {
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 }
                 else
                 {

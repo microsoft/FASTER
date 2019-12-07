@@ -74,7 +74,7 @@ namespace FASTER.core
         private Guid _hybridLogCheckpointToken;
         private SystemState _systemState;
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        private ConcurrentDictionary<Guid, CommitPoint> _recoveredSessions;
+        private ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>
         /// Create FASTER instance

@@ -17,7 +17,7 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        internal CommitPoint InternalContinue(Guid guid, out FasterExecutionContext ctx)
+        internal CommitPoint InternalContinue(string guid, out FasterExecutionContext ctx)
         {
             ctx = null;
 
@@ -90,7 +90,7 @@ namespace FASTER.core
         }
 
 
-        internal void InitContext(FasterExecutionContext ctx, Guid token, long lsn = -1)
+        internal void InitContext(FasterExecutionContext ctx, string token, long lsn = -1)
         {
             ctx.phase = Phase.REST;
             ctx.version = _systemState.version;

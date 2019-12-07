@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -13,7 +15,8 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        #region Session Operations
+        /*
+        #region Session Operations (Deprecated)
 
         /// <summary>
         /// Start a session with FASTER. FASTER sessions correspond to threads issuing
@@ -42,8 +45,10 @@ namespace FASTER.core
         void Refresh();
 
         #endregion
+        */
 
-        #region Core Index Operations
+        /*
+        #region Core Index Operations (Deprecated)
 
         /// <summary>
         /// Read operation
@@ -95,15 +100,37 @@ namespace FASTER.core
         /// <returns>Whether all pending operations have completed</returns>
         bool CompletePending(bool wait);
 
+        #endregion
+        */
+
+        #region New Session Operations
+        /// <summary>
+        /// Start new client session (not thread-specific) with FASTER.
+        /// Session starts in dormant state.
+        /// </summary>
+        /// <param name="sessionId"></param>
+        /// <param name="supportAsync"></param>
+        /// <returns></returns>
+        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool supportAsync = true);
+
+        /// <summary>
+        /// Continue client session with FASTER
+        /// </summary>
+        /// <param name="sessionId"></param>
+        /// <param name="cp"></param>
+        /// <param name="supportAsync"></param>
+        /// <returns></returns>
+        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionId, out CommitPoint cp, bool supportAsync = true);
+
+        #endregion
+
+        #region Growth and Recovery
+
         /// <summary>
         /// Grow the hash index
         /// </summary>
         /// <returns></returns>
         bool GrowIndex();
-
-        #endregion
-
-        #region Recovery
 
         /// <summary>
         /// Take full checkpoint of FASTER
@@ -147,9 +174,8 @@ namespace FASTER.core
         /// <summary>
         /// Complete ongoing checkpoint (spin-wait)
         /// </summary>
-        /// <param name="wait"></param>
         /// <returns>Whether checkpoint has completed</returns>
-        bool CompleteCheckpoint(bool wait);
+        ValueTask CompleteCheckpointAsync(CancellationToken token = default);
 
         #endregion
 

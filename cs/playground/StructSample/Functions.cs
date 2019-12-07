@@ -32,7 +32,7 @@ namespace StructSample
         public void UpsertCompletionCallback(ref long key, ref long value, Empty ctx) { }
         public void DeleteCompletionCallback(ref long key, Empty ctx) { }
         public void RMWCompletionCallback(ref long key, ref long input, Empty ctx, Status s) { }
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint) { }
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
 
@@ -72,6 +72,6 @@ namespace StructSample
         public void UpsertCompletionCallback(ref Key key, ref Value output, Empty ctx) { }
         public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
         public void RMWCompletionCallback(ref Key key, ref Input output, Empty ctx, Status status) { }
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint) { }
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 }

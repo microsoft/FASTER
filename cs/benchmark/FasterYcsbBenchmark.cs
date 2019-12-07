@@ -101,9 +101,9 @@ namespace FASTER.benchmark
             sw.Start();
 
 
-            Value value = default(Value);
-            Input input = default(Input);
-            Output output = default(Output);
+            Value value = default;
+            Input input = default;
+            Output output = default;
 
             long reads_done = 0;
             long writes_done = 0;
@@ -115,7 +115,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.StartClientSession(false);
+            var session = store.NewSession(null, false);
 
             while (!done)
             {
@@ -317,7 +317,7 @@ namespace FASTER.benchmark
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            var session = store.StartClientSession(false);
+            var session = store.NewSession(null, false);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -326,7 +326,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            Value value = default(Value);
+            Value value = default;
 
             for (long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 chunk_idx < kInitCount;

@@ -17,10 +17,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-
-    /// <summary>
-    /// Checkpoint related function of FASTER
-    /// </summary>
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()

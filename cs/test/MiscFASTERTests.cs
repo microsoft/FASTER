@@ -32,13 +32,11 @@ namespace FASTER.test
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<int, MyValue> { valueSerializer = () => new MyValueSerializer() }
                 );
-            fht.StartSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -49,40 +47,44 @@ namespace FASTER.test
         [Test]
         public void MixedTest1()
         {
+            using var session = fht.NewSession();
+
             int key = 8999998;
             var input1 = new MyInput { value = 23 };
             MyOutput output = new MyOutput();
 
-            fht.RMW(ref key, ref input1, Empty.Default, 0);
+            session.RMW(ref key, ref input1, Empty.Default, 0);
 
             int key2 = 8999999;
             var input2 = new MyInput { value = 24 };
-            fht.RMW(ref key2, ref input2, Empty.Default, 0);
+            session.RMW(ref key2, ref input2, Empty.Default, 0);
 
-            fht.Read(ref key, ref input1, ref output, Empty.Default, 0);
+            session.Read(ref key, ref input1, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == input1.value);
 
-            fht.Read(ref key2, ref input2, ref output, Empty.Default, 0);
+            session.Read(ref key2, ref input2, ref output, Empty.Default, 0);
             Assert.IsTrue(output.value.value == input2.value);
         }
 
         [Test]
         public void MixedTest2()
         {
+            using var session = fht.NewSession();
+
             for (int i = 0; i < 2000; i++)
             {
                 var value = new MyValue { value = i };
-                fht.Upsert(ref i, ref value, Empty.Default, 0);
+                session.Upsert(ref i, ref value, Empty.Default, 0);
             }
 
             var key2 = 23;
             var input = new MyInput();
             MyOutput g1 = new MyOutput();
-            var status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -92,11 +94,11 @@ namespace FASTER.test
             Assert.IsTrue(g1.value.value == 23);
 
             key2 = 99999;
-            status = fht.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -114,36 +116,32 @@ namespace FASTER.test
             try
             {
                 log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-                using (var fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>
-                    (128, copyOnWrite, new LogSettings { LogDevice = log, MemorySizeBits = 29 }))
+                using var fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>
+                    (128, copyOnWrite, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+                using var session = fht.NewSession();
+
+                var key = default(KeyStruct);
+                var value = default(ValueStruct);
+
+                key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
+                value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
+
+                session.Upsert(ref key, ref value, Empty.Default, 0);
+
+                value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
+                session.Upsert(ref key, ref value, Empty.Default, 0);
+
+                var recordCount = 0;
+                using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
                 {
-                    fht.StartSession();
-
-                    var key = default(KeyStruct);
-                    var value = default(ValueStruct);
-
-                    key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
-                    value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
-
-                    fht.Upsert(ref key, ref value, Empty.Default, 0);
-
-                    value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
-                    fht.Upsert(ref key, ref value, Empty.Default, 0);
-
-                    var recordCount = 0;
-                    using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
+                    while (iterator.GetNext(out var info))
                     {
-                        while (iterator.GetNext(out var info))
-                        {
-                            recordCount++;
-                        }
+                        recordCount++;
                     }
-
-                    Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount, 2);
-                    Assert.AreEqual(2, recordCount);
-
-                    fht.StopSession();
                 }
+
+                Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount, 2);
+                Assert.AreEqual(2, recordCount);
             }
             finally
             {

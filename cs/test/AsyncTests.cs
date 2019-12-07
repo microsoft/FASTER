@@ -56,9 +56,9 @@ namespace FASTER.test.async
             AdInput inputArg = default;
             Output output = default;
 
-            var s0 = fht1.StartClientSession();
-            var s1 = fht1.StartClientSession();
-            var s2 = fht1.StartClientSession();
+            var s0 = fht1.NewSession();
+            var s1 = fht1.NewSession();
+            var s2 = fht1.NewSession();
 
             for (int key = 0; key < numOps; key++)
             {
@@ -73,12 +73,12 @@ namespace FASTER.test.async
             }
 
             // does not require session
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TakeFullCheckpoint(out _);
             await fht1.CompleteCheckpointAsync();
 
             s2.CompletePending(true);
 
-            fht1.TakeFullCheckpoint(out token);
+            fht1.TakeFullCheckpoint(out Guid token);
             await fht1.CompleteCheckpointAsync();
 
             s2.Dispose();
@@ -89,7 +89,7 @@ namespace FASTER.test.async
             fht2.Recover(token); // sync, does not require session
 
             var guid = s1.ID;
-            using (var s3 = fht2.ContinueClientSession(guid, out CommitPoint lsn))
+            using (var s3 = fht2.ResumeSession(guid, out CommitPoint lsn))
             {
                 Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
 
@@ -132,7 +132,7 @@ namespace FASTER.test.async
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
             Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }

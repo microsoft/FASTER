@@ -6,6 +6,7 @@
     <TargetFramework>net46</TargetFramework>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win7-x64</RuntimeIdentifier>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
