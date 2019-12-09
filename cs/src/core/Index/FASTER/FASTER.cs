@@ -282,8 +282,8 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
-            if (InLegacySession())
-                throw new FasterException("Cannot use CompleteCheckpointAsync with legacy sessions");
+            if (LightEpoch.AnyInstanceProtected())
+                throw new FasterException("Cannot use CompleteCheckpointAsync when using legacy or non-async sessions");
 
             token.ThrowIfCancellationRequested();
 

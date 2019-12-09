@@ -123,12 +123,32 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Check whether current thread is protected
+        /// Check whether current epoch instance is protected on this thread
         /// </summary>
         /// <returns>Result of the check</returns>
-        public bool IsProtected()
+        public bool ThisInstanceProtected()
         {
-            return kInvalidIndex != threadEntryIndex;
+            int entry = threadEntryIndex;
+            if (kInvalidIndex != entry)
+            {
+                if ((*(tableAligned + entry)).threadId == entry)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Check whether any epoch instance is protected on this thread
+        /// </summary>
+        /// <returns>Result of the check</returns>
+        public static bool AnyInstanceProtected()
+        {
+            int entry = threadEntryIndex;
+            if (kInvalidIndex != entry)
+            {
+                return threadEntryIndexCount > 0;
+            }
+            return false;
         }
 
         /// <summary>

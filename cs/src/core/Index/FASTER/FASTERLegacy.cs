@@ -155,10 +155,10 @@ namespace FASTER.core
         /// <summary>
         /// Legacy API: Complete the ongoing checkpoint (if any)
         /// </summary>
-        /// <param name="wait">Spin-wait for completion</param>
+        /// <param name="spinWait">Spin-wait for completion</param>
         /// <returns></returns>
         [Obsolete("Use NewSession() and CompleteCheckpointAsync() instead.")]
-        public bool CompleteCheckpoint(bool wait = false)
+        public bool CompleteCheckpoint(bool spinWait = false)
         {
             if (!InLegacySession())
             {
@@ -178,7 +178,7 @@ namespace FASTER.core
                     CompletePending();
                     return true;
                 }
-            } while (wait);
+            } while (spinWait);
 
             return false;
         }

@@ -188,6 +188,8 @@ namespace FASTER.core
             return false;
         }
 
+        internal bool InRestPhase() => _systemState.phase == Phase.REST;
+
         internal void CompleteRetryRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx)
         {
             int count = opCtx.retryRequests.Count;

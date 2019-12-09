@@ -173,12 +173,27 @@ namespace FASTER.core
         /// <summary>
         /// Sync complete outstanding pending operations
         /// </summary>
-        /// <param name="spinWait"></param>
+        /// <param name="spinWait">Spin-wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCheckpointCompletion">Extend spin-wait until ongoing checkpoint (if any) completes</param>
         /// <returns></returns>
-        public bool CompletePending(bool spinWait = false)
+        public bool CompletePending(bool spinWait = false, bool spinWaitForCheckpointCompletion = false)
         {
             if (supportAsync) UnsafeResumeThread();
             var result = fht.InternalCompletePending(ctx, spinWait);
+            if (spinWaitForCheckpointCompletion)
+            {
+                if (spinWait != true)
+                    throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
+                do
+                {
+                    fht.InternalCompletePending(ctx, spinWait);
+                    if (fht.InRestPhase())
+                    {
+                        fht.InternalCompletePending(ctx, spinWait);
+                        return true;
+                    }
+                } while (spinWait);
+            }
             if (supportAsync) UnsafeSuspendThread();
             return result;
         }
