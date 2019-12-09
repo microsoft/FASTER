@@ -16,7 +16,6 @@ namespace FASTER.test.recovery.sumstore
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);
         const long numOps = (1L << 19);
-        const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         private string rootPath;
         private string sharedLogDirectory;
@@ -53,13 +52,12 @@ namespace FASTER.test.recovery.sumstore
         public void SharedLogDirectory()
         {
             this.original.Initialize($"{this.rootPath}\\OriginalCheckpoint", this.sharedLogDirectory);
-            this.original.Faster.StartSession();
             Assert.IsTrue(IsDirectoryEmpty(this.sharedLogDirectory)); // sanity check
             Populate(this.original.Faster);
 
             // Take checkpoint from original to start the clone from
             Assert.IsTrue(this.original.Faster.TakeFullCheckpoint(out var checkpointGuid));
-            Assert.IsTrue(this.original.Faster.CompleteCheckpoint(wait: true));
+            this.original.Faster.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             // Sanity check against original
             Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
@@ -72,7 +70,6 @@ namespace FASTER.test.recovery.sumstore
             // Recover from original checkpoint
             this.clone.Initialize(cloneCheckpointDirectory, this.sharedLogDirectory);
             this.clone.Faster.Recover(checkpointGuid);
-            this.clone.Faster.StartSession();
 
             // Both sessions should work concurrently
             Test(this.original, checkpointGuid);
@@ -113,7 +110,6 @@ namespace FASTER.test.recovery.sumstore
 
             public void TearDown()
             {
-                this.Faster?.StopSession();
                 this.Faster?.Dispose();
                 this.Faster = null;
                 this.LogDevice?.Close();
@@ -123,6 +119,8 @@ namespace FASTER.test.recovery.sumstore
 
         private void Populate(FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fasterInstance)
         {
+            using var session = fasterInstance.NewSession();
+
             // Prepare the dataset
             var inputArray = new AdInput[numOps];
             for (int i = 0; i < numOps; i++)
@@ -134,20 +132,16 @@ namespace FASTER.test.recovery.sumstore
             // Process the batch of input data
             for (int i = 0; i < numOps; i++)
             {
-                fasterInstance.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if (i % completePendingInterval == 0)
                 {
-                    fasterInstance.CompletePending(false);
-                }
-                else if (i % refreshInterval == 0)
-                {
-                    fasterInstance.Refresh();
+                    session.CompletePending(false);
                 }
             }
 
             // Make sure operations are completed
-            fasterInstance.CompletePending(true);
+            session.CompletePending(true);
         }
 
         private void Test(FasterTestInstance fasterInstance, Guid checkpointToken)
@@ -166,16 +160,17 @@ namespace FASTER.test.recovery.sumstore
             var input = default(AdInput);
             var output = default(Output);
 
+            using var session = fasterInstance.Faster.NewSession();
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fasterInstance.Faster.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 Assert.IsTrue(status == Status.OK);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
-            fasterInstance.Faster.CompletePending(true);
+            session.CompletePending(true);
 
 
             // Compute expected array

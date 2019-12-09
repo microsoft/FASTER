@@ -52,33 +52,34 @@ namespace FASTER.test.recovery.sumstore.simple
             }
 
             NumClicks value;
-            AdInput inputArg = default(AdInput);
-            Output output = default(Output);
+            AdInput inputArg = default;
+            Output output = default;
 
-            fht1.StartSession();
+            var session1 = fht1.NewSession();
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                fht1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpoint(true);
-            fht1.StopSession();
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            session1.Dispose();
 
             fht2.Recover(token);
-            fht2.StartSession();
+
+            var session2 = fht2.NewSession();
             for (int key = 0; key < numOps; key++)
             {
-                var status = fht2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
-                    fht2.CompletePending(true);
+                    session2.CompletePending(true);
                 else
                 {
                     Assert.IsTrue(output.value.numClicks == key);
                 }
             }
-            fht2.StopSession();
+            session2.Dispose();
 
             log.Close();
             fht1.Dispose();
@@ -117,12 +118,12 @@ namespace FASTER.test.recovery.sumstore.simple
 
             NumClicks value;
 
-            fht1.StartSession();
+            var session1 = fht1.NewSession();
             var address = 0L;
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                fht1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
 
                 if (key == 2999)
                     address = fht1.Log.TailAddress;
@@ -131,8 +132,8 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1.Log.ShiftBeginAddress(address);
 
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpoint(true);
-            fht1.StopSession();
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            session1.Dispose();
 
             fht2.Recover(token);
 
@@ -165,7 +166,7 @@ namespace FASTER.test.recovery.sumstore.simple
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
             Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }

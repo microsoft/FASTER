@@ -12,7 +12,7 @@ namespace FixedLenStructSample
     /// </summary>
     public class FixedLenFunctions : IFunctions<FixedLenKey, FixedLenValue, string, string, Empty>
     {
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 

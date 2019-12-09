@@ -29,7 +29,7 @@ namespace FASTER.benchmark
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
             Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }

@@ -17,7 +17,6 @@ namespace FASTER.test.recovery.sumstore
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);
         const long numOps = (1L << 19);
-        const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
         private FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fht;
@@ -96,43 +95,37 @@ namespace FASTER.test.recovery.sumstore
             }
 
             // Register thread with FASTER
-            fht.StartSession();
+            using var session = fht.NewSession();
 
             // Prpcess the batch of input data
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if ((i+1) % checkpointInterval == 0)
                 {
                     if (first)
-                        while (!fht.TakeFullCheckpoint(out token))
-                            fht.Refresh();
+                        while (!fht.TakeFullCheckpoint(out token)) ;
                     else
-                        while (!fht.TakeFullCheckpoint(out Guid nextToken))
-                            fht.Refresh();
+                        while (!fht.TakeFullCheckpoint(out Guid nextToken)) ;
 
-                    fht.CompleteCheckpoint(true);
+                    fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
                     first = false;
                 }
 
                 if (i % completePendingInterval == 0)
                 {
-                    fht.CompletePending(false);
-                }
-                else if (i % refreshInterval == 0)
-                {
-                    fht.Refresh();
+                    session.CompletePending(false);
                 }
             }
 
             // Make sure operations are completed
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Deregister thread from FASTER
-            fht.StopSession();
+            session.Dispose();
         }
 
         public void RecoverAndTest(Guid cprVersion, Guid indexVersion)
@@ -149,24 +142,24 @@ namespace FASTER.test.recovery.sumstore
             }
 
             // Register with thread
-            fht.StartSession();
+            var session = fht.NewSession();
 
-            AdInput input = default(AdInput);
-            Output output = default(Output);
+            AdInput input = default;
+            Output output = default;
 
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 Assert.IsTrue(status == Status.OK);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Release
-            fht.StopSession();
+            session.Dispose();
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);

@@ -102,7 +102,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -165,7 +165,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -238,7 +238,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -361,7 +361,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 

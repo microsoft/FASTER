@@ -12,7 +12,16 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    /// <summary>
+    /// The FASTER key-value store
+    /// </summary>
+    /// <typeparam name="Key">Key</typeparam>
+    /// <typeparam name="Value">Value</typeparam>
+    /// <typeparam name="Input">Input</typeparam>
+    /// <typeparam name="Output">Output</typeparam>
+    /// <typeparam name="Context">Context</typeparam>
+    /// <typeparam name="Functions">Functions</typeparam>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -90,7 +99,7 @@ namespace FASTER.core
             }
 
             // In non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.GC || newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
+            if (newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
             {
                 return;
             }
@@ -106,61 +115,68 @@ namespace FASTER.core
                 if (toCtx.version < version)
                 {
                     CopyContext(fromCtx, toCtx);
-                    _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid,
-                        new CommitPoint
-                        {
-                            UntilSerialNo = toCtx.serialNum,
-                            ExcludedSerialNos = toCtx.excludedSerialNos
-                        });
+                    if (toCtx.serialNum != -1)
+                    {
+                        _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid,
+                            new CommitPoint
+                            {
+                                UntilSerialNo = toCtx.serialNum,
+                                ExcludedSerialNos = toCtx.excludedSerialNos
+                            });
+                    }
                     return true;
                 }
             }
             return false;
         }
 
+        private SystemState GetStartState(SystemState state)
+        {
+            if (state.phase <= Phase.REST)
+                return SystemState.Make(Phase.REST, state.version - 1);
+            else
+                return SystemState.Make(Phase.REST, state.version);
+        }
+
         private async ValueTask HandleCheckpointingPhasesAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true)
         {
             if (async)
-                clientSession.UnsafeResumeThread();
+                clientSession?.UnsafeResumeThread();
 
-            var previousState = SystemState.Make(ctx.phase, ctx.version);
             var finalState = SystemState.Copy(ref _systemState);
-
             while (finalState.phase == Phase.INTERMEDIATE)
-            {
                 finalState = SystemState.Copy(ref _systemState);
-            }
+
+            var previousState = ctx != null ? SystemState.Make(ctx.phase, ctx.version) : finalState;
 
             // We need to move from previousState to finalState one step at a time
+            var currentState = previousState;
+
+            SystemState startState = GetStartState(finalState);
+
+            if ((currentState.version < startState.version) ||
+                (currentState.version == startState.version && currentState.phase < startState.phase))
+            {
+                // Fast-forward to beginning of current checkpoint cycle
+                currentState = startState;
+            }
+
             do
             {
-                var currentState = default(SystemState);
-                if (previousState.word == finalState.word)
-                {
-                    currentState.word = previousState.word;
-                }
-                else if (previousState.version < finalState.version)
-                {
-                    if (finalState.phase <= Phase.PREPARE)
-                        previousState.version = finalState.version;
-                    else
-                        previousState.version = finalState.version - 1;
-                    currentState = GetNextState(previousState, CheckpointType.FULL);
-                }
-                else
-                {
-                    currentState = GetNextState(previousState, _checkpointType);
-                }
-
                 switch (currentState.phase)
                 {
                     case Phase.PREP_INDEX_CHECKPOINT:
                         {
-                            if (!ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
+                            if (ctx != null)
                             {
-                                ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
+                                if (!ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
+                                {
+                                    ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
+                                }
+                                epoch.Mark(EpochPhaseIdx.PrepareForIndexCheckpt, currentState.version);
                             }
-                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, ctx.version))
+
+                            if (epoch.CheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, currentState.version))
                             {
                                 GlobalMoveToNextCheckpointState(currentState);
                             }
@@ -168,7 +184,7 @@ namespace FASTER.core
                         }
                     case Phase.INDEX_CHECKPOINT:
                         {
-                            if (_checkpointType == CheckpointType.INDEX_ONLY)
+                            if (_checkpointType == CheckpointType.INDEX_ONLY && ctx != null)
                             {
                                 // Reseting the marker for a potential FULL or INDEX_ONLY checkpoint in the future
                                 ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = false;
@@ -176,9 +192,9 @@ namespace FASTER.core
 
                             if (async && !IsIndexFuzzyCheckpointCompleted())
                             {
-                                clientSession.UnsafeSuspendThread();
+                                clientSession?.UnsafeSuspendThread();
                                 await IsIndexFuzzyCheckpointCompletedAsync();
-                                clientSession.UnsafeResumeThread();
+                                clientSession?.UnsafeResumeThread();
                             }
                             GlobalMoveToNextCheckpointState(currentState);
 
@@ -186,22 +202,20 @@ namespace FASTER.core
                         }
                     case Phase.PREPARE:
                         {
-                            if (!ctx.markers[EpochPhaseIdx.Prepare])
+                            if (ctx != null)
                             {
-                                if (!RelaxedCPR)
+                                if (!ctx.markers[EpochPhaseIdx.Prepare])
                                 {
-                                    AcquireSharedLatchesForAllPendingRequests(ctx);
+                                    if (!RelaxedCPR)
+                                    {
+                                        AcquireSharedLatchesForAllPendingRequests(ctx);
+                                    }
+                                    ctx.markers[EpochPhaseIdx.Prepare] = true;
                                 }
-
-                                var idx = Interlocked.Increment(ref _hybridLogCheckpoint.info.numThreads);
-                                idx -= 1;
-
-                                _hybridLogCheckpoint.info.guids[idx] = ctx.guid;
-
-                                ctx.markers[EpochPhaseIdx.Prepare] = true;
+                                epoch.Mark(EpochPhaseIdx.Prepare, currentState.version);
                             }
 
-                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.Prepare, ctx.version))
+                            if (epoch.CheckIsComplete(EpochPhaseIdx.Prepare, currentState.version))
                             {
                                 GlobalMoveToNextCheckpointState(currentState);
                             }
@@ -210,28 +224,33 @@ namespace FASTER.core
                         }
                     case Phase.IN_PROGRESS:
                         {
-                            // Need to be very careful here as threadCtx is changing
-                            FasterExecutionContext _ctx;
-                            if (previousState.phase == Phase.IN_PROGRESS)
+                            if (ctx != null)
                             {
-                                _ctx = ctx.prevCtx;
-                            }
-                            else
-                            {
-                                _ctx = ctx;
-                            }
+                                // Need to be very careful here as threadCtx is changing
+                                FasterExecutionContext _ctx;
+                                if (previousState.phase == Phase.IN_PROGRESS)
+                                {
+                                    _ctx = ctx.prevCtx;
+                                }
+                                else
+                                {
+                                    _ctx = ctx;
+                                }
 
-                            if (!_ctx.markers[EpochPhaseIdx.InProgress])
-                            {
-                                AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
-                                InitContext(ctx, ctx.prevCtx.guid);
+                                if (!_ctx.markers[EpochPhaseIdx.InProgress])
+                                {
+                                    AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
+                                    InitContext(ctx, ctx.prevCtx.guid, ctx.prevCtx.serialNum);
 
-                                // Has to be prevCtx, not ctx
-                                ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
+                                    // Has to be prevCtx, not ctx
+                                    ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
+                                }
+
+                                epoch.Mark(EpochPhaseIdx.InProgress, currentState.version);
                             }
 
                             // Has to be prevCtx, not ctx
-                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.InProgress, ctx.prevCtx.version))
+                            if (epoch.CheckIsComplete(EpochPhaseIdx.InProgress, currentState.version))
                             {
                                 GlobalMoveToNextCheckpointState(currentState);
                             }
@@ -239,32 +258,32 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            if (!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
+                            if (ctx != null)
                             {
-                                var notify = (ctx.prevCtx.ioPendingRequests.Count == 0);
-                                notify = notify && (ctx.prevCtx.retryRequests.Count == 0);
+                                if (!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
+                                {
+                                    var notify = (ctx.prevCtx.ioPendingRequests.Count == 0);
+                                    notify = notify && (ctx.prevCtx.retryRequests.Count == 0);
 
-                                if (notify)
-                                {
-                                    if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitPending, ctx.version))
+                                    if (notify)
                                     {
-                                        GlobalMoveToNextCheckpointState(currentState);
+                                        ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
                                     }
-                                    ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
+                                    else
+                                        break;
                                 }
+                                epoch.Mark(EpochPhaseIdx.WaitPending, currentState.version);
                             }
-                            else
+
+                            if (epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, currentState.version))
                             {
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitPending, ctx.version))
-                                {
-                                    GlobalMoveToNextCheckpointState(currentState);
-                                }
+                                GlobalMoveToNextCheckpointState(currentState);
                             }
                             break;
                         }
                     case Phase.WAIT_FLUSH:
                         {
-                            if (!ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
+                            if (ctx == null  || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
                             {
                                 bool notify;
 
@@ -280,9 +299,9 @@ namespace FASTER.core
                                 if (async && !notify)
                                 {
                                     Debug.Assert(_hybridLogCheckpoint.flushedSemaphore != null);
-                                    clientSession.UnsafeSuspendThread();
+                                    clientSession?.UnsafeSuspendThread();
                                     await _hybridLogCheckpoint.flushedSemaphore.WaitAsync();
-                                    clientSession.UnsafeResumeThread();
+                                    clientSession?.UnsafeResumeThread();
 
                                     _hybridLogCheckpoint.flushedSemaphore.Release();
 
@@ -295,9 +314,9 @@ namespace FASTER.core
 
                                     if (async && !notify)
                                     {
-                                        clientSession.UnsafeSuspendThread();
+                                        clientSession?.UnsafeSuspendThread();
                                         await IsIndexFuzzyCheckpointCompletedAsync();
-                                        clientSession.UnsafeResumeThread();
+                                        clientSession?.UnsafeResumeThread();
 
                                         notify = true;
                                     }
@@ -305,38 +324,44 @@ namespace FASTER.core
 
                                 if (notify)
                                 {
-                                    if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, ctx.prevCtx.version))
-                                    {
-                                        GlobalMoveToNextCheckpointState(currentState);
-                                    }
-
-                                    ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
+                                    if (ctx != null)
+                                        ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
                                 }
+                                else
+                                    break;
                             }
-                            else
+
+                            if (ctx != null)
+                                epoch.Mark(EpochPhaseIdx.WaitFlush, currentState.version);
+
+                            if (epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, currentState.version))
                             {
-                                if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.WaitFlush, ctx.prevCtx.version))
-                                {
-                                    GlobalMoveToNextCheckpointState(currentState);
-                                }
+                                GlobalMoveToNextCheckpointState(currentState);
                             }
                             break;
                         }
 
                     case Phase.PERSISTENCE_CALLBACK:
                         {
-                            if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
+                            if (ctx != null)
                             {
-                                // Thread local action
-                                functions.CheckpointCompletionCallback(ctx.guid,
-                                    new CommitPoint
+                                if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
+                                {
+                                    if (ctx.prevCtx.serialNum != -1)
                                     {
-                                        UntilSerialNo = ctx.prevCtx.serialNum,
-                                        ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                                    });
-                                ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
+                                        // Thread local action
+                                        functions.CheckpointCompletionCallback(ctx.guid,
+                                            new CommitPoint
+                                            {
+                                                UntilSerialNo = ctx.prevCtx.serialNum,
+                                                ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
+                                            });
+                                    }
+                                    ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
+                                }
+                                epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, currentState.version);
                             }
-                            if (epoch.MarkAndCheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, ctx.prevCtx.version))
+                            if (epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, currentState.version))
                             {
                                 GlobalMoveToNextCheckpointState(currentState);
                             }
@@ -347,19 +372,21 @@ namespace FASTER.core
                             break;
                         }
                     default:
-                        Debug.WriteLine("Error!");
-                        break;
+                        throw new FasterException("Invalid state found during checkpointing");
                 }
 
-                // update thread local variables
-                ctx.phase = currentState.phase;
-                ctx.version = currentState.version;
-
+                if (ctx != null)
+                {
+                    // update thread local variables
+                    ctx.phase = currentState.phase;
+                    ctx.version = currentState.version;
+                }
                 previousState.word = currentState.word;
+                currentState = GetNextState(currentState, _checkpointType);
             } while (previousState.word != finalState.word);
 
             if (async)
-                clientSession.UnsafeSuspendThread();
+                clientSession?.UnsafeSuspendThread();
         }
     }
 }

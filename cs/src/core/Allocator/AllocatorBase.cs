@@ -363,7 +363,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory));
+        protected abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default);
         /// <summary>
         /// Read page (async)
         /// </summary>
@@ -710,7 +710,7 @@ namespace FASTER.core
             if (numSlots > PageSize)
                 throw new FasterException("Entry does not fit on page");
 
-            PageOffset localTailPageOffset = default(PageOffset);
+            PageOffset localTailPageOffset = default;
 
             // Necessary to check because threads keep retrying and we do not
             // want to overflow offset more than once per thread
@@ -960,7 +960,7 @@ namespace FASTER.core
             {
                 newHeadAddress = currentFlushedUntilAddress;
             }
-            newHeadAddress = newHeadAddress & ~PageSizeMask;
+            newHeadAddress &= ~PageSizeMask;
 
             if (ReadCache && (newHeadAddress > HeadAddress))
                 EvictCallback(HeadAddress, newHeadAddress);
@@ -1134,7 +1134,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1419,9 +1419,9 @@ namespace FASTER.core
         public void AsyncGetFromDisk(long fromLogical,
                               int numBytes,
                               AsyncIOContext<Key, Value> context,
-                              SectorAlignedMemory result = default(SectorAlignedMemory))
+                              SectorAlignedMemory result = default)
         {
-            if (epoch.IsProtected()) // Do not spin for unprotected IO threads
+            if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
                 while (numPendingReads > 120)
                 {
@@ -1464,14 +1464,12 @@ namespace FASTER.core
                     }
                     else
                     {
-                        var oldAddress = ctx.logicalAddress;
-
                         // Keys are not same. I/O is not complete
                         ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
                         if (ctx.logicalAddress >= BeginAddress)
                         {
                             ctx.record.Return();
-                            ctx.record = ctx.objBuffer = default(SectorAlignedMemory);
+                            ctx.record = ctx.objBuffer = default;
                             AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
                         }
                         else

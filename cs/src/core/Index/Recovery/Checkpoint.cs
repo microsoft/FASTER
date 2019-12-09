@@ -17,11 +17,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-
-    /// <summary>
-    /// Checkpoint related function of FASTER
-    /// </summary>
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -45,12 +41,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool InternalTakeCheckpoint(CheckpointType type)
         {
-            if (_systemState.phase == Phase.GC)
-            {
-                Debug.WriteLine("Forcing completion of GC");
-                GarbageCollectBuckets(0, null, true);
-            }
-
             if (_systemState.phase == Phase.REST)
             {
                 var context = (long)type;
@@ -67,12 +57,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool InternalGrowIndex()
         {
-            if (_systemState.phase == Phase.GC)
-            {
-                Debug.WriteLine("Forcing completion of GC");
-                GarbageCollectBuckets(0, null, true);
-            }
-
             if (_systemState.phase == Phase.REST)
             {
                 var version = _systemState.version;
@@ -110,7 +94,7 @@ namespace FASTER.core
         /// </item>
         /// </list>
         /// 
-        /// We currently support 5 different state machines:
+        /// We currently support 4 different state machines:
         /// <list type="number">
         /// <item>
         /// <term> Index-Only Checkpoint </term>
@@ -123,10 +107,6 @@ namespace FASTER.core
         /// <item>
         /// <term>Full Checkpoint</term>
         /// <description>REST -> PREP_INDEX_CHECKPOINT -> PREPARE -> IN_PROGRESS -> WAIT_PENDING -> WAIT_FLUSH -> PERSISTENCE_CALLBACK -> REST</description>
-        /// </item>
-        /// <item>
-        /// <term>GC</term>
-        /// <description></description>
         /// </item>
         /// <item>
         /// <term>Grow</term>
@@ -152,6 +132,7 @@ namespace FASTER.core
                     case Phase.PREP_INDEX_CHECKPOINT:
                         {
                             _checkpointType = (CheckpointType)context;
+
                             switch (_checkpointType)
                             {
                                 case CheckpointType.INDEX_ONLY:
@@ -196,6 +177,7 @@ namespace FASTER.core
                                 case Phase.REST:
                                     {
                                         _checkpointType = (CheckpointType)context;
+                                        
                                         Debug.Assert(_checkpointType == CheckpointType.HYBRID_LOG_ONLY);
                                         _hybridLogCheckpointToken = Guid.NewGuid();
                                         InitializeHybridLogCheckpoint(_hybridLogCheckpointToken, currentState.version);
@@ -302,19 +284,6 @@ namespace FASTER.core
 
                             if (_checkpointType == CheckpointType.FULL)
                                 WriteIndexMetaInfo();
-
-                            MakeTransition(intermediateState, nextState);
-                            break;
-                        }
-                    case Phase.GC:
-                        {
-                            hlog.ShiftBeginAddress(context);
-
-                            int numChunks = (int)(state[resizeInfo.version].size / Constants.kSizeofChunk);
-                            if (numChunks == 0) numChunks = 1; // at least one chunk
-
-                            numPendingChunksToBeGCed = numChunks;
-                            gcStatus = new long[numChunks];
 
                             MakeTransition(intermediateState, nextState);
                             break;
@@ -489,6 +458,7 @@ namespace FASTER.core
                             break;
                         default:
                             nextState.phase = Phase.REST;
+                            nextState.version = start.version + 1;
                             break;
                     }
                     break;
@@ -506,10 +476,6 @@ namespace FASTER.core
                     nextState.phase = Phase.PERSISTENCE_CALLBACK;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    nextState.phase = Phase.REST;
-                    break;
-
-                case Phase.GC:
                     nextState.phase = Phase.REST;
                     break;
                 case Phase.PREPARE_GROW:

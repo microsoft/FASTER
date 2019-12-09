@@ -34,17 +34,16 @@ namespace FASTER.test.async
             fht1 = new FasterKV
                 <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
-
 
             int numOps = 5000;
             var inputArray = new AdId[numOps];
@@ -54,12 +53,12 @@ namespace FASTER.test.async
             }
 
             NumClicks value;
-            AdInput inputArg = default(AdInput);
-            Output output = default(Output);
+            AdInput inputArg = default;
+            Output output = default;
 
-            var s0 = fht1.StartClientSession(); // leave dormant
-
-            var s1 = fht1.StartClientSession();
+            var s0 = fht1.NewSession();
+            var s1 = fht1.NewSession();
+            var s2 = fht1.NewSession();
 
             for (int key = 0; key < numOps; key++)
             {
@@ -67,20 +66,30 @@ namespace FASTER.test.async
                 s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
             }
 
-            fht1.TakeFullCheckpoint(out Guid token); // does not require session
+            for (int key = 0; key < numOps; key++)
+            {
+                value.numClicks = key;
+                s2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, key);
+            }
 
-            var s2 = fht1.StartClientSession();
-            await s2.CompleteCheckpointAsync();
+            // does not require session
+            fht1.TakeFullCheckpoint(out _);
+            await fht1.CompleteCheckpointAsync();
+
+            s2.CompletePending(true);
+
+            fht1.TakeFullCheckpoint(out Guid token);
+            await fht1.CompleteCheckpointAsync();
 
             s2.Dispose();
-            s1.Dispose(); // should receive persistence callback
-            s0.Dispose(); // should receive persistence callback
+            s1.Dispose();
+            s0.Dispose();
             fht1.Dispose();
 
             fht2.Recover(token); // sync, does not require session
 
             var guid = s1.ID;
-            using (var s3 = fht2.ContinueClientSession(guid, out CommitPoint lsn))
+            using (var s3 = fht2.ResumeSession(guid, out CommitPoint lsn))
             {
                 Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
 
@@ -123,7 +132,7 @@ namespace FASTER.test.async
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
             Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }

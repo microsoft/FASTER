@@ -7,11 +7,12 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -54,12 +55,12 @@ namespace FASTER.core
         /// <summary>
         /// Hybrid log used by this FASTER instance
         /// </summary>
-        public LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+        public LogAccessor<Key, Value, Input, Output, Context, Functions> Log { get; }
 
         /// <summary>
         /// Read cache used by this FASTER instance
         /// </summary>
-        public LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+        public LogAccessor<Key, Value, Input, Output, Context, Functions> ReadCache { get; }
 
         private enum CheckpointType
         {
@@ -72,14 +73,8 @@ namespace FASTER.core
         private Guid _indexCheckpointToken;
         private Guid _hybridLogCheckpointToken;
         private SystemState _systemState;
-
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
-
-
-        private ConcurrentDictionary<Guid, CommitPoint> _recoveredSessions;
-
-        private readonly FastThreadLocal<FasterExecutionContext> threadCtx;
-
+        private ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>
         /// Create FASTER instance
@@ -93,8 +88,6 @@ namespace FASTER.core
         /// <param name="serializerSettings">Serializer settings</param>
         public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
-            threadCtx = new FastThreadLocal<FasterExecutionContext>();
-
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -133,7 +126,7 @@ namespace FASTER.core
                 if (variableLengthStructSettings != null)
                 {
                     hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings, this.comparer, null, epoch);
-                    Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                    Log = new LogAccessor<Key, Value, Input, Output, Context, Functions>(this, hlog);
                     if (UseReadCache)
                     {
                         readcache = new VariableLengthBlittableAllocator<Key, Value>(
@@ -145,13 +138,13 @@ namespace FASTER.core
                                 MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                             }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
                         readcache.Initialize();
-                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context, Functions>(this, readcache);
                     }
                 }
                 else
                 {
                     hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
-                    Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                    Log = new LogAccessor<Key, Value, Input, Output, Context, Functions>(this, hlog);
                     if (UseReadCache)
                     {
                         readcache = new BlittableAllocator<Key, Value>(
@@ -163,7 +156,7 @@ namespace FASTER.core
                                 MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                             }, this.comparer, ReadCacheEvict, epoch);
                         readcache.Initialize();
-                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context, Functions>(this, readcache);
                     }
                 }
             }
@@ -172,7 +165,7 @@ namespace FASTER.core
                 WriteDefaultOnDelete = true;
 
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
-                Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                Log = new LogAccessor<Key, Value, Input, Output, Context, Functions>(this, hlog);
                 if (UseReadCache)
                 {
                     readcache = new GenericAllocator<Key, Value>(
@@ -184,7 +177,7 @@ namespace FASTER.core
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, serializerSettings, this.comparer, ReadCacheEvict, epoch);
                     readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                    ReadCache = new LogAccessor<Key, Value, Input, Output, Context, Functions>(this, readcache);
                 }
             }
 
@@ -193,67 +186,67 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            _systemState = default(SystemState);
+            _systemState = default;
             _systemState.phase = Phase.REST;
             _systemState.version = 1;
             _checkpointType = CheckpointType.HYBRID_LOG_ONLY;
         }
 
         /// <summary>
-        /// Take full checkpoint
+        /// Initiate full checkpoint
         /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
+        /// <param name="token">Checkpoint token</param>
+        /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeFullCheckpoint(out Guid token)
         {
-            var success = InternalTakeCheckpoint(CheckpointType.FULL);
-            if (success)
+            if (InternalTakeCheckpoint(CheckpointType.FULL))
             {
                 token = _indexCheckpointToken;
+                return true;
             }
             else
             {
-                token = default(Guid);
+                token = default;
+                return false;
             }
-            return success;
         }
 
         /// <summary>
-        /// Take index checkpoint
+        /// Initiate index checkpoint
         /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
+        /// <param name="token">Checkpoint token</param>
+        /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeIndexCheckpoint(out Guid token)
         {
-            var success = InternalTakeCheckpoint(CheckpointType.INDEX_ONLY);
-            if (success)
+            if (InternalTakeCheckpoint(CheckpointType.INDEX_ONLY))
             {
                 token = _indexCheckpointToken;
+                return true;
             }
             else
             {
-                token = default(Guid);
+                token = default;
+                return false;
             }
-            return success;
         }
 
         /// <summary>
         /// Take hybrid log checkpoint
         /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
+        /// <param name="token">Checkpoint token</param>
+        /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeHybridLogCheckpoint(out Guid token)
         {
-            var success = InternalTakeCheckpoint(CheckpointType.HYBRID_LOG_ONLY);
-            if (success)
+            if (InternalTakeCheckpoint(CheckpointType.HYBRID_LOG_ONLY))
             {
                 token = _hybridLogCheckpointToken;
+                return true;
             }
             else
             {
-                token = default(Guid);
+                token = default;
+                return false;
             }
-            return success;
         }
 
         /// <summary>
@@ -284,133 +277,31 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Start session with FASTER - call once per thread before using FASTER
+        /// Wait for ongoing checkpoint to complete
         /// </summary>
         /// <returns></returns>
-        public Guid StartSession()
+        public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
-            return InternalAcquire();
-        }
+            if (LightEpoch.AnyInstanceProtected())
+                throw new FasterException("Cannot use CompleteCheckpointAsync when using legacy or non-async sessions");
 
-        /// <summary>
-        /// Continue session with FASTER
-        /// </summary>
-        /// <param name="guid"></param>
-        /// <returns></returns>
-        public CommitPoint ContinueSession(Guid guid)
-        {
-            StartSession();
+            token.ThrowIfCancellationRequested();
 
-            var cp = InternalContinue(guid, out FasterExecutionContext ctx);
-            threadCtx.Value = ctx;
-
-            return cp;
-        }
-
-        /// <summary>
-        /// Stop session with FASTER
-        /// </summary>
-        public void StopSession()
-        {
-            InternalRelease(this.threadCtx.Value);
-        }
-
-        /// <summary>
-        /// Refresh epoch (release memory pins)
-        /// </summary>
-        public void Refresh()
-        {
-            InternalRefresh(threadCtx.Value);
-        }
-
-
-        /// <summary>
-        /// Complete all pending operations issued by this session
-        /// </summary>
-        /// <param name="wait">Whether we spin-wait for pending operations to complete</param>
-        /// <returns>Whether all pending operations have completed</returns>
-        public bool CompletePending(bool wait = false)
-        {
-            return InternalCompletePending(threadCtx.Value, wait);
-        }
-
-        /// <summary>
-        /// Get list of pending requests (for local session)
-        /// </summary>
-        /// <returns></returns>
-        public IEnumerable<long> GetPendingRequests()
-        {
-
-            foreach (var kvp in threadCtx.Value.prevCtx?.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-
-            foreach (var val in threadCtx.Value.prevCtx?.retryRequests)
-                yield return val.serialNum;
-
-            foreach (var kvp in threadCtx.Value.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-
-            foreach (var val in threadCtx.Value.retryRequests)
-                yield return val.serialNum;
-        }
-
-        /// <summary>
-        /// Complete the ongoing checkpoint (if any)
-        /// </summary>
-        /// <param name="wait">Spin-wait for completion</param>
-        /// <returns></returns>
-        public bool CompleteCheckpoint(bool wait = false)
-        {
-            if (threadCtx == null)
+            while (true)
             {
-                // the thread does not have an active session
-                // we can wait until system state becomes REST
-                do
-                {
-                    if (_systemState.phase == Phase.REST)
-                    {
-                        return true;
-                    }
-                } while (wait);
-            }
-            else
-            {
-                // the thread does has an active session and 
-                // so we need to constantly complete pending 
-                // and refresh (done inside CompletePending)
-                // for the checkpoint to be proceed
-                do
-                {
-                    CompletePending();
-                    if (_systemState.phase == Phase.REST)
-                    {
-                        CompletePending();
-                        return true;
-                    }
-                } while (wait);
-            }
-            return false;
-        }
+                var systemState = _systemState;
+                if (systemState.phase == Phase.REST || systemState.phase == Phase.PREPARE_GROW || systemState.phase == Phase.IN_PROGRESS_GROW)
+                    return;
 
-        /// <summary>
-        /// Read operation
-        /// </summary>
-        /// <param name="key">Key of read</param>
-        /// <param name="input">Input argument used by Reader to select what part of value to read</param>
-        /// <param name="output">Reader stores the read result in output</param>
-        /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
-        /// <returns>Status of operation</returns>
-        public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
-        {
-            return Read(ref key, ref input, ref output, context, serialNo, threadCtx.Value);
+                await HandleCheckpointingPhasesAsync(null, null);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextRead(ref Key key, ref Input input, ref Output output, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -424,24 +315,11 @@ namespace FASTER.core
             return status;
         }
 
-        /// <summary>
-        /// (Blind) upsert operation
-        /// </summary>
-        /// <param name="key">Key of read</param>
-        /// <param name="value">Value being upserted</param>
-        /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
-        /// <returns>Status of operation</returns>
-        public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
-        {
-            return Upsert(ref key, ref value, context, serialNo, threadCtx.Value);
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status Upsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextUpsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx, serialNo);
             Status status;
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -456,25 +334,11 @@ namespace FASTER.core
             return status;
         }
 
-
-        /// <summary>
-        /// Atomic read-modify-write operation
-        /// </summary>
-        /// <param name="key">Key of read</param>
-        /// <param name="input">Input argument used by RMW callback to perform operation</param>
-        /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
-        /// <returns>Status of operation</returns>
-        public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
-        {
-            return RMW(ref key, ref input, context, serialNo, threadCtx.Value);
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status RMW(ref Key key, ref Input input, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextRMW(ref Key key, ref Input input, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -488,26 +352,11 @@ namespace FASTER.core
             return status;
         }
 
-        /// <summary>
-        /// Delete entry (use tombstone if necessary)
-        /// Hash entry is removed as a best effort (if key is in memory and at 
-        /// the head of hash chain.
-        /// Value is set to null (using ConcurrentWrite) if it is in mutable region
-        /// </summary>
-        /// <param name="key">Key of delete</param>
-        /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
-        /// <returns>Status of operation</returns>
-        public Status Delete(ref Key key, Context context, long serialNo)
-        {
-            return Delete(ref key, context, serialNo, threadCtx.Value);
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status Delete(ref Key key, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextDelete(ref Key key, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalDelete(ref key, ref context, ref pcontext, sessionCtx);
+            var internalStatus = InternalDelete(ref key, ref context, ref pcontext, sessionCtx, serialNo);
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -517,19 +366,6 @@ namespace FASTER.core
             return status;
         }
 
-        /// <summary>
-        /// Experimental feature
-        /// Checks whether specified record is present in memory
-        /// (between HeadAddress and tail, or between fromAddress
-        /// and tail)
-        /// </summary>
-        /// <param name="key">Key of the record.</param>
-        /// <param name="fromAddress">Look until this address</param>
-        /// <returns>Status</returns>
-        public Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
-        {
-            return InternalContainsKeyInMemory(ref key, threadCtx.Value, fromAddress);
-        }
 
         /// <summary>
         /// Grow the hash index
@@ -546,7 +382,7 @@ namespace FASTER.core
         public void Dispose()
         {
             base.Free();
-            threadCtx?.Dispose();
+            LegacyDispose();
             hlog.Dispose();
             readcache?.Dispose();
         }

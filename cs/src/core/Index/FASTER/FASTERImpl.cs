@@ -14,7 +14,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -39,6 +39,7 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -65,12 +66,10 @@ namespace FASTER.core
                                     ref Input input,
                                     ref Output output,
                                     ref Context userContext,
-                                    ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                                    ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
-            var status = default(OperationStatus);
             var bucket = default(HashBucket*);
             var slot = default(int);
-            var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
             var latestRecordVersion = -1;
 
@@ -78,11 +77,13 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, sessionCtx.phase);
+                HeavyEnter(hash, sessionCtx);
 
             #region Trace back for record in in-memory HybridLog
-            HashBucketEntry entry = default(HashBucketEntry);
+            HashBucketEntry entry = default;
             var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+            OperationStatus status;
+            long logicalAddress;
             if (tagExists)
             {
                 logicalAddress = entry.Address;
@@ -134,11 +135,6 @@ namespace FASTER.core
                                 goto CreatePendingContext; // Pivot thread
                             }
                             break; // Normal processing
-                        }
-                    case Phase.GC:
-                        {
-                            GarbageCollectBuckets(hash, sessionCtx);
-                            break;
                         }
                     default:
                         {
@@ -205,7 +201,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -237,7 +233,7 @@ namespace FASTER.core
                             AsyncIOContext<Key, Value> request,
                             ref PendingContext pendingContext, FasterExecutionContext currentCtx)
         {
-            Debug.Assert(pendingContext.version == ctx.version);
+            Debug.Assert(RelaxedCPR || pendingContext.version == ctx.version);
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
@@ -272,7 +268,7 @@ namespace FASTER.core
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext, FasterExecutionContext currentCtx)
         {
-            Debug.Assert(pendingContext.version == opCtx.version);
+            Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
 
             var recordSize = default(int);
             var bucket = default(HashBucket*);
@@ -378,6 +374,7 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -402,7 +399,7 @@ namespace FASTER.core
         internal OperationStatus InternalUpsert(
                             ref Key key, ref Value value,
                             ref Context userContext,
-                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -417,7 +414,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, sessionCtx.phase);
+                HeavyEnter(hash, sessionCtx);
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
@@ -597,7 +594,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -620,7 +617,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, sessionCtx);
+                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, sessionCtx, lsn);
             }
             else
             {
@@ -642,6 +639,7 @@ namespace FASTER.core
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -670,7 +668,7 @@ namespace FASTER.core
         internal OperationStatus InternalRMW(
                                    ref Key key, ref Input input,
                                    ref Context userContext,
-                                   ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                                   ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
             var recordSize = default(int);
             var bucket = default(HashBucket*);
@@ -686,7 +684,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, sessionCtx.phase);
+                HeavyEnter(hash, sessionCtx);
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
@@ -931,7 +929,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -954,7 +952,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, sessionCtx);
+                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, sessionCtx, lsn);
             }
             else
             {
@@ -1007,7 +1005,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, sessionCtx.phase);
+                HeavyEnter(hash, sessionCtx);
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
@@ -1379,6 +1377,7 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -1403,7 +1402,7 @@ namespace FASTER.core
         internal OperationStatus InternalDelete(
                             ref Key key,
                             ref Context userContext,
-                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx)
+                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -1418,7 +1417,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, sessionCtx.phase);
+                HeavyEnter(hash, sessionCtx);
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
@@ -1560,7 +1559,7 @@ namespace FASTER.core
                         {
                             // Write default value
                             // Ignore return value, the record is already marked
-                            Value v = default(Value);
+                            Value v = default;
                             functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
                         }
 
@@ -1579,7 +1578,7 @@ namespace FASTER.core
                 {
                     // Write default value
                     // Ignore return value, the record is already marked
-                    Value v = default(Value);
+                    Value v = default;
                     functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
                 }
 
@@ -1639,7 +1638,7 @@ namespace FASTER.core
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
-                pendingContext.serialNum = sessionCtx.serialNum;
+                pendingContext.serialNum = lsn;
             }
             #endregion
 
@@ -1662,7 +1661,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalDelete(ref key, ref userContext, ref pendingContext, sessionCtx);
+                return InternalDelete(ref key, ref userContext, ref pendingContext, sessionCtx, lsn);
             }
             else
             {
@@ -1684,22 +1683,21 @@ namespace FASTER.core
 
             var bucket = default(HashBucket*);
             var slot = default(int);
-            var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
+            long physicalAddress;
             var latestRecordVersion = -1;
 
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, sessionCtx.phase);
+                HeavyEnter(hash, sessionCtx);
 
-            HashBucketEntry entry = default(HashBucketEntry);
+            HashBucketEntry entry = default;
             var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
 
             if (tagExists)
             {
-                logicalAddress = entry.Address;
+                long logicalAddress = entry.Address;
 
                 if (UseReadCache)
                     SkipReadCache(ref logicalAddress, ref latestRecordVersion);
@@ -1707,8 +1705,6 @@ namespace FASTER.core
                 if (logicalAddress >= fromAddress)
                 {
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    if (latestRecordVersion == -1)
-                        latestRecordVersion = hlog.GetInfo(physicalAddress).Version;
 
                     if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                     {
@@ -1717,7 +1713,7 @@ namespace FASTER.core
                                                 logicalAddress,
                                                 fromAddress,
                                                 out logicalAddress,
-                                                out physicalAddress);
+                                                out _);
                     }
 
                     if (logicalAddress < fromAddress)
@@ -1789,18 +1785,18 @@ namespace FASTER.core
                                                       ref pendingContext.input,
                                                       ref pendingContext.output,
                                                       ref pendingContext.userContext,
-                                                      ref pendingContext, currentCtx); // incorrect
+                                                      ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref pendingContext.key.Get(),
                                                         ref pendingContext.value.Get(),
                                                         ref pendingContext.userContext,
-                                                        ref pendingContext, currentCtx); // incorrect
+                                                        ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.DELETE:
                         internalStatus = InternalDelete(ref pendingContext.key.Get(),
                                                         ref pendingContext.userContext,
-                                                        ref pendingContext, currentCtx); // incorrect
+                                                        ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.RMW:
                         internalStatus = InternalRetryPendingRMW(currentCtx, ref pendingContext, currentCtx);
@@ -1823,12 +1819,12 @@ namespace FASTER.core
                 opCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
                 // Issue asynchronous I/O request
-                AsyncIOContext<Key, Value> request = default(AsyncIOContext<Key, Value>);
+                AsyncIOContext<Key, Value> request = default;
                 request.id = pendingContext.id;
                 request.request_key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.callbackQueue = opCtx.readyResponses;
-                request.record = default(SectorAlignedMemory);
+                request.record = default;
                 hlog.AsyncGetFromDisk(pendingContext.logicalAddress,
                                  hlog.GetAverageRecordSize(),
                                  request);
@@ -1868,19 +1864,17 @@ namespace FASTER.core
             HashBucket.ReleaseSharedLatch(bucket);
         }
 
-        private void HeavyEnter(long hash, Phase phase)
+        private void HeavyEnter(long hash, FasterExecutionContext ctx)
         {
-            if (phase == Phase.GC)
-                GarbageCollectBuckets(hash, null);
-            if (phase == Phase.PREPARE_GROW)
+            if (ctx.phase == Phase.PREPARE_GROW)
             {
                 // We spin-wait as a simplification
                 // Could instead do a "heavy operation" here
                 while (_systemState.phase != Phase.IN_PROGRESS_GROW)
                     Thread.SpinWait(100);
-                Refresh();
+                InternalRefresh(ctx);
             }
-            if (phase == Phase.IN_PROGRESS_GROW)
+            if (ctx.phase == Phase.IN_PROGRESS_GROW)
             {
                 SplitBuckets(hash);
             }
@@ -1934,83 +1928,6 @@ namespace FASTER.core
         }
         #endregion
 
-        #region Garbage Collection
-        private long[] gcStatus;
-        private long numPendingChunksToBeGCed;
-
-        private void GarbageCollectBuckets(long hash, FasterExecutionContext currentCtx, bool force = false)
-        {
-            if (numPendingChunksToBeGCed == 0)
-            {
-                InternalRefresh(currentCtx);
-                return;
-            }
-
-            long masked_bucket_index = hash & state[resizeInfo.version].size_mask;
-            int offset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);
-
-            int numChunks = (int)(state[resizeInfo.version].size / Constants.kSizeofChunk);
-            if (numChunks == 0) numChunks = 1; // at least one chunk
-
-            if (!Utility.IsPowerOfTwo(numChunks))
-            {
-                throw new FasterException("Invalid number of chunks: " + numChunks);
-            }
-
-            for (int i = offset; i < offset + numChunks; i++)
-            {
-                if (0 == Interlocked.CompareExchange(ref gcStatus[i & (numChunks - 1)], 1, 0))
-                {
-                    int version = resizeInfo.version;
-                    long chunkSize = state[version].size / numChunks;
-                    long ptr = chunkSize * (i & (numChunks - 1));
-
-                    HashBucket* src_start = state[version].tableAligned + ptr;
-                    // CleanBucket(src_start, chunkSize);
-
-                    // GC for chunk is done
-                    gcStatus[i & (numChunks - 1)] = 2;
-
-                    if (Interlocked.Decrement(ref numPendingChunksToBeGCed) == 0)
-                    {
-                        long context = 0;
-                        GlobalMoveToNextState(_systemState, SystemState.Make(Phase.REST, _systemState.version), ref context);
-                        return;
-                    }
-                    if (!force)
-                        break;
-
-                    InternalRefresh(currentCtx);
-                }
-            }
-        }
-
-        private void CleanBucket(HashBucket* _src_start, long chunkSize)
-        {
-            HashBucketEntry entry = default(HashBucketEntry);
-
-            for (int i = 0; i < chunkSize; i++)
-            {
-                var src_start = _src_start + i;
-
-                do
-                {
-                    for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
-                    {
-                        entry.word = *(((long*)src_start) + index);
-                        if (entry.Address != Constants.kInvalidAddress && entry.Address != Constants.kTempInvalidAddress && entry.Address < hlog.BeginAddress)
-                        {
-                            Interlocked.CompareExchange(ref *(((long*)src_start) + index), Constants.kInvalidAddress, entry.word);
-                        }
-                    }
-
-                    if (*(((long*)src_start) + Constants.kOverflowBucketIndex) == 0) break;
-                    src_start = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
-                } while (true);
-            }
-        }
-        #endregion
-
         #region Split Index
         private void SplitBuckets(long hash)
         {
@@ -2044,7 +1961,7 @@ namespace FASTER.core
                     if (Interlocked.Decrement(ref numPendingChunksToBeSplit) == 0)
                     {
                         // GC old version of hash table
-                        state[1 - resizeInfo.version] = default(InternalHashTable);
+                        state[1 - resizeInfo.version] = default;
 
                         long context = 0;
                         GlobalMoveToNextState(_systemState, SystemState.Make(Phase.REST, _systemState.version), ref context);
@@ -2076,7 +1993,7 @@ namespace FASTER.core
                 long* left_end = left + Constants.kOverflowBucketIndex;
                 long* right_end = right + Constants.kOverflowBucketIndex;
 
-                HashBucketEntry entry = default(HashBucketEntry);
+                HashBucketEntry entry = default;
                 do
                 {
                     for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
@@ -2208,7 +2125,7 @@ namespace FASTER.core
         #region Read Cache
         private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress, ref int latestRecordVersion)
         {
-            HashBucketEntry entry = default(HashBucketEntry);
+            HashBucketEntry entry = default;
             entry.word = logicalAddress;
             if (!entry.ReadCache) return false;
 
@@ -2239,7 +2156,7 @@ namespace FASTER.core
 
         private void SkipReadCache(ref long logicalAddress, ref int latestRecordVersion)
         {
-            HashBucketEntry entry = default(HashBucketEntry);
+            HashBucketEntry entry = default;
             entry.word = logicalAddress;
             if (!entry.ReadCache) return;
 
@@ -2257,7 +2174,7 @@ namespace FASTER.core
 
         private void SkipAndInvalidateReadCache(ref long logicalAddress, ref int latestRecordVersion, ref Key key)
         {
-            HashBucketEntry entry = default(HashBucketEntry);
+            HashBucketEntry entry = default;
             entry.word = logicalAddress;
             if (!entry.ReadCache) return;
 
@@ -2286,7 +2203,7 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
 
-            HashBucketEntry entry = default(HashBucketEntry);
+            HashBucketEntry entry = default;
             logicalAddress = fromHeadAddress;
 
             while (logicalAddress < toHeadAddress)
@@ -2303,7 +2220,7 @@ namespace FASTER.core
                         var hash = comparer.GetHashCode64(ref key);
                         var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-                        entry = default(HashBucketEntry);
+                        entry = default;
                         var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
                         while (tagExists && entry.ReadCache)
                         {
