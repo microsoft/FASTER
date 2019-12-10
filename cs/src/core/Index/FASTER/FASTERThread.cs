@@ -68,7 +68,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh(FasterExecutionContext ctx)
+        internal void InternalRefresh(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession = null)
         {
             epoch.ProtectAndDrain();
 
@@ -86,7 +86,7 @@ namespace FASTER.core
                 return;
             }
 
-            HandleCheckpointingPhases(ctx);
+            HandleCheckpointingPhases(ctx, clientSession);
         }
 
 

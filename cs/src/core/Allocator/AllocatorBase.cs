@@ -906,7 +906,7 @@ namespace FASTER.core
             }
         }
 
-        private void DebugPrintAddresses(long closePageAddress)
+        internal void DebugPrintAddresses(long closePageAddress)
         {
             var _flush = FlushedUntilAddress;
             var _readonly = ReadOnlyAddress;
@@ -1076,6 +1076,7 @@ namespace FASTER.core
         /// Address for notification of flushed-until
         /// </summary>
         public long notifyFlushedUntilAddress;
+
         /// <summary>
         /// Semaphore for notification of flushed-until
         /// </summary>
@@ -1133,8 +1134,8 @@ namespace FASTER.core
         /// <param name="numBytes"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        /// <param name="result"></param>
-        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
+        /// 
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1432,7 +1433,7 @@ namespace FASTER.core
             Interlocked.Increment(ref numPendingReads);
 
             if (result == null)
-                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
+                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context);
             else
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
@@ -1581,7 +1582,7 @@ namespace FASTER.core
             dst = src;
         }
 
-        private string PrettyPrint(long address)
+        internal string PrettyPrint(long address)
         {
             return $"{GetPage(address)}:{GetOffsetInPage(address)}";
         }

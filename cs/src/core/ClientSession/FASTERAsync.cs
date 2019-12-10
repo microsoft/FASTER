@@ -30,7 +30,7 @@ namespace FASTER.core
         /// Complete outstanding pending operations
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        internal async ValueTask CompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
         {
             bool done = true;
 
@@ -42,7 +42,7 @@ namespace FASTER.core
                     clientSession.ctx.phase == Phase.WAIT_PENDING)
                 {
 
-                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
+                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
                     Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
 
                     if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
@@ -56,7 +56,7 @@ namespace FASTER.core
             }
             #endregion
 
-            await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession);
+            await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
             CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
 
             Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
@@ -349,13 +349,16 @@ namespace FASTER.core
                                 {
                                     if (ctx.prevCtx.serialNum != -1)
                                     {
+                                        var commitPoint = new CommitPoint
+                                        {
+                                            UntilSerialNo = ctx.prevCtx.serialNum,
+                                            ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
+                                        };
+
                                         // Thread local action
-                                        functions.CheckpointCompletionCallback(ctx.guid,
-                                            new CommitPoint
-                                            {
-                                                UntilSerialNo = ctx.prevCtx.serialNum,
-                                                ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                                            });
+                                        functions.CheckpointCompletionCallback(ctx.guid, commitPoint);
+                                        if (clientSession != null)
+                                            clientSession.LatestCommitPoint = commitPoint;
                                     }
                                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                                 }

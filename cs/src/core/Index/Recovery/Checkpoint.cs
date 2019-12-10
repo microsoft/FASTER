@@ -17,11 +17,27 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Linked list (chain) of checkpoint info
+    /// </summary>
+    public struct LinkedCheckpointInfo
+    {
+        /// <summary>
+        /// Next task in checkpoint chain
+        /// </summary>
+        public Task<LinkedCheckpointInfo> NextTask;
+    }
+
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
+
+        private TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
+            = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
+
         private class EpochPhaseIdx
         {
             public const int PrepareForIndexCheckpt = 0;
@@ -177,7 +193,7 @@ namespace FASTER.core
                                 case Phase.REST:
                                     {
                                         _checkpointType = (CheckpointType)context;
-                                        
+
                                         Debug.Assert(_checkpointType == CheckpointType.HYBRID_LOG_ONLY);
                                         _hybridLogCheckpointToken = Guid.NewGuid();
                                         InitializeHybridLogCheckpoint(_hybridLogCheckpointToken, currentState.version);
@@ -342,6 +358,10 @@ namespace FASTER.core
                                     throw new FasterException();
                             }
 
+                            var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+                            checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
+                            checkpointTcs = nextTcs;
+
                             MakeTransition(intermediateState, nextState);
                             break;
                         }
@@ -358,9 +378,9 @@ namespace FASTER.core
         /// Corresponding thread-local actions that must be performed when any state machine is active
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void HandleCheckpointingPhases(FasterExecutionContext ctx)
+        private void HandleCheckpointingPhases(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
-            var _ = HandleCheckpointingPhasesAsync(ctx, null, false);
+            var _ = HandleCheckpointingPhasesAsync(ctx, clientSession, false);
             return;
         }
 
