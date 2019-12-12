@@ -54,10 +54,10 @@ namespace FASTER.core
             return completed1 && completed2;
         }
 
-        internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync()
+        internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)
         {
-            await IsMainIndexCheckpointCompletedAsync();
-            await overflowBucketsAllocator.IsCheckpointCompletedAsync();
+            await IsMainIndexCheckpointCompletedAsync(token);
+            await overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
         }
 
 
@@ -104,11 +104,11 @@ namespace FASTER.core
             return mainIndexCheckpointCallbackCount == 0;
         }
 
-        private async ValueTask IsMainIndexCheckpointCompletedAsync()
+        private async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
         {
             if (mainIndexCheckpointCallbackCount > 0)
             {
-                await mainIndexCheckpointSemaphore.WaitAsync();
+                await mainIndexCheckpointSemaphore.WaitAsync(token);
                 mainIndexCheckpointSemaphore.Release();
             }
         }

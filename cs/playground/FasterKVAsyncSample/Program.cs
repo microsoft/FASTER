@@ -69,10 +69,9 @@ namespace FasterKVAsyncSample
 
             if (!batched)
             {
-                // Single commit version - append each item and wait for commit
+                // Single commit version - upsert each item and wait for commit
                 // Needs high parallelism (NumParallelTasks) for perf
-                // Needs separate commit thread to perform regular commit
-                // Otherwise we commit only at page boundaries
+                // Needs separate commit thread to perform regular checkpoints
                 while (true)
                 {
                     try

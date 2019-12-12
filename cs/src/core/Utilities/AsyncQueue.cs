@@ -45,7 +45,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<T> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken))
+        public async Task<T> DequeueAsync(CancellationToken cancellationToken = default)
         {
             for (; ; )
             {

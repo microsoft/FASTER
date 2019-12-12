@@ -444,9 +444,9 @@ namespace FASTER.core
         /// Is checkpoint completed
         /// </summary>
         /// <returns></returns>
-        public async ValueTask IsCheckpointCompletedAsync()
+        public async ValueTask IsCheckpointCompletedAsync(CancellationToken token = default)
         {
-            await checkpointSemaphore.WaitAsync();
+            await checkpointSemaphore.WaitAsync(token);
             checkpointSemaphore.Release();
         }
 

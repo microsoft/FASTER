@@ -160,5 +160,63 @@ namespace FASTER.test
             }
 
         }
+
+        [Test]
+        public async Task AsyncObjectDiskWriteRead()
+        {
+            using var session = fht.NewSession();
+
+            for (int i = 0; i < 2000; i++)
+            {
+                var key = new MyKey { key = i };
+                var value = new MyValue { value = i };
+                await session.UpsertAsync(key, value);
+            }
+
+            var key1 = new MyKey { key = 1989 };
+            var input = new MyInput();
+            var result = await session.ReadAsync(key1, input);
+            Assert.IsTrue(result.Item1 == Status.OK);
+            Assert.IsTrue(result.Item2.value.value == 1989);
+
+            var key2 = new MyKey { key = 23 };
+            result = await session.ReadAsync(key2, input);
+            Assert.IsTrue(result.Item1 == Status.OK);
+            Assert.IsTrue(result.Item2.value.value == 23);
+
+            var key3 = new MyKey { key = 9999 };
+            result = await session.ReadAsync(key3, input);
+            Assert.IsTrue(result.Item1 == Status.NOTFOUND);
+
+            // Update last 100 using RMW in memory
+            for (int i = 1900; i < 2000; i++)
+            {
+                var key = new MyKey { key = i };
+                input = new MyInput { value = 1 };
+                await session.RMWAsync(key, input);
+            }
+
+            // Update first 100 using RMW from storage
+            for (int i = 0; i < 100; i++)
+            {
+                var key = new MyKey { key = i };
+                input = new MyInput { value = 1 };
+                await session.RMWAsync(key, input);
+            }
+
+            for (int i = 0; i < 2000; i++)
+            {
+                var output = new MyOutput();
+                var key = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                result = await session.ReadAsync(key, input);
+                Assert.IsTrue(result.Item1 == Status.OK);
+                if (i < 100 || i >= 1900)
+                    Assert.IsTrue(result.Item2.value.value == value.value + 1);
+                else
+                    Assert.IsTrue(result.Item2.value.value == value.value);
+            }
+        }
     }
 }

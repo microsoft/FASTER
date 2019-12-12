@@ -88,16 +88,16 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask<Output> ReadAsync(Key key, Input input, bool waitForCommit = false, CancellationToken token = default)
+        public async ValueTask<(Status, Output)> ReadAsync(Key key, Input input, bool waitForCommit = false, CancellationToken token = default)
         {
             Output output = default;
             Context context = default;
             var status = Read(ref key, ref input, ref output, context, ctx.serialNum + 1);
             if (status == Status.PENDING)
-                await CompletePendingAsync(waitForCommit, token);
+                return await CompletePendingReadAsync(ctx.serialNum, waitForCommit, token);
             else if (waitForCommit)
                 await WaitForCommitAsync(token);
-            return output;
+            return (status, output);
         }
 
         /// <summary>
@@ -288,10 +288,29 @@ namespace FASTER.core
             if (fht.epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
+            // Complete all pending operations on session
+            await fht.CompletePendingAsync(this, token);
+
+            // Wait for commit if necessary
             if (waitForCommit)
                 await WaitForCommitAsync(token);
+        }
+
+        private async ValueTask<(Status, Output)> CompletePendingReadAsync(long serialNo, bool waitForCommit = false, CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+
+            if (fht.epoch.ThisInstanceProtected())
+                throw new NotSupportedException("Async operations not supported over protected epoch");
+
+            if (waitForCommit)
+            {
+                (Status, Output) s = await fht.CompletePendingReadAsync(serialNo, this, token);
+                await WaitForCommitAsync(token);
+                return s;
+            }
             else
-                await fht.CompletePendingAsync(this, token);
+                return await fht.CompletePendingReadAsync(serialNo, this, token);
         }
 
         /// <summary>

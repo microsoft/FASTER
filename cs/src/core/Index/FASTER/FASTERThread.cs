@@ -252,8 +252,37 @@ namespace FASTER.core
                     InternalContinuePendingRequestAndCallback(opCtx, currentCtx, request);
                     clientSession.UnsafeSuspendThread();
                 }
-
             }
+        }
+
+        internal async ValueTask<(Status, Output)> CompleteIOPendingReadRequestsAsync(long serialNo, FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        {
+            (Status, Output) s = default;
+
+            while (opCtx.ioPendingRequests.Count > 0)
+            {
+                AsyncIOContext<Key, Value> request;
+
+                if (opCtx.readyResponses.Count > 0)
+                {
+                    clientSession.UnsafeResumeThread();
+                    while (opCtx.readyResponses.Count > 0)
+                    {
+                        opCtx.readyResponses.TryDequeue(out request);
+                        s = InternalContinuePendingRequestAndCallback(serialNo, opCtx, currentCtx, request);
+                    }
+                    clientSession.UnsafeSuspendThread();
+                }
+                else
+                {
+                    request = await opCtx.readyResponses.DequeueAsync(token);
+
+                    clientSession.UnsafeResumeThread();
+                    s = InternalContinuePendingRequestAndCallback(serialNo, opCtx, currentCtx, request);
+                    clientSession.UnsafeSuspendThread();
+                }
+            }
+            return s;
         }
 
         internal void InternalRetryRequestAndCallback(
@@ -414,6 +443,90 @@ namespace FASTER.core
                 }
                 pendingContext.Dispose();
             }
+        }
+
+
+        internal (Status, Output) InternalContinuePendingRequestAndCallback(
+                            long readSerialNo,
+                            FasterExecutionContext opCtx,
+                            FasterExecutionContext currentCtx,
+                            AsyncIOContext<Key, Value> request)
+        {
+            bool handleLatches = false;
+            (Status, Output) s = default;
+
+            if (!RelaxedCPR)
+            {
+                if ((opCtx.version < currentCtx.version) // Thread has already shifted to (v+1)
+                    ||
+                    (currentCtx.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+                {
+                    handleLatches = true;
+                }
+            }
+
+            if (opCtx.ioPendingRequests.TryGetValue(request.id, out PendingContext pendingContext))
+            {
+                ref Key key = ref pendingContext.key.Get();
+
+                // Remove from pending dictionary
+                opCtx.ioPendingRequests.Remove(request.id);
+
+                OperationStatus internalStatus;
+                // Issue the continue command
+                if (pendingContext.type == OperationType.READ)
+                {
+                    internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, currentCtx);
+                }
+                else
+                {
+                    internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, currentCtx); ;
+                }
+
+                request.Dispose();
+
+                Status status;
+                // Handle operation status
+                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+                {
+                    status = (Status)internalStatus;
+                }
+                else
+                {
+                    status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
+                }
+
+                // If done, callback user code
+                if (status == Status.OK || status == Status.NOTFOUND)
+                {
+                    if (handleLatches)
+                        ReleaseSharedLatch(key);
+
+                    if (pendingContext.type == OperationType.READ)
+                    {
+                        functions.ReadCompletionCallback(ref key,
+                                                         ref pendingContext.input,
+                                                         ref pendingContext.output,
+                                                         pendingContext.userContext,
+                                                         status);
+                        if (pendingContext.serialNum == readSerialNo)
+                        {
+                            s.Item1 = status;
+                            s.Item2 = pendingContext.output;
+                        }
+                    }
+                    else
+                    {
+                        functions.RMWCompletionCallback(ref key,
+                                                        ref pendingContext.input,
+                                                        pendingContext.userContext,
+                                                        status);
+                    }
+                }
+                pendingContext.Dispose();
+            }
+
+            return s;
         }
 
     }

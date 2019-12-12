@@ -7,6 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -71,21 +72,48 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Complete the ongoing checkpoint (if any)
+        /// Complete outstanding pending operations
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompleteCheckpointAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        internal async ValueTask<(Status, Output)> CompletePendingReadAsync(long serialNo, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
         {
-            // Called outside active session
-            while (true)
-            {
-                var systemState = _systemState;
-                await InternalRefreshAsync(ctx, clientSession);
-                await CompletePendingAsync(clientSession);
+            bool done = true;
 
-                if (systemState.phase == Phase.REST)
-                    return;
+            #region Previous pending requests
+            if (!RelaxedCPR)
+            {
+                if (clientSession.ctx.phase == Phase.IN_PROGRESS
+                    ||
+                    clientSession.ctx.phase == Phase.WAIT_PENDING)
+                {
+
+                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
+                    Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
+
+                    if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
+                    {
+                        CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
+                    }
+
+                    done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
+                    done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
+                }
             }
+            #endregion
+
+            var s = await CompleteIOPendingReadRequestsAsync(serialNo, clientSession.ctx, clientSession.ctx, clientSession, token);
+            CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
+
+            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
+
+            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
+            done &= (clientSession.ctx.retryRequests.Count == 0);
+
+            if (!done)
+            {
+                throw new Exception("CompletePendingAsync did not complete");
+            }
+            return s;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -138,7 +166,7 @@ namespace FASTER.core
                 return SystemState.Make(Phase.REST, state.version);
         }
 
-        private async ValueTask HandleCheckpointingPhasesAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true)
+        private async ValueTask HandleCheckpointingPhasesAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true, CancellationToken token = default)
         {
             if (async)
                 clientSession?.UnsafeResumeThread();
@@ -193,7 +221,7 @@ namespace FASTER.core
                             if (async && !IsIndexFuzzyCheckpointCompleted())
                             {
                                 clientSession?.UnsafeSuspendThread();
-                                await IsIndexFuzzyCheckpointCompletedAsync();
+                                await IsIndexFuzzyCheckpointCompletedAsync(token);
                                 clientSession?.UnsafeResumeThread();
                             }
                             GlobalMoveToNextCheckpointState(currentState);
@@ -300,7 +328,7 @@ namespace FASTER.core
                                 {
                                     Debug.Assert(_hybridLogCheckpoint.flushedSemaphore != null);
                                     clientSession?.UnsafeSuspendThread();
-                                    await _hybridLogCheckpoint.flushedSemaphore.WaitAsync();
+                                    await _hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
                                     clientSession?.UnsafeResumeThread();
 
                                     _hybridLogCheckpoint.flushedSemaphore.Release();
@@ -315,7 +343,7 @@ namespace FASTER.core
                                     if (async && !notify)
                                     {
                                         clientSession?.UnsafeSuspendThread();
-                                        await IsIndexFuzzyCheckpointCompletedAsync();
+                                        await IsIndexFuzzyCheckpointCompletedAsync(token);
                                         clientSession?.UnsafeResumeThread();
 
                                         notify = true;
