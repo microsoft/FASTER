@@ -22,10 +22,10 @@ Table of Contents
 ## Getting FASTER
 
 ### Building From Sources
-Clone the Git repo, open cs/FASTER.sln in VS 2017, and build.
+Clone the Git repo, open cs/FASTER.sln in Visual Studio 2019, and build.
 
 ### NuGet
-You can install FASTER binaries using Nuget, from Nuget.org. Right-click on your project, manage NuGet packages, browse for FASTER. Here is a [direct link](https://www.nuget.org/packages/FASTER).
+You can install FASTER binaries using NuGet, from Nuget.org. Right-click on your project, manage NuGet packages, browse for `Microsoft.FASTER`. Here is a [direct link](https://www.nuget.org/packages/Microsoft.FASTER).
 
 ## Basic Concepts
 
