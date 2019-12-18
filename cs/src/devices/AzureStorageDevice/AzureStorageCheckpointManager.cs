@@ -12,7 +12,6 @@ namespace FASTER.devices
 {
     public class AzureStorageCheckpointManager : ICheckpointManager
     {
-        
         private CloudBlobContainer container;
 
         public AzureStorageCheckpointManager(string connectionString, string containerName)

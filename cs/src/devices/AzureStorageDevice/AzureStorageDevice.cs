@@ -3,8 +3,10 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using FASTER.core;
@@ -237,6 +239,33 @@ namespace FASTER.devices
         private string GetSegmentBlobName(int segmentId)
         {
             return blobName + segmentId;
+        }
+    }
+
+    public class AzureStorageNamedDeviceFactory : INamedDeviceFactory
+    {
+        private readonly CloudBlobClient client;
+        
+        // TODO(Tianyu): Add alternative constructors for convenience
+        public AzureStorageNamedDeviceFactory(CloudBlobClient client)
+        {
+            this.client = client;
+        }
+        
+        public IDevice GetOrCreateFromName(string container, string name)
+        {
+            var containerRef = client.GetContainerReference(container);
+            containerRef.CreateIfNotExists();
+            return new AzureStorageDevice(containerRef, name);
+        }
+
+        public IEnumerable<IDevice> ListDevicesNewestToOldest(string container)
+        {
+            var containerRef = client.GetContainerReference(container);
+            containerRef.CreateIfNotExists();
+            return containerRef.ListBlobs()
+                .OrderByDescending(f => ((CloudPageBlob)f).Properties.LastModified)
+                .Select(f => new AzureStorageDevice(containerRef, ((CloudPageBlob) f).Name));
         }
     }
 }

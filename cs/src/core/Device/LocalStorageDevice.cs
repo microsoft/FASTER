@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -316,6 +317,26 @@ namespace FASTER.core
             Native32.SetFilePointer(logHandle, lodist, ref hidist, Native32.EMoveMethod.Begin);
             if (!Native32.SetEndOfFile(logHandle)) return false;
             return true;
+        }
+    }
+
+    public class LocalStorageNamedDeviceFactory : INamedDeviceFactory
+    {
+        public IDevice GetOrCreateFromName(string container, string name)
+        {
+            // This should be a no-op if the directory already exists right?
+            Directory.CreateDirectory(container);
+            return new LocalStorageDevice(Path.Combine(container, name));
+        }
+
+        public IEnumerable<IDevice> ListDevicesNewestToOldest(string container)
+        {
+            if (!Directory.Exists(container))
+            {
+                return Enumerable.Empty<IDevice>();
+            }
+            var dir = new DirectoryInfo(container);
+            return dir.GetFiles().OrderByDescending(f => f.LastWriteTime).Select(f => new LocalStorageDevice(f.Name));
         }
     }
 }
