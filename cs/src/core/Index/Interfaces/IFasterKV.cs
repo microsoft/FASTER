@@ -114,7 +114,8 @@ namespace FASTER.core
         ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool supportAsync = true);
 
         /// <summary>
-        /// Continue client session with FASTER
+        /// Continue prior client session with FASTER, used during
+        /// recovery from failure.
         /// </summary>
         /// <param name="sessionId"></param>
         /// <param name="cp"></param>

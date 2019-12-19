@@ -35,7 +35,7 @@ namespace FASTER.core
         /// us to eliminate the WAIT_PENDING phase, and allows
         /// sessions to be suspended. Do not modify during checkpointing.
         /// </summary>
-        public void UseRelaxedCPR() => RelaxedCPR = true;
+        internal void UseRelaxedCPR() => RelaxedCPR = true;
 
         /// <summary>
         /// Number of used entries in hash index
@@ -196,7 +196,11 @@ namespace FASTER.core
         /// Initiate full checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
-        /// <returns>Whether we could initiate the checkpoint</returns>
+        /// <returns>
+        /// Whether we successfully initiated the checkpoint (initiation may
+        /// fail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index).
+        /// </returns>
         public bool TakeFullCheckpoint(out Guid token)
         {
             if (InternalTakeCheckpoint(CheckpointType.FULL))
