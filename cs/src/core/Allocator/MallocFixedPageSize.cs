@@ -28,17 +28,12 @@ namespace FASTER.core
         private const int PageSizeMask = PageSize - 1;
         private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
-        private const int LevelSizeMask = LevelSize - 1;
 
         private T[][] values = new T[LevelSize][];
         private GCHandle[] handles = new GCHandle[LevelSize];
         private IntPtr[] pointers = new IntPtr[LevelSize];
 
-        private T[] values0;
-        private readonly GCHandle handles0;
-        private readonly IntPtr pointers0;
         private readonly int RecordSize;
-        private readonly int AlignedPageSize;
 
         private volatile int writeCacheLevel;
 
@@ -89,10 +84,7 @@ namespace FASTER.core
                     {
                         handles[0] = GCHandle.Alloc(values[0], GCHandleType.Pinned);
                         pointers[0] = handles[0].AddrOfPinnedObject();
-                        handles0 = handles[0];
-                        pointers0 = pointers[0];
                         RecordSize = Marshal.SizeOf(values[0][0]);
-                        AlignedPageSize = RecordSize * PageSize;
                     }
                     catch (Exception)
                     {
@@ -102,7 +94,6 @@ namespace FASTER.core
                 }
             }
 
-            values0 = values[0];
             writeCacheLevel = -1;
             Interlocked.MemoryBarrier();
 
@@ -174,7 +165,7 @@ namespace FASTER.core
         {
             if (!ReturnPhysicalAddress)
             {
-                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
+                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default;
             }
 
             freeList.Enqueue(pointer);
@@ -220,7 +211,7 @@ namespace FASTER.core
 
                 // Return location.
                 if (ReturnPhysicalAddress)
-                    return (((long)pointers0) + index * RecordSize);
+                    return (((long)pointers[0]) + index * RecordSize);
                 else
                     return index;
             }
@@ -330,7 +321,7 @@ namespace FASTER.core
 
                 // Return location.
                 if (ReturnPhysicalAddress)
-                    return ((long)pointers0) + index * RecordSize;
+                    return ((long)pointers[0]) + index * RecordSize;
                 else
                     return index;
             }
@@ -412,7 +403,6 @@ namespace FASTER.core
             handles = null;
             pointers = null;
             values = null;
-            values0 = null;
             count = 0;
             freeList = null;
         }
@@ -466,7 +456,7 @@ namespace FASTER.core
             numBytesWritten = 0;
             for (int i = 0; i < numLevels; i++)
             {
-                OverflowPagesFlushAsyncResult result = default(OverflowPagesFlushAsyncResult);
+                OverflowPagesFlushAsyncResult result = default;
                 uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
 
                 device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
@@ -526,7 +516,7 @@ namespace FASTER.core
         /// <param name="offset"></param>
         public void Recover(IDevice device, ulong offset, int buckets, ulong numBytes)
         {
-            BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead);
+            BeginRecovery(device, offset, buckets, numBytes, out _);
         }
 
         /// <summary>
@@ -576,7 +566,7 @@ namespace FASTER.core
             {
                 //read a full page
                 uint length = (uint)PageSize * (uint)RecordSize; ;
-                OverflowPagesReadAsyncResult result = default(OverflowPagesReadAsyncResult);
+                OverflowPagesReadAsyncResult result = default;
                 device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
                 numBytesRead += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
             }

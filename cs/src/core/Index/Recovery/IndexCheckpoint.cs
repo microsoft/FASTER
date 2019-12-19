@@ -91,7 +91,7 @@ namespace FASTER.core
             for (int index = 0; index < numChunks; index++)
             {
                 long chunkStartBucket = (long)start + (index * chunkSize);
-                HashIndexPageAsyncFlushResult result = default(HashIndexPageAsyncFlushResult);
+                HashIndexPageAsyncFlushResult result = default;
                 result.chunkIndex = index;
                 device.WriteAsync((IntPtr)chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                 numBytesWritten += chunkSize;
@@ -119,7 +119,7 @@ namespace FASTER.core
                                             NativeOverlapped* overlap)
         {
             //Set the page status to flushed
-            var result = (HashIndexPageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
+            _ = (HashIndexPageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
 
             try
             {

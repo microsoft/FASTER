@@ -19,21 +19,22 @@ namespace FASTER.core
         private Dictionary<string, ClientSession<Key, Value, Input, Output, Context, Functions>> _activeSessions;
 
         /// <summary>
-        /// Start new client session (not thread-specific) with FASTER.
-        /// Session starts in dormant state.
+        /// Start a new client session with FASTER.
         /// </summary>
-        /// <returns></returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionName = null, bool supportAsync = true)
+        /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <returns>Session instance</returns>
+        public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool threadAffinitized = false)
         {
-            if (supportAsync)
+            if (!threadAffinitized)
                 UseRelaxedCPR();
 
-            if (sessionName == null)
-                sessionName = Guid.NewGuid().ToString();
+            if (sessionId == null)
+                sessionId = Guid.NewGuid().ToString();
             var ctx = new FasterExecutionContext();
-            InitContext(ctx, sessionName);
+            InitContext(ctx, sessionId);
             var prevCtx = new FasterExecutionContext();
-            InitContext(prevCtx, sessionName);
+            InitContext(prevCtx, sessionId);
             prevCtx.version--;
 
             ctx.prevCtx = prevCtx;
@@ -41,34 +42,35 @@ namespace FASTER.core
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<string, ClientSession<Key, Value, Input, Output, Context, Functions>>(), null);
 
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, supportAsync);
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, !threadAffinitized);
             lock (_activeSessions)
-                _activeSessions.Add(sessionName, session);
+                _activeSessions.Add(sessionId, session);
             return session;
         }
 
         /// <summary>
-        /// Continue session with FASTER
+        /// Resume (continue) prior client session with FASTER, used during
+        /// recovery from failure.
         /// </summary>
-        /// <param name="sessionName"></param>
-        /// <param name="cp"></param>
-        /// <param name="supportAsync"></param>
-        /// <returns></returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionName, out CommitPoint cp, bool supportAsync = true)
+        /// <param name="sessionId">ID/name of previous session to resume</param>
+        /// <param name="commitPoint">Prior commit point of durability for session</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <returns>Session instance</returns>
+        public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
         {
-            if (supportAsync)
+            if (!threadAffinitized)
                 UseRelaxedCPR();
 
-            cp = InternalContinue(sessionName, out FasterExecutionContext ctx);
-            if (cp.UntilSerialNo == -1)
-                throw new Exception($"Unable to find session {sessionName} to recover");
+            commitPoint = InternalContinue(sessionId, out FasterExecutionContext ctx);
+            if (commitPoint.UntilSerialNo == -1)
+                throw new Exception($"Unable to find session {sessionId} to recover");
 
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, supportAsync);
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, !threadAffinitized);
 
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<string, ClientSession<Key, Value, Input, Output, Context, Functions>>(), null);
             lock (_activeSessions)
-                _activeSessions.Add(sessionName, session);
+                _activeSessions.Add(sessionId, session);
             return session;
         }
 

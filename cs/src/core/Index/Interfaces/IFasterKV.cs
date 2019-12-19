@@ -15,7 +15,6 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        /*
         #region Session Operations (Deprecated)
 
         /// <summary>
@@ -23,6 +22,7 @@ namespace FASTER.core
         /// operations to FASTER.
         /// </summary>
         /// <returns>Session identifier</returns>
+        [Obsolete("Use NewSession() instead.")]
         Guid StartSession();
 
         /// <summary>
@@ -31,23 +31,24 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns>Sequence number for resuming operations</returns>
+        [Obsolete("Use ResumeSession() instead.")] 
         CommitPoint ContinueSession(Guid guid);
 
         /// <summary>
         /// Stop a session and de-register the thread from FASTER.
         /// </summary>
+        [Obsolete("Use and dispose NewSession() instead.")] 
         void StopSession();
 
         /// <summary>
         /// Refresh the session epoch. The caller is required to invoke Refresh periodically
         /// in order to guarantee system liveness.
         /// </summary>
+        [Obsolete("Use NewSession(), where Refresh() is not required by default.")] 
         void Refresh();
 
         #endregion
-        */
 
-        /*
         #region Core Index Operations (Deprecated)
 
         /// <summary>
@@ -59,6 +60,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke Read() on the session.")] 
         Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo);
 
         /// <summary>
@@ -69,6 +71,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke Upsert() on the session.")] 
         Status Upsert(ref Key key, ref Value value, Context context, long serialNo);
 
         /// <summary>
@@ -79,6 +82,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke RMW() on the session.")] 
         Status RMW(ref Key key, ref Input input, Context context, long serialNo);
 
         /// <summary>
@@ -91,6 +95,7 @@ namespace FASTER.core
         /// <param name="context">User context to identify operation in asynchronous callback</param>
         /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke Delete() on the session.")] 
         Status Delete(ref Key key, Context context, long serialNo);
 
         /// <summary>
@@ -98,30 +103,30 @@ namespace FASTER.core
         /// </summary>
         /// <param name="wait">Whether we spin-wait for pending operations to complete</param>
         /// <returns>Whether all pending operations have completed</returns>
+        [Obsolete("Use NewSession() and invoke CompletePending() on the session.")] 
         bool CompletePending(bool wait);
 
         #endregion
-        */
 
         #region New Session Operations
-        /// <summary>
-        /// Start new client session (not thread-specific) with FASTER.
-        /// Session starts in dormant state.
-        /// </summary>
-        /// <param name="sessionId"></param>
-        /// <param name="supportAsync"></param>
-        /// <returns></returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool supportAsync = true);
 
         /// <summary>
-        /// Continue prior client session with FASTER, used during
+        /// Start a new client session with FASTER.
+        /// </summary>
+        /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <returns>Session instance</returns>
+        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool threadAffinitized = false);
+
+        /// <summary>
+        /// Resume (continue) prior client session with FASTER, used during
         /// recovery from failure.
         /// </summary>
-        /// <param name="sessionId"></param>
-        /// <param name="cp"></param>
-        /// <param name="supportAsync"></param>
-        /// <returns></returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionId, out CommitPoint cp, bool supportAsync = true);
+        /// <param name="sessionId">ID/name of previous session to resume</param>
+        /// <param name="commitPoint">Prior commit point of durability for session</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <returns>Session instance</returns>
+        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false);
 
         #endregion
 

@@ -240,7 +240,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Refresh session, handling checkpointing if needed
+        /// Refresh session epoch and handle checkpointing phases. Used only
+        /// in case of thread-affinitized sessions (async support is disabled).
         /// </summary>
         public void Refresh()
         {
