@@ -60,22 +60,11 @@ namespace FASTER.test.largeobjects
             }
         }
 
-
-        [Test]
-        public void LargeObjectTest1()
+        [TestCase(CheckpointType.FoldOver)]
+        [TestCase(CheckpointType.Snapshot)]
+        public void LargeObjectTest(CheckpointType checkpointType)
         {
-            LargeObjectTest(CheckpointType.Snapshot);
-        }
-
-        [Test]
-        public void LargeObjectTest2()
-        {
-            LargeObjectTest(CheckpointType.FoldOver);
-        }
-
-        private void LargeObjectTest(CheckpointType checkpointType)
-        {
-            MyInput input = default(MyInput);
+            MyInput input = default;
             MyLargeOutput output = new MyLargeOutput();
 
             log = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.log");
@@ -91,17 +80,18 @@ namespace FASTER.test.largeobjects
             int maxSize = 100;
             int numOps = 5000;
 
-            fht1.StartSession();
+            var session1 = fht1.NewSession();
             Random r = new Random(33);
             for (int key = 0; key < numOps; key++)
             {
                 var mykey = new MyKey { key = key };
                 var value = new MyLargeValue(1+r.Next(maxSize));
-                fht1.Upsert(ref mykey, ref value, Empty.Default, 0);
+                session1.Upsert(ref mykey, ref value, Empty.Default, 0);
             }
+            session1.Dispose();
+
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpoint(true);
-            fht1.StopSession();
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             fht1.Dispose();
             log.Close();
             objlog.Close();
@@ -117,14 +107,15 @@ namespace FASTER.test.largeobjects
                 );
 
             fht2.Recover(token);
-            fht2.StartSession();
+
+            var session2 = fht2.NewSession();
             for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
                 var key = new MyKey { key = keycnt };
-                var status = fht2.Read(ref key, ref input, ref output, Empty.Default, 0);
+                var status = session2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
-                    fht2.CompletePending(true);
+                    session2.CompletePending(true);
                 else
                 {
                     for (int i = 0; i < output.value.value.Length; i++)
@@ -133,7 +124,8 @@ namespace FASTER.test.largeobjects
                     }
                 }
             }
-            fht2.StopSession();
+            session2.Dispose();
+
             fht2.Dispose();
 
             log.Close();

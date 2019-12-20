@@ -1,7 +1,7 @@
 Introduction to FASTER C#
 =========================
 
-FASTER C# works in .NET Framework and .NET core, and can be used in both a single-threaded and concurrent setting. It has been tested to work on both Windows and Linux. It exposes an API that allows one to performs a mix of Reads, Blind Updates (Upserts), and Read-Modify-Write operations. It supports data larger than memory, and accepts an `IDevice` implementation for storing logs on storage. We have provided `IDevice` implementations for local file system, but one may create new devices, for example, to write to remote file systems. Alternatively, one may mount remote storage into the local file system. FASTER  may be used as a high-performance replacement for traditional concurrent data structures such as the .NET ConcurrentDictionary, and additionally supports larger-than-memory data. It also supports checkpointing of the data structure - both incremental and non-incremental.
+FASTER C# works in .NET Framework and .NET core, and can be used in both a single-threaded and concurrent setting. It has been tested to work on both Windows and Linux. It exposes an API that allows one to performs a mix of Reads, Blind Updates (Upserts), and Read-Modify-Write operations. It supports data larger than memory, and accepts an `IDevice` implementation for storing logs on storage. We have provided `IDevice` implementations for local file system and Azure Page Blobs, but one may create new devices as well. We also offer meta-devices that can group device instances into sharded and tiered configurations. FASTER  may be used as a high-performance replacement for traditional concurrent data structures such as the .NET ConcurrentDictionary, and additionally supports larger-than-memory data. It also supports checkpointing of the data structure - both incremental and non-incremental. Operations on FASTER can be issued synchronously or asynchronously, i.e., using the C# `async` interface.
 
 Table of Contents
 -----------
@@ -14,7 +14,7 @@ Table of Contents
 ## Getting FASTER
 
 ### Building From Sources
-Clone the Git repo, open cs/FASTER.sln in VS 2017, and build.
+Clone the Git repo, open cs/FASTER.sln in VS 2019, and build.
 
 ### NuGet
 You can install FASTER binaries using Nuget, from Nuget.org. Right-click on your project, manage NuGet packages, browse for FASTER. Here is a [direct link](https://www.nuget.org/packages/FASTER).
@@ -30,7 +30,7 @@ FASTER supports three basic operations:
 
 ### Constructor
 
-Before instantiating FASTER, you need to create storage devices that FASTER will use. If you are using blittable types, you only need the hybrid log device. If you are also using objects, you need to create a separate object log device.
+Before instantiating FASTER, you need to create storage devices that FASTER will use. If you are using value (blittable) types, you only need one log device. If you are also using objects, you need to create a separate object log device.
 
 ```Csharp
 IDevice log = Devices.CreateLogDevice("C:\\Temp\\hybridlog_native.log");
@@ -59,7 +59,7 @@ The user provides an instance of a type that implements `IFunctions<>`. This typ
 
 1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume there are no concurrent operations.
 2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value.
-3. Completion callbacks: Called when various operations complete.
+3. Completion callbacks: Called by FASTER when various operations complete.
 4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
 
 ### Constructor Parameters
@@ -76,15 +76,22 @@ The total in-memory footprint of FASTER is controlled by the following parameter
 
 ### Sessions (Threads)
 
-Once FASTER is instantiated, threads may use FASTER by registering themselves via the concept of a Session, using the call 
+Once FASTER is instantiated, one issues operations to FASTER by creating logical sessions. A session represents a sequence of operations issued to FASTER. There is no concurrency within a session, but different sessions may execute concurrently. Sessions do not need to be affinitized to threads, but if they are, FASTER can leverage the same (covered later). You create a session as follows:
 
-```fht.StartSession();```
+```var session = fht.NewSession();```
 
-At the end, the thread calls:
+You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports sync and async versions of operations. Examples:
 
-```fht.StopSession();```
+```cs
+var status = session.Read(ref key, ref input, ref output, ref context);
+await session.ReadAsync(key, input);
+```
 
-When all threads are done operating on FASTER, you finally dispose the FASTER instance:
+At the end, the session is disposed:
+
+```session.Dispose();```
+
+When all sessions are done operating on FASTER, you finally dispose the FASTER instance:
 
 ```fht.Dispose();```
 

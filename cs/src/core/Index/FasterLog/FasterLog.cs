@@ -934,7 +934,7 @@ namespace FASTER.core
         private long CommitInternal(bool spinWait = false)
         {
             epoch.Resume();
-            if (allocator.ShiftReadOnlyToTail(out long tailAddress))
+            if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
             {
                 if (spinWait)
                 {

@@ -36,7 +36,7 @@ namespace FASTER.core
     {
         public int version;
         public long serialNum;
-        public Guid guid;
+        public string guid;
 
         public void Write(StreamWriter writer)
         {
@@ -50,15 +50,13 @@ namespace FASTER.core
             string value = reader.ReadLine();
             version = int.Parse(value);
 
-            value = reader.ReadLine();
-            guid = Guid.Parse(value);
-
+            guid = reader.ReadLine();
             value = reader.ReadLine();
             serialNum = long.Parse(value);
         }
     }
 
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -102,11 +100,30 @@ namespace FASTER.core
             public long totalPending;
             public Queue<PendingContext> retryRequests;
             public Dictionary<long, PendingContext> ioPendingRequests;
-            public BlockingCollection<AsyncIOContext<Key, Value>> readyResponses;
+            public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
+            public List<long> excludedSerialNos;
+
+            public FasterExecutionContext prevCtx;
         }
     }
 
  
+    /// <summary>
+    /// Descriptor for a CPR commit point
+    /// </summary>
+    public struct CommitPoint
+    {
+        /// <summary>
+        /// Serial number until which we have committed
+        /// </summary>
+        public long UntilSerialNo;
+
+        /// <summary>
+        /// List of operation serial nos excluded from commit
+        /// </summary>
+        public List<long> ExcludedSerialNos;
+    }
+
     /// <summary>
     /// Recovery info for hybrid log
     /// </summary>
@@ -124,10 +141,6 @@ namespace FASTER.core
         /// Version
         /// </summary>
         public int version;
-        /// <summary>
-        /// Number of threads
-        /// </summary>
-        public int numThreads;
         /// <summary>
         /// Flushed logical address
         /// </summary>
@@ -148,20 +161,16 @@ namespace FASTER.core
         /// Begin address
         /// </summary>
         public long beginAddress;
-        /// <summary>
-        /// Guid array
-        /// </summary>
-        public Guid[] guids;
 
         /// <summary>
-        /// Tokens per guid restored during Continue
+        /// Commit tokens per session restored during Continue
         /// </summary>
-        public ConcurrentDictionary<Guid, long> continueTokens;
+        public ConcurrentDictionary<string, CommitPoint> continueTokens;
 
         /// <summary>
-        /// Tokens per guid created during Checkpoint
+        /// Commit tokens per session created during Checkpoint
         /// </summary>
-        public ConcurrentDictionary<Guid, long> checkpointTokens;
+        public ConcurrentDictionary<string, CommitPoint> checkpointTokens;
 
         /// <summary>
         /// Object log segment offsets
@@ -178,14 +187,14 @@ namespace FASTER.core
             guid = token;
             useSnapshotFile = 0;
             version = _version;
-            numThreads = 0;
             flushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
             headAddress = 0;
-            guids = new Guid[LightEpoch.kTableSize + 1];
-            continueTokens = new ConcurrentDictionary<Guid, long>();
-            checkpointTokens = new ConcurrentDictionary<Guid, long>();
+
+            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
+            checkpointTokens = new ConcurrentDictionary<string, CommitPoint>();
+
             objectLogSegmentOffsets = null;
         }
 
@@ -195,8 +204,7 @@ namespace FASTER.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            guids = new Guid[LightEpoch.kTableSize + 1];
-            continueTokens = new ConcurrentDictionary<Guid, long>();
+            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
 
             string value = reader.ReadLine();
             guid = Guid.Parse(value);
@@ -223,15 +231,24 @@ namespace FASTER.core
             beginAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            numThreads = int.Parse(value);
+            var numSessions = int.Parse(value);
 
-            for (int i = 0; i < numThreads; i++)
+            for (int i = 0; i < numSessions; i++)
             {
-                value = reader.ReadLine();
-                guids[i] = Guid.Parse(value);
+                var guid = reader.ReadLine();
                 value = reader.ReadLine();
                 var serialno = long.Parse(value);
-                continueTokens.TryAdd(guids[i], serialno);
+
+                var exclusions = new List<long>();
+                var exclusionCount = int.Parse(reader.ReadLine());
+                for (int j = 0; j < exclusionCount; j++)
+                    exclusions.Add(long.Parse(reader.ReadLine()));
+
+                continueTokens.TryAdd(guid, new CommitPoint
+                    {
+                        UntilSerialNo = serialno,
+                        ExcludedSerialNos = exclusions
+                    });
             }
 
             // Read object log segment offsets
@@ -260,7 +277,8 @@ namespace FASTER.core
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
 
-            Initialize(new StreamReader(new MemoryStream(metadata)));
+            using StreamReader s = new StreamReader(new MemoryStream(metadata));
+            Initialize(s);
         }
 
         /// <summary>
@@ -268,7 +286,7 @@ namespace FASTER.core
         /// </summary>
         public void Reset()
         {
-            Initialize(default(Guid), -1);
+            Initialize(default, -1);
         }
 
         /// <summary>
@@ -276,37 +294,39 @@ namespace FASTER.core
         /// </summary>
         public byte[] ToByteArray()
         {
-            using (var ms = new MemoryStream())
+            using MemoryStream ms = new MemoryStream();
+            using (StreamWriter writer = new StreamWriter(ms))
             {
-                using (StreamWriter writer = new StreamWriter(ms))
-                {
-                    writer.WriteLine(guid);
-                    writer.WriteLine(useSnapshotFile);
-                    writer.WriteLine(version);
-                    writer.WriteLine(flushedLogicalAddress);
-                    writer.WriteLine(startLogicalAddress);
-                    writer.WriteLine(finalLogicalAddress);
-                    writer.WriteLine(headAddress);
-                    writer.WriteLine(beginAddress);
-                    writer.WriteLine(numThreads);
-                    for (int i = 0; i < numThreads; i++)
-                    {
-                        writer.WriteLine(guids[i]);
-                        writer.WriteLine(checkpointTokens[guids[i]]);
-                    }
+                writer.WriteLine(guid);
+                writer.WriteLine(useSnapshotFile);
+                writer.WriteLine(version);
+                writer.WriteLine(flushedLogicalAddress);
+                writer.WriteLine(startLogicalAddress);
+                writer.WriteLine(finalLogicalAddress);
+                writer.WriteLine(headAddress);
+                writer.WriteLine(beginAddress);
 
-                    // Write object log segment offsets
-                    writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
-                    if (objectLogSegmentOffsets != null)
+                writer.WriteLine(checkpointTokens.Count);
+                foreach (var kvp in checkpointTokens)
+                {
+                    writer.WriteLine(kvp.Key);
+                    writer.WriteLine(kvp.Value.UntilSerialNo);
+                    writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
+                    foreach (long item in kvp.Value.ExcludedSerialNos)
+                        writer.WriteLine(item);
+                }
+
+                // Write object log segment offsets
+                writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
+                if (objectLogSegmentOffsets != null)
+                {
+                    for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
                     {
-                        for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
-                        {
-                            writer.WriteLine(objectLogSegmentOffsets[i]);
-                        }
+                        writer.WriteLine(objectLogSegmentOffsets[i]);
                     }
                 }
-                return ms.ToArray();
             }
+            return ms.ToArray();
         }
 
         /// <summary>
@@ -322,7 +342,7 @@ namespace FASTER.core
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
             Debug.WriteLine("Head Address: {0}", headAddress);
             Debug.WriteLine("Begin Address: {0}", beginAddress);
-            Debug.WriteLine("Num sessions recovered: {0}", numThreads);
+            Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
             Debug.WriteLine("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens)
             {
@@ -336,7 +356,7 @@ namespace FASTER.core
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
-        public CountdownEvent flushed;
+        public SemaphoreSlim flushedSemaphore;
         public long started;
 
         public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
@@ -355,7 +375,7 @@ namespace FASTER.core
         public void Reset()
         {
             started = 0;
-            flushed = null;
+            flushedSemaphore = null;
             info.Reset();
             if (snapshotFileDevice != null) snapshotFileDevice.Close();
             if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Close();
@@ -411,26 +431,25 @@ namespace FASTER.core
             var metadata = checkpointManager.GetIndexCommitMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
-            Initialize(new StreamReader(new MemoryStream(metadata)));
+            using StreamReader s = new StreamReader(new MemoryStream(metadata));
+            Initialize(s);
         }
 
         public byte[] ToByteArray()
         {
-            using (var ms = new MemoryStream())
+            using MemoryStream ms = new MemoryStream();
+            using (var writer = new StreamWriter(ms))
             {
-                using (var writer = new StreamWriter(ms))
-                {
 
-                    writer.WriteLine(token);
-                    writer.WriteLine(table_size);
-                    writer.WriteLine(num_ht_bytes);
-                    writer.WriteLine(num_ofb_bytes);
-                    writer.WriteLine(num_buckets);
-                    writer.WriteLine(startLogicalAddress);
-                    writer.WriteLine(finalLogicalAddress);
-                }
-                return ms.ToArray();
+                writer.WriteLine(token);
+                writer.WriteLine(table_size);
+                writer.WriteLine(num_ht_bytes);
+                writer.WriteLine(num_ofb_bytes);
+                writer.WriteLine(num_buckets);
+                writer.WriteLine(startLogicalAddress);
+                writer.WriteLine(finalLogicalAddress);
             }
+            return ms.ToArray();
         }
 
         public void DebugPrint()
@@ -445,7 +464,7 @@ namespace FASTER.core
         }
         public void Reset()
         {
-            token = default(Guid);
+            token = default;
             table_size = 0;
             num_ht_bytes = 0;
             num_ofb_bytes = 0;
