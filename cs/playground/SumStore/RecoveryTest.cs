@@ -19,9 +19,9 @@ namespace SumStore
         const long completePendingInterval = 1 << 12;
         const int checkpointInterval = 10 * 1000;
         readonly int threadCount;
-        FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+        readonly FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
 
-        BlockingCollection<Input[]> inputArrays;
+        readonly BlockingCollection<Input[]> inputArrays;
 
         public RecoveryTest(int threadCount)
         {
@@ -68,7 +68,7 @@ namespace SumStore
             for (int idx = 0; idx < threadCount; ++idx)
             {
                 int x = idx;
-                workers[idx] = new Thread(() => PrepareThread(x));
+                workers[idx] = new Thread(() => PrepareThread());
             }
 
             foreach (Thread worker in workers)
@@ -78,7 +78,7 @@ namespace SumStore
                 worker.Join();
         }
 
-        private void PrepareThread(int threadIdx)
+        private void PrepareThread()
         {
             var inputArray = new Input[numOps];
             for (int i = 0; i < numOps; i++)
@@ -111,34 +111,28 @@ namespace SumStore
 
         private void RunThread(int threadId, bool continueSession)
         {
+            ClientSession<AdId, NumClicks, Input, Output, Empty, Functions> session;
             long sno = 0;
             if (continueSession)
             {
-                // Find out session Guid
-                string sessionGuidText = System.IO.File.ReadAllText("logs\\clients\\" + threadId + ".txt");
-                Guid.TryParse(sessionGuidText, out Guid sessionGuid);
-
                 // Register with thread
                 do
                 {
-                    sno = fht.ContinueSession(sessionGuid);
+                    session = fht.ResumeSession(threadId.ToString(), out CommitPoint cp);
+                    sno = cp.UntilSerialNo;
                 } while (sno == -1);
-                Console.WriteLine("Session {0} recovered until {1}", sessionGuid, sno);
+                Console.WriteLine("Session {0} recovered until {1}", threadId, sno);
                 sno++;
             }
             else
             {
                 // Register thread with FASTER
-                Guid sessionGuid = fht.StartSession();
-
-                Directory.CreateDirectory("logs\\clients");
-                // Persist session id
-                File.WriteAllText("logs\\clients\\" + threadId + ".txt", sessionGuid.ToString());
+                session = fht.NewSession(threadId.ToString(), true);
             }
 
-            GenerateClicks(sno);
+            GenerateClicks(session, sno);
         }
-        private void GenerateClicks(long sno)
+        private void GenerateClicks(ClientSession<AdId, NumClicks, Input, Output, Empty, Functions> session, long sno)
         {
             inputArrays.TryTake(out Input[] inputArray);
 
@@ -146,21 +140,21 @@ namespace SumStore
             while (true)
             {
                 var key = (sno % numUniqueKeys);
-                fht.RMW(ref inputArray[key].adId, ref inputArray[key], Empty.Default, sno);
+                session.RMW(ref inputArray[key].adId, ref inputArray[key], Empty.Default, sno);
 
                 sno++;
 
                 if (sno % refreshInterval == 0)
                 {
-                    fht.Refresh();
+                    session.Refresh();
                 }
                 else if (sno % completePendingInterval == 0)
                 {
-                    fht.CompletePending(false);
+                    session.CompletePending(false);
                 }
                 else if (sno % numUniqueKeys == 0)
                 {
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 }
             }
         }
@@ -176,7 +170,7 @@ namespace SumStore
 
                 fht.TakeFullCheckpoint(out Guid token);
 
-                fht.CompleteCheckpoint(true);
+                fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
                 Console.WriteLine("Completed checkpoint {0}", token);
             }
@@ -188,21 +182,10 @@ namespace SumStore
 
             for (int i = 0; i < threadCount; i++)
             {
-                // Find out session Guid
-                string sessionGuidText = System.IO.File.ReadAllText("logs\\clients\\" + i + ".txt");
-                Guid.TryParse(sessionGuidText, out Guid sessionGuid);
-
-                // Register with thread
-                long _sno = -1;
-                do {
-                    _sno = fht.ContinueSession(sessionGuid);
-                } while (_sno == -1);
-                sno.Add(_sno);
-
-                Console.WriteLine("Session {0} recovered until {1}", sessionGuid, _sno);
-
-                // De-register session
-                fht.StopSession();
+                var s = fht.ResumeSession(i.ToString(), out CommitPoint cp);
+                sno.Add(cp.UntilSerialNo);
+                Console.WriteLine("Session {0} recovered until {1}", i, cp.UntilSerialNo);
+                s.Dispose();
             }
 
 
@@ -215,22 +198,22 @@ namespace SumStore
             }
 
             // Start a new session
-            fht.StartSession();
+            var session = fht.NewSession();
 
             // Issue read requests
             for (int i = 0; i < numUniqueKeys; i++)
             {
-                Output output = default(Output);
-                var status = fht.Read(ref inputArray[i].adId, ref inputArray[i], ref output, Empty.Default, i);
+                Output output = default;
+                var status = session.Read(ref inputArray[i].adId, ref inputArray[i], ref output, Empty.Default, i);
                 Debug.Assert(status == Status.OK || status == Status.NOTFOUND);
                 inputArray[i].numClicks.numClicks = output.value.numClicks;
             }
 
             // Complete all pending requests
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Release
-            fht.StopSession();
+            session.Dispose();
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

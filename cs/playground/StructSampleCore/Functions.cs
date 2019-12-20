@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -31,7 +32,7 @@ namespace StructSampleCore
         public void UpsertCompletionCallback(ref long key, ref long value, Empty ctx) { }
         public void DeleteCompletionCallback(ref long key, Empty ctx) { }
         public void RMWCompletionCallback(ref long key, ref long input, Empty ctx, Status s) { }
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
 
@@ -71,6 +72,6 @@ namespace StructSampleCore
         public void UpsertCompletionCallback(ref Key key, ref Value output, Empty ctx) { }
         public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
         public void RMWCompletionCallback(ref Key key, ref Input output, Empty ctx, Status status) { }
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 }
