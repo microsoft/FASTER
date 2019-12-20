@@ -55,7 +55,7 @@ There are six basic concepts, provided as generic type arguments when instantiat
 
 ### Callback Functions
 
-The user provides an instance of a type that implements `IFunctions<>`. This type encapsulates all the callbacks, which are described next:
+The user provides an instance of a type that implements `IFunctions<>`, or its corresponding abstract base class `FunctionsBase<>`. This type encapsulates all the callbacks, which are described next:
 
 1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume there are no concurrent operations.
 2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value.
@@ -107,16 +107,16 @@ public static void Test()
   var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
   var fht = new FasterKV<long, long, long, long, Empty, Funcs>
     (1L << 20, new Funcs(), new LogSettings { LogDevice = log });
-  fht.StartSession();
+  var session = fht.NewSession();
   long key = 1, value = 1, input = 10, output = 0;
-  fht.Upsert(ref key, ref value, Empty.Default, 0);
-  fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+  session.Upsert(ref key, ref value, Empty.Default, 0);
+  session.Read(ref key, ref input, ref output, Empty.Default, 0);
   Debug.Assert(output == value);
-  fht.RMW(ref key, ref input, Empty.Default, 0);
-  fht.RMW(ref key, ref input, Empty.Default, 0);
-  fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+  session.RMW(ref key, ref input, Empty.Default, 0);
+  session.RMW(ref key, ref input, Empty.Default, 0);
+  session.Read(ref key, ref input, ref output, Empty.Default, 0);
   Debug.Assert(output == value + 20);
-  fht.StopSession();
+  session.Dispose();
   fht.Dispose();
   log.Close();
 }
@@ -137,7 +137,7 @@ public class Funcs : IFunctions<long, long, long, long, Empty>
   public void UpsertCompletionCallback(ref long key, ref long value, Empty ctx) { }
   public void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status s) { }
   public void RMWCompletionCallback(ref long key, ref long input, Empty ctx, Status s) { }
-  public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+  public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
 }
 ```
 
@@ -147,17 +147,20 @@ Several example projects are located in [cs/playground](https://github.com/Micro
 
 ## Checkpointing and Recovery
 
-FASTER supports **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations (Read, Upsert or RMW). FASTER allows client threads to keep track of operations that have persisted and those that have not using a session-based API. 
+FASTER supports **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations (Read, Upsert or RMW). FASTER allows clients to keep track of operations that have persisted and those that have not using a session-based API. 
 
-Recall that each FASTER threads starts a session, associated with a unique Guid.
-All FASTER thread operations (Read, Upsert, RMW) carry a monotonic sequence number.
-At any point in time, one may call `Checkpoint` to initiate an asynchronous checkpoint of FASTER.
-After calling `Checkpoint`, each FASTER thread is (eventually) notified of a sequence number, such that all operations until, and no operations after, that sequence number, are guaranteed to be persisted as part of that checkpoint. 
-This sequence number can be used by the FASTER thread to clear any in-memory buffer of operations waiting to be performed.
+Recall that each FASTER client starts a session, associated with a unique session ID (or name). All FASTER session operations (Read, Upsert, RMW) carry a monotonic sequence number (sequence numbers are implicit in case of async calls). At any point in time, one may call `Checkpoint` to initiate an asynchronous checkpoint of FASTER. After calling `Checkpoint`, each FASTER session is (eventually) notified of a commit point. A commit point consists of (1) a sequence number, such that all operations until, and no operations after, that sequence number, are guaranteed to be persisted as part of that checkpoint; (2) an optional exception list of operations that were not part of the commit because they went pending and could not complete before the checkpoint, because the session was not active at the time of checkpointing.
 
-During recovery, threads can continue their session with the same Guid using `ContinueSession`. The function returns the thread-local sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted operations since that point.
+The commit point information can be used by the session to clear any in-memory buffer of operations waiting to be performed. During recovery, sessions can continue using `ResumeSession` invoked with the same session ID. The function returns the thread-local sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted operations since that point.
 
-Below, we show a simple recovery example for a single thread. 
+With async session operations on FASTER, one may optionally set a boolean parameter `waitForCommit` in the calls. When set, the async call completes only after the operation is made persistent by an asynchronous checkpoint. The user is responsible for performing the checkpoint asynchronously. An async upsert which returns only after the upsert is made durable, is shown below:
+
+```cs
+await session.UpsertAsync(key, value, waitForCommit: true);
+```
+
+Below, we show a simple recovery example with asynchronous checkpointing.
+
 ```Csharp
 public class PersistenceExample 
 {
@@ -187,35 +190,27 @@ public class PersistenceExample
   /* Helper Functions */
   private void RunSession() 
   {
-    Guid guid = fht.StartSession();
-    System.IO.File.WriteAllText(@"C:\\Temp\\session1.txt", guid.ToString());
-    
+    using var session = fht.NewSession("s1");
     long seq = 0; // sequence identifier
     
     long key = 1, input = 10;
     while(true) 
     {
       key = (seq % 1L << 20);
-      fht.RMW(ref key, ref input, Empty.Default, seq);
-      seq++;
+      session.RMW(ref key, ref input, Empty.Default, seq++);
     }
-    // fht.StopSession() - outside infinite loop
   }
   
   private void ContinueSession() 
   {
-    string guidText = System.IO.File.ReadAllText(@"C:\\Temp\session1.txt");
-    Guid sessionGuid = Guid.Parse(guidText);
-    
-    long seq = fht.ContinueSession(sessionGuid); // recovered seq identifier
-    seq++;
+    using var session = fht.ResumeSession("s1", out CommitPoint cp); // recovered session
+    var seq = cp.UntilSerialNo + 1;
     
     long key = 1, input = 10;
     while(true) 
     {
       key = (seq % 1L << 20);
-      fht.RMW(ref key, ref input, Empty.Default, seq);
-      seq++;
+      session.RMW(ref key, ref input, Empty.Default, seq++);
     }
   }
   
@@ -226,10 +221,8 @@ public class PersistenceExample
       while(true) 
       {
         Thread.Sleep(10000);
-		fht.StartSession();
-        fht.TakeCheckpoint(out Guid token);
-        fht.CompleteCheckpoint(token, true);
-		fht.StopSession();
+        fht.TakeFullCheckpoint(out Guid token);
+        fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
       }
     });
     t.Start();
