@@ -115,7 +115,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession(null, false);
+            var session = store.NewSession(null, true);
 
             while (!done)
             {
@@ -317,7 +317,7 @@ namespace FASTER.benchmark
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            var session = store.NewSession(null, false);
+            var session = store.NewSession(null, true);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
