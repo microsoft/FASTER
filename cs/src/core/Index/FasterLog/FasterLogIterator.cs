@@ -31,7 +31,7 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private bool disposed = false;
-        private long requestedCompletedUntilAddress;
+        internal long requestedCompletedUntilAddress;
 
         /// <summary>
         /// Next address
