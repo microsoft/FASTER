@@ -9,7 +9,7 @@ problems in the cloud today. The FASTER project offers two artifacts to help tac
 
 * :new: **FASTER Log** is a high-performance concurrent persistent recoverable log, iterator, and random 
 reader library in C#. It supports very frequent commit operations at low latency, and can quickly saturate 
-disk bandwidth. It support both sync and async interfaces, handles disk errors, and supports checksums. Learn 
+disk bandwidth. It supports both sync and async interfaces, handles disk errors, and supports checksums. Learn 
 more about the FASTER Log [here](https://github.com/microsoft/FASTER/blob/master/docs/cs/FasterLog.md) or [here](https://microsoft.github.io/FASTER/docs/fasterlog).
 
 * **FASTER KV** is a concurrent key-value store + cache (available in C# and C++) that is designed for point 
