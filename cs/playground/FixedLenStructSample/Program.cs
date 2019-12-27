@@ -16,12 +16,13 @@ namespace FixedLenStructSample
                 (128, new FixedLenFunctions(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 }
                 );
-            fht.StartSession();
+            
+            var session = fht.NewSession();
 
             var key = new FixedLenKey("foo");
             var value = new FixedLenValue("bar");
 
-            var status = fht.Upsert(ref key, ref value, Empty.Default, 0);
+            var status = session.Upsert(ref key, ref value, Empty.Default, 0);
 
             if (status != Status.OK)
                 Console.WriteLine("FixedLenStructSample: Error!");
@@ -30,13 +31,13 @@ namespace FixedLenStructSample
             var output = default(string);
 
             key = new FixedLenKey("xyz");
-            status = fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
             if (status != Status.NOTFOUND)
                 Console.WriteLine("FixedLenStructSample: Error!");
 
             key = new FixedLenKey("foo");
-            status = fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
             if (status != Status.OK)
                 Console.WriteLine("FixedLenStructSample: Error!");
@@ -46,7 +47,7 @@ namespace FixedLenStructSample
             else
                 Console.WriteLine("FixedLenStructSample: Error!");
 
-            fht.StopSession();
+            session.Dispose();
             fht.Dispose();
             log.Close();
 

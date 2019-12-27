@@ -60,11 +60,10 @@ namespace FASTER.benchmark
         Input[] input_;
         Input* input_ptr;
 
-        ConcurrentDictionary<Key, Value> store;
+        readonly ConcurrentDictionary<Key, Value> store;
 
         long total_ops_done = 0;
 
-        const string kKeyWorkload = "a";
         readonly int threadCount;
         readonly int numaStyle;
         readonly string distribution;

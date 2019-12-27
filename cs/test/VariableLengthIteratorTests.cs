@@ -22,7 +22,8 @@ namespace FASTER.test
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = vlLength }
                 );
-            fht.StartSession();
+
+            var session = fht.NewSession();
 
             try
             {
@@ -36,7 +37,7 @@ namespace FASTER.test
 
                 Set(4, 64, 4);
 
-                fht.CompletePending(true);
+                session.CompletePending(true);
 
                 var data = new List<Tuple<long, int, int>>();
                 using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
@@ -64,9 +65,8 @@ namespace FASTER.test
             }
             finally
             {
-                fht.StopSession();
+                session.Dispose();
                 fht.Dispose();
-                fht = null;
                 log.Close();
             }
 
@@ -74,7 +74,7 @@ namespace FASTER.test
             {
                 var key = new Key() { key = keyValue };
                 ref var value = ref GetValue(length, tag);
-                fht.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default, 0);
             }
         }
 

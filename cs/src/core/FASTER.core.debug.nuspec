@@ -16,17 +16,18 @@
     <tags>key-value store dictionary hashtable concurrent log persistent commit write-ahead</tags>
     <dependencies>
       <group targetFramework="net46">
-        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.6.0" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.7.0" />
         <dependency id="System.Memory" version="4.5.3" />
         <dependency id="System.Threading.Tasks.Extensions" version="4.5.3" />
         <dependency id="System.ValueTuple" version="4.5.0" />
       </group>
       <group targetFramework="netstandard2.0">
-        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.6.0" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.7.0" />
         <dependency id="System.Memory" version="4.5.3" />
         <dependency id="System.Threading.Tasks.Extensions" version="4.5.3" />
         <dependency id="System.ValueTuple" version="4.5.0" />
         <dependency id="System.Interactive.Async" version="4.0.0" />
+        <dependency id="Mono.Posix.NETStandard" version="1.0.0" />
       </group>
     </dependencies>
   </metadata>

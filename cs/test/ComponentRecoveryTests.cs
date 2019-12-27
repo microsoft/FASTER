@@ -22,7 +22,6 @@ namespace FASTER.test.recovery
             var rand1 = new Random(seed);
             var device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
             var allocator = new MallocFixedPageSize<HashBucket>();
-            allocator.Acquire();
 
             //do something
             int numBucketsToAdd = 16 * allocator.GetPageSize();
@@ -41,13 +40,11 @@ namespace FASTER.test.recovery
             //issue call to checkpoint
             allocator.BeginCheckpoint(device, 0, out ulong numBytesWritten);
             //wait until complete
-            allocator.IsCheckpointCompleted(true);
+            allocator.IsCheckpointCompletedAsync().AsTask().Wait();
 
-            allocator.Release();
             allocator.Dispose();
 
             var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
-            recoveredAllocator.Acquire();
 
             //issue call to recover
             recoveredAllocator.BeginRecovery(device, 0, numBucketsToAdd, numBytesWritten, out ulong numBytesRead);
@@ -67,7 +64,6 @@ namespace FASTER.test.recovery
                 }
             }
 
-            recoveredAllocator.Release();
             recoveredAllocator.Dispose();
         }
 
@@ -107,7 +103,7 @@ namespace FASTER.test.recovery
                 ofb_device, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
 
             //wait until complete
-            hash_table1.IsIndexFuzzyCheckpointCompleted(true);
+            hash_table1.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
 
             var hash_table2 = new FasterBase();
             hash_table2.Initialize(size, 512);

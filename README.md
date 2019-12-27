@@ -38,6 +38,9 @@ analysis of C# FASTER KV performance in a wiki page
 C# and C++ versions of FASTER are very similar. FASTER Log is also extremely fast, capable of saturating modern
 NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded setting.
 
+:new: We now support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md) for more information. Also, check out the 
+samples in the playground located [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground).
+
 # Getting Started
 
 Visit our [research website](http://aka.ms/FASTER) for technical details and papers. For FASTER usage and 

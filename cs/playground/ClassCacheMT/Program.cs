@@ -32,7 +32,7 @@ namespace ClassCacheMT
         static FasterKV<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>[] h;
         static long totalReads = 0;
 
-        static void Main(string[] args)
+        static void Main()
         {
             // This sample shows the use of FASTER as a multi-threaded (MT) cache + key-value store for 
             // C# objects. Number of caches and number of threads can be varied.
@@ -62,7 +62,7 @@ namespace ClassCacheMT
                     new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() },
                     null
                     );
-                h[ht].StartSession();
+                var session = h[ht].NewSession();
                 Console.WriteLine("Table {0}:", ht);
                 Console.WriteLine("   Writing keys from 0 to {0} to FASTER", max);
 
@@ -70,23 +70,20 @@ namespace ClassCacheMT
                 sw.Start();
                 for (int i = 0; i < max; i++)
                 {
-                    if (i % 256 == 0)
+                    if (i % (1 << 19) == 0)
                     {
-                        h[ht].Refresh();
-                        if (i % (1 << 19) == 0)
-                        {
-                            // long workingSet = Process.GetCurrentProcess().WorkingSet64;
-                            // Console.WriteLine($"{i}: {workingSet / 1048576}M");
-                        }
+                        // long workingSet = Process.GetCurrentProcess().WorkingSet64;
+                        // Console.WriteLine($"{i}: {workingSet / 1048576}M");
                     }
+
                     var key = new CacheKey(i);
                     var value = new CacheValue(i);
-                    h[ht].Upsert(ref key, ref value, context, 0);
+                    session.Upsert(ref key, ref value, context, 0);
                 }
                 sw.Stop();
                 Console.WriteLine("   Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
                 h[ht].Log.DisposeFromMemory();
-                h[ht].StopSession();
+                session.Dispose();
             }
 
             ContinuousRandomReadWorkload();
@@ -136,8 +133,11 @@ namespace ClassCacheMT
         {
             Console.WriteLine("Issuing uniform random read workload of {0} reads from thread {1}", max, threadid);
 
+            ClientSession<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>[]
+                sessions = new ClientSession<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions>[kNumTables];
+
             for (int ht = 0; ht < kNumTables; ht++)
-                h[ht].StartSession();
+                sessions[ht] = h[ht].NewSession();
 
             var rnd = new Random(threadid);
 
@@ -154,14 +154,14 @@ namespace ClassCacheMT
                 if (i > 0 && (i % 256 == 0))
                 {
                     for (int htcnt = 0; htcnt < kNumTables; htcnt++)
-                        h[htcnt].CompletePending(false);
+                        sessions[htcnt].CompletePending(false);
                     Interlocked.Add(ref totalReads, 256);
                 }
                 long k = rnd.Next(max);
 
-                var ht = h[rnd.Next(kNumTables)];
+                var hts = sessions[rnd.Next(kNumTables)];
                 var key = new CacheKey(k);
-                var status = ht.Read(ref key, ref input, ref output, context, 0);
+                var status = hts.Read(ref key, ref input, ref output, context, 0);
 
                 switch (status)
                 {
@@ -183,7 +183,7 @@ namespace ClassCacheMT
             Console.WriteLine($"Reads completed with PENDING: {statusPending}");
 
             for (int ht = 0; ht < kNumTables; ht++)
-                h[ht].StopSession();
+                sessions[ht].Dispose();
             */
         }
     }

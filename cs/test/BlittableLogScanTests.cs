@@ -27,13 +27,11 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BlittableFASTERScanTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
                 (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
-            fht.StartSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -42,6 +40,8 @@ namespace FASTER.test
         [Test]
         public void BlittableDiskWriteScan()
         {
+            using var session = fht.NewSession();
+
             var s = fht.Log.Subscribe(new LogObserver());
 
             var start = fht.Log.TailAddress;
@@ -49,7 +49,7 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
             fht.Log.FlushAndEvict(true);
 
