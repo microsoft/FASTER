@@ -85,7 +85,7 @@ namespace FASTER.test.recovery.objects
             logPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests.log");
             objPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests_HEAP.log");
             log = Devices.CreateLogDevice(logPath);
-            objlog = Devices.CreateLogDevice(objPath);
+            objlog = Devices.CreateLogDevice(objPath, false);
             h = new FasterKV
                 <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
                 (1L << 20, new MyFunctions(),
