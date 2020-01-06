@@ -65,6 +65,8 @@ namespace FASTER.core
             {
                 if (objectLogDevice == null)
                     throw new FasterException("Objects in key/value, but object log not provided during creation of FASTER instance");
+                if (objectLogDevice.SegmentSize != -1)
+                    throw new FasterException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
             }
         }
 
@@ -567,7 +569,7 @@ namespace FASTER.core
 
             // Request objects from objlog
             result.objlogDevice.ReadAsync(
-                (int)(result.page >> (LogSegmentSizeBits - LogPageSizeBits)),
+                (int)((result.page - result.offset) >> (LogSegmentSizeBits - LogPageSizeBits)),
                 (ulong)startptr,
                 (IntPtr)objBuffer.aligned_pointer, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
         }

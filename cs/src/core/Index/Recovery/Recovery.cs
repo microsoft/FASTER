@@ -222,7 +222,7 @@ namespace FASTER.core
             var recoveryDevice = checkpointManager.GetSnapshotLogDevice(recoveryInfo.guid);
             var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(recoveryInfo.guid);
             recoveryDevice.Initialize(hlog.GetSegmentSize());
-            objectLogRecoveryDevice.Initialize(hlog.GetSegmentSize());
+            objectLogRecoveryDevice.Initialize(-1);
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress)
             {
                 recoveryDevice = recoveryDevice,

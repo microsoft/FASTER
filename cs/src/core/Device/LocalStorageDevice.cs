@@ -285,7 +285,7 @@ namespace FASTER.core
                 throw new IOException($"Error creating log file for {GetSegmentName(segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
             }
 
-            if (preallocateFile)
+            if (preallocateFile && segmentSize != -1)
                 SetFileSize(FileName, logHandle, segmentSize);
 
             try

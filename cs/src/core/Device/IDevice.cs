@@ -48,7 +48,7 @@ namespace FASTER.core
         /// <summary>
         /// Initialize device. This function is used to pass optional information that may only be known after
         /// FASTER initialization (whose constructor takes in IDevice upfront). Implementation are free to ignore
-        /// information if it does not need the supplied information.
+        /// information if it does not need the supplied information. Segment size of -1 is used for object log.
         /// 
         /// This is a bit of a hack. 
         /// </summary>
