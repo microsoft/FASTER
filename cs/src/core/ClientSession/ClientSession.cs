@@ -263,13 +263,17 @@ namespace FASTER.core
             if (spinWaitForCommit)
             {
                 if (spinWait != true)
+                {
+                    if (supportAsync) UnsafeSuspendThread();
                     throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
+                }
                 do
                 {
                     fht.InternalCompletePending(ctx, spinWait);
                     if (fht.InRestPhase())
                     {
                         fht.InternalCompletePending(ctx, spinWait);
+                        if (supportAsync) UnsafeSuspendThread();
                         return true;
                     }
                 } while (spinWait);

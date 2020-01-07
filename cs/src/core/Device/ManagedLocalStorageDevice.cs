@@ -321,7 +321,7 @@ namespace FASTER.core
 #endif
 
             if (preallocateFile && segmentSize != -1)
-            SetFileSize(logWriteHandle, segmentSize);
+                SetFileSize(logWriteHandle, segmentSize);
 
             return logWriteHandle;
         }
