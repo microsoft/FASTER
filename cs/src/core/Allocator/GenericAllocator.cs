@@ -407,6 +407,9 @@ namespace FASTER.core
                         if (ValueHasObjects())
                             valueSerializer.BeginSerialize(ms);
 
+                        // Reset address list for next chunk
+                        addr = new List<long>();
+
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
