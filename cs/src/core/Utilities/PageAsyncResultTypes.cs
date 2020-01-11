@@ -15,6 +15,7 @@ namespace FASTER.core
     public class PageAsyncReadResult<TContext> : IAsyncResult
     {
         internal long page;
+        internal long offset;
         internal TContext context;
         internal CountdownEvent handle;
         internal SectorAlignedMemory freeBuffer1;

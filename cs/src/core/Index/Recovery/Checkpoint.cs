@@ -262,7 +262,7 @@ namespace FASTER.core
                                 _hybridLogCheckpoint.snapshotFileDevice = checkpointManager.GetSnapshotLogDevice(_hybridLogCheckpointToken);
                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice = checkpointManager.GetSnapshotObjectLogDevice(_hybridLogCheckpointToken);
                                 _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(hlog.GetSegmentSize());
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
 
                                 long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
                                 long endPage = hlog.GetPage(_hybridLogCheckpoint.info.finalLogicalAddress);
