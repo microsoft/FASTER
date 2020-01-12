@@ -18,9 +18,11 @@ namespace ClassRecoveryDurablity
                 stop = true;
             });
 
+            int stopAfterIteration = args.Any() ? int.Parse(args[0]) : 5;
+
             while (true)
             {
-                Filldb(5);
+                Filldb(stopAfterIteration);
 
                 if (stop == true)
                     break;
