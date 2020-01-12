@@ -131,8 +131,6 @@ namespace ClassRecoveryDurablity
 
             }).Wait();
 
-            TestData(store);
-
             store.Checkpoint();
             Console.WriteLine("checkpoint done");
 
