@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\core\FASTER.core.csproj" />
+    <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
   </ItemGroup>
 
 </Project>

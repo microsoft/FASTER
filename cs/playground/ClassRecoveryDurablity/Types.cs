@@ -53,7 +53,6 @@ namespace ClassRecoveryDurablity
             {
                 var bytes = System.Text.Encoding.UTF8.GetBytes(obj.tableType);
                 var len = BitConverter.GetBytes(bytes.Length);
-
                 this.writer.Write(len);
                 this.writer.Write(bytes);
 
@@ -77,9 +76,7 @@ namespace ClassRecoveryDurablity
             {
                 var bytesr = new byte[4];
                 this.reader.Read(bytesr, 0, 4);
-                var sizet = BitConverter.ToInt32(bytesr);
-
-                int size = BitConverter.ToInt32(bytesr); ;
+                int size = BitConverter.ToInt32(bytesr);
                 obj.value = this.reader.ReadBytes(size);
             }
 

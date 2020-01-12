@@ -207,6 +207,8 @@ namespace ClassRecoveryDurablity
             }).Wait();
 
             store.Checkpoint();
+
+            Console.WriteLine("call dispose");
             store.Dispose();
 
         }
