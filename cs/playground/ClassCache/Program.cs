@@ -18,7 +18,7 @@ namespace ClassCache
         static readonly bool useReadCache = true;
         const int max = 1000000;
 
-        static void Main(string[] args)
+        static void Main()
         {
             // This sample shows the use of FASTER as a cache + key-value store for 
             // C# objects.
@@ -45,7 +45,7 @@ namespace ClassCache
                 );
 
             // Thread starts session with FASTER
-            h.StartSession();
+            var s = h.NewSession();
 
             Console.WriteLine("Writing keys from 0 to {0} to FASTER", max);
 
@@ -53,18 +53,14 @@ namespace ClassCache
             sw.Start();
             for (int i = 0; i < max; i++)
             {
-                if (i % 256 == 0)
+                if (i % (1<<19) == 0)
                 {
-                    h.Refresh();
-                    if (i % (1<<19) == 0)
-                    {
-                        long workingSet = Process.GetCurrentProcess().WorkingSet64;
-                        Console.WriteLine($"{i}: {workingSet / 1048576}M");
-                    }
+                    long workingSet = Process.GetCurrentProcess().WorkingSet64;
+                    Console.WriteLine($"{i}: {workingSet / 1048576}M");
                 }
                 var key = new CacheKey(i);
                 var value = new CacheValue(i);
-                h.Upsert(ref key, ref value, context, 0);
+                s.Upsert(ref key, ref value, context, 0);
             }
             sw.Stop();
             Console.WriteLine("Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds/1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
@@ -86,12 +82,12 @@ namespace ClassCache
             var workload = int.Parse(Console.ReadLine());
 
             if (workload == 0)
-                RandomReadWorkload(h, max);
+                RandomReadWorkload(s, max);
             else
-                InteractiveReadWorkload(h, max);
+                InteractiveReadWorkload(s);
 
             // Stop session and clean up
-            h.StopSession();
+            s.Dispose();
             h.Dispose();
             log.Close();
             objlog.Close();
@@ -100,7 +96,7 @@ namespace ClassCache
             Console.ReadLine();
         }
 
-        private static void RandomReadWorkload(FasterKV<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> h, int max)
+        private static void RandomReadWorkload(ClientSession<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> s, int max)
         {
             Console.WriteLine("Issuing uniform random read workload of {0} reads", max);
 
@@ -118,14 +114,14 @@ namespace ClassCache
                 long k = rnd.Next(max);
 
                 var key = new CacheKey(k);
-                var status = h.Read(ref key, ref input, ref output, context, 0);
+                var status = s.Read(ref key, ref input, ref output, context, 0);
 
                 switch (status)
                 {
                     case Status.PENDING:
                         statusPending++;
                         if (statusPending % 1000 == 0)
-                            h.CompletePending(false);
+                            s.CompletePending(false);
                         break;
                     case Status.OK:
                         if (output.value.value != key.key)
@@ -135,13 +131,13 @@ namespace ClassCache
                         throw new Exception("Error!");
                 }
             }
-            h.CompletePending(true);
+            s.CompletePending(true);
             sw.Stop();
             Console.WriteLine("Total time to read {0} elements: {1:0.000} secs ({2:0.00} reads/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
             Console.WriteLine($"Reads completed with PENDING: {statusPending}");
         }
 
-        private static void InteractiveReadWorkload(FasterKV<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> h, int max)
+        private static void InteractiveReadWorkload(ClientSession<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext, CacheFunctions> s)
         {
             Console.WriteLine("Issuing interactive read workload");
 
@@ -158,11 +154,11 @@ namespace ClassCache
                 var key = new CacheKey(k);
 
                 context.ticks = DateTime.Now.Ticks;
-                var status = h.Read(ref key, ref input, ref output, context, 0);
+                var status = s.Read(ref key, ref input, ref output, context, 0);
                 switch (status)
                 {
                     case Status.PENDING:
-                        h.CompletePending(true);
+                        s.CompletePending(true);
                         break;
                     case Status.OK:
                         long ticks = DateTime.Now.Ticks - context.ticks;

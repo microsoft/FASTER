@@ -27,13 +27,11 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\NativeReadCacheTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
                 (1L<<20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
-            fht.StartSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -42,15 +40,17 @@ namespace FASTER.test
         [Test]
         public void NativeDiskWriteReadCache()
         {
-            InputStruct input = default(InputStruct);
+            using var session = fht.NewSession();
+
+            InputStruct input = default;
 
             for (int i = 0; i < 2000; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Evict all records from main memory of hybrid log
             fht.Log.FlushAndEvict(true);
@@ -58,23 +58,23 @@ namespace FASTER.test
             // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
             for (int i = 0; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
                 Assert.IsTrue(output.value.vfield2 == value.vfield2);
@@ -86,23 +86,23 @@ namespace FASTER.test
             // Read 100 keys - all should be served from disk, populating cache
             for (int i = 1900; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
                 Assert.IsTrue(output.value.vfield2 == value.vfield2);
@@ -114,7 +114,7 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             // RMW to overwrite the read cache
@@ -122,19 +122,19 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
-                var status = fht.RMW(ref key1, ref input, Empty.Default, 0);
+                var status = session.RMW(ref key1, ref input, Empty.Default, 0);
                 if (status == Status.PENDING)
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
             }
 
             // Read 100 keys
             for (int i = 1900; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
                 Assert.IsTrue(output.value.vfield2 == value.vfield2);
@@ -145,15 +145,17 @@ namespace FASTER.test
         [Test]
         public void NativeDiskWriteReadCache2()
         {
-            InputStruct input = default(InputStruct);
+            using var session = fht.NewSession();
+
+            InputStruct input = default;
 
             for (int i = 0; i < 2000; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Dispose the hybrid log from memory entirely
             fht.Log.DisposeFromMemory();
@@ -161,23 +163,23 @@ namespace FASTER.test
             // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
             for (int i = 0; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
                 Assert.IsTrue(output.value.vfield2 == value.vfield2);
@@ -189,23 +191,23 @@ namespace FASTER.test
             // Read 100 keys - all should be served from disk, populating cache
             for (int i = 1900; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
                 Assert.IsTrue(output.value.vfield2 == value.vfield2);

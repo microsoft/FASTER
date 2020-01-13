@@ -93,6 +93,9 @@ namespace FASTER.test
 
         public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
+            if (dst == default)
+                dst = new MyOutput();
+
             dst.value = value;
         }
 
@@ -102,7 +105,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -127,6 +130,8 @@ namespace FASTER.test
 
         public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
+            if (dst == default)
+                dst = new MyOutput();
             dst.value = value;
         }
 
@@ -165,7 +170,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -238,7 +243,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -361,7 +366,7 @@ namespace FASTER.test
             return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 

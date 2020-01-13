@@ -20,7 +20,7 @@ namespace SumStore
             {
                 Console.WriteLine("Usage:");
                 Console.WriteLine("Concurrency Test:\n  SumStore.exe concurrency_test #threads");
-                Console.WriteLine("Recovery Test:\n  SumStore.exe recovery #threads populate");
+                Console.WriteLine("Recovery Test:\n  SumStore.exe recovery_test #threads populate");
                 Console.WriteLine("  SumStore.exe recovery_test #threads continue");
                 Console.WriteLine("  SumStore.exe recovery_test #threads recover");
                 Console.WriteLine("  SumStore.exe recovery_test #threads recover single_guid");

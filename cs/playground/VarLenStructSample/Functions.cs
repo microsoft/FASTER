@@ -43,9 +43,9 @@ namespace VarLenStructSample
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions

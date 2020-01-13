@@ -1,14 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
@@ -33,13 +26,11 @@ namespace FASTER.test
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            fht.StartSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -49,15 +40,17 @@ namespace FASTER.test
         [Test]
         public void ObjectDiskWriteReadCache()
         {
-            MyInput input = default(MyInput);
+            using var session = fht.NewSession();
+
+            MyInput input = default;
 
             for (int i = 0; i < 2000; i++)
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default, 0);
             }
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Evict all records from main memory of hybrid log
             fht.Log.FlushAndEvict(true);
@@ -69,9 +62,9 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
@@ -81,7 +74,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.value == value.value);
             }
@@ -96,9 +89,9 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
@@ -108,7 +101,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.value == value.value);
             }
@@ -119,7 +112,7 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             // RMW to overwrite the read cache
@@ -127,9 +120,9 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                var status = fht.RMW(ref key1, ref input, Empty.Default, 0);
+                var status = session.RMW(ref key1, ref input, Empty.Default, 0);
                 if (status == Status.PENDING)
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
             }
 
             // Read the 100 keys
@@ -139,7 +132,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.value == value.value);
             }
@@ -148,15 +141,17 @@ namespace FASTER.test
         [Test]
         public void ObjectDiskWriteReadCache2()
         {
-            MyInput input = default(MyInput);
+            using var session = fht.NewSession();
+
+            MyInput input = default;
 
             for (int i = 0; i < 2000; i++)
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default, 0);
             }
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Dispose the hybrid log from memory entirely
             fht.Log.DisposeFromMemory();
@@ -168,9 +163,9 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
@@ -180,7 +175,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.value == value.value);
             }
@@ -195,9 +190,9 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.PENDING);
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
@@ -207,7 +202,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(status == Status.OK);
                 Assert.IsTrue(output.value.value == value.value);
             }

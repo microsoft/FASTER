@@ -50,7 +50,7 @@ namespace FASTER.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public BlockingCollection<AsyncIOContext<Key, Value>> callbackQueue;
+        public AsyncQueue<AsyncIOContext<Key, Value>> callbackQueue;
 
         /// <summary>
         /// Dispose
