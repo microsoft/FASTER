@@ -9,6 +9,11 @@ namespace ClassRecoveryDurablity
     {
         static bool stop;
 
+        static int deleteWindown = 5;
+        static int indexAhead = 10000000;
+        static int startDeletHeight = 20;
+        static int addCount = 100;
+        static int deletePosition = 20;
         static void Main(string[] args)
         {
             Task.Run(() =>
@@ -18,7 +23,7 @@ namespace ClassRecoveryDurablity
                 stop = true;
             });
 
-            int stopAfterIteration = args.Any() ? int.Parse(args[0]) : 5;
+            int stopAfterIteration = args.Any() ? int.Parse(args[0]) : 10;
 
             while (true)
             {
@@ -53,7 +58,7 @@ namespace ClassRecoveryDurablity
                 store.Checkpoint();
             }
 
-            TestData(store);
+            TestData(store, 20);
 
             Task.Run(() =>
             {
@@ -71,8 +76,8 @@ namespace ClassRecoveryDurablity
                     blockHeight += 1;
 
                     var start = blockHeight;
-                    var toadd = start * 10000000;
-                    for (long i = toadd; i < toadd + 1000; i++)
+                    var toadd = start * indexAhead;
+                    for (long i = toadd; i < toadd + addCount; i++)
                     {
                         var data = Generate(i);
 
@@ -80,24 +85,27 @@ namespace ClassRecoveryDurablity
                         var upsertValue = new Types.StoreValue { value = data.data };
                         Types.StoreContext context2 = new Types.StoreContext();
                         var addStatus = session.Upsert(ref upsertKey, ref upsertValue, context2, 1);
+                        
+                        //Console.WriteLine("add=" + i);
 
                         if (addStatus != Status.OK)
                             throw new Exception();
                     }
 
-                    if (blockHeight > 150)
+                    if (start > startDeletHeight)
                     {
-                        toadd = (start - 5) * 10000000;
+                        var todelete = (start - deleteWindown) * indexAhead;
 
-                        for (long i = toadd; i < toadd + 1000; i++)
+                        for (long i = todelete; i < todelete + addCount; i++)
                         {
-                            if (i % 100 == 0)
+                            if (i % deletePosition == 0)
                             {
                                 var data = Generate(i);
 
                                 var deteletKey = new Types.StoreKey { tableType = "C", key = data.key };
                                 Types.StoreContext context2 = new Types.StoreContext();
                                 var deleteStatus = session.Delete(ref deteletKey, context2, 1);
+                                //Console.WriteLine("delete=" + i);
 
                                 if (deleteStatus != Status.OK)
                                     throw new Exception();
@@ -136,14 +144,14 @@ namespace ClassRecoveryDurablity
             store.Checkpoint();
             Console.WriteLine("checkpoint done");
 
-            TestData(store);
+            TestData(store, 20);
 
             Console.WriteLine("call dispose");
             store.Dispose();
 
         }
 
-        static void TestData(Storedb store)
+        static void TestData(Storedb store, int  count)
         {
             Task.Run(() =>
             {
@@ -160,61 +168,62 @@ namespace ClassRecoveryDurablity
                 var blkStatus = session.Read(ref lastblockKey, ref input, ref output, context1, 1);
                 var blockHeight = BitConverter.ToUInt32(output.value.value);
 
-                var from = 1;
+                var from = count == -1 ? 1 : blockHeight - count;
+                if (from <= 0)
+                    return;
 
                 while (from <= blockHeight)
                 {
                     var start = from;
-                    var toadd = start * 10000000;
-                    for (long i = toadd; i < toadd + 1000; i++)
+                    var toadd = start * indexAhead;
+                    var todelete = start * indexAhead;
+                    var deleteHegith = from > startDeletHeight - deleteWindown && from <= blockHeight - deleteWindown;
+
+                    for (long i = toadd, j = todelete; i < toadd + addCount; i++, j++)
                     {
-                        var data = Generate(i);
-
-                        Types.StoreInput input1 = new Types.StoreInput();
-                        Types.StoreOutput output1 = new Types.StoreOutput();
-                        Types.StoreContext context = new Types.StoreContext();
-                        var readKey = new Types.StoreKey { tableType = "C", key = data.key };
-                        var addStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
-
-                        if (addStatus == Status.PENDING)
+                        if (deleteHegith && (j % deletePosition == 0))
                         {
-                            session.CompletePending(true);
-                            context.FinalizeRead(ref addStatus, ref output1);
-                        }
+                            var data = Generate(j);
 
-                        if (addStatus != Status.OK)
-                            throw new Exception();
+                            Types.StoreInput input1 = new Types.StoreInput();
+                            Types.StoreOutput output1 = new Types.StoreOutput();
+                            Types.StoreContext context = new Types.StoreContext();
+                            var readKey = new Types.StoreKey { tableType = "C", key = data.key };
 
-                        if (output1.value.value.SequenceEqual(data.data) == false)
-                            throw new Exception();
-                    }
+                            var deleteStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
+                            //Console.WriteLine("test delete=" + i);
 
-                    if (from > 150)
-                    {
-                        toadd = (start - 5) * 10000000;
-
-                        for (long i = toadd; i < toadd + 1000; i++)
-                        {
-                            if (i % 100 == 0)
+                            if (deleteStatus == Status.PENDING)
                             {
-                                var data = Generate(i);
-
-                                Types.StoreInput input1 = new Types.StoreInput();
-                                Types.StoreOutput output1 = new Types.StoreOutput();
-                                Types.StoreContext context = new Types.StoreContext();
-                                var readKey = new Types.StoreKey { tableType = "C", key = data.key };
-
-                                var deleteStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
-
-                                if (deleteStatus == Status.PENDING)
-                                {
-                                    session.CompletePending(true);
-                                    context.FinalizeRead(ref deleteStatus, ref output1);
-                                }
-
-                                if (deleteStatus != Status.NOTFOUND)
-                                    throw new Exception();
+                                session.CompletePending(true);
+                                context.FinalizeRead(ref deleteStatus, ref output1);
                             }
+
+                            if (deleteStatus != Status.NOTFOUND)
+                                throw new Exception();
+                        }
+                        else
+                        {
+                            var data = Generate(i);
+
+                            Types.StoreInput input1 = new Types.StoreInput();
+                            Types.StoreOutput output1 = new Types.StoreOutput();
+                            Types.StoreContext context = new Types.StoreContext();
+                            var readKey = new Types.StoreKey { tableType = "C", key = data.key };
+                            var addStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
+                            //Console.WriteLine("test add=" + i);
+
+                            if (addStatus == Status.PENDING)
+                            {
+                                session.CompletePending(true);
+                                context.FinalizeRead(ref addStatus, ref output1);
+                            }
+
+                            if (addStatus != Status.OK)
+                                throw new Exception();
+
+                            if (output1.value.value.SequenceEqual(data.data) == false)
+                                throw new Exception();
                         }
                     }
 
@@ -230,8 +239,12 @@ namespace ClassRecoveryDurablity
 
         static (byte[] key, byte[] data) Generate(long i)
         {
+            // Generate data deterministically 
             byte[] key = BitConverter.GetBytes(i * int.MaxValue);
-            byte[] data = System.Text.Encoding.UTF8.GetBytes("00000000000000000000000000000000000000000000000000000000000000000000000000000000000" + i);
+
+            byte[] data = i % 2 == 0 ?
+                System.Text.Encoding.UTF8.GetBytes("00000000000000000000000000000000000000000000000000000000000000000000000000000000000" + i) :
+                System.Text.Encoding.UTF8.GetBytes("11111111111111111111111111111111111111111111111111111111111111111111" + i);
 
             return (key, data);
         }
