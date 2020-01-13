@@ -232,12 +232,6 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            var seg = hlog.GetSegmentOffsets();
-                            if (seg != null)
-                            {
-                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-                            }
                             MakeTransition(intermediateState, nextState);
                             break;
                         }
@@ -251,6 +245,13 @@ namespace FASTER.core
 
                             _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
                             _hybridLogCheckpoint.info.beginAddress = hlog.BeginAddress;
+
+                            var seg = hlog.GetSegmentOffsets();
+                            if (seg != null)
+                            {
+                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+                            }
 
                             if (FoldOverSnapshot)
                             {
