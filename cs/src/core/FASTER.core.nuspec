@@ -6,20 +6,28 @@
     <title>FASTER</title>
     <authors>Microsoft</authors>
     <owners>Microsoft</owners>
-    <projectUrl>https://github.com/Microsoft/FASTER</projectUrl>
+    <projectUrl>https://github.com/microsoft/FASTER</projectUrl>
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <description>FASTER is a fast concurrent key-value store that also supports indexing of larger-than-memory data</description>
-    <releaseNotes>See the project website at https://github.com/Microsoft/FASTER for more details</releaseNotes>
+    <description>FASTER is a fast concurrent persistent log and key-value store for larger-than-memory data.</description>
+    <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details.</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
-    <tags>key-value store dictionary hashtable concurrent log persistent</tags>
+    <tags>key-value store dictionary hashtable concurrent log persistent commit write-ahead</tags>
     <dependencies>
       <group targetFramework="net46">
-        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.2" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.7.0" />
+        <dependency id="System.Memory" version="4.5.3" />
+        <dependency id="System.Threading.Tasks.Extensions" version="4.5.3" />
+        <dependency id="System.ValueTuple" version="4.5.0" />
       </group>
       <group targetFramework="netstandard2.0">
-        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.5.2" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.7.0" />
+        <dependency id="System.Memory" version="4.5.3" />
+        <dependency id="System.Threading.Tasks.Extensions" version="4.5.3" />
+        <dependency id="System.ValueTuple" version="4.5.0" />
+        <dependency id="System.Interactive.Async" version="4.0.0" />
+        <dependency id="Mono.Posix.NETStandard" version="1.0.0" />
       </group>
     </dependencies>
   </metadata>

@@ -275,7 +275,7 @@ namespace FASTER.core
         public FasterBase()
         {
             epoch = new LightEpoch();
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(false, epoch);
+            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(false);
         }
 
         internal Status Free()
@@ -598,7 +598,7 @@ namespace FASTER.core
                         if (compare_word != result_word)
                         {
                             // Install failed, undo allocation; use the winner's entry
-                            overflowBucketsAllocator.FreeAtEpoch(logicalBucketAddress, 0);
+                            overflowBucketsAllocator.Free(logicalBucketAddress);
                             target_entry_word = result_word;
                         }
                         else
@@ -754,7 +754,7 @@ namespace FASTER.core
                             var x = default(HashBucketEntry);
                             x.word = b.bucket_entries[bucket_entry];
                             if (tags.Contains(x.Tag) && !x.Tentative)
-                                throw new Exception("Duplicate tag found in index");
+                                throw new FasterException("Duplicate tag found in index");
                             tags.Add(x.Tag);
                             ++cnt;
                             ++total_record_count;

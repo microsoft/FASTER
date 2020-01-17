@@ -1,18 +1,11 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-using System.Security;
-using System.IO;
 using System.Runtime.CompilerServices;
-using Microsoft.Win32.SafeHandles;
-using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -95,7 +88,7 @@ namespace FASTER.core
         /// <param name="numBytes"></param>
         public unsafe static void Copy(byte* src, byte* dest, int numBytes)
         {
-            for(int i = 0; i < numBytes; i++)
+            for (int i = 0; i < numBytes; i++)
             {
                 *(dest + i) = *(src + i);
             }
@@ -120,7 +113,6 @@ namespace FASTER.core
 
             return (long)Rotr64((ulong)local_rand_hash, 45);
         }
-
 
         /// <summary>
         /// Get 64-bit hash code for a byte array
@@ -147,7 +139,42 @@ namespace FASTER.core
 
             return (long)Rotr64(magicno * hashState, 4);
         }
-    
+
+        /// <summary>
+        /// Compute XOR of all provided bytes
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="length"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe ulong XorBytes(byte* src, int length)
+        {
+            ulong result = 0;
+            byte* curr = src;
+            byte* end = src + length;
+            while (curr + 4 * sizeof(ulong) <= end)
+            {
+                result ^= *(ulong*)curr;
+                result ^= *(1 + (ulong*)curr);
+                result ^= *(2 + (ulong*)curr);
+                result ^= *(3 + (ulong*)curr);
+                curr += 4 * sizeof(ulong);
+            }
+            while (curr + sizeof(ulong) <= end)
+            {
+                result ^= *(ulong*)curr;
+                curr += sizeof(ulong);
+            }
+            while (curr + 1 <= end)
+            {
+                result ^= *curr;
+                curr++;
+            }
+
+            return result;
+        }
+
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ulong Rotr64(ulong x, int n)
         {
@@ -258,5 +285,37 @@ namespace FASTER.core
             return true;
         }
 
+        /// <summary>
+        /// Throws OperationCanceledException if token cancels before the real task completes.
+        /// Doesn't abort the inner task, but allows the calling code to get "unblocked" and react to stuck tasks.
+        /// </summary>
+        internal static Task<T> WithCancellationAsync<T>(this Task<T> task, CancellationToken token, bool useSynchronizationContext = false, bool continueOnCapturedContext = false)
+        {
+            if (!token.CanBeCanceled || task.IsCompleted)
+            {
+                return task;
+            }
+            else if (token.IsCancellationRequested)
+            {
+                return Task.FromCanceled<T>(token);
+            }
+
+            return Inner(task, token, useSynchronizationContext, continueOnCapturedContext);
+
+            static async Task<T> Inner(Task<T> task, CancellationToken token, bool useSynchronizationContext, bool continueOnCapturedContext)
+            {
+                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
+                {
+                    if (task != await Task.WhenAny(task, tcs.Task))
+                    {
+                        token.ThrowIfCancellationRequested();
+                    }
+                }
+
+                // make sure any exceptions in the task get unwrapped and exposed to the caller.
+                return await task.ConfigureAwait(continueOnCapturedContext);
+            }
+        }
     }
 }

@@ -18,6 +18,7 @@ namespace FASTER.test
     internal class GenericLogCompactionTests
     {
         private FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> fht;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
 
         [SetUp]
@@ -32,13 +33,13 @@ namespace FASTER.test
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            fht.StartSession();
+            session = fht.NewSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
+            session.Dispose();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -51,7 +52,6 @@ namespace FASTER.test
             MyInput input = new MyInput();
 
             const int totalRecords = 2000;
-            var start = fht.Log.TailAddress;
             long compactUntil = 0;
 
             for (int i = 0; i < totalRecords; i++)
@@ -61,7 +61,7 @@ namespace FASTER.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0, 0);
             }
 
             fht.Log.Compact(compactUntil);
@@ -75,9 +75,9 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, 0, 0);
+                var status = session.Read(ref key1, ref input, ref output, 0, 0);
                 if (status == Status.PENDING)
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 else
                 {
                     Assert.IsTrue(status == Status.OK);
@@ -93,7 +93,6 @@ namespace FASTER.test
             MyInput input = new MyInput();
 
             const int totalRecords = 2000;
-            var start = fht.Log.TailAddress;
             long compactUntil = 0;
 
             for (int i = 0; i < totalRecords; i++)
@@ -103,7 +102,7 @@ namespace FASTER.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0, 0);
             }
 
             // Put fresh entries for 1000 records
@@ -111,7 +110,7 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0, 0);
             }
 
             fht.Log.Flush(true);
@@ -128,9 +127,9 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = fht.Read(ref key1, ref input, ref output, 0, 0);
+                var status = session.Read(ref key1, ref input, ref output, 0, 0);
                 if (status == Status.PENDING)
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 else
                 {
                     Assert.IsTrue(status == Status.OK);
@@ -146,7 +145,6 @@ namespace FASTER.test
             MyInput input = new MyInput();
 
             const int totalRecords = 2000;
-            var start = fht.Log.TailAddress;
             long compactUntil = 0;
 
             for (int i = 0; i < totalRecords; i++)
@@ -156,17 +154,16 @@ namespace FASTER.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                fht.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new MyKey { key = j };
-                    fht.Delete(ref key1, 0, 0);
+                    session.Delete(ref key1, 0, 0);
                 }
             }
 
-            var tail = fht.Log.TailAddress;
             fht.Log.Compact(compactUntil);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
@@ -179,9 +176,9 @@ namespace FASTER.test
 
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
-                var status = fht.Read(ref key1, ref input, ref output, ctx, 0);
+                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
                 if (status == Status.PENDING)
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 else
                 {
                     if (ctx == 0)

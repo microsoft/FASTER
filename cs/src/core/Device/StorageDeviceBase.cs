@@ -94,13 +94,14 @@ namespace FASTER.core
         /// <param name="epoch"></param>
         public virtual void Initialize(long segmentSize, LightEpoch epoch = null)
         {
-            Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
+            if (segmentSize != -1)
+                Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
             this.segmentSize = segmentSize;
             this.epoch = epoch;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
-                    throw new Exception("Invalid segment size: " + segmentSize);
+                    throw new FasterException("Invalid segment size: " + segmentSize);
                 segmentSizeBits = 64;
                 segmentSizeMask = ~0UL;
             }
@@ -233,7 +234,7 @@ namespace FASTER.core
         public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
         {
             // Truncate only up to segment boundary if address is not aligned
-            TruncateUntilSegmentAsync((int)toAddress >> segmentSizeBits, callback, result);
+            TruncateUntilSegmentAsync((int)(toAddress >> segmentSizeBits), callback, result);
         }
 
         /// <summary>

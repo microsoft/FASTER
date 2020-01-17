@@ -4,6 +4,7 @@
 #pragma warning disable 1591
 
 using System;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -32,7 +33,7 @@ namespace FASTER.core
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
-        public virtual void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+        public virtual void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
     /// <summary>
@@ -62,7 +63,7 @@ namespace FASTER.core
         public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
         public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
-        public override void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
     public class SimpleFunctions<Key, Value> : SimpleFunctions<Key, Value, Empty>
