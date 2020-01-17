@@ -77,5 +77,11 @@ namespace VarLenStructSample
         {
             return sizeof(int) * t.length;
         }
+
+        // Assume array concat semantics for merge
+        public int GetMergedLength(ref VarLenType t1, ref VarLenType t2)
+        {
+            return sizeof(int) * (t1.length + t2.length - 1);
+        }
     }
 }

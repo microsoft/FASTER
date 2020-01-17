@@ -43,6 +43,11 @@ namespace FASTER.core
         public SectorAlignedMemory record;
 
         /// <summary>
+        /// Value accumulator
+        /// </summary>
+        public IHeapContainer<Value> accValue;
+
+        /// <summary>
         /// Object buffer
         /// </summary>
         public SectorAlignedMemory objBuffer;

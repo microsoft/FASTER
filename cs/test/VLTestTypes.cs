@@ -34,6 +34,11 @@ namespace FASTER.test
             return sizeof(long);
         }
 
+        public int GetMergedLength(ref Key t1, ref Key t2)
+        {
+            return sizeof(long);
+        }
+
         public int GetAverageLength()
         {
             return sizeof(long);
@@ -67,6 +72,12 @@ namespace FASTER.test
         public int GetLength(ref VLValue t)
         {
             return sizeof(int) * t.length;
+        }
+
+        // Assume array concat semantics for merge
+        public int GetMergedLength(ref VLValue t1, ref VLValue t2)
+        {
+            return sizeof(int) * (t1.length + t2.length - 1);
         }
 
         public void ToIntArray(ref int[] dst)

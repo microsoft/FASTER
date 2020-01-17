@@ -113,4 +113,35 @@ namespace FASTER.core
         /// <param name="dst"></param>
         bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
     }
+
+    delegate bool CrdtMerger<Key, Value>(ref Key key, ref Value inputValue, ref Value mergedValue);
+
+    /// <summary>
+    /// Extension for reading replicated data (CRDT) values
+    /// </summary>
+    /// <typeparam name="Key"></typeparam>
+    /// <typeparam name="Value"></typeparam>
+    /// <typeparam name="Input"></typeparam>
+    /// <typeparam name="Output"></typeparam>
+    /// <typeparam name="Context"></typeparam>
+    public interface IReplicatedDataFunctions<Key, Value, Input, Output, Context>
+        : IFunctions<Key, Value, Input, Output, Context>
+    {
+        /// <summary>
+        /// Copy-update for CRDT value merge
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="inValue"></param>
+        /// <param name="oldValue"></param>
+        /// <param name="newValue"></param>
+        void CopyMerger(ref Key key, ref Value inValue, ref Value oldValue, ref Value newValue);
+
+        /// <summary>
+        /// In-place update for CRDT value merge
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="inValue"></param>
+        /// <param name="value"></param>
+        bool InPlaceMerger(ref Key key, ref Value inValue, ref Value value);
+    }
 }

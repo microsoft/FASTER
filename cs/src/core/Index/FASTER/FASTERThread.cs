@@ -371,7 +371,7 @@ namespace FASTER.core
             }
         }
 
-        internal void InternalContinuePendingRequestAndCallback(
+        internal unsafe void InternalContinuePendingRequestAndCallback(
                                     FasterExecutionContext opCtx,
                                     FasterExecutionContext currentCtx,
                                     AsyncIOContext<Key, Value> request)
@@ -392,8 +392,9 @@ namespace FASTER.core
             {
                 ref Key key = ref pendingContext.key.Get();
 
-                // Remove from pending dictionary
-                opCtx.ioPendingRequests.Remove(request.id);
+                // Remove from pending dictionary if done
+                if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Final)
+                    opCtx.ioPendingRequests.Remove(request.id);
 
                 OperationStatus internalStatus;
                 // Issue the continue command
@@ -446,7 +447,7 @@ namespace FASTER.core
         }
 
 
-        internal (Status, Output) InternalContinuePendingRequestAndCallback(
+        internal unsafe (Status, Output) InternalContinuePendingRequestAndCallback(
                             long readSerialNo,
                             FasterExecutionContext opCtx,
                             FasterExecutionContext currentCtx,
@@ -470,7 +471,8 @@ namespace FASTER.core
                 ref Key key = ref pendingContext.key.Get();
 
                 // Remove from pending dictionary
-                opCtx.ioPendingRequests.Remove(request.id);
+                if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Final)
+                    opCtx.ioPendingRequests.Remove(request.id);
 
                 OperationStatus internalStatus;
                 // Issue the continue command

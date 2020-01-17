@@ -75,6 +75,7 @@ namespace FASTER.core
         private SystemState _systemState;
         private HybridLogCheckpointInfo _hybridLogCheckpoint;
         private ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
+        private readonly bool isCrdt = false;
 
         /// <summary>
         /// Create FASTER instance
@@ -82,12 +83,15 @@ namespace FASTER.core
         /// <param name="size">Size of core index (#cache lines)</param>
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
+        /// <param name="isCrdt"></param>
         /// <param name="functions">Callback functions</param>
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
-        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
+        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool isCrdt = false)
         {
+            this.isCrdt = isCrdt;
+
             if (comparer != null)
                 this.comparer = comparer;
             else

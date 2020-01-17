@@ -52,6 +52,14 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <returns></returns>
         int GetInitialLength<Input>(ref Input input);
+
+        /// <summary>
+        /// Length of value resulting from merging two values
+        /// </summary>
+        /// <param name="t1"></param>
+        /// <param name="t2"></param>
+        /// <returns></returns>
+        int GetMergedLength(ref T t1, ref T t2);
     }
 
 
@@ -89,6 +97,17 @@ namespace FASTER.core
         /// <param name="t"></param>
         /// <returns></returns>
         public int GetLength(ref T t)
+        {
+            return size;
+        }
+
+        /// <summary>
+        /// Get merged length
+        /// </summary>
+        /// <param name="t1"></param>
+        /// <param name="t2"></param>
+        /// <returns></returns>
+        public int GetMergedLength(ref T t1, ref T t2)
         {
             return size;
         }

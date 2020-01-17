@@ -1462,11 +1462,28 @@ namespace FASTER.core
                     {
                         // The keys are same, so I/O is complete
                         // ctx.record = result.record;
-                        ctx.callbackQueue.Enqueue(ctx);
+
+                        if (functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input, ref hlog.GetContextRecordValue(ref request), ref pendingContext.output))
+                        {
+                            ctx.callbackQueue.Enqueue(ctx);
+                        }                            
+                        else
+                        {
+                            ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
+                            if (ctx.accValue == null)
+                                ctx.accValue = GetValueContainer(ref GetContextRecordValue(ref ctx));
+                            else
+                            {
+                                ctx.accValue.Get()
+                            }
+                            ctx.record.Return();
+                            ctx.record = default;
+                            AsyncGetFromDisk(ctx.logicalAddress, GetAverageRecordSize(), ctx);
+                        }
                     }
                     else
                     {
-                        // Keys are not same. I/O is not complete
+                        // Keys are not same or it is CRDT. I/O is not complete
                         ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
                         if (ctx.logicalAddress >= BeginAddress)
                         {
@@ -1486,7 +1503,6 @@ namespace FASTER.core
                 ctx.record.Return();
                 AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
             }
-
             Overlapped.Free(overlap);
         }
 

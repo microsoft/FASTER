@@ -48,6 +48,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterLogSample", "playgrou
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterKVAsyncSample", "playground\FasterKVAsyncSample\FasterKVAsyncSample.csproj", "{859F76F4-93D8-4D60-BF9A-363E217FA247}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "KeyedList", "playground\KeyedList\KeyedList.csproj", "{68805B24-6DF8-49EB-B747-61174E430A85}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -174,6 +176,12 @@ Global
 		{859F76F4-93D8-4D60-BF9A-363E217FA247}.Release|Any CPU.ActiveCfg = Release|x64
 		{859F76F4-93D8-4D60-BF9A-363E217FA247}.Release|x64.ActiveCfg = Release|x64
 		{859F76F4-93D8-4D60-BF9A-363E217FA247}.Release|x64.Build.0 = Release|x64
+		{68805B24-6DF8-49EB-B747-61174E430A85}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{68805B24-6DF8-49EB-B747-61174E430A85}.Debug|x64.ActiveCfg = Debug|x64
+		{68805B24-6DF8-49EB-B747-61174E430A85}.Debug|x64.Build.0 = Debug|x64
+		{68805B24-6DF8-49EB-B747-61174E430A85}.Release|Any CPU.ActiveCfg = Release|x64
+		{68805B24-6DF8-49EB-B747-61174E430A85}.Release|x64.ActiveCfg = Release|x64
+		{68805B24-6DF8-49EB-B747-61174E430A85}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -196,6 +204,7 @@ Global
 		{E571E686-01A0-44D5-BFF5-B7678284258B} = {A6B14415-D316-4955-BE5F-725BB2DEBEBE}
 		{25C5C6B6-4A8A-46DD-88C1-EB247033FE58} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{859F76F4-93D8-4D60-BF9A-363E217FA247} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
+		{68805B24-6DF8-49EB-B747-61174E430A85} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}

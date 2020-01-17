@@ -83,11 +83,10 @@ namespace FASTER.core
             HashBucketEntry entry = default;
             var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
             OperationStatus status;
-            long logicalAddress;
+            long logicalAddress = entry.Address;
+        RepeatRead:
             if (tagExists)
-            {
-                logicalAddress = entry.Address;
-
+            {                
                 if (UseReadCache && ReadFromCache(ref key, ref logicalAddress, ref physicalAddress, ref latestRecordVersion))
                 {
                     if (sessionCtx.phase == Phase.PREPARE && latestRecordVersion != -1 && latestRecordVersion > sessionCtx.version)
@@ -151,8 +150,9 @@ namespace FASTER.core
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                functions.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
-                return OperationStatus.SUCCESS;
+                if (functions.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output))
+                    return OperationStatus.SUCCESS;
+                goto RepeatRead;
             }
 
             // Immutable region
@@ -161,8 +161,9 @@ namespace FASTER.core
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                functions.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
-                return OperationStatus.SUCCESS;
+                if (functions.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output))
+                    return OperationStatus.SUCCESS;
+                goto RepeatRead;
             }
 
             // On-Disk Region
@@ -242,8 +243,7 @@ namespace FASTER.core
                 if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
-                                       ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
+                functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input, ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
 
                 if (CopyReadsToTail || UseReadCache)
                 {
@@ -863,7 +863,7 @@ namespace FASTER.core
                 BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
-                               true, false, false,
+                               isCrdt ? logicalAddress < hlog.BeginAddress : true, false, false,
                                latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
@@ -876,15 +876,24 @@ namespace FASTER.core
                     if (hlog.GetInfo(physicalAddress).Tombstone)
                     {
                         functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                        if (isCrdt) hlog.GetInfo(newPhysicalAddress).Final = true;
                         status = OperationStatus.NOTFOUND;
+                    }
+                    else if (isCrdt)
+                    {
+                        functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                        status = OperationStatus.SUCCESS;
                     }
                     else
                     {
-                        functions.CopyUpdater(ref key, ref input,
-                                                ref hlog.GetValue(physicalAddress),
-                                                ref hlog.GetValue(newPhysicalAddress));
+                        functions.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref hlog.GetValue(newPhysicalAddress));
                         status = OperationStatus.SUCCESS;
                     }
+                }
+                else if (isCrdt)
+                {
+                    functions.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                    status = OperationStatus.SUCCESS;
                 }
                 else
                 {
@@ -1147,22 +1156,36 @@ namespace FASTER.core
                 BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), pendingContext.version,
-                               true, false, false,
+                               isCrdt ? logicalAddress < hlog.BeginAddress : true, false, false,
                                latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    functions.InitialUpdater(ref key,
-                                             ref pendingContext.input,
-                                             ref hlog.GetValue(newPhysicalAddress));
+                    functions.InitialUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    functions.CopyUpdater(ref key,
-                                            ref pendingContext.input,
-                                            ref hlog.GetValue(physicalAddress),
-                                            ref hlog.GetValue(newPhysicalAddress));
+                    if (hlog.GetInfo(physicalAddress).Tombstone)
+                    {
+                        functions.InitialUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(newPhysicalAddress));
+                        if (isCrdt) hlog.GetInfo(newPhysicalAddress).Final = true;
+                        status = OperationStatus.NOTFOUND;
+                    }
+                    else if (isCrdt)
+                    {
+                        functions.InitialUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(newPhysicalAddress));
+                        status = OperationStatus.SUCCESS;
+                    }
+                    else
+                    {
+                        functions.CopyUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(physicalAddress), ref hlog.GetValue(newPhysicalAddress));
+                        status = OperationStatus.SUCCESS;
+                    }
+                }
+                else if (isCrdt)
+                {
+                    functions.InitialUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
                 }
                 else
@@ -1322,20 +1345,16 @@ namespace FASTER.core
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                            true, false, false,
                            latestLogicalAddress);
+            Debug.Assert(!isCrdt);
             hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
             if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
-                functions.InitialUpdater(ref key,
-                                         ref pendingContext.input,
-                                         ref hlog.GetValue(newPhysicalAddress));
+                functions.InitialUpdater(ref key, ref pendingContext.input, ref hlog.GetValue(newPhysicalAddress));
                 status = OperationStatus.NOTFOUND;
             }
             else
             {
-                functions.CopyUpdater(ref key,
-                                      ref pendingContext.input,
-                                      ref hlog.GetContextRecordValue(ref request),
-                                      ref hlog.GetValue(newPhysicalAddress));
+                functions.CopyUpdater(ref key, ref pendingContext.input, ref hlog.GetContextRecordValue(ref request), ref hlog.GetValue(newPhysicalAddress));
                 status = OperationStatus.SUCCESS;
             }
 
