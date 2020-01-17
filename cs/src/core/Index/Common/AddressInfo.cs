@@ -61,7 +61,7 @@ namespace FASTER.core
                     multiplier = 1;
                     if (val >= (1 << kSizeBits))
                     {
-                        throw new Exception("Unsupported object size: " + value);
+                        throw new FasterException("Unsupported object size: " + value);
                     }
                 }
                 var _word = (long)word;
@@ -87,7 +87,7 @@ namespace FASTER.core
                 word = (IntPtr)_word;
                 if (value != Address)
                 {
-                    throw new Exception("Overflow in AddressInfo");
+                    throw new FasterException("Overflow in AddressInfo" + ((kAddressBits < 64) ? " - consider running the program in x64 mode for larger address space support" : ""));
                 }
             }
         }

@@ -17,10 +17,9 @@ namespace FASTER.test.recovery.sumstore
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);
         const long numOps = (1L << 19);
-        const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fht;
         private string test_path;
         private Guid token;
         private IDevice log;
@@ -37,7 +36,7 @@ namespace FASTER.test.recovery.sumstore
 
             log = Devices.CreateLogDevice(test_path + "\\FullRecoveryTests.log");
 
-            fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
+            fht = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>
                 (keySpace, new Functions(), 
                 new LogSettings { LogDevice = log },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot }
@@ -88,7 +87,7 @@ namespace FASTER.test.recovery.sumstore
         public void Populate()
         {
             // Prepare the dataset
-            var inputArray = new Input[numOps];
+            var inputArray = new AdInput[numOps];
             for (int i = 0; i < numOps; i++)
             {
                 inputArray[i].adId.adId = i % numUniqueKeys;
@@ -96,43 +95,37 @@ namespace FASTER.test.recovery.sumstore
             }
 
             // Register thread with FASTER
-            fht.StartSession();
+            using var session = fht.NewSession();
 
             // Prpcess the batch of input data
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                fht.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if ((i+1) % checkpointInterval == 0)
                 {
                     if (first)
-                        while (!fht.TakeFullCheckpoint(out token))
-                            fht.Refresh();
+                        while (!fht.TakeFullCheckpoint(out token)) ;
                     else
-                        while (!fht.TakeFullCheckpoint(out Guid nextToken))
-                            fht.Refresh();
+                        while (!fht.TakeFullCheckpoint(out Guid nextToken)) ;
 
-                    fht.CompleteCheckpoint(true);
+                    fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
                     first = false;
                 }
 
                 if (i % completePendingInterval == 0)
                 {
-                    fht.CompletePending(false);
-                }
-                else if (i % refreshInterval == 0)
-                {
-                    fht.Refresh();
+                    session.CompletePending(false);
                 }
             }
 
             // Make sure operations are completed
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Deregister thread from FASTER
-            fht.StopSession();
+            session.Dispose();
         }
 
         public void RecoverAndTest(Guid cprVersion, Guid indexVersion)
@@ -141,7 +134,7 @@ namespace FASTER.test.recovery.sumstore
             fht.Recover(cprVersion, indexVersion);
 
             // Create array for reading
-            var inputArray = new Input[numUniqueKeys];
+            var inputArray = new AdInput[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
                 inputArray[i].adId.adId = i;
@@ -149,35 +142,35 @@ namespace FASTER.test.recovery.sumstore
             }
 
             // Register with thread
-            fht.StartSession();
+            var session = fht.NewSession();
 
-            Input input = default(Input);
-            Output output = default(Output);
+            AdInput input = default;
+            Output output = default;
 
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fht.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 Assert.IsTrue(status == Status.OK);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
-            fht.CompletePending(true);
+            session.CompletePending(true);
 
             // Release
-            fht.StopSession();
+            session.Dispose();
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion, new DirectoryConfiguration(test_path));
+            checkpointInfo.Recover(cprVersion, new LocalCheckpointManager(test_path));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var sno = checkpointInfo.continueTokens[guid];
-                for (long i = 0; i <= sno; i++)
+                var cp = checkpointInfo.continueTokens[guid];
+                for (long i = 0; i <= cp.UntilSerialNo; i++)
                 {
                     var id = i % numUniqueKeys;
                     expected[id]++;

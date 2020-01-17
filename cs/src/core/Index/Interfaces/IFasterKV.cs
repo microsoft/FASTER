@@ -2,34 +2,27 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Interface to FASTER key-value store
-    /// (customized for sample types Key, Value, Input, Output, Context)
-    /// Since there are pointers in the API, we cannot automatically create a
-    /// generic version covering arbitrary blittable types. Instead, the
-    /// user defines the customized interface and provides it to FASTER
-    /// so it can return a (generated) instance for that interface.
     /// </summary>
-    public interface IFasterKV<Key, Value, Input, Output, Context> : IDisposable
+    public interface IFasterKV<Key, Value, Input, Output, Context, Functions> : IDisposable
         where Key : new()
         where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        /* Thread-related operations */
+        #region Session Operations (Deprecated)
 
         /// <summary>
         /// Start a session with FASTER. FASTER sessions correspond to threads issuing
         /// operations to FASTER.
         /// </summary>
         /// <returns>Session identifier</returns>
+        [Obsolete("Use NewSession() instead.")]
         Guid StartSession();
 
         /// <summary>
@@ -38,20 +31,25 @@ namespace FASTER.core
         /// </summary>
         /// <param name="guid"></param>
         /// <returns>Sequence number for resuming operations</returns>
-        long ContinueSession(Guid guid);
+        [Obsolete("Use ResumeSession() instead.")] 
+        CommitPoint ContinueSession(Guid guid);
 
         /// <summary>
         /// Stop a session and de-register the thread from FASTER.
         /// </summary>
+        [Obsolete("Use and dispose NewSession() instead.")] 
         void StopSession();
 
         /// <summary>
         /// Refresh the session epoch. The caller is required to invoke Refresh periodically
         /// in order to guarantee system liveness.
         /// </summary>
+        [Obsolete("Use NewSession(), where Refresh() is not required by default.")] 
         void Refresh();
 
-        /* Store Interface */
+        #endregion
+
+        #region Core Index Operations (Deprecated)
 
         /// <summary>
         /// Read operation
@@ -60,9 +58,10 @@ namespace FASTER.core
         /// <param name="input">Input argument used by Reader to select what part of value to read</param>
         /// <param name="output">Reader stores the read result in output</param>
         /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status Read(ref Key key, ref Input input, ref Output output, Context context, long lsn);
+        [Obsolete("Use NewSession() and invoke Read() on the session.")] 
+        Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo);
 
         /// <summary>
         /// (Blind) upsert operation
@@ -70,9 +69,10 @@ namespace FASTER.core
         /// <param name="key">Key of read</param>
         /// <param name="value">Value being upserted</param>
         /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status Upsert(ref Key key, ref Value value, Context context, long lsn);
+        [Obsolete("Use NewSession() and invoke Upsert() on the session.")] 
+        Status Upsert(ref Key key, ref Value value, Context context, long serialNo);
 
         /// <summary>
         /// Atomic read-modify-write operation
@@ -80,19 +80,63 @@ namespace FASTER.core
         /// <param name="key">Key of read</param>
         /// <param name="input">Input argument used by RMW callback to perform operation</param>
         /// <param name="context">User context to identify operation in asynchronous callback</param>
-        /// <param name="lsn">Increasing sequence number of operation (used for recovery)</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
         /// <returns>Status of operation</returns>
-        Status RMW(ref Key key, ref Input input, Context context, long lsn);
+        [Obsolete("Use NewSession() and invoke RMW() on the session.")] 
+        Status RMW(ref Key key, ref Input input, Context context, long serialNo);
+
+        /// <summary>
+        /// Delete entry (use tombstone if necessary)
+        /// Hash entry is removed as a best effort (if key is in memory and at 
+        /// the head of hash chain.
+        /// Value is set to null (using ConcurrentWrite) if it is in mutable region
+        /// </summary>
+        /// <param name="key">Key of delete</param>
+        /// <param name="context">User context to identify operation in asynchronous callback</param>
+        /// <param name="serialNo">Increasing sequence number of operation (used for recovery)</param>
+        /// <returns>Status of operation</returns>
+        [Obsolete("Use NewSession() and invoke Delete() on the session.")] 
+        Status Delete(ref Key key, Context context, long serialNo);
 
         /// <summary>
         /// Complete all pending operations issued by this session
         /// </summary>
         /// <param name="wait">Whether we spin-wait for pending operations to complete</param>
         /// <returns>Whether all pending operations have completed</returns>
+        [Obsolete("Use NewSession() and invoke CompletePending() on the session.")] 
         bool CompletePending(bool wait);
 
+        #endregion
 
-        /* Recovery */
+        #region New Session Operations
+
+        /// <summary>
+        /// Start a new client session with FASTER.
+        /// </summary>
+        /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <returns>Session instance</returns>
+        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool threadAffinitized = false);
+
+        /// <summary>
+        /// Resume (continue) prior client session with FASTER, used during
+        /// recovery from failure.
+        /// </summary>
+        /// <param name="sessionId">ID/name of previous session to resume</param>
+        /// <param name="commitPoint">Prior commit point of durability for session</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <returns>Session instance</returns>
+        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false);
+
+        #endregion
+
+        #region Growth and Recovery
+
+        /// <summary>
+        /// Grow the hash index
+        /// </summary>
+        /// <returns></returns>
+        bool GrowIndex();
 
         /// <summary>
         /// Take full checkpoint of FASTER
@@ -136,15 +180,12 @@ namespace FASTER.core
         /// <summary>
         /// Complete ongoing checkpoint (spin-wait)
         /// </summary>
-        /// <param name="wait"></param>
         /// <returns>Whether checkpoint has completed</returns>
-        bool CompleteCheckpoint(bool wait);
+        ValueTask CompleteCheckpointAsync(CancellationToken token = default);
 
-        /// <summary>
-        /// Grow the hash index
-        /// </summary>
-        /// <returns></returns>
-        bool GrowIndex();
+        #endregion
+
+        #region Other Operations
 
         /// <summary>
         /// Get number of (non-zero) hash entries in FASTER
@@ -167,24 +208,15 @@ namespace FASTER.core
         string DumpDistribution();
 
         /// <summary>
-        /// Experimental feature
-        /// Check if FASTER contains key in memory (between HeadAddress 
-        /// and tail), or between the specified fromAddress (after 
-        /// HeadAddress) and tail
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="fromAddress"></param>
-        /// <returns></returns>
-        Status ContainsKeyInMemory(ref Key key, long fromAddress = -1);
-
-        /// <summary>
         /// Get accessor for FASTER hybrid log
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+        LogAccessor<Key, Value, Input, Output, Context, Functions> Log { get; }
 
         /// <summary>
         /// Get accessor for FASTER read cache
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+        LogAccessor<Key, Value, Input, Output, Context, Functions> ReadCache { get; }
+
+        #endregion
     }
 }

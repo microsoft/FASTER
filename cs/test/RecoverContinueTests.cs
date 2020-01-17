@@ -16,9 +16,9 @@ namespace FASTER.test.recovery.sumstore.recover_continue
     [TestFixture]
     internal class RecoverContinueTests
     {
-        private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht1;
-        private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht2;
-        private FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht3;
+        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht1;
+        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht2;
+        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht3;
         private IDevice log;
         private int numOps;
 
@@ -29,21 +29,21 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints3");
 
             fht1 = new FasterKV
-                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
-                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht3 = new FasterKV
-                <AdId, NumClicks, Input, Output, Empty, SimpleFunctions>
+                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
@@ -92,58 +92,61 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
             long sno = 0;
 
-            Guid sessionToken = fht1.StartSession();
-            IncrementAllValues(ref fht1, ref sno);
-            fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpoint(true);
-            fht1.StopSession();
+            var firstsession = fht1.NewSession("first");
+            IncrementAllValues(ref firstsession, ref sno);
+            fht1.TakeFullCheckpoint(out _);
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            firstsession.Dispose();
 
             // Check if values after checkpoint are correct
-            fht1.StartSession();
-            CheckAllValues(ref fht1, 1);
-            fht1.StopSession();
+            var session1 = fht1.NewSession();
+            CheckAllValues(ref session1, 1);
+            session1.Dispose();
 
             // Recover and check if recovered values are correct
             fht2.Recover();
-            fht2.StartSession();
-            CheckAllValues(ref fht2, 1);
-            fht2.StopSession();
+            var session2 = fht2.NewSession();
+            CheckAllValues(ref session2, 1);
+            session2.Dispose();
 
             // Continue and increment values
-            long newSno = fht2.ContinueSession(sessionToken);
+            var continuesession = fht2.ResumeSession("first", out CommitPoint cp);
+            long newSno = cp.UntilSerialNo;
             Assert.IsTrue(newSno == sno - 1);
-            IncrementAllValues(ref fht2, ref sno);
-            fht2.TakeFullCheckpoint(out token);
-            fht2.CompleteCheckpoint(true);
-            fht2.StopSession();
+            IncrementAllValues(ref continuesession, ref sno);
+            fht2.TakeFullCheckpoint(out _);
+            fht2.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            continuesession.Dispose();
 
             // Check if values after continue checkpoint are correct
-            fht2.StartSession();
-            CheckAllValues(ref fht2, 2);
-            fht2.StopSession();
+            var session3 = fht2.NewSession();
+            CheckAllValues(ref session3, 2);
+            session3.Dispose();
 
 
             // Recover and check if recovered values are correct
             fht3.Recover();
-            long newSno2 = fht3.ContinueSession(sessionToken);
+
+            var nextsession = fht3.ResumeSession("first", out cp);
+            long newSno2 = cp.UntilSerialNo;
             Assert.IsTrue(newSno2 == sno - 1);
-            CheckAllValues(ref fht3, 2);
-            fht3.StopSession();
+            CheckAllValues(ref nextsession, 2);
+            nextsession.Dispose();
         }
 
         private void CheckAllValues(
-            ref FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht,
+            ref ClientSession<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht,
             int value)
         {
-            Input inputArg = default(Input);
-            Output outputArg = default(Output);
+            AdInput inputArg = default;
+            Output outputArg = default;
             for (var key = 0; key < numOps; key++)
             {
                 inputArg.adId.adId = key;
                 var status = fht.Read(ref inputArg.adId, ref inputArg, ref outputArg, Empty.Default, key);
 
                 if (status == Status.PENDING)
-                    fht2.CompletePending(true);
+                    fht.CompletePending(true);
                 else
                 {
                     Assert.IsTrue(outputArg.value.numClicks == value);
@@ -154,10 +157,10 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         private void IncrementAllValues(
-            ref FasterKV<AdId, NumClicks, Input, Output, Empty, SimpleFunctions> fht, 
+            ref ClientSession<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht, 
             ref long sno)
         {
-            Input inputArg = default(Input);
+            AdInput inputArg = default;
             for (int key = 0; key < numOps; key++, sno++)
             {
                 inputArg.adId.adId = key;
@@ -170,13 +173,13 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
     }
 
-    public class SimpleFunctions : IFunctions<AdId, NumClicks, Input, Output, Empty>
+    public class SimpleFunctions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.numClicks == key.adId);
@@ -190,18 +193,18 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
-        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
@@ -212,23 +215,25 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             dst = src;
         }
 
-        public void ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
         {
             dst = src;
+            return true;
         }
 
         // RMW functions
-        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             value = input.numClicks;
         }
 
-        public void InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+            return true;
         }
 
-        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

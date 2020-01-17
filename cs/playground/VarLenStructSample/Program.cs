@@ -19,7 +19,7 @@ namespace VarLenStructSample
         // required, as these are effectively value-types. One may provide safe APIs on top of 
         // this raw functionality using, for example, Span<T> and Memory<T>.
 
-        static void Main(string[] args)
+        static void Main()
         {
             Sample1();
             Console.WriteLine("Press <ENTER> to end");
@@ -37,12 +37,12 @@ namespace VarLenStructSample
                 null, null,
                 new VarLenTypeComparer(),
                 new VariableLengthStructSettings<VarLenType, VarLenType>
-                  { keyLength = new VarLenLength(), valueLength = new VarLenLength() }
+                { keyLength = new VarLenLength(), valueLength = new VarLenLength() }
                 );
-            fht.StartSession();
+            var s = fht.NewSession();
 
 
-            int[] input = default(int[]);
+            int[] input = default;
 
             Random r = new Random(100);
 
@@ -63,7 +63,7 @@ namespace VarLenStructSample
                 for (int j = 0; j < len; j++)
                     *(val + j) = len;
 
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                s.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             bool success = true;
@@ -80,11 +80,11 @@ namespace VarLenStructSample
                 var len = 2 + r.Next(10);
 
                 int[] output = null;
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                 {
-                    fht.CompletePending(true);
+                    s.CompletePending(true);
                 }
                 else
                 {
@@ -93,7 +93,7 @@ namespace VarLenStructSample
                         success = false;
                         break;
                     }
-                        
+
                     for (int j = 0; j < len; j++)
                     {
                         if (output[j] != len)
@@ -113,7 +113,7 @@ namespace VarLenStructSample
                 Console.WriteLine("Sample1: Error!");
             }
 
-            fht.StopSession();
+            s.Dispose();
             fht.Dispose();
             fht = null;
             log.Close();

@@ -7,6 +7,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using FASTER.core;
+using System.Collections.Generic;
 
 namespace FASTER.benchmark
 {
@@ -28,9 +29,9 @@ namespace FASTER.benchmark
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
@@ -54,9 +55,10 @@ namespace FASTER.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
         {
             dst = src;
+            return true;
         }
 
         // RMW functions
@@ -67,9 +69,10 @@ namespace FASTER.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
         {
             value.value += input.value;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

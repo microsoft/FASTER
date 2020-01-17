@@ -33,13 +33,11 @@ namespace FASTER.test
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            fht.StartSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -50,6 +48,8 @@ namespace FASTER.test
         [Test]
         public void GenericDiskWriteScan()
         {
+            using var session = fht.NewSession();
+
             var s = fht.Log.Subscribe(new LogObserver());
 
             var start = fht.Log.TailAddress;
@@ -57,7 +57,7 @@ namespace FASTER.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                fht.Upsert(ref _key, ref _value, Empty.Default, 0);
+                session.Upsert(ref _key, ref _value, Empty.Default, 0);
                 if (i % 100 == 0) fht.Log.FlushAndEvict(true);
             }
             fht.Log.FlushAndEvict(true);

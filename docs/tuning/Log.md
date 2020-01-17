@@ -1,14 +1,14 @@
 ---
 layout: default
-title: Log and Read Cache
+title: Hybrid Log and Read Cache
 parent: Tuning FASTER
 nav_order: 3
 ---
 
-# Configuring the Log
+# Configuring the Hybrid Log
 
 Recall that FASTER consists of the hash index that connects to a hybrid log spanning storage and main 
-memory. The log may be configured using the `LogSettings` input to the FasterKV constructor.
+memory. The hybrid log may be configured using the `LogSettings` input to the FasterKV constructor.
 
 ```cs
 var fht = new FasterKV<...>(1L << 20, new Funcs(), new LogSettings { ... }, ...);

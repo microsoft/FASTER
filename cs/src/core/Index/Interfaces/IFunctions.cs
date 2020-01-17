@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -50,8 +51,8 @@ namespace FASTER.core
         /// Checkpoint completion callback (called per client session)
         /// </summary>
         /// <param name="sessionId">Session ID reporting persistence</param>
-        /// <param name="serialNum">Checkpoint offset (CPR point) for session</param>
-        void CheckpointCompletionCallback(Guid sessionId, long serialNum);
+        /// <param name="commitPoint">Commit point descriptor</param>
+        void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint);
 
         /// <summary>
         /// Initial update for RMW
@@ -76,7 +77,7 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="value"></param>
-        void InPlaceUpdater(ref Key key, ref Input input, ref Value value);
+        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value);
 
         /// <summary>
         /// Single reader
@@ -110,6 +111,6 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="src"></param>
         /// <param name="dst"></param>
-        void ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
+        bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
     }
 }

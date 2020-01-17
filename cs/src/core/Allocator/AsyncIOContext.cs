@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -49,7 +50,7 @@ namespace FASTER.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public BlockingCollection<AsyncIOContext<Key, Value>> callbackQueue;
+        public AsyncQueue<AsyncIOContext<Key, Value>> callbackQueue;
 
         /// <summary>
         /// Dispose
@@ -60,5 +61,20 @@ namespace FASTER.core
             // of the key in pendingContext
             record.Return();
         }
+    }
+
+    internal class SimpleReadContext : IAsyncResult
+    {
+        public long logicalAddress;
+        public SectorAlignedMemory record;
+        public SemaphoreSlim completedRead;
+
+        public object AsyncState => throw new NotImplementedException();
+
+        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
+
+        public bool CompletedSynchronously => throw new NotImplementedException();
+
+        public bool IsCompleted => throw new NotImplementedException();
     }
 }

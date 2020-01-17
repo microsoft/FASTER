@@ -80,9 +80,10 @@ namespace FASTER.test
             value = new MyValue { value = input.value };
         }
 
-        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
+            return true;
         }
 
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
@@ -92,15 +93,19 @@ namespace FASTER.test
 
         public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
+            if (dst == default)
+                dst = new MyOutput();
+
             dst.value = value;
         }
 
-        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
             dst.value = src.value;
+            return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -125,6 +130,8 @@ namespace FASTER.test
 
         public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
+            if (dst == default)
+                dst = new MyOutput();
             dst.value = value;
         }
 
@@ -141,9 +148,10 @@ namespace FASTER.test
             value = new MyValue { value = input.value };
         }
 
-        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
+            return true;
         }
 
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
@@ -156,12 +164,13 @@ namespace FASTER.test
             dst.value = value;
         }
 
-        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
             dst = src;
+            return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -212,9 +221,10 @@ namespace FASTER.test
             value = new MyValue { value = input.value };
         }
 
-        public void InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value)
+        public bool InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
+            return true;
         }
 
         public void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
@@ -227,12 +237,13 @@ namespace FASTER.test
             dst.value = value;
         }
 
-        public void ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
+        public bool ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
         {
             dst.value = src.value;
+            return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 
@@ -334,8 +345,9 @@ namespace FASTER.test
         {
         }
 
-        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
+        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
         {
+            return true;
         }
 
         public void SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
@@ -348,12 +360,13 @@ namespace FASTER.test
             dst.value = value;
         }
 
-        public void ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        public bool ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
         {
             dst = src;
+            return true;
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
         }
 

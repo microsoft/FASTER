@@ -133,6 +133,11 @@ namespace FASTER.core
             Array.Clear(page.buffer, 0, page.buffer.Length);
             if (!Disabled)
                 queue[page.level].Enqueue(page);
+            else
+            {
+                page.handle.Free();
+                page.buffer = null;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

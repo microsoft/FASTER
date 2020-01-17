@@ -16,7 +16,6 @@ namespace FASTER.test.recovery.sumstore
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);
         const long numOps = (1L << 19);
-        const long refreshInterval = (1L << 8);
         const long completePendingInterval = (1L << 10);
         private string rootPath;
         private string sharedLogDirectory;
@@ -53,13 +52,12 @@ namespace FASTER.test.recovery.sumstore
         public void SharedLogDirectory()
         {
             this.original.Initialize($"{this.rootPath}\\OriginalCheckpoint", this.sharedLogDirectory);
-            this.original.Faster.StartSession();
             Assert.IsTrue(IsDirectoryEmpty(this.sharedLogDirectory)); // sanity check
             Populate(this.original.Faster);
 
             // Take checkpoint from original to start the clone from
             Assert.IsTrue(this.original.Faster.TakeFullCheckpoint(out var checkpointGuid));
-            Assert.IsTrue(this.original.Faster.CompleteCheckpoint(wait: true));
+            this.original.Faster.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             // Sanity check against original
             Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
@@ -72,7 +70,6 @@ namespace FASTER.test.recovery.sumstore
             // Recover from original checkpoint
             this.clone.Initialize(cloneCheckpointDirectory, this.sharedLogDirectory);
             this.clone.Faster.Recover(checkpointGuid);
-            this.clone.Faster.StartSession();
 
             // Both sessions should work concurrently
             Test(this.original, checkpointGuid);
@@ -95,7 +92,7 @@ namespace FASTER.test.recovery.sumstore
         {
             public string CheckpointDirectory { get; private set; }
             public string LogDirectory { get; private set; }
-            public FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> Faster { get; private set; }
+            public FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> Faster { get; private set; }
             public IDevice LogDevice { get; private set; }
 
             public void Initialize(string checkpointDirectory, string logDirectory)
@@ -104,7 +101,7 @@ namespace FASTER.test.recovery.sumstore
                 this.LogDirectory = logDirectory;
 
                 this.LogDevice = Devices.CreateLogDevice($"{this.LogDirectory}\\log", deleteOnClose: true);
-                this.Faster = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>(
+                this.Faster = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>(
                     keySpace,
                     new Functions(),
                     new LogSettings { LogDevice = this.LogDevice },
@@ -113,7 +110,6 @@ namespace FASTER.test.recovery.sumstore
 
             public void TearDown()
             {
-                this.Faster?.StopSession();
                 this.Faster?.Dispose();
                 this.Faster = null;
                 this.LogDevice?.Close();
@@ -121,10 +117,12 @@ namespace FASTER.test.recovery.sumstore
             }
         }
 
-        private void Populate(FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fasterInstance)
+        private void Populate(FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fasterInstance)
         {
+            using var session = fasterInstance.NewSession();
+
             // Prepare the dataset
-            var inputArray = new Input[numOps];
+            var inputArray = new AdInput[numOps];
             for (int i = 0; i < numOps; i++)
             {
                 inputArray[i].adId.adId = i % numUniqueKeys;
@@ -134,55 +132,52 @@ namespace FASTER.test.recovery.sumstore
             // Process the batch of input data
             for (int i = 0; i < numOps; i++)
             {
-                fasterInstance.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
                 if (i % completePendingInterval == 0)
                 {
-                    fasterInstance.CompletePending(false);
-                }
-                else if (i % refreshInterval == 0)
-                {
-                    fasterInstance.Refresh();
+                    session.CompletePending(false);
                 }
             }
 
             // Make sure operations are completed
-            fasterInstance.CompletePending(true);
+            session.CompletePending(true);
         }
 
         private void Test(FasterTestInstance fasterInstance, Guid checkpointToken)
         {
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            Assert.IsTrue(checkpointInfo.Recover(checkpointToken, new DirectoryConfiguration(fasterInstance.CheckpointDirectory)));
+            checkpointInfo.Recover(checkpointToken, new LocalCheckpointManager(fasterInstance.CheckpointDirectory));
 
             // Create array for reading
-            var inputArray = new Input[numUniqueKeys];
+            var inputArray = new AdInput[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
                 inputArray[i].adId.adId = i;
                 inputArray[i].numClicks.numClicks = 0;
             }
 
-            var input = default(Input);
+            var input = default(AdInput);
             var output = default(Output);
 
+            using var session = fasterInstance.Faster.NewSession();
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = fasterInstance.Faster.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
                 Assert.IsTrue(status == Status.OK);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
-            fasterInstance.Faster.CompletePending(true);
+            session.CompletePending(true);
 
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var sno = checkpointInfo.continueTokens[guid];
+                var sno = checkpointInfo.continueTokens[guid].UntilSerialNo;
                 for (long i = 0; i <= sno; i++)
                 {
                     var id = i % numUniqueKeys;

@@ -5,11 +5,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using System.IO;
-using System.Diagnostics;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -31,8 +26,8 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
-            : base(settings, comparer, evictCallback, epoch)
+        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
@@ -92,6 +87,8 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
+            base.Dispose();
+
             if (values != null)
             {
                 for (int i = 0; i < values.Length; i++)
@@ -104,7 +101,6 @@ namespace FASTER.core
             handles = null;
             pointers = null;
             values = null;
-            base.Dispose();
         }
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
@@ -121,7 +117,7 @@ namespace FASTER.core
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
         /// <param name="index"></param>
-        protected override void AllocatePage(int index)
+        internal override void AllocatePage(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
             byte[] tmp = new byte[adjustedSize];
@@ -131,10 +127,6 @@ namespace FASTER.core
             long p = (long)handles[index].AddrOfPinnedObject();
             pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
             values[index] = tmp;
-
-            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
-            Interlocked.MemoryBarrier();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -153,11 +145,6 @@ namespace FASTER.core
             return values[pageIndex] != null;
         }
 
-        protected override void DeleteAddressRange(long fromAddress, long toAddress)
-        {
-            base.DeleteAddressRange(fromAddress, toAddress);
-        }
-
         protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
@@ -169,7 +156,7 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, IOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
@@ -203,9 +190,16 @@ namespace FASTER.core
             return page << LogPageSizeBits;
         }
 
-        protected override void ClearPage(long page)
+        protected override void ClearPage(long page, int offset)
         {
-            Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
+            if (offset == 0)
+                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
+            else
+            {
+                // Adjust array offset for cache alignment
+                offset += (int)(pointers[page % BufferSize] - (long)handles[page % BufferSize].AddrOfPinnedObject());
+                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
+            }
         }
 
         /// <summary>
@@ -311,7 +305,7 @@ namespace FASTER.core
 
         internal override void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
-            throw new Exception("BlittableAllocator memory pages are sector aligned - use direct copy");
+            throw new FasterException("BlittableAllocator memory pages are sector aligned - use direct copy");
             // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);
         }
 
@@ -342,6 +336,7 @@ namespace FASTER.core
         /// <param name="devicePageOffset"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
+        /// <param name="cts"></param>
         internal void AsyncReadPagesFromDeviceToFrame<TContext>(
                                         long readPageStart,
                                         int numPages,
@@ -351,7 +346,9 @@ namespace FASTER.core
                                         BlittableFrame frame,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
+                                        IDevice device = null,
+                                        IDevice objectLogDevice = null,
+                                        CancellationTokenSource cts = null)
         {
             var usedDevice = device;
             IDevice usedObjlogDevice = objectLogDevice;
@@ -378,7 +375,8 @@ namespace FASTER.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    frame = frame
+                    frame = frame,
+                    cts = cts
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);

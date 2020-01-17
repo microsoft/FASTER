@@ -134,9 +134,9 @@ namespace FASTER.test
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
@@ -156,9 +156,13 @@ namespace FASTER.test
             src.CopyTo(ref dst);
         }
 
-        public void ConcurrentWriter(ref Key key, ref VLValue src, ref VLValue dst)
+        public bool ConcurrentWriter(ref Key key, ref VLValue src, ref VLValue dst)
         {
+            if (src.length != dst.length)
+                return false;
+
             src.CopyTo(ref dst);
+            return true;
         }
 
         // RMW functions
@@ -166,8 +170,9 @@ namespace FASTER.test
         {
         }
 
-        public void InPlaceUpdater(ref Key key, ref Input input, ref VLValue value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref VLValue value)
         {
+            return true;
         }
 
         public void CopyUpdater(ref Key key, ref Input input, ref VLValue oldValue, ref VLValue newValue)
@@ -199,9 +204,9 @@ namespace FASTER.test
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
@@ -221,9 +226,13 @@ namespace FASTER.test
             src.CopyTo(ref dst);
         }
 
-        public void ConcurrentWriter(ref VLValue key, ref VLValue src, ref VLValue dst)
+        public bool ConcurrentWriter(ref VLValue key, ref VLValue src, ref VLValue dst)
         {
+            if (src.length != dst.length)
+                return false;
+
             src.CopyTo(ref dst);
+            return true;
         }
 
         // RMW functions
@@ -231,8 +240,9 @@ namespace FASTER.test
         {
         }
 
-        public void InPlaceUpdater(ref VLValue key, ref Input input, ref VLValue value)
+        public bool InPlaceUpdater(ref VLValue key, ref Input input, ref VLValue value)
         {
+            return true;
         }
 
         public void CopyUpdater(ref VLValue key, ref Input input, ref VLValue oldValue, ref VLValue newValue)

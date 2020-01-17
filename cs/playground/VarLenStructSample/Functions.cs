@@ -43,9 +43,9 @@ namespace VarLenStructSample
         {
         }
 
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, serialNum);
+            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
@@ -65,9 +65,10 @@ namespace VarLenStructSample
             src.CopyTo(ref dst);
         }
 
-        public void ConcurrentWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
+        public bool ConcurrentWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
         {
             src.CopyTo(ref dst);
+            return true;
         }
 
         // RMW functions
@@ -75,8 +76,9 @@ namespace VarLenStructSample
         {
         }
 
-        public void InPlaceUpdater(ref VarLenType key, ref int[] input, ref VarLenType value)
+        public bool InPlaceUpdater(ref VarLenType key, ref int[] input, ref VarLenType value)
         {
+            return true;
         }
 
         public void CopyUpdater(ref VarLenType key, ref int[] input, ref VarLenType oldValue, ref VarLenType newValue)

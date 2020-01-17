@@ -24,8 +24,13 @@ namespace FASTER.benchmark
             ReadModifyWrite = 2
         }
 
-        const bool kUseSyntheticData = false;
+#if DEBUG
+        const bool kUseSmallData = true;
+        const bool kUseSyntheticData = true;
+#else
         const bool kUseSmallData = false;
+        const bool kUseSyntheticData = false;
+#endif
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
@@ -42,11 +47,10 @@ namespace FASTER.benchmark
         Input[] input_;
         readonly IDevice device;
 
-        FasterKV<Key, Value, Input, Output, Empty, Functions> store;
+        readonly FasterKV<Key, Value, Input, Output, Empty, Functions> store;
 
         long total_ops_done = 0;
 
-        const string kKeyWorkload = "a";
         readonly int threadCount;
         readonly int numaStyle;
         readonly string distribution;
@@ -97,9 +101,9 @@ namespace FASTER.benchmark
             sw.Start();
 
 
-            Value value = default(Value);
-            Input input = default(Input);
-            Output output = default(Output);
+            Value value = default;
+            Input input = default;
+            Output output = default;
 
             long reads_done = 0;
             long writes_done = 0;
@@ -111,7 +115,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            store.StartSession();
+            var session = store.NewSession(null, true);
 
             while (!done)
             {
@@ -136,11 +140,11 @@ namespace FASTER.benchmark
 
                     if (idx % 256 == 0)
                     {
-                        store.Refresh();
+                        session.Refresh();
 
                         if (idx % 65536 == 0)
                         {
-                            store.CompletePending(false);
+                            session.CompletePending(false);
                         }
                     }
 
@@ -148,13 +152,13 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                store.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                                session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                Status result = store.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                                Status result = session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++reads_done;
@@ -163,7 +167,7 @@ namespace FASTER.benchmark
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = store.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                                Status result = session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
                                 if (result == Status.OK)
                                 {
                                     ++writes_done;
@@ -192,8 +196,9 @@ namespace FASTER.benchmark
 #endif
             }
 
-            store.CompletePending(true);
-            store.StopSession();
+            session.CompletePending(true);
+            session.Dispose();
+
             sw.Stop();
 
             Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
@@ -312,7 +317,7 @@ namespace FASTER.benchmark
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            store.StartSession();
+            var session = store.NewSession(null, true);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -321,7 +326,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            Value value = default(Value);
+            Value value = default;
 
             for (long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 chunk_idx < kInitCount;
@@ -331,15 +336,15 @@ namespace FASTER.benchmark
                 {
                     if (idx % 256 == 0)
                     {
-                        store.Refresh();
+                        session.Refresh();
 
                         if (idx % 65536 == 0)
                         {
-                            store.CompletePending(false);
+                            session.CompletePending(false);
                         }
                     }
 
-                    store.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
+                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -357,9 +362,8 @@ namespace FASTER.benchmark
 #endif
             }
 
-
-            store.CompletePending(true);
-            store.StopSession();
+            session.CompletePending(true);
+            session.Dispose();
         }
 
 #if DASHBOARD
@@ -433,7 +437,7 @@ namespace FASTER.benchmark
         }
 #endif
 
-        #region Load Data
+#region Load Data
 
         private unsafe void LoadDataFromFile(string filePath)
         {
@@ -575,7 +579,7 @@ namespace FASTER.benchmark
             Console.WriteLine("loaded " + kTxnCount + " txns.");
 
         }
-        #endregion
+#endregion
 
 
     }

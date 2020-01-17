@@ -4,69 +4,66 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
-#include <functional>
 #include <thread>
+#include <utility>
 #include "gtest/gtest.h"
 
 #include "core/faster.h"
 #include "device/null_disk.h"
 
+#include "test_types.h"
+
 using namespace FASTER::core;
+using FASTER::test::FixedSizeKey;
+using FASTER::test::SimpleAtomicValue;
+
+class Latch {
+ private:
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool triggered_ = false;
+
+ public:
+  void Wait() {
+    std::unique_lock<std::mutex> lock{ mutex_ };
+    while (!triggered_) {
+      cv_.wait(lock);
+    }
+  }
+
+  void Trigger() {
+    std::unique_lock<std::mutex> lock{ mutex_ };
+    triggered_ = true;
+    cv_.notify_all();
+  }
+
+  void Reset() {
+    triggered_ = false;
+  }
+};
+
+template <typename Callable, typename... Args>
+void run_threads(size_t num_threads, Callable worker, Args... args) {
+  Latch latch;
+  auto run_thread = [&latch, &worker, &args...](size_t idx) {
+    latch.Wait();
+    worker(idx, args...);
+  };
+
+  std::deque<std::thread> threads{};
+  for(size_t idx = 0; idx < num_threads; ++idx) {
+    threads.emplace_back(run_thread, idx);
+  }
+
+  latch.Trigger();
+  for(auto& thread : threads) {
+    thread.join();
+  }
+}
+
 TEST(InMemFaster, UpsertRead) {
-  class alignas(2) Key {
-   public:
-    Key(uint8_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint8_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint8_t key_;
-  };
-
-  class UpsertContext;
-  class ReadContext;
-
-  class Value {
-   public:
-    Value()
-      : value_{ 0 } {
-    }
-    Value(const Value& other)
-      : value_{ other.value_ } {
-    }
-    Value(uint8_t value)
-      : value_{ value } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext;
-
-   private:
-    union {
-      uint8_t value_;
-      std::atomic<uint8_t> atomic_value_;
-    };
-  };
+  using Key = FixedSizeKey<uint8_t>;
+  using Value = SimpleAtomicValue<uint8_t>;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -91,10 +88,10 @@ TEST(InMemFaster, UpsertRead) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
-      value.value_ = 23;
+      value.value = 23;
     }
     inline bool PutAtomic(Value& value) {
-      value.atomic_value_.store(42);
+      value.atomic_value.store(42);
       return true;
     }
 
@@ -132,7 +129,7 @@ TEST(InMemFaster, UpsertRead) {
       ASSERT_TRUE(false);
     }
     inline void GetAtomic(const Value& value) {
-      output = value.atomic_value_.load();
+      output = value.atomic_value.load();
     }
 
    protected:
@@ -201,62 +198,15 @@ TEST(InMemFaster, UpsertRead) {
 
 /// The hash always returns "0," so the FASTER store devolves into a linked list.
 TEST(InMemFaster, UpsertRead_DummyHash) {
-  class UpsertContext;
-  class ReadContext;
-
-  class Key {
+  class DummyHash {
    public:
-    Key(uint16_t key)
-      : key_{ key } {
+    inline size_t operator()(const uint16_t& key) const {
+      return 42;
     }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      return KeyHash{ 42 };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext;
-
-   private:
-    uint16_t key_;
   };
 
-  class Value {
-   public:
-    Value()
-      : value_{ 0 } {
-    }
-    Value(const Value& other)
-      : value_{ other.value_ } {
-    }
-    Value(uint16_t value)
-      : value_{ value } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class UpsertContext;
-    friend class ReadContext;
-
-   private:
-    union {
-      uint16_t value_;
-      std::atomic<uint16_t> atomic_value_;
-    };
-  };
+  using Key = FixedSizeKey<uint16_t, DummyHash>;
+  using Value = SimpleAtomicValue<uint16_t>;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -281,10 +231,10 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
     }
     /// Non-atomic and atomic Put() methods.
     inline void Put(Value& value) {
-      value.value_ = key_.key_;
+      value.value = key_.key;
     }
     inline bool PutAtomic(Value& value) {
-      value.atomic_value_.store(key_.key_);
+      value.atomic_value.store(key_.key);
       return true;
     }
 
@@ -322,7 +272,7 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
       ASSERT_TRUE(false);
     }
     inline void GetAtomic(const Value& value) {
-      output = value.atomic_value_.load();
+      output = value.atomic_value.load();
     }
 
    protected:
@@ -368,31 +318,7 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
 }
 
 TEST(InMemFaster, UpsertRead_Concurrent) {
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint32_t key_;
-  };
+  using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContext;
   class ReadContext;
@@ -519,9 +445,10 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  auto upsert_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+
+  auto upsert_worker = [&store](size_t thread_idx) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -529,16 +456,15 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
         ASSERT_TRUE(false);
       };
       UpsertContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx) };
-      Status result = store_->Upsert(context, callback, 1);
+      Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  auto read_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx, uint64_t expected_value) {
-    store_->StartSession();
+  auto read_worker = [&store](size_t thread_idx, uint64_t expected_value) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -546,79 +472,29 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
         ASSERT_TRUE(false);
       };
       ReadContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx) };
-      Status result = store_->Read(context, callback, 1);
+      Status result = store.Read(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(expected_value, context.output_pt1);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
-
   // Insert.
-  std::deque<std::thread> threads{};
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker);
 
   // Read.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 0x1717171717);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 0x1717171717);
 
   // Update.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker);
 
   // Read again.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 0x2a2a2a2a2a2a2a);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 0x2a2a2a2a2a2a2a);
 }
 
 TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
-  class Key {
-   public:
-    Key(uint32_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint32_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint32_t key_;
-  };
+  using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContext;
   class ReadContext;
@@ -680,7 +556,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
       return false;
     }
     inline void unlock(bool replaced) {
-      if(replaced) {
+      if(!replaced) {
         // Just turn off "locked" bit and increase gen number.
         uint64_t sub_delta = ((uint64_t)1 << 62) - 1;
         control_.fetch_sub(sub_delta);
@@ -839,9 +715,10 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  auto upsert_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx, uint32_t value_length) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+
+  auto upsert_worker = [&store](size_t thread_idx, uint32_t value_length) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -849,16 +726,15 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
         ASSERT_TRUE(false);
       };
       UpsertContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx), value_length };
-      Status result = store_->Upsert(context, callback, 1);
+      Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  auto read_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  size_t thread_idx, uint8_t expected_value) {
-    store_->StartSession();
+  auto read_worker = [&store](size_t thread_idx, uint8_t expected_value) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumOps; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -866,105 +742,31 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
         ASSERT_TRUE(false);
       };
       ReadContext context{ static_cast<uint32_t>((thread_idx * kNumOps) + idx) };
-      Status result = store_->Read(context, callback, 1);
+      Status result = store.Read(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(expected_value, context.output_bytes[0]);
       ASSERT_EQ(expected_value, context.output_bytes[1]);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
-
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
 
   // Insert.
-  std::deque<std::thread> threads{};
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx, 7);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker, 7);
 
   // Read.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 88);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 88);
 
   // Update.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(upsert_worker, &store, idx, 11);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, upsert_worker, 11);
 
   // Read again.
-  threads.clear();
-  for(size_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(read_worker, &store, idx, 88);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, read_worker, 88);
 }
+
 TEST(InMemFaster, Rmw) {
-  class Key {
-   public:
-    Key(uint64_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint64_t key_;
-  };
-
-  class RmwContext;
-  class ReadContext;
-
-  class Value {
-   public:
-    Value()
-      : value_{ 0 } {
-    }
-    Value(const Value& other)
-      : value_{ other.value_ } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class RmwContext;
-    friend class ReadContext;
-
-   private:
-    union {
-      int32_t value_;
-      std::atomic<int32_t> atomic_value_;
-    };
-  };
+  using Key = FixedSizeKey<uint64_t>;
+  using Value = SimpleAtomicValue<uint32_t>;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -993,13 +795,13 @@ TEST(InMemFaster, Rmw) {
       return sizeof(value_t);
     }
     inline void RmwInitial(Value& value) {
-      value.value_ = incr_;
+      value.value = incr_;
     }
     inline void RmwCopy(const Value& old_value, Value& value) {
-      value.value_ = old_value.value_ + incr_;
+      value.value = old_value.value + incr_;
     }
     inline bool RmwAtomic(Value& value) {
-      value.atomic_value_.fetch_add(incr_);
+      value.atomic_value.fetch_add(incr_);
       return true;
     }
 
@@ -1038,7 +840,7 @@ TEST(InMemFaster, Rmw) {
       ASSERT_TRUE(false);
     }
     inline void GetAtomic(const Value& value) {
-      output = value.atomic_value_.load();
+      output = value.atomic_value.load();
     }
 
    protected:
@@ -1106,57 +908,8 @@ TEST(InMemFaster, Rmw) {
 }
 
 TEST(InMemFaster, Rmw_Concurrent) {
-  class Key {
-   public:
-    Key(uint64_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint64_t key_;
-  };
-
-  class RmwContext;
-  class ReadContext;
-
-  class Value {
-   public:
-    Value()
-      : value_{ 0 } {
-    }
-    Value(const Value& other)
-      : value_{ other.value_ } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class RmwContext;
-    friend class ReadContext;
-
-   private:
-    union {
-      int64_t value_;
-      std::atomic<int64_t> atomic_value_;
-    };
-  };
+  using Key = FixedSizeKey<uint64_t>;
+  using Value = SimpleAtomicValue<int64_t>;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1186,13 +939,13 @@ TEST(InMemFaster, Rmw_Concurrent) {
     }
 
     inline void RmwInitial(Value& value) {
-      value.value_ = incr_;
+      value.value = incr_;
     }
     inline void RmwCopy(const Value& old_value, Value& value) {
-      value.value_ = old_value.value_ + incr_;
+      value.value = old_value.value + incr_;
     }
     inline bool RmwAtomic(Value& value) {
-      value.atomic_value_.fetch_add(incr_);
+      value.atomic_value.fetch_add(incr_);
       return true;
     }
 
@@ -1231,7 +984,7 @@ TEST(InMemFaster, Rmw_Concurrent) {
       ASSERT_TRUE(false);
     }
     inline void GetAtomic(const Value& value) {
-      output = value.atomic_value_.load();
+      output = value.atomic_value.load();
     }
 
    protected:
@@ -1250,33 +1003,27 @@ TEST(InMemFaster, Rmw_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int64_t incr) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
 
+  auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
+    store.StartSession();
+
+    int64_t incr{ (int64_t) thread_idx * multiplier };
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
       };
       RmwContext context{ idx % kRange, incr };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
-
   // Rmw, increment by 2 * idx.
-  std::deque<std::thread> threads{};
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 2 * idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, 2);
 
   // Read.
   store.StartSession();
@@ -1296,13 +1043,7 @@ TEST(InMemFaster, Rmw_Concurrent) {
   store.StopSession();
 
   // Rmw, decrement by idx.
-  threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, -idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, -1);
 
   // Read again.
   store.StartSession();
@@ -1323,31 +1064,7 @@ TEST(InMemFaster, Rmw_Concurrent) {
 }
 
 TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
-  class Key {
-   public:
-    Key(uint64_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint64_t key_;
-  };
+  using Key = FixedSizeKey<uint64_t>;
 
   class RmwContext;
   class ReadContext;
@@ -1409,7 +1126,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
       return false;
     }
     inline void unlock(bool replaced) {
-      if(replaced) {
+      if(!replaced) {
         // Just turn off "locked" bit and increase gen number.
         uint64_t sub_delta = ((uint64_t)1 << 62) - 1;
         control_.fetch_sub(sub_delta);
@@ -1586,9 +1303,10 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int8_t incr, uint32_t value_length) {
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+
+  auto rmw_worker = [&store](size_t thread_idx, int8_t incr, uint32_t value_length) {
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1596,23 +1314,15 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
         ASSERT_TRUE(false);
       };
       RmwContext context{ idx % kRange, incr, value_length };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
-
   // Rmw, increment by 3.
-  std::deque<std::thread> threads{};
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 3, 5);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, 3, 5);
 
   // Read.
   store.StartSession();
@@ -1634,13 +1344,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
   store.StopSession();
 
   // Rmw, decrement by 4.
-  threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, -4, 8);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, -4, 8);
 
   // Read again.
   store.StartSession();
@@ -1663,37 +1367,13 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
 }
 
 TEST(InMemFaster, Rmw_GrowString_Concurrent) {
-class Key {
-public:
-    Key(uint64_t key)
-            : key_{ key } {
-    }
+  using Key = FixedSizeKey<uint64_t>;
 
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
+  class RmwContext;
+  class ReadContext;
 
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-private:
-    uint64_t key_;
-};
-
-class RmwContext;
-class ReadContext;
-
-class Value {
-public:
+  class Value {
+   public:
     Value()
             : length_{ 0 } {
     }
@@ -1705,7 +1385,7 @@ public:
     friend class RmwContext;
     friend class ReadContext;
 
-private:
+   private:
     uint32_t length_;
 
     const char* buffer() const {
@@ -1714,10 +1394,10 @@ private:
     char* buffer() {
       return reinterpret_cast<char*>(this + 1);
     }
-};
+  };
 
-class RmwContext : public IAsyncContext {
-public:
+  class RmwContext : public IAsyncContext {
+   public:
     typedef Key key_t;
     typedef Value value_t;
 
@@ -1757,19 +1437,19 @@ public:
       return false;
     }
 
-protected:
+   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
 
-private:
+   private:
     char letter_;
     Key key_;
-};
+  };
 
-class ReadContext : public IAsyncContext {
-public:
+  class ReadContext : public IAsyncContext {
+   public:
     typedef Key key_t;
     typedef Value value_t;
 
@@ -1800,26 +1480,28 @@ public:
       output_letters[1] = value.buffer()[value.length_ - 1];
     }
 
-protected:
+   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
 
-private:
+   private:
     Key key_;
-public:
+   public:
     uint8_t output_length;
     // Extract two letters of output.
     char output_letters[2];
-};
+  };
 
-static constexpr int8_t kNumThreads = 2;
-static constexpr size_t kNumRmws = 2048;
-static constexpr size_t kRange = 512;
+  static constexpr int8_t kNumThreads = 2;
+  static constexpr size_t kNumRmws = 2048;
+  static constexpr size_t kRange = 512;
 
-auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_, char start_letter){
-    store_->StartSession();
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+
+  auto rmw_worker = [&store](size_t _, char start_letter){
+    store.StartSession();
 
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1828,28 +1510,20 @@ auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_, cha
       };
       char letter = static_cast<char>(start_letter + idx / kRange);
       RmwContext context{ idx % kRange, letter };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    store_->StopSession();
-};
+    store.StopSession();
+  };
 
-FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+  // Rmw.
+  run_threads(kNumThreads, rmw_worker, 'A');
 
-// Rmw.
-std::deque<std::thread> threads{};
-for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 'A');
-}
-for(auto& thread : threads) {
-    thread.join();
-}
+  // Read.
+  store.StartSession();
 
-// Read.
-store.StartSession();
-
-for(size_t idx = 0; idx < kRange; ++idx) {
+  for(size_t idx = 0; idx < kRange; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
@@ -1860,23 +1534,17 @@ for(size_t idx = 0; idx < kRange; ++idx) {
     ASSERT_EQ(kNumThreads * kNumRmws / kRange, context.output_length);
     ASSERT_EQ('A', context.output_letters[0]);
     ASSERT_EQ('D', context.output_letters[1]);
-}
+  }
 
-store.StopSession();
+  store.StopSession();
 
-// Rmw.
-threads.clear();
-for(int64_t idx = 0; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 'E');
-}
-for(auto& thread : threads) {
-    thread.join();
-}
+  // Rmw.
+  run_threads(kNumThreads, rmw_worker, 'E');
 
-// Read again.
-store.StartSession();
+  // Read again.
+  store.StartSession();
 
-for(size_t idx = 0; idx < kRange; ++idx) {
+  for(size_t idx = 0; idx < kRange; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
@@ -1887,63 +1555,190 @@ for(size_t idx = 0; idx < kRange; ++idx) {
     ASSERT_EQ(2 * kNumThreads * kNumRmws / kRange, context.output_length);
     ASSERT_EQ('A', context.output_letters[0]);
     ASSERT_EQ('H', context.output_letters[1]);
+  }
+
+  store.StopSession();
 }
 
-store.StopSession();
+TEST(InMemFaster, ConcurrentDelete) {
+  using KeyData = std::pair<uint64_t, uint64_t>;
+  struct HashFn {
+    inline size_t operator()(const KeyData& key) const {
+      std::hash<uint64_t> hash_fn;
+      return hash_fn(key.first);
+    }
+  };
+
+  using Key = FixedSizeKey<KeyData, HashFn>;
+  using Value = SimpleAtomicValue<int64_t>;
+
+  class RmwContext : public IAsyncContext {
+   private:
+    Key key_;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    explicit RmwContext(const Key& key)
+      : key_{ key }
+    {}
+
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline static constexpr uint32_t value_size() {
+      return Value::size();
+    }
+
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return Value::size();
+    }
+
+    inline void RmwInitial(Value& value) {
+      value.value = 1;
+    }
+
+    inline void RmwCopy(const Value& old_value, Value& value) {
+      value.value = old_value.value * 2 + 1;
+    }
+
+    inline bool RmwAtomic(Value& value) {
+      // Not supported: so that operation would allocate a new entry for the update.
+      return false;
+    }
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+  };
+
+  class DeleteContext : public IAsyncContext {
+   private:
+    Key key_;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    explicit DeleteContext(const Key& key)
+      : key_{ key }
+    {}
+
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline static constexpr uint32_t value_size() {
+      return Value::size();
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+  };
+
+  class ReadContext : public IAsyncContext {
+   private:
+    Key key_;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    int64_t output;
+
+    explicit ReadContext(const Key& key)
+      : key_{ key }
+    {}
+
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline void Get(const Value& value) {
+      // All reads should be atomic (from the mutable tail).
+      ASSERT_TRUE(false);
+    }
+
+    inline void GetAtomic(const Value& value) {
+      output = value.atomic_value.load();
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+  };
+
+  static constexpr size_t kNumOps = 1024;
+  static constexpr size_t kNumThreads = 2;
+
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+
+  // Rmw.
+  run_threads(kNumThreads, [&store](size_t thread_idx) {
+    store.StartSession();
+
+    // Update each entry 2 times (1st is insert, 2nd is rmw).
+    for(size_t i = 0; i < 2; ++i) {
+      for(size_t idx = 0; idx < kNumOps; ++idx) {
+        auto callback = [](IAsyncContext* ctxt, Status result) {
+          // In-memory test.
+          ASSERT_TRUE(false);
+        };
+        Key key{ std::make_pair(idx % 7, thread_idx * kNumOps + idx) };
+        RmwContext context{ key };
+        Status result = store.Rmw(context, callback, 1);
+        ASSERT_EQ(Status::Ok, result);
+      }
+    }
+
+    store.StopSession();
+  });
+
+  // Delete.
+  run_threads(kNumThreads, [&store](size_t thread_idx) {
+    store.StartSession();
+
+    for(size_t idx = 0; idx < kNumOps; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+      };
+      Key key{ std::make_pair(idx % 7, thread_idx * kNumOps + idx) };
+      DeleteContext context{ key };
+      Status result = store.Delete(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
+
+    store.StopSession();
+  });
+
+  // Read.
+  run_threads(kNumThreads, [&store](size_t thread_idx) {
+    store.StartSession();
+
+    for(size_t idx = 0; idx < kNumOps; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        // In-memory test.
+        ASSERT_TRUE(false);
+      };
+      Key key{ std::make_pair(idx % 7, thread_idx * kNumOps + idx) };
+      ReadContext context{ key };
+      Status result = store.Read(context, callback, 1);
+      ASSERT_EQ(Status::NotFound, result);
+    }
+
+    store.StopSession();
+  });
 }
 
 TEST(InMemFaster, GrowHashTable) {
-  class Key {
-   public:
-    Key(uint64_t key)
-      : key_{ key } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Key));
-    }
-    inline KeyHash GetHash() const {
-      std::hash<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
-    }
-
-    /// Comparison operators.
-    inline bool operator==(const Key& other) const {
-      return key_ == other.key_;
-    }
-    inline bool operator!=(const Key& other) const {
-      return key_ != other.key_;
-    }
-
-   private:
-    uint64_t key_;
-  };
-
-  class RmwContext;
-  class ReadContext;
-
-  class Value {
-   public:
-    Value()
-      : value_{ 0 } {
-    }
-    Value(const Value& other)
-      : value_{ other.value_ } {
-    }
-
-    inline static constexpr uint32_t size() {
-      return static_cast<uint32_t>(sizeof(Value));
-    }
-
-    friend class RmwContext;
-    friend class ReadContext;
-
-   private:
-    union {
-      int64_t value_;
-      std::atomic<int64_t> atomic_value_;
-    };
-  };
+  using Key = FixedSizeKey<uint64_t>;
+  using Value = SimpleAtomicValue<int64_t>;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1973,13 +1768,13 @@ TEST(InMemFaster, GrowHashTable) {
     }
 
     inline void RmwInitial(Value& value) {
-      value.value_ = incr_;
+      value.value = incr_;
     }
     inline void RmwCopy(const Value& old_value, Value& value) {
-      value.value_ = old_value.value_ + incr_;
+      value.value = old_value.value + incr_;
     }
     inline bool RmwAtomic(Value& value) {
-      value.atomic_value_.fetch_add(incr_);
+      value.atomic_value.fetch_add(incr_);
       return true;
     }
 
@@ -2018,7 +1813,7 @@ TEST(InMemFaster, GrowHashTable) {
       ASSERT_TRUE(false);
     }
     inline void GetAtomic(const Value& value) {
-      output = value.atomic_value_.load();
+      output = value.atomic_value.load();
     }
 
    protected:
@@ -2037,70 +1832,40 @@ TEST(InMemFaster, GrowHashTable) {
   static constexpr size_t kNumRmws = 32768;
   static constexpr size_t kRange = 8192;
 
+  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
   static std::atomic<bool> grow_done{ false };
 
-  auto rmw_worker0 = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int64_t incr) {
-    auto callback = [](uint64_t new_size) {
-      grow_done = true;
-    };
+  auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
+    store.StartSession();
 
-    store_->StartSession();
-
+    int64_t incr{ (int64_t) thread_idx * multiplier };
     for(size_t idx = 0; idx < kNumRmws; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
       };
       RmwContext context{ idx % kRange, incr };
-      Status result = store_->Rmw(context, callback, 1);
+      Status result = store.Rmw(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
     }
 
-    // Double the size of the index.
-    store_->GrowIndex(callback);
-
-    while(!grow_done) {
-      store_->Refresh();
-      std::this_thread::yield();
-    }
-
-    store_->StopSession();
-  };
-
-  auto rmw_worker = [](FasterKv<Key, Value, FASTER::device::NullDisk>* store_,
-  int64_t incr) {
-    store_->StartSession();
-
-    for(size_t idx = 0; idx < kNumRmws; ++idx) {
-      auto callback = [](IAsyncContext* ctxt, Status result) {
-        // In-memory test.
-        ASSERT_TRUE(false);
-      };
-      RmwContext context{ idx % kRange, incr };
-      Status result = store_->Rmw(context, callback, 1);
-      ASSERT_EQ(Status::Ok, result);
+    if(thread_idx == 0) {
+      // Double the size of the index.
+      store.GrowIndex([](uint64_t new_size) {
+        grow_done = true;
+      });
     }
 
     while(!grow_done) {
-      store_->Refresh();
+      store.Refresh();
       std::this_thread::yield();
     }
 
-    store_->StopSession();
+    store.StopSession();
   };
-
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
 
   // Rmw, increment by 2 * idx.
-  std::deque<std::thread> threads{};
-  threads.emplace_back(rmw_worker0, &store, 0);
-  for(int64_t idx = 1; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, 2 * idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, 2);
 
   // Read.
   store.StartSession();
@@ -2121,14 +1886,7 @@ TEST(InMemFaster, GrowHashTable) {
 
   // Rmw, decrement by idx.
   grow_done = false;
-  threads.clear();
-  threads.emplace_back(rmw_worker0, &store, 0);
-  for(int64_t idx = 1; idx < kNumThreads; ++idx) {
-    threads.emplace_back(rmw_worker, &store, -idx);
-  }
-  for(auto& thread : threads) {
-    thread.join();
-  }
+  run_threads(kNumThreads, rmw_worker, -1);
 
   // Read again.
   store.StartSession();
@@ -2214,34 +1972,7 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
       }
   };
 
-  class UpsertContext;
-  class ReadContext;
-
-  class Value {
-  public:
-      Value()
-              : value_{ 0 } {
-      }
-      Value(const Value& other)
-              : value_{ other.value_ } {
-      }
-      Value(uint8_t value)
-              : value_{ value } {
-      }
-
-      inline static constexpr uint32_t size() {
-        return static_cast<uint32_t>(sizeof(Value));
-      }
-
-      friend class UpsertContext;
-      friend class ReadContext;
-
-  private:
-      union {
-          uint8_t value_;
-          std::atomic<uint8_t> atomic_value_;
-      };
-  };
+  using Value = SimpleAtomicValue<uint8_t>;
 
   class UpsertContext : public IAsyncContext {
   public:
@@ -2266,10 +1997,10 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
       }
       /// Non-atomic and atomic Put() methods.
       inline void Put(Value& value) {
-        value.value_ = 23;
+        value.value = 23;
       }
       inline bool PutAtomic(Value& value) {
-        value.atomic_value_.store(42);
+        value.atomic_value.store(42);
         return true;
       }
 
@@ -2307,7 +2038,7 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
         ASSERT_TRUE(false);
       }
       inline void GetAtomic(const Value& value) {
-        output = value.atomic_value_.load();
+        output = value.atomic_value.load();
       }
 
   protected:

@@ -6,10 +6,12 @@
 #define CALLOC
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -17,7 +19,7 @@ namespace FASTER.core
     /// Memory allocator for objects
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public unsafe class MallocFixedPageSize<T> : IDisposable
+    public class MallocFixedPageSize<T> : IDisposable
     {
         private const bool ForceUnpinnedAllocation = false;
 
@@ -26,17 +28,12 @@ namespace FASTER.core
         private const int PageSizeMask = PageSize - 1;
         private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
-        private const int LevelSizeMask = LevelSize - 1;
 
         private T[][] values = new T[LevelSize][];
         private GCHandle[] handles = new GCHandle[LevelSize];
         private IntPtr[] pointers = new IntPtr[LevelSize];
 
-        private T[] values0;
-        private readonly GCHandle handles0;
-        private readonly IntPtr pointers0;
         private readonly int RecordSize;
-        private readonly int AlignedPageSize;
 
         private volatile int writeCacheLevel;
 
@@ -45,28 +42,18 @@ namespace FASTER.core
         private readonly bool IsPinned;
         private readonly bool ReturnPhysicalAddress;
 
-        private CountdownEvent checkpointEvent;
+        private int checkpointCallbackCount;
+        private SemaphoreSlim checkpointSemaphore;
 
-        private readonly LightEpoch epoch;
-        private readonly bool ownedEpoch;
-
-        private FastThreadLocal<Queue<FreeItem>> freeList;
+        private ConcurrentQueue<long> freeList;
 
         /// <summary>
         /// Create new instance
         /// </summary>
         /// <param name="returnPhysicalAddress"></param>
-        /// <param name="epoch"></param>
-        public MallocFixedPageSize(bool returnPhysicalAddress = false, LightEpoch epoch = null)
+        public MallocFixedPageSize(bool returnPhysicalAddress = false)
         {
-            freeList = new FastThreadLocal<Queue<FreeItem>>();
-            if (epoch == null)
-            {
-                this.epoch = new LightEpoch();
-                ownedEpoch = true;
-            }
-            else
-                this.epoch = epoch;
+            freeList = new ConcurrentQueue<long>();
 
             values[0] = new T[PageSize];
 
@@ -97,10 +84,7 @@ namespace FASTER.core
                     {
                         handles[0] = GCHandle.Alloc(values[0], GCHandleType.Pinned);
                         pointers[0] = handles[0].AddrOfPinnedObject();
-                        handles0 = handles[0];
-                        pointers0 = pointers[0];
                         RecordSize = Marshal.SizeOf(values[0][0]);
-                        AlignedPageSize = RecordSize * PageSize;
                     }
                     catch (Exception)
                     {
@@ -110,7 +94,6 @@ namespace FASTER.core
                 }
             }
 
-            values0 = values[0];
             writeCacheLevel = -1;
             Interlocked.MemoryBarrier();
 
@@ -146,7 +129,7 @@ namespace FASTER.core
         public ref T Get(long index)
         {
             if (this.ReturnPhysicalAddress)
-                throw new Exception("Physical pointer returned by allocator: de-reference pointer to get records instead of calling Get");
+                throw new FasterException("Physical pointer returned by allocator: de-reference pointer to get records instead of calling Get");
 
             return ref values
                 [index >> PageSizeBits]
@@ -163,7 +146,7 @@ namespace FASTER.core
         public void Set(long index, ref T value)
         {
             if (this.ReturnPhysicalAddress)
-                throw new Exception("Physical pointer returned by allocator: de-reference pointer to set records instead of calling Set (otherwise, set ForceUnpinnedAllocation to true)");
+                throw new FasterException("Physical pointer returned by allocator: de-reference pointer to set records instead of calling Set (otherwise, set ForceUnpinnedAllocation to true)");
 
             values
                 [index >> PageSizeBits]
@@ -177,20 +160,15 @@ namespace FASTER.core
         /// Free object
         /// </summary>
         /// <param name="pointer"></param>
-        /// <param name="removed_epoch"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void FreeAtEpoch(long pointer, int removed_epoch = -1)
+        public void Free(long pointer)
         {
             if (!ReturnPhysicalAddress)
             {
-                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default(T);
+                values[pointer >> PageSizeBits][pointer & PageSizeMask] = default;
             }
 
-            freeList.InitializeThread();
-
-            if (freeList.Value == null)
-                freeList.Value = new Queue<FreeItem>();
-            freeList.Value.Enqueue(new FreeItem { removed_item = pointer, removal_epoch = removed_epoch });
+            freeList.Enqueue(pointer);
         }
 
         private const int kAllocateChunkSize = 16;
@@ -233,7 +211,7 @@ namespace FASTER.core
 
                 // Return location.
                 if (ReturnPhysicalAddress)
-                    return (((long)pointers0) + index * RecordSize);
+                    return (((long)pointers[0]) + index * RecordSize);
                 else
                     return index;
             }
@@ -308,19 +286,8 @@ namespace FASTER.core
         /// <returns></returns>
         public long Allocate()
         {
-            freeList.InitializeThread();
-            if (freeList.Value == null)
-            {
-                freeList.Value = new Queue<FreeItem>();
-            }
-            if (freeList.Value.Count > 0)
-            {
-                if (freeList.Value.Peek().removal_epoch <= epoch.SafeToReclaimEpoch)
-                    return freeList.Value.Dequeue().removed_item;
-
-                //if (freeList.Count % 64 == 0)
-                //    LightEpoch.Instance.BumpCurrentEpoch();
-            }
+            if (freeList.TryDequeue(out long result))
+                return result;
 
             // Determine insertion index.
             // ReSharper disable once CSharpWarnings::CS0420
@@ -354,7 +321,7 @@ namespace FASTER.core
 
                 // Return location.
                 if (ReturnPhysicalAddress)
-                    return ((long)pointers0) + index * RecordSize;
+                    return ((long)pointers[0]) + index * RecordSize;
                 else
                     return index;
             }
@@ -424,26 +391,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Acquire thread
-        /// </summary>
-        public void Acquire()
-        {
-            if (ownedEpoch)
-                epoch.Acquire();
-            freeList.InitializeThread();
-        }
-
-        /// <summary>
-        /// Release thread
-        /// </summary>
-        public void Release()
-        {
-            if (ownedEpoch)
-                epoch.Release();
-            freeList.DisposeThread();
-        }
-
-        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -456,11 +403,8 @@ namespace FASTER.core
             handles = null;
             pointers = null;
             values = null;
-            values0 = null;
             count = 0;
-            if (ownedEpoch)
-                epoch.Dispose();
-            freeList.Dispose();
+            freeList = null;
         }
 
 
@@ -470,37 +414,40 @@ namespace FASTER.core
         /// Public facing persistence API
         /// </summary>
         /// <param name="device"></param>
+        /// <param name="start_offset"></param>
         /// <param name="numBytes"></param>
-        public void TakeCheckpoint(IDevice device, out ulong numBytes)
+        public void TakeCheckpoint(IDevice device, ulong start_offset, out ulong numBytes)
         {
-            BeginCheckpoint(device, 0UL, out numBytes);
+            BeginCheckpoint(device, start_offset, out numBytes);
         }
 
         /// <summary>
         /// Is checkpoint complete
         /// </summary>
-        /// <param name="waitUntilComplete"></param>
         /// <returns></returns>
-        public bool IsCheckpointCompleted(bool waitUntilComplete = false)
+        public bool IsCheckpointCompleted()
         {
-            bool completed = checkpointEvent.IsSet;
-            if (!completed && waitUntilComplete)
-            {
-                checkpointEvent.Wait();
-                return true;
-            }
-            return completed;
+            return checkpointCallbackCount == 0;
         }
 
+        /// <summary>
+        /// Is checkpoint completed
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask IsCheckpointCompletedAsync(CancellationToken token = default)
+        {
+            await checkpointSemaphore.WaitAsync(token);
+            checkpointSemaphore.Release();
+        }
 
-        internal void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
+        internal unsafe void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
         {
             int localCount = count;
             int recordsCountInLastLevel = localCount & PageSizeMask;
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
-            checkpointEvent = new CountdownEvent(numLevels);
-
+            checkpointCallbackCount = numLevels;
+            checkpointSemaphore = new SemaphoreSlim(0);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
@@ -509,7 +456,7 @@ namespace FASTER.core
             numBytesWritten = 0;
             for (int i = 0; i < numLevels; i++)
             {
-                OverflowPagesFlushAsyncResult result = default(OverflowPagesFlushAsyncResult);
+                OverflowPagesFlushAsyncResult result = default;
                 uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
 
                 device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
@@ -517,7 +464,7 @@ namespace FASTER.core
             }
         }
 
-        private void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
             try
             {
@@ -532,7 +479,10 @@ namespace FASTER.core
             }
             finally
             {
-                checkpointEvent.Signal();
+                if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
+                {
+                    checkpointSemaphore.Release();
+                }
                 Overlapped.Free(overlap);
             }
         }
@@ -563,9 +513,10 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="buckets"></param>
         /// <param name="numBytes"></param>
-        public void Recover(IDevice device, int buckets, ulong numBytes)
+        /// <param name="offset"></param>
+        public void Recover(IDevice device, ulong offset, int buckets, ulong numBytes)
         {
-            BeginRecovery(device, 0UL, buckets, numBytes, out ulong numBytesRead);
+            BeginRecovery(device, offset, buckets, numBytes, out _);
         }
 
         /// <summary>
@@ -589,7 +540,7 @@ namespace FASTER.core
         // Implementation of asynchronous recovery
         private int numLevelsToBeRecovered;
 
-        internal void BeginRecovery(IDevice device,
+        internal unsafe void BeginRecovery(IDevice device,
                                     ulong offset,
                                     int buckets,
                                     ulong numBytesToRead,
@@ -615,13 +566,13 @@ namespace FASTER.core
             {
                 //read a full page
                 uint length = (uint)PageSize * (uint)RecordSize; ;
-                OverflowPagesReadAsyncResult result = default(OverflowPagesReadAsyncResult);
+                OverflowPagesReadAsyncResult result = default;
                 device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
                 numBytesRead += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
             }
         }
 
-        private void AsyncPageReadCallback(
+        private unsafe void AsyncPageReadCallback(
                                     uint errorCode,
                                     uint numBytes,
                                     NativeOverlapped* overlap)
@@ -644,11 +595,5 @@ namespace FASTER.core
             }
         }
         #endregion
-    }
-
-    internal struct FreeItem
-    {
-        public long removed_item;
-        public int removal_epoch;
     }
 }

@@ -18,6 +18,7 @@ namespace FASTER.test
     internal class BasicFASTERTests
     {
         private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
+        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
         private IDevice log;
 
         [SetUp]
@@ -26,13 +27,13 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
                 (128, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 29 });
-            fht.StartSession();
+            session = fht.NewSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.StopSession();
+            session.Dispose();
             fht.Dispose();
             fht = null;
             log.Close();
@@ -43,18 +44,18 @@ namespace FASTER.test
         [Test]
         public void NativeInMemWriteRead()
         {
-            InputStruct input = default(InputStruct);
-            OutputStruct output = default(OutputStruct);
+            InputStruct input = default;
+            OutputStruct output = default;
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            fht.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -68,33 +69,31 @@ namespace FASTER.test
         [Test]
         public void NativeInMemWriteReadDelete()
         {
-            InputStruct input = default(InputStruct);
-            OutputStruct output = default(OutputStruct);
+            InputStruct input = default;
+            OutputStruct output = default;
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            fht.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
                 Assert.IsTrue(status == Status.OK);
             }
 
-            long tail = fht.Log.TailAddress;
+            session.Delete(ref key1, Empty.Default, 0);
 
-            fht.Delete(ref key1, Empty.Default, 0);
-
-            status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -104,12 +103,12 @@ namespace FASTER.test
             var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
             var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-            fht.Upsert(ref key2, ref value2, Empty.Default, 0);
-            status = fht.Read(ref key2, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key2, ref value2, Empty.Default, 0);
+            status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
@@ -126,25 +125,21 @@ namespace FASTER.test
         {
             const int count = 10;
 
-            InputStruct input = default(InputStruct);
-            OutputStruct output = default(OutputStruct);
+            InputStruct input = default;
+            OutputStruct output = default;
 
             for (int i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
-            var tail = fht.Log.TailAddress;
-
             for (int i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
-
-                fht.Delete(ref key1, Empty.Default, 0);
+                session.Delete(ref key1, Empty.Default, 0);
             }
 
             for (int i = 0; i < 10 * count; i++)
@@ -152,30 +147,29 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                 {
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 }
                 else
                 {
                     Assert.IsTrue(status == Status.NOTFOUND);
                 }
 
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             for (int i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                var status = fht.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                 {
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 }
                 else
                 {
@@ -187,7 +181,7 @@ namespace FASTER.test
         [Test]
         public unsafe void NativeInMemWriteRead2()
         {
-            InputStruct input = default(InputStruct);
+            InputStruct input = default;
 
             Random r = new Random(10);
             for (int c = 0; c < 1000; c++)
@@ -195,7 +189,7 @@ namespace FASTER.test
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             r = new Random(10);
@@ -203,13 +197,13 @@ namespace FASTER.test
             for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
                 {
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 }
 
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
@@ -223,18 +217,16 @@ namespace FASTER.test
             for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-
-                Assert.IsTrue(fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.NOTFOUND);
+                Assert.IsTrue(session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.NOTFOUND);
             }
         }
 
         [Test]
         public unsafe void TestShiftHeadAddress()
         {
-            InputStruct input = default(InputStruct);
+            InputStruct input = default;
 
             Random r = new Random(10);
             for (int c = 0; c < 1000; c++)
@@ -242,7 +234,7 @@ namespace FASTER.test
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                fht.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
 
             r = new Random(10);
@@ -250,13 +242,13 @@ namespace FASTER.test
             for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
                 {
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 }
 
                 Assert.IsTrue(output.value.vfield1 == value.vfield1);
@@ -270,19 +262,17 @@ namespace FASTER.test
             for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
-                OutputStruct output = default(OutputStruct);
+                OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-
-                Assert.IsTrue(fht.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING);
-                fht.CompletePending(true);
+                Assert.IsTrue(session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING);
+                session.CompletePending(true);
             }
         }
 
         [Test]
         public unsafe void NativeInMemRMW1()
         {
-            InputStruct input = default(InputStruct);
+            InputStruct input = default;
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -299,55 +289,52 @@ namespace FASTER.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                fht.RMW(ref key1, ref input, Empty.Default, 0);
+                session.RMW(ref key1, ref input, Empty.Default, 0);
             }
             for (int j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                fht.RMW(ref key1, ref input, Empty.Default, 0);
+                session.RMW(ref key1, ref input, Empty.Default, 0);
             }
 
-
-            KeyStruct key = default(KeyStruct);
-            ValueStruct value = default(ValueStruct);
-            OutputStruct output = default(OutputStruct);
-            Status status = default(Status);
+            OutputStruct output = default;
+            Status status;
+            KeyStruct key;
 
             for (int j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
 
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                ValueStruct value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                status = fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+                status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
                 {
-                    fht.CompletePending(true);
+                    session.CompletePending(true);
                 }
                 else
                 {
                     Assert.IsTrue(status == Status.OK);
                 }
-                Assert.IsTrue(output.value.vfield1 == 2*value.vfield1, "found " + output.value.vfield1 + ", expected " + 2 * value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == 2*value.vfield2);
+                Assert.IsTrue(output.value.vfield1 == 2 * value.vfield1, "found " + output.value.vfield1 + ", expected " + 2 * value.vfield1);
+                Assert.IsTrue(output.value.vfield2 == 2 * value.vfield2);
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
             if (status == Status.PENDING)
             {
-                fht.CompletePending(true);
+                session.CompletePending(true);
             }
             else
             {
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
         }
-
     }
 }

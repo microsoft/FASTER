@@ -41,19 +41,19 @@ namespace FASTER.core
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
-            : base(settings, comparer, evictCallback, epoch)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
             SerializerSettings = serializerSettings;
 
             if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
-                throw new Exception("Key is not blittable, but no serializer specified via SerializerSettings");
+                throw new FasterException("Key is not blittable, but no serializer specified via SerializerSettings");
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
-                throw new Exception("Value is not blittable, but no serializer specified via SerializerSettings");
+                throw new FasterException("Value is not blittable, but no serializer specified via SerializerSettings");
             }
 
             values = new Record<Key, Value>[BufferSize][];
@@ -64,7 +64,9 @@ namespace FASTER.core
             if ((settings.LogDevice as NullDevice == null) && (KeyHasObjects() || ValueHasObjects()))
             {
                 if (objectLogDevice == null)
-                    throw new Exception("Objects in key/value, but object log not provided during creation of FASTER instance");
+                    throw new FasterException("Objects in key/value, but object log not provided during creation of FASTER instance");
+                if (objectLogDevice.SegmentSize != -1)
+                    throw new FasterException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
             }
         }
 
@@ -197,12 +199,9 @@ namespace FASTER.core
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
         /// <param name="index"></param>
-        protected override void AllocatePage(int index)
+        internal override void AllocatePage(int index)
         {
             values[index] = AllocatePage();
-            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
-            Interlocked.MemoryBarrier();
         }
 
         internal Record<Key, Value>[] AllocatePage()
@@ -226,10 +225,10 @@ namespace FASTER.core
             return values[pageIndex] != null;
         }
 
-        protected override void DeleteAddressRange(long fromAddress, long toAddress)
+        protected override void TruncateUntilAddress(long toAddress)
         {
-            base.DeleteAddressRange(fromAddress, toAddress);
-            objectLogDevice.DeleteSegmentRange((int)(fromAddress >> LogSegmentSizeBits), (int)(toAddress >> LogSegmentSizeBits));
+            base.TruncateUntilAddress(toAddress);
+            objectLogDevice.TruncateUntilAddress(toAddress);
         }
 
         protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
@@ -243,20 +242,20 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, IOCompletionCallback callback, 
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             // We are writing to separate device, so use fresh segment offsets
             WriteAsync(flushPage,
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)pageSize, callback, asyncResult, 
-                        device, objectLogDevice, flushPage, new long[SegmentBufferSize]);
+                        device, objectLogDevice, flushPage, localSegmentOffsets);
         }
 
 
 
-        protected override void ClearPage(long page)
+        protected override void ClearPage(long page, int offset)
         {
-            Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
+            Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
 
             // Close segments
             var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);
@@ -312,6 +311,8 @@ namespace FASTER.core
                 }
                 fixed (RecordInfo* pin = &src[0].info)
                 {
+                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)buffer.handle.AddrOfPinnedObject() + buffer.buffer.Length);
+
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start, 
                         numBytesToWrite - start, numBytesToWrite - start);
                 }
@@ -320,6 +321,8 @@ namespace FASTER.core
             {
                 fixed (RecordInfo* pin = &src[0].info)
                 {
+                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)buffer.handle.AddrOfPinnedObject() + buffer.buffer.Length);
+
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.aligned_pointer + aligned_start, 
                         numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
                 }
@@ -403,6 +406,9 @@ namespace FASTER.core
                             keySerializer.BeginSerialize(ms);
                         if (ValueHasObjects())
                             valueSerializer.BeginSerialize(ms);
+
+                        // Reset address list for next chunk
+                        addr = new List<long>();
 
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
@@ -494,7 +500,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+               Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
             // Set the page status to flushed
@@ -513,26 +519,17 @@ namespace FASTER.core
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
 
-            var src = values[result.page % BufferSize];
+            Record<Key, Value>[] src;
 
             // We are reading into a frame
             if (result.frame != null)
             {
                 var frame = (GenericFrame<Key, Value>)result.frame;
                 src = frame.GetPage(result.page % frame.frameSize);
-
-                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
-                {
-                    PopulatePageFrame(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, src);
-                }
             }
             else
-            {
-                if (result.freeBuffer2 == null && result.freeBuffer1 != null && result.freeBuffer1.required_bytes > 0)
-                {
-                    PopulatePage(result.freeBuffer1.GetValidPointer(), (int)result.maxPtr, result.page);
-                }
-            }
+                src = values[result.page % BufferSize];
+
 
             // Deserialize all objects until untilptr
             if (result.resumePtr < result.untilPtr)
@@ -560,23 +557,22 @@ namespace FASTER.core
             // We will be re-issuing I/O, so free current overlap
             Overlapped.Free(overlap);
 
-            // Compute new untilPtr
             // We will now be able to process all records until (but not including) untilPtr
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, src, out long startptr, out long size);
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long size);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
 
             if (size > int.MaxValue)
-                throw new Exception("Unable to read object page, total size greater than 2GB: " + size);
+                throw new FasterException("Unable to read object page, total size greater than 2GB: " + size);
 
-            var objBuffer = bufferPool.Get((int)size);
-            result.freeBuffer2 = objBuffer;
             var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
+            var objBuffer = bufferPool.Get((int)alignedLength);
+            result.freeBuffer2 = objBuffer;
 
             // Request objects from objlog
             result.objlogDevice.ReadAsync(
-                (int)(result.page >> (LogSegmentSizeBits - LogPageSizeBits)),
+                (int)((result.page - result.offset) >> (LogSegmentSizeBits - LogPageSizeBits)),
                 (ulong)startptr,
                 (IntPtr)objBuffer.aligned_pointer, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
         }
@@ -718,7 +714,10 @@ namespace FASTER.core
 
             while (ptr < untilptr)
             {
-                if (!src[ptr / recordSize].info.Invalid)
+                ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
+                src[ptr / recordSize].info = record.info;
+
+                if (!record.info.Invalid)
                 {
                     if (KeyHasObjects())
                     {
@@ -729,21 +728,32 @@ namespace FASTER.core
                             stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
                         }
 
-                        src[ptr/recordSize].key = new Key();
+                        src[ptr / recordSize].key = new Key();
                         keySerializer.Deserialize(ref src[ptr/recordSize].key);
-                    } 
-
-                    if (ValueHasObjects() && !src[ptr / recordSize].info.Tombstone)
+                    }
+                    else
                     {
-                        var value_addr = GetValueAddressInfo((long)raw + ptr);
-                        if (start_addr == -1) start_addr = value_addr->Address;
-                        if (stream.Position != streamStartPos + value_addr->Address - start_addr)
-                        {
-                            stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
-                        }
+                        src[ptr / recordSize].key = record.key;
+                    }
 
-                        src[ptr / recordSize].value = new Value();
-                        valueSerializer.Deserialize(ref src[ptr/recordSize].value);
+                    if (!record.info.Tombstone)
+                    {
+                        if (ValueHasObjects())
+                        {
+                            var value_addr = GetValueAddressInfo((long)raw + ptr);
+                            if (start_addr == -1) start_addr = value_addr->Address;
+                            if (stream.Position != streamStartPos + value_addr->Address - start_addr)
+                            {
+                                stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
+                            }
+
+                            src[ptr / recordSize].value = new Value();
+                            valueSerializer.Deserialize(ref src[ptr / recordSize].value);
+                        }
+                        else
+                        {
+                            src[ptr / recordSize].value = record.value;
+                        }
                     }
                 }
                 ptr += GetRecordSize(ptr);
@@ -765,17 +775,18 @@ namespace FASTER.core
         /// <param name="ptr"></param>
         /// <param name="untilptr"></param>
         /// <param name="objectBlockSize"></param>
-        /// <param name="src"></param>
         /// <param name="startptr"></param>
         /// <param name="size"></param>
-        public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, Record<Key, Value>[] src, out long startptr, out long size)
+        public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
         {
             long minObjAddress = long.MaxValue;
             long maxObjAddress = long.MinValue;
 
             while (ptr < untilptr)
             {
-                if (!src[ptr/recordSize].info.Invalid)
+                ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
+
+                if (!record.info.Invalid)
                 {
                     if (KeyHasObjects())
                     {
@@ -794,7 +805,7 @@ namespace FASTER.core
                     }
 
 
-                    if (ValueHasObjects() && !src[ptr / recordSize].info.Tombstone)
+                    if (ValueHasObjects() && !record.info.Tombstone)
                     {
                         var value_addr = GetValueAddressInfo((long)raw + ptr);
                         var addr = value_addr->Address;
@@ -866,7 +877,7 @@ namespace FASTER.core
 
                 // We are limited to a 2GB size per key-value
                 if (endAddress-startAddress > int.MaxValue)
-                    throw new Exception("Size of key-value exceeds max of 2GB: " + (endAddress - startAddress));
+                    throw new FasterException("Size of key-value exceeds max of 2GB: " + (endAddress - startAddress));
 
                 AsyncGetFromDisk(startAddress, (int)(endAddress - startAddress), ctx, ctx.record);
                 return false;
@@ -941,6 +952,8 @@ namespace FASTER.core
         {
             fixed (RecordInfo* pin = &destinationPage[0].info)
             {
+                Debug.Assert(required_bytes <= recordSize * destinationPage.Length);
+
                 Buffer.MemoryCopy(src, Unsafe.AsPointer(ref destinationPage[0]), required_bytes, required_bytes);
             }
         }

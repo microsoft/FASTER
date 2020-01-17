@@ -75,24 +75,24 @@ namespace ClassSample
     {
         public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
-        public void InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value += input.value;
+        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value) { value.value += input.value; return true; }
 
 
         public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
         public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
         public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
-        public void ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
+        public bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst) { dst = src; return true; }
 
         public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status) { }
         public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, MyContext ctx) { }
         public void RMWCompletionCallback(ref MyKey key, ref MyInput input, MyContext ctx, Status status) { }
         public void DeleteCompletionCallback(ref MyKey key, MyContext ctx) { }
-        public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
     class Program
     {
-        static void Main(string[] args)
+        static void Main()
         {
             // This sample uses class key and value types, which are not blittable (i.e., they
             // require a pointer to heap objects). Such datatypes include variable length types
@@ -116,21 +116,21 @@ namespace ClassSample
             var context = default(MyContext);
 
             // Each thread calls StartSession to register itself with FASTER
-            h.StartSession();
+            var s = h.NewSession();
 
             for (int i = 0; i < 20000; i++)
             {
                 var _key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                h.Upsert(ref _key, ref value, context, 0);
+                s.Upsert(ref _key, ref value, context, 0);
 
                 // Each thread calls Refresh periodically for thread coordination
-                if (i % 1024 == 0) h.Refresh();
+                if (i % 1024 == 0) s.Refresh();
             }
             var key = new MyKey { key = 23 };
             var input = default(MyInput);
             MyOutput g1 = new MyOutput();
-            var status = h.Read(ref key, ref input, ref g1, context, 0);
+            var status = s.Read(ref key, ref input, ref g1, context, 0);
 
             if (status == Status.OK && g1.value.value == key.key)
                 Console.WriteLine("Success!");
@@ -139,7 +139,7 @@ namespace ClassSample
 
             MyOutput g2 = new MyOutput();
             key = new MyKey { key = 46 };
-            status = h.Read(ref key, ref input, ref g2, context, 0);
+            status = s.Read(ref key, ref input, ref g2, context, 0);
 
             if (status == Status.OK && g2.value.value == key.key)
                 Console.WriteLine("Success!");
@@ -148,15 +148,15 @@ namespace ClassSample
 
             /// Delete key, read to verify deletion
             var output = new MyOutput();
-            h.Delete(ref key, context, 0);
-            status = h.Read(ref key, ref input, ref output, context, 0);
+            s.Delete(ref key, context, 0);
+            status = s.Read(ref key, ref input, ref output, context, 0);
             if (status == Status.NOTFOUND)
                 Console.WriteLine("Success!");
             else
                 Console.WriteLine("Error!");
 
             // Each thread ends session when done
-            h.StopSession();
+            s.Dispose();
 
             // Dispose FASTER instance and log
             h.Dispose();

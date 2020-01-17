@@ -5,6 +5,7 @@
 
 
 using System;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -16,11 +17,13 @@ namespace FASTER.core
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public class LogAccessor<Key, Value, Input, Output, Context> : IObservable<IFasterScanIterator<Key, Value>>
+    /// <typeparam name="Functions"></typeparam>
+    public class LogAccessor<Key, Value, Input, Output, Context, Functions> : IObservable<IFasterScanIterator<Key, Value>>
         where Key : new()
         where Value : new()
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private readonly IFasterKV<Key, Value, Input, Output, Context> fht;
+        private readonly FasterKV<Key, Value, Input, Output, Context, Functions> fht;
         private readonly AllocatorBase<Key, Value> allocator;
 
         /// <summary>
@@ -28,7 +31,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(IFasterKV<Key, Value, Input, Output, Context> fht, AllocatorBase<Key, Value> allocator)
+        public LogAccessor(FasterKV<Key, Value, Input, Output, Context, Functions> fht, AllocatorBase<Key, Value> allocator)
         {
             this.fht = fht;
             this.allocator = allocator;
@@ -81,8 +84,9 @@ namespace FASTER.core
             ShiftReadOnlyAddress(newHeadAddress, wait);
 
             // Then shift head address
+            fht.epoch.Resume();
             var updatedHeadAddress = allocator.ShiftHeadAddress(newHeadAddress);
-
+            fht.epoch.Suspend();
             return updatedHeadAddress >= newHeadAddress;
         }
 
@@ -104,7 +108,7 @@ namespace FASTER.core
         /// </summary>
         class LogSubscribeDisposable : IDisposable
         {
-            private AllocatorBase<Key, Value> allocator;
+            private readonly AllocatorBase<Key, Value> allocator;
 
             public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator)
             {
@@ -124,11 +128,12 @@ namespace FASTER.core
         /// <param name="wait">Wait to ensure shift is complete (may involve page flushing)</param>
         public void ShiftReadOnlyAddress(long newReadOnlyAddress, bool wait)
         {
+            fht.epoch.Resume();
             allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
+            fht.epoch.Suspend();
 
             // Wait for flush to complete
-            while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress)
-                fht.Refresh();
+            while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) ;
         }
 
         /// <summary>
@@ -182,96 +187,138 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         public void Compact(long untilAddress)
         {
-            long originalUntilAddress = untilAddress;
+            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
+            {
+                var functions = new LogVariableCompactFunctions(varLen);
+                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
 
-            var tempKv = new FasterKV<Key, Value, Input, Output, Context, LogCompactFunctions>
-                (fht.IndexSize, new LogCompactFunctions(), new LogSettings(), comparer: fht.Comparer);
-            tempKv.StartSession();
+                Compact(functions, untilAddress, variableLengthStructSettings);
+            }
+            else
+            {
+                Compact(new LogCompactFunctions(), untilAddress, null);
+            }
+        }
 
-            int cnt = 0;
+        private void Compact<T>(T functions, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+            where T : IFunctions<Key, Value, Input, Output, Context>
+        {
+            var fhtSession = fht.NewSession();
+
+            var originalUntilAddress = untilAddress;
+
+            var tempKv = new FasterKV<Key, Value, Input, Output, Context, T>
+                (fht.IndexSize, functions, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
+            var tempKvSession = tempKv.NewSession();
 
             using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
             {
-                while (iter1.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
+                while (iter1.GetNext(out RecordInfo recordInfo))
                 {
-                    if (recordInfo.Tombstone)
-                        tempKv.Delete(ref key, default(Context), 0);
-                    else
-                        tempKv.Upsert(ref key, ref value, default(Context), 0);
+                    ref var key = ref iter1.GetKey();
+                    ref var value = ref iter1.GetValue();
 
-                    if (++cnt % 1000 == 0)
-                    {
-                        fht.Refresh();
-                        tempKv.Refresh();
-                    }
+                    if (recordInfo.Tombstone)
+                        tempKvSession.Delete(ref key, default, 0);
+                    else
+                        tempKvSession.Upsert(ref key, ref value, default, 0);
                 }
             }
 
             // TODO: Scan until SafeReadOnlyAddress
             long scanUntil = untilAddress;
-            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKv);
+            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
 
             // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
 
-            cnt = 0;
             using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
             {
-                while (iter3.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
+                while (iter3.GetNext(out RecordInfo recordInfo))
                 {
+                    ref var key = ref iter3.GetKey();
+                    ref var value = ref iter3.GetValue();
+
                     if (!recordInfo.Tombstone)
                     {
-                        if (fht.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
-                            fht.Upsert(ref key, ref value, default(Context), 0);
-                    }
-                    if (++cnt % 1000 == 0)
-                    {
-                        fht.Refresh();
-                        tempKv.Refresh();
+                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
+                            fhtSession.Upsert(ref key, ref value, default, 0);
                     }
                     if (scanUntil < fht.Log.SafeReadOnlyAddress)
                     {
-                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKv);
+                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
                     }
                 }
             }
-            tempKv.StopSession();
+            fhtSession.Dispose();
+            tempKvSession.Dispose();
             tempKv.Dispose();
 
             ShiftBeginAddress(originalUntilAddress);
         }
 
-        private void LogScanForValidity(ref long untilAddress, ref long scanUntil, ref FasterKV<Key, Value, Input, Output, Context, LogCompactFunctions> tempKv)
+        private void LogScanForValidity<T>(ref long untilAddress, ref long scanUntil, ref ClientSession<Key, Value, Input, Output, Context, T> tempKvSession)
+            where T : IFunctions<Key, Value, Input, Output, Context>
         {
             while (scanUntil < fht.Log.SafeReadOnlyAddress)
             {
                 untilAddress = scanUntil;
                 scanUntil = fht.Log.SafeReadOnlyAddress;
-                int cnt = 0;
-                using (var iter2 = fht.Log.Scan(untilAddress, scanUntil))
+                using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
+                while (iter2.GetNext(out RecordInfo recordInfo))
                 {
-                    while (iter2.GetNext(out RecordInfo recordInfo, out Key key, out Value value))
-                    {
-                        tempKv.Delete(ref key, default(Context), 0);
+                    ref var key = ref iter2.GetKey();
+                    ref var value = ref iter2.GetValue();
 
-                        if (++cnt % 1000 == 0)
-                        {
-                            fht.Refresh();
-                            tempKv.Refresh();
-                        }
-                    }
+                    tempKvSession.Delete(ref key, default, 0);
                 }
-                fht.Refresh();
             }
+        }
+
+        private class LogVariableCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            private readonly VariableLengthBlittableAllocator<Key, Value> allocator;
+
+            public LogVariableCompactFunctions(VariableLengthBlittableAllocator<Key, Value> allocator)
+            {
+                this.allocator = allocator;
+            }
+
+            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+            {
+                var srcLength = allocator.ValueLength.GetLength(ref src);
+                var dstLength = allocator.ValueLength.GetLength(ref dst);
+
+                if (srcLength != dstLength)
+                    return false;
+
+                allocator.ShallowCopy(ref src, ref dst);
+                return true;
+            }
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) => false;
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { allocator.ShallowCopy(ref src, ref dst); }
+            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+            public void DeleteCompletionCallback(ref Key key, Context ctx) { }
         }
 
         private class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
-            public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
+            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
-            public void ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; }
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
             public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
-            public void InPlaceUpdater(ref Key key, ref Input input, ref Value value) { }
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) { return true; }
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
             public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
             public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }

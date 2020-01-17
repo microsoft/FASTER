@@ -15,6 +15,7 @@ namespace FASTER.core
     public class PageAsyncReadResult<TContext> : IAsyncResult
     {
         internal long page;
+        internal long offset;
         internal TContext context;
         internal CountdownEvent handle;
         internal SectorAlignedMemory freeBuffer1;
@@ -22,6 +23,7 @@ namespace FASTER.core
         internal IOCompletionCallback callback;
         internal IDevice objlogDevice;
         internal object frame;
+        internal CancellationTokenSource cts;
 
         /* Used for iteration */
         internal long resumePtr;
@@ -89,11 +91,11 @@ namespace FASTER.core
         internal bool partial;
         internal long fromAddress;
         internal long untilAddress;
-        internal CountdownEvent handle;
         internal IDevice objlogDevice;
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
         internal AutoResetEvent done;
+        internal SemaphoreSlim completedSemaphore;
 
         /// <summary>
         /// 
@@ -130,10 +132,8 @@ namespace FASTER.core
                 freeBuffer2.Return();
                 freeBuffer2 = null;
             }
-            if (handle != null)
-            {
-                handle.Signal();
-            }
+
+            completedSemaphore?.Release();
         }
     }
 }

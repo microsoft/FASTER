@@ -22,6 +22,7 @@ namespace FASTER.core
 
         private bool first = true;
         private long currentAddress, nextAddress;
+        private long currentPhysicalAddress;
 
         /// <summary>
         /// Current address
@@ -72,17 +73,31 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Get next record in iterator
+        /// Gets reference to current key
+        /// </summary>
+        /// <returns></returns>
+        public ref Key GetKey()
+        {
+            return ref hlog.GetKey(currentPhysicalAddress);
+        }
+
+        /// <summary>
+        /// Gets reference to current value
+        /// </summary>
+        /// <returns></returns>
+        public ref Value GetValue()
+        {
+            return ref hlog.GetValue(currentPhysicalAddress);
+        }
+
+        /// <summary>
+        /// Get next record
         /// </summary>
         /// <param name="recordInfo"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
+        /// <returns>True if record found, false if end of scan</returns>
+        public bool GetNext(out RecordInfo recordInfo)
         {
             recordInfo = default(RecordInfo);
-            key = default(Key);
-            value = default(Value);
 
             currentAddress = nextAddress;
             while (true)
@@ -95,12 +110,12 @@ namespace FASTER.core
 
                 if (currentAddress < hlog.BeginAddress)
                 {
-                    throw new Exception("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
+                    throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
                 if (frameSize == 0 && currentAddress < hlog.HeadAddress)
                 {
-                    throw new Exception("Iterator address is less than log HeadAddress in memory-scan mode");
+                    throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
@@ -109,47 +124,54 @@ namespace FASTER.core
                 if (currentAddress < hlog.HeadAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
-                var recordSize = hlog.GetRecordSize(hlog.GetPhysicalAddress(currentAddress));
+                var physicalAddress = default(long);
+                if (currentAddress >= hlog.HeadAddress)
+                    physicalAddress = hlog.GetPhysicalAddress(currentAddress);
+                else
+                    physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+
                 // Check if record fits on page, if not skip to next page
+                var recordSize = hlog.GetRecordSize(physicalAddress);
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     currentAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
                     continue;
                 }
 
-
-                if (currentAddress >= hlog.HeadAddress)
+                ref var info = ref hlog.GetInfo(physicalAddress);
+                if (info.Invalid || info.IsNull())
                 {
-                    // Read record from cached page memory
-                    var _physicalAddress = hlog.GetPhysicalAddress(currentAddress);
-
-                    if (hlog.GetInfo(_physicalAddress).Invalid)
-                    {
-                        currentAddress += hlog.GetRecordSize(_physicalAddress);
-                        continue;
-                    }
-
-                    recordInfo = hlog.GetInfo(_physicalAddress);
-                    key = hlog.GetKey(_physicalAddress);
-                    value = hlog.GetValue(_physicalAddress);
-                    nextAddress = currentAddress + hlog.GetRecordSize(_physicalAddress);
-                    return true;
-                }
-
-                var physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
-
-                if (hlog.GetInfo(physicalAddress).Invalid)
-                {
-                    currentAddress += hlog.GetRecordSize(physicalAddress);
+                    currentAddress += recordSize;
                     continue;
                 }
 
-                recordInfo = hlog.GetInfo(physicalAddress);
-                key = hlog.GetKey(physicalAddress);
-                value = hlog.GetValue(physicalAddress);
-                nextAddress = currentAddress + hlog.GetRecordSize(physicalAddress);
+                currentPhysicalAddress = physicalAddress;
+                recordInfo = info;
+                nextAddress = currentAddress + recordSize;
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Get next record in iterator
+        /// </summary>
+        /// <param name="recordInfo"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
+        {
+            key = default(Key);
+            value = default(Value);
+
+            if (GetNext(out recordInfo))
+            {
+                key = GetKey();
+                value = GetValue();
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

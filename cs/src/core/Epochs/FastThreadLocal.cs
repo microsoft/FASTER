@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading;
 
 namespace FASTER.core
@@ -16,42 +17,49 @@ namespace FASTER.core
         private const int kMaxInstances = 128;
 
         [ThreadStatic]
-        private static T[] values;
+        private static T[] tl_values;
+        [ThreadStatic]
+        private static int[] tl_iid;
 
-        private readonly int id;
+        private readonly int offset;
+        private readonly int iid;
+
         private static readonly int[] instances = new int[kMaxInstances];
+        private static int instanceId = 0;
 
         public FastThreadLocal()
         {
+            iid = Interlocked.Increment(ref instanceId);
+
             for (int i = 0; i < kMaxInstances; i++)
             {
-                if (0 == Interlocked.CompareExchange(ref instances[i], 1, 0))
+                if (0 == Interlocked.CompareExchange(ref instances[i], iid, 0))
                 {
-                    id = i;
+                    offset = i;
                     return;
                 }
             }
-            throw new Exception("Unsupported number of simultaneous instances");
+            throw new FasterException("Unsupported number of simultaneous instances");
         }
 
         public void InitializeThread()
         {
-            if (values == null)
-                values = new T[kMaxInstances];
+            if (tl_values == null)
+            {
+                tl_values = new T[kMaxInstances];
+                tl_iid = new int[kMaxInstances];
+            }
+            if (tl_iid[offset] != iid)
+            {
+                tl_iid[offset] = iid;
+                tl_values[offset] = default(T);
+            }
         }
 
         public void DisposeThread()
         {
-            Value = default(T);
-
-            // Dispose values only if there are no other
-            // instances active for this thread
-            for (int i = 0; i < kMaxInstances; i++)
-            {
-                if ((instances[i] == 1) && (i != id))
-                    return;
-            }
-            values = null;
+            tl_values[offset] = default(T);
+            tl_iid[offset] = 0;
         }
 
         /// <summary>
@@ -59,15 +67,15 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            instances[id] = 0;
+            instances[offset] = 0;
         }
 
         public T Value
         {
-            get => values[id];
-            set => values[id] = value;
+            get => tl_values[offset];
+            set => tl_values[offset] = value;
         }
 
-        public bool IsInitializedForThread => values != null;
+        public bool IsInitializedForThread => (tl_values != null) && (iid == tl_iid[offset]);
     }
 }

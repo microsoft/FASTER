@@ -19,19 +19,22 @@ namespace FASTER.core
         where Key : new()
         where Value : new()
     {
+        public const int kRecordAlignment = 8; // RecordInfo has a long field, so it should be aligned to 8-bytes
+
         // Circular buffer definition
         private byte[][] values;
         private GCHandle[] handles;
         private long[] pointers;
         private readonly GCHandle ptrHandle;
         private readonly long* nativePointers;
-        private readonly IVariableLengthStruct<Key> KeyLength;
-        private readonly IVariableLengthStruct<Value> ValueLength;
         private readonly bool fixedSizeKey;
         private readonly bool fixedSizeValue;
 
-        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null)
-            : base(settings, comparer, evictCallback, epoch)
+        internal readonly IVariableLengthStruct<Key> KeyLength;
+        internal readonly IVariableLengthStruct<Value> ValueLength;
+
+        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
@@ -93,8 +96,13 @@ namespace FASTER.core
 
         public override int GetRecordSize(long physicalAddress)
         {
-            return RecordInfo.GetLength() +
-                 KeySize(physicalAddress) + ValueSize(physicalAddress);
+            ref var recordInfo = ref GetInfo(physicalAddress);
+            if (recordInfo.IsNull())
+                return RecordInfo.GetLength();
+
+            var size = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            size = (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
+            return size;
         }
 
         public override int GetRequiredRecordSize(long physicalAddress, int availableBytes)
@@ -115,34 +123,40 @@ namespace FASTER.core
 
             // We need at least [record size] + [actual key size] + [actual value size]
             reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            reqBytes = (reqBytes + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
             return reqBytes;
         }
 
         public override int GetAverageRecordSize()
         {
             return RecordInfo.GetLength() +
+                kRecordAlignment +
                 KeyLength.GetAverageLength() +
                 ValueLength.GetAverageLength();
         }
 
-        public override int GetInitialRecordSize<Input>(ref Key key, ref Input input)
+        public override int GetInitialRecordSize<TInput>(ref Key key, ref TInput input)
         {
-            return RecordInfo.GetLength() +
-                 KeyLength.GetLength(ref key) +
-                 ValueLength.GetInitialLength(ref input);
+            var actualSize = RecordInfo.GetLength() +
+                KeyLength.GetLength(ref key) +
+                ValueLength.GetInitialLength(ref input);
+
+            return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
 
         public override int GetRecordSize(ref Key key, ref Value value)
         {
-            return RecordInfo.GetLength() +
+            var actualSize = RecordInfo.GetLength() +
                 KeyLength.GetLength(ref key) +
                 ValueLength.GetLength(ref value);
+
+            return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
 
         public override void ShallowCopy(ref Key src, ref Key dst)
         {
             Buffer.MemoryCopy(
-                Unsafe.AsPointer(ref src), 
+                Unsafe.AsPointer(ref src),
                 Unsafe.AsPointer(ref dst),
                 KeyLength.GetLength(ref src),
                 KeyLength.GetLength(ref src));
@@ -179,21 +193,19 @@ namespace FASTER.core
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength());
+            throw new NotSupportedException();
         }
 
         public override AddressInfo* GetValueAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + 
-                RecordInfo.GetLength() + 
-                KeySize(physicalAddress));
+            throw new NotSupportedException();
         }
 
         /// <summary>
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
         /// <param name="index"></param>
-        protected override void AllocatePage(int index)
+        internal override void AllocatePage(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
             byte[] tmp = new byte[adjustedSize];
@@ -203,10 +215,6 @@ namespace FASTER.core
             long p = (long)handles[index].AddrOfPinnedObject();
             pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
             values[index] = tmp;
-
-            PageStatusIndicator[index].PageFlushCloseStatus.PageFlushStatus = PMMFlushStatus.Flushed;
-            PageStatusIndicator[index].PageFlushCloseStatus.PageCloseStatus = PMMCloseStatus.Closed;
-            Interlocked.MemoryBarrier();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -225,11 +233,6 @@ namespace FASTER.core
             return values[pageIndex] != null;
         }
 
-        protected override void DeleteAddressRange(long fromAddress, long toAddress)
-        {
-            base.DeleteAddressRange(fromAddress, toAddress);
-        }
-
         protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
@@ -241,7 +244,7 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, IOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
@@ -275,9 +278,16 @@ namespace FASTER.core
             return page << LogPageSizeBits;
         }
 
-        protected override void ClearPage(long page)
+        protected override void ClearPage(long page, int offset)
         {
-            Array.Clear(values[page % BufferSize], 0, values[page % BufferSize].Length);
+            if (offset == 0)
+                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
+            else
+            {
+                // Adjust array offset for cache alignment
+                offset += (int)(pointers[page % BufferSize] - (long)handles[page % BufferSize].AddrOfPinnedObject());
+                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
+            }
         }
 
         /// <summary>
@@ -401,7 +411,7 @@ namespace FASTER.core
 
         internal override void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
-            throw new Exception("BlittableAllocator memory pages are sector aligned - use direct copy");
+            throw new FasterException("BlittableAllocator memory pages are sector aligned - use direct copy");
             // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);
         }
 
@@ -414,7 +424,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            throw new NotImplementedException();
+            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode);
         }
 
 
