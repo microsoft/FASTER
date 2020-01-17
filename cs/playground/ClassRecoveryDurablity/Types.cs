@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Linq;
 using FASTER.core;
 
@@ -36,29 +39,29 @@ namespace ClassRecoveryDurablity
             public override void Deserialize(ref StoreKey obj)
             {
                 var bytesr = new byte[4];
-                this.reader.Read(bytesr, 0, 4);
+                reader.Read(bytesr, 0, 4);
                 var sizet = BitConverter.ToInt32(bytesr);
                 var bytes = new byte[sizet];
-                this.reader.Read(bytes, 0, sizet);
+                reader.Read(bytes, 0, sizet);
                 obj.tableType = System.Text.Encoding.UTF8.GetString(bytes);
 
                 bytesr = new byte[4];
-                this.reader.Read(bytesr, 0, 4);
+                reader.Read(bytesr, 0, 4);
                 var size = BitConverter.ToInt32(bytesr);
                 obj.key = new byte[size];
-                this.reader.Read(obj.key, 0, size);
+                reader.Read(obj.key, 0, size);
             }
 
             public override void Serialize(ref StoreKey obj)
             {
                 var bytes = System.Text.Encoding.UTF8.GetBytes(obj.tableType);
                 var len = BitConverter.GetBytes(bytes.Length);
-                this.writer.Write(len);
-                this.writer.Write(bytes);
+                writer.Write(len);
+                writer.Write(bytes);
 
                 len = BitConverter.GetBytes(obj.key.Length);
-                this.writer.Write(len);
-                this.writer.Write(obj.key);
+                writer.Write(len);
+                writer.Write(obj.key);
             }
         }
 
@@ -75,16 +78,16 @@ namespace ClassRecoveryDurablity
             public override void Deserialize(ref StoreValue obj)
             {
                 var bytesr = new byte[4];
-                this.reader.Read(bytesr, 0, 4);
+                reader.Read(bytesr, 0, 4);
                 int size = BitConverter.ToInt32(bytesr);
-                obj.value = this.reader.ReadBytes(size);
+                obj.value = reader.ReadBytes(size);
             }
 
             public override void Serialize(ref StoreValue obj)
             {
                 var len = BitConverter.GetBytes(obj.value.Length);
-                this.writer.Write(len);
-                this.writer.Write(obj.value);
+                writer.Write(len);
+                writer.Write(obj.value);
             }
         }
 

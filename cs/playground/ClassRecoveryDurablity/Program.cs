@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -8,12 +11,12 @@ namespace ClassRecoveryDurablity
     class Program
     {
         static bool stop;
-
-        static int deleteWindown = 5;
+        static int deleteWindow = 5;
         static int indexAhead = 10000000;
-        static int startDeletHeight = 20;
+        static int startDeleteHeight = 20;
         static int addCount = 100;
         static int deletePosition = 20;
+
         static void Main(string[] args)
         {
             Task.Run(() =>
@@ -86,15 +89,15 @@ namespace ClassRecoveryDurablity
                         Types.StoreContext context2 = new Types.StoreContext();
                         var addStatus = session.Upsert(ref upsertKey, ref upsertValue, context2, 1);
                         
-                        //Console.WriteLine("add=" + i);
+                        // Console.WriteLine("add=" + i);
 
                         if (addStatus != Status.OK)
                             throw new Exception();
                     }
 
-                    if (start > startDeletHeight)
+                    if (start > startDeleteHeight)
                     {
-                        var todelete = (start - deleteWindown) * indexAhead;
+                        var todelete = (start - deleteWindow) * indexAhead;
 
                         for (long i = todelete; i < todelete + addCount; i++)
                         {
@@ -105,7 +108,7 @@ namespace ClassRecoveryDurablity
                                 var deteletKey = new Types.StoreKey { tableType = "C", key = data.key };
                                 Types.StoreContext context2 = new Types.StoreContext();
                                 var deleteStatus = session.Delete(ref deteletKey, context2, 1);
-                                //Console.WriteLine("delete=" + i);
+                                // Console.WriteLine("delete=" + i);
 
                                 if (deleteStatus != Status.OK)
                                     throw new Exception();
@@ -177,11 +180,11 @@ namespace ClassRecoveryDurablity
                     var start = from;
                     var toadd = start * indexAhead;
                     var todelete = start * indexAhead;
-                    var deleteHegith = from > startDeletHeight - deleteWindown && from <= blockHeight - deleteWindown;
+                    var deleteHeight = from > startDeleteHeight - deleteWindow && from <= blockHeight - deleteWindow;
 
                     for (long i = toadd, j = todelete; i < toadd + addCount; i++, j++)
                     {
-                        if (deleteHegith && (j % deletePosition == 0))
+                        if (deleteHeight && (j % deletePosition == 0))
                         {
                             var data = Generate(j);
 
@@ -251,9 +254,8 @@ namespace ClassRecoveryDurablity
 
         public static byte[] Hash256(byte[] byteContents)
         {
-            var hash = new System.Security.Cryptography.SHA256CryptoServiceProvider();
-            byte[] hased = hash.ComputeHash(byteContents);
-            return hased;
+            using var hash = new System.Security.Cryptography.SHA256CryptoServiceProvider();
+            return hash.ComputeHash(byteContents);
         }
     }
 }

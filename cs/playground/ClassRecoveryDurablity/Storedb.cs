@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.IO;
 using FASTER.core;
 
@@ -6,7 +9,7 @@ namespace ClassRecoveryDurablity
 {
     public class Storedb
     {
-        private string dataFolder;
+        private readonly string dataFolder;
 
         public FasterKV<Types.StoreKey, Types.StoreValue, Types.StoreInput, Types.StoreOutput, Types.StoreContext, Types.StoreFunctions> db;
         public IDevice log;
@@ -14,14 +17,14 @@ namespace ClassRecoveryDurablity
 
         public Storedb(string folder)
         {
-            this.dataFolder = folder;
+            dataFolder = folder;
         }
 
         public bool InitAndRecover()
         {
             var logSize = 1L << 20;
-            this.log = Devices.CreateLogDevice(@$"{this.dataFolder}\data\Store-hlog.log", preallocateFile: false);
-            this.objLog = Devices.CreateLogDevice(@$"{this.dataFolder}\data\Store-hlog-obj.log", preallocateFile: false);
+            log = Devices.CreateLogDevice(@$"{this.dataFolder}\data\Store-hlog.log", preallocateFile: false);
+            objLog = Devices.CreateLogDevice(@$"{this.dataFolder}\data\Store-hlog-obj.log", preallocateFile: false);
 
             this.db = new FasterKV
                 <Types.StoreKey, Types.StoreValue, Types.StoreInput, Types.StoreOutput, Types.StoreContext, Types.StoreFunctions>(
@@ -48,10 +51,8 @@ namespace ClassRecoveryDurablity
 
             if (Directory.Exists($"{this.dataFolder}/data/checkpoints"))
             {
-                Console.WriteLine("call rcover db");
-
-                this.db.Recover();
-
+                Console.WriteLine("call recover db");
+                db.Recover();
                 return false;
             }
 
@@ -60,19 +61,16 @@ namespace ClassRecoveryDurablity
 
         public Guid Checkpoint()
         {
-            Guid token = default(Guid);
-
-            this.db.TakeFullCheckpoint(out token);
-            this.db.CompleteCheckpointAsync().GetAwaiter().GetResult();
-
+            db.TakeFullCheckpoint(out Guid token);
+            db.CompleteCheckpointAsync().GetAwaiter().GetResult();
             return token;
         }
 
         public void Dispose()
         {
-            this.db.Dispose();
-            this.log.Close();
-            this.objLog.Close();
+            db.Dispose();
+            log.Close();
+            objLog.Close();
         }
     }
 }
