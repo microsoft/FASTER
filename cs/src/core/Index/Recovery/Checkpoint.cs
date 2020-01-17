@@ -244,13 +244,6 @@ namespace FASTER.core
                             _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
                             _hybridLogCheckpoint.info.beginAddress = hlog.BeginAddress;
 
-                            var seg = hlog.GetSegmentOffsets();
-                            if (seg != null)
-                            {
-                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-                            }
-
                             if (FoldOverSnapshot)
                             {
                                 hlog.ShiftReadOnlyToTail(out long tailAddress, out _hybridLogCheckpoint.flushedSemaphore);
@@ -289,6 +282,15 @@ namespace FASTER.core
                         }
                     case Phase.PERSISTENCE_CALLBACK:
                         {
+                            // Collect object log offsets only after flushes
+                            // are completed
+                            var seg = hlog.GetSegmentOffsets();
+                            if (seg != null)
+                            {
+                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+                            }
+
                             if (_activeSessions != null)
                             {
                                 // write dormant sessions to checkpoint
