@@ -216,10 +216,10 @@ namespace FASTER.core
         /// <summary>
         /// GetNext supporting memory pools
         /// </summary>
-        /// <param name="pool"></param>
-        /// <param name="entry"></param>
-        /// <param name="entryLength"></param>
-        /// <param name="currentAddress"></param>
+        /// <param name="pool">Memory pool</param>
+        /// <param name="entry">Copy of entry, if found</param>
+        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="currentAddress">Logical address of entry</param>
         /// <returns></returns>
         public unsafe bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress)
         {
@@ -476,14 +476,16 @@ namespace FASTER.core
                     }
                 }
 
-                
                 if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
                     currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
                 else
                     currentAddress += recordSize;
 
-                if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _))
+                if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out long oldCurrentAddress))
+                {
+                    currentAddress = oldCurrentAddress;
                     return true;
+                }
             }
         }
     }
