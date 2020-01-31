@@ -2869,15 +2869,15 @@ bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
 }
 
 // Some printing support for gtest
-std::ostream& operator << (std::ostream& out, const Status s) {
+inline std::ostream& operator << (std::ostream& out, const Status s) {
   return out << (uint8_t)s;
 }
 
-std::ostream& operator << (std::ostream& out, const Guid guid) {
+inline std::ostream& operator << (std::ostream& out, const Guid guid) {
   return out << guid.ToString();
 }
 
-std::ostream& operator << (std::ostream& out, const FixedPageAddress address) {
+inline std::ostream& operator << (std::ostream& out, const FixedPageAddress address) {
   return out << address.control();
 }
 
