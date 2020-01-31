@@ -490,7 +490,7 @@ namespace FASTER.core
                 this.epoch = epoch;
 
             settings.LogDevice.Initialize(1L << settings.SegmentSizeBits, epoch);
-            settings.ObjectLogDevice?.Initialize(1L << settings.SegmentSizeBits, epoch);
+            settings.ObjectLogDevice?.Initialize(-1, epoch);
 
             // Page size
             LogPageSizeBits = settings.PageSizeBits;
@@ -1257,6 +1257,7 @@ namespace FASTER.core
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
                     page = readPage,
+                    offset = devicePageOffset,
                     context = context,
                     handle = completed,
                     maxPtr = PageSize

@@ -230,12 +230,6 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            var seg = hlog.GetSegmentOffsets();
-                            if (seg != null)
-                            {
-                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-                            }
                             MakeTransition(intermediateState, nextState);
                             break;
                         }
@@ -262,7 +256,7 @@ namespace FASTER.core
                                 _hybridLogCheckpoint.snapshotFileDevice = checkpointManager.GetSnapshotLogDevice(_hybridLogCheckpointToken);
                                 _hybridLogCheckpoint.snapshotFileObjectLogDevice = checkpointManager.GetSnapshotObjectLogDevice(_hybridLogCheckpointToken);
                                 _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(hlog.GetSegmentSize());
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
 
                                 long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
                                 long endPage = hlog.GetPage(_hybridLogCheckpoint.info.finalLogicalAddress);
@@ -288,6 +282,15 @@ namespace FASTER.core
                         }
                     case Phase.PERSISTENCE_CALLBACK:
                         {
+                            // Collect object log offsets only after flushes
+                            // are completed
+                            var seg = hlog.GetSegmentOffsets();
+                            if (seg != null)
+                            {
+                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+                            }
+
                             if (_activeSessions != null)
                             {
                                 // write dormant sessions to checkpoint
