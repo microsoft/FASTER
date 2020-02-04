@@ -214,10 +214,10 @@ namespace FASTER.core
         public ValueTask DeleteAsync(ref Key key, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
             var status = Delete(ref key, context, ctx.serialNum + 1);
-            return GetDeteleTask(waitForCommit, status, token);
+            return GetDeleteTask(waitForCommit, status, token);
         }
 
-        private async ValueTask GetDeteleTask(bool waitForCommit, Status status, CancellationToken token)
+        private async ValueTask GetDeleteTask(bool waitForCommit, Status status, CancellationToken token)
         {
             if (status == Status.PENDING)
                 await CompletePendingAsync(waitForCommit, token);
