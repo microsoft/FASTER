@@ -93,21 +93,27 @@ namespace FASTER.core
         {
             Output output = default;
             var status = Read(ref key, ref input, ref output, context, ctx.serialNum + 1);
-            
+
             if ((status == Status.OK || status == Status.NOTFOUND) && !waitForCommit)
                 return new ValueTask<(Status, Output)>((status, output));
 
-            return GetReadAsyncTask(waitForCommit, output, status, token);
+            return SlowReadAsync(this, waitForCommit, output, status, token);
+
+            static async ValueTask<(Status, Output)> SlowReadAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this, 
+                bool waitForCommit, Output output, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    return await @this.CompletePendingReadAsync(@this.ctx.serialNum, waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+                return (status, output);
+            }
         }
 
-        private async ValueTask<(Status, Output)> GetReadAsyncTask(bool waitForCommit, Output output, Status status, CancellationToken token)
-        {
-            if (status == Status.PENDING)
-                return await CompletePendingReadAsync(ctx.serialNum, waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
-            return (status, output);
-        }
+        
 
         /// <summary>
         /// Upsert operation
@@ -143,16 +149,22 @@ namespace FASTER.core
             if (status == Status.OK && !waitForCommit)
                 return default;
 
-            return GetUpsertTask(waitForCommit, status, token);
+            return SlowUpsertAsync(this, waitForCommit, status, token);
+
+            static async ValueTask SlowUpsertAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
+                bool waitForCommit, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    await @this.CompletePendingAsync(waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+            }
         }
 
-        private async ValueTask GetUpsertTask(bool waitForCommit, Status status, CancellationToken token)
-        {
-            if (status == Status.PENDING)
-                await CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
-        }
+
 
         /// <summary>
         /// RMW operation
@@ -188,16 +200,22 @@ namespace FASTER.core
             if (status == Status.OK && !waitForCommit)
                 return default;
 
-            return GetRMWTask(waitForCommit, status, token);
+            return SlowRMWAsync(this, waitForCommit, status, token);
+
+            static async ValueTask SlowRMWAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
+                bool waitForCommit, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    await @this.CompletePendingAsync(waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+            }
         }
 
-        private async ValueTask GetRMWTask(bool waitForCommit, Status status, CancellationToken token)
-        {
-            if (status == Status.PENDING)
-                await CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
-        }
+
 
         /// <summary>
         /// Delete operation
@@ -230,16 +248,22 @@ namespace FASTER.core
             if (status == Status.OK && !waitForCommit)
                 return default;
 
-            return GetDeleteTask(waitForCommit, status, token);
+            return SlowDeleteAsync(this, waitForCommit, status, token);
+
+            static async ValueTask SlowDeleteAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
+                bool waitForCommit, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    await @this.CompletePendingAsync(waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+            }
         }
 
-        private async ValueTask GetDeleteTask(bool waitForCommit, Status status, CancellationToken token)
-        {
-            if (status == Status.PENDING)
-                await CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
-        }
+
 
         /// <summary>
         /// Experimental feature
