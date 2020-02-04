@@ -180,8 +180,8 @@ namespace FASTER.core
 
                 if (wait)
                 {
-                    // Yield before checking again
-                    Thread.Yield();
+                    // SpinOnce before checking again
+                    new SpinWait().SpinOnce();
                 }
             } while (wait);
 
