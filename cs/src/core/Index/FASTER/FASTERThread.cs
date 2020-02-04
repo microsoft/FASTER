@@ -147,6 +147,7 @@ namespace FASTER.core
 
         internal bool InternalCompletePending(FasterExecutionContext ctx, bool wait = false)
         {
+            var spin = new SpinWait();
             do
             {
                 bool done = true;
@@ -181,7 +182,7 @@ namespace FASTER.core
                 if (wait)
                 {
                     // SpinOnce before checking again
-                    new SpinWait().SpinOnce();
+                    spin.SpinOnce();
                 }
             } while (wait);
 
