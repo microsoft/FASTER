@@ -32,7 +32,7 @@ namespace FASTER.core
 
         internal ClientSession(
             FasterKV<Key, Value, Input, Output, Context, Functions> fht,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx, 
+            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             bool supportAsync)
         {
             this.fht = fht;
@@ -84,14 +84,14 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="context"></param>
         /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask<(Status, Output)> ReadAsync(Key key, Input input, bool waitForCommit = false, CancellationToken token = default)
+        public async ValueTask<(Status, Output)> ReadAsync(Key key, Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
             Output output = default;
-            Context context = default;
             var status = Read(ref key, ref input, ref output, context, ctx.serialNum + 1);
             if (status == Status.PENDING)
                 return await CompletePendingReadAsync(ctx.serialNum, waitForCommit, token);
@@ -122,13 +122,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
+        /// <param name="context"></param>
         /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask UpsertAsync(Key key, Value desiredValue, bool waitForCommit = false, CancellationToken token = default)
+        public async ValueTask UpsertAsync(Key key, Value desiredValue, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
-            Context context = default;
             var status = Upsert(ref key, ref desiredValue, context, ctx.serialNum + 1);
             if (status == Status.PENDING)
                 await CompletePendingAsync(waitForCommit, token);
@@ -158,13 +158,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="context"></param>
         /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask RMWAsync(Key key, Input input, bool waitForCommit = false, CancellationToken token = default)
+        public async ValueTask RMWAsync(Key key, Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
-            Context context = default;
             var status = RMW(ref key, ref input, context, ctx.serialNum + 1);
             if (status == Status.PENDING)
                 await CompletePendingAsync(waitForCommit, token);
@@ -196,9 +196,8 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask DeleteAsync(Key key, bool waitForCommit = false, CancellationToken token = default)
+        public async ValueTask DeleteAsync(Key key, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
-            Context context = default;
             var status = Delete(ref key, context, ctx.serialNum + 1);
             if (status == Status.PENDING)
                 await CompletePendingAsync(waitForCommit, token);
