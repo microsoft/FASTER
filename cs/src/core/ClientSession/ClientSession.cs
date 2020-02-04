@@ -93,6 +93,10 @@ namespace FASTER.core
         {
             Output output = default;
             var status = Read(ref key, ref input, ref output, context, ctx.serialNum + 1);
+            
+            if ((status == Status.OK || status == Status.NOTFOUND) && !waitForCommit)
+                return new ValueTask<(Status, Output)>((status, output));
+
             return GetReadAsyncTask(waitForCommit, output, status, token);
         }
 
@@ -135,6 +139,10 @@ namespace FASTER.core
         public ValueTask UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
             var status = Upsert(ref key, ref desiredValue, context, ctx.serialNum + 1);
+
+            if (status == Status.OK && !waitForCommit)
+                return default;
+
             return GetUpsertTask(waitForCommit, status, token);
         }
 
@@ -176,6 +184,10 @@ namespace FASTER.core
         public ValueTask RMWAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
             var status = RMW(ref key, ref input, context, ctx.serialNum + 1);
+
+            if (status == Status.OK && !waitForCommit)
+                return default;
+
             return GetRMWTask(waitForCommit, status, token);
         }
 
@@ -214,6 +226,10 @@ namespace FASTER.core
         public ValueTask DeleteAsync(ref Key key, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
             var status = Delete(ref key, context, ctx.serialNum + 1);
+
+            if (status == Status.OK && !waitForCommit)
+                return default;
+
             return GetDeleteTask(waitForCommit, status, token);
         }
 
