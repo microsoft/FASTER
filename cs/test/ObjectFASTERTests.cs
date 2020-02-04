@@ -170,22 +170,22 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                await session.UpsertAsync(key, value, Empty.Default);
+                await session.UpsertAsync(ref key, ref value, Empty.Default);
             }
 
             var key1 = new MyKey { key = 1989 };
             var input = new MyInput();
-            var result = await session.ReadAsync(key1, input, Empty.Default);
+            var result = await session.ReadAsync(ref key1, ref input, Empty.Default);
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 1989);
 
             var key2 = new MyKey { key = 23 };
-            result = await session.ReadAsync(key2, input, Empty.Default);
+            result = await session.ReadAsync(ref key2, ref input, Empty.Default);
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 23);
 
             var key3 = new MyKey { key = 9999 };
-            result = await session.ReadAsync(key3, input, Empty.Default);
+            result = await session.ReadAsync(ref key3, ref input, Empty.Default);
             Assert.IsTrue(result.Item1 == Status.NOTFOUND);
 
             // Update last 100 using RMW in memory
@@ -193,7 +193,7 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                await session.RMWAsync(key, input, Empty.Default);
+                await session.RMWAsync(ref key, ref input, Empty.Default);
             }
 
             // Update first 100 using RMW from storage
@@ -201,7 +201,7 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                await session.RMWAsync(key, input, Empty.Default);
+                await session.RMWAsync(ref key, ref input, Empty.Default);
             }
 
             for (int i = 0; i < 2000; i++)
@@ -210,7 +210,7 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                result = await session.ReadAsync(key, input, Empty.Default);
+                result = await session.ReadAsync(ref key, ref input, Empty.Default);
                 Assert.IsTrue(result.Item1 == Status.OK);
                 if (i < 100 || i >= 1900)
                     Assert.IsTrue(result.Item2.value.value == value.value + 1);
