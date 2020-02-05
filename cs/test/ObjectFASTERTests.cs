@@ -19,7 +19,7 @@ namespace FASTER.test
     {
         private FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> fht;
         private IDevice log, objlog;
-        
+
         [SetUp]
         public void Setup()
         {
@@ -170,22 +170,22 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                await session.UpsertAsync(key, value);
+                await session.UpsertAsync(key, value, Empty.Default);
             }
 
             var key1 = new MyKey { key = 1989 };
             var input = new MyInput();
-            var result = await session.ReadAsync(key1, input);
+            var result = await session.ReadAsync(key1, input, Empty.Default);
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 1989);
 
             var key2 = new MyKey { key = 23 };
-            result = await session.ReadAsync(key2, input);
+            result = await session.ReadAsync(key2, input, Empty.Default);
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 23);
 
             var key3 = new MyKey { key = 9999 };
-            result = await session.ReadAsync(key3, input);
+            result = await session.ReadAsync(key3, input, Empty.Default);
             Assert.IsTrue(result.Item1 == Status.NOTFOUND);
 
             // Update last 100 using RMW in memory
@@ -193,7 +193,7 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                await session.RMWAsync(key, input);
+                await session.RMWAsync(key, input, Empty.Default);
             }
 
             // Update first 100 using RMW from storage
@@ -201,7 +201,7 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                await session.RMWAsync(key, input);
+                await session.RMWAsync(key, input, Empty.Default);
             }
 
             for (int i = 0; i < 2000; i++)
@@ -210,7 +210,7 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                result = await session.ReadAsync(key, input);
+                result = await session.ReadAsync(key, input, Empty.Default);
                 Assert.IsTrue(result.Item1 == Status.OK);
                 if (i < 100 || i >= 1900)
                     Assert.IsTrue(result.Item2.value.value == value.value + 1);
