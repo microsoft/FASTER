@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -78,9 +78,11 @@ namespace FasterKVAsyncSample
                 {
                     try
                     {
+
                         var key = new CacheKey(rand.Next());
                         var value = new CacheValue(rand.Next());
                         await session.UpsertAsync(ref key, ref value, context, true);
+
                         Interlocked.Increment(ref numOps);
                     }
                     catch (Exception ex)
@@ -97,9 +99,11 @@ namespace FasterKVAsyncSample
 
                 while (true)
                 {
+
                     var key = new CacheKey(rand.Next());
                     var value = new CacheValue(rand.Next());
                     await session.UpsertAsync(ref key, ref value, context);
+
                     if (count++ % 100 == 0)
                     {
                         await session.WaitForCommitAsync();

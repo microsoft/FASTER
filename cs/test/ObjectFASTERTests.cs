@@ -181,11 +181,13 @@ namespace FASTER.test
 
             var key2 = new MyKey { key = 23 };
             result = await session.ReadAsync(ref key2, ref input, Empty.Default);
+
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 23);
 
             var key3 = new MyKey { key = 9999 };
             result = await session.ReadAsync(ref key3, ref input, Empty.Default);
+
             Assert.IsTrue(result.Item1 == Status.NOTFOUND);
 
             // Update last 100 using RMW in memory
@@ -194,6 +196,7 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 await session.RMWAsync(ref key, ref input, Empty.Default);
+
             }
 
             // Update first 100 using RMW from storage
