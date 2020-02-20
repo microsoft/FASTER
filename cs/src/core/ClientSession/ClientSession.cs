@@ -369,12 +369,12 @@ namespace FASTER.core
 
             if (waitForCommit)
             {
-                (Status, Output) s = await fht.CompletePendingReadAsync(serialNo, this, token);
+                (Status, Output) s = await fht.CompletePendingReadAsync(this, token);
                 await WaitForCommitAsync(token);
                 return s;
             }
             else
-                return await fht.CompletePendingReadAsync(serialNo, this, token);
+                return await fht.CompletePendingReadAsync(this, token);
         }
 
         /// <summary>

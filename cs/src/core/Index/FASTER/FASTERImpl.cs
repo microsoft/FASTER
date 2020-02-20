@@ -1919,7 +1919,8 @@ namespace FASTER.core
                 else
                 {
                     foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
-                    Debug.WriteLine("Tracing back");
+                    //This makes testing REALLY slow
+                    //Debug.WriteLine("Tracing back");
                     continue;
                 }
             }

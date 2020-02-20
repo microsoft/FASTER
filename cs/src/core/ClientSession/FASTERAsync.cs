@@ -75,7 +75,7 @@ namespace FASTER.core
         /// Complete outstanding pending operations
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask<(Status, Output)> CompletePendingReadAsync(long serialNo, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        internal async ValueTask<(Status, Output)> CompletePendingReadAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
         {
             bool done = true;
 
@@ -101,7 +101,7 @@ namespace FASTER.core
             }
             #endregion
 
-            var s = await CompleteIOPendingReadRequestsAsync(serialNo, clientSession.ctx, clientSession.ctx, clientSession, token);
+            var s = await CompleteIOPendingReadRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
             CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
 
             Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);

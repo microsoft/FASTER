@@ -255,7 +255,7 @@ namespace FASTER.core
             }
         }
 
-        internal async ValueTask<(Status, Output)> CompleteIOPendingReadRequestsAsync(long serialNo, FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        internal async ValueTask<(Status, Output)> CompleteIOPendingReadRequestsAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
         {
             (Status, Output) s = default;
 
@@ -269,7 +269,7 @@ namespace FASTER.core
                     while (opCtx.readyResponses.Count > 0)
                     {
                         opCtx.readyResponses.TryDequeue(out request);
-                        s = InternalContinuePendingRequestAndCallback(serialNo, opCtx, currentCtx, request);
+                        s = InternalCompleteIOPendingReadRequestsAsync(opCtx, currentCtx, request);
                     }
                     clientSession.UnsafeSuspendThread();
                 }
@@ -278,7 +278,7 @@ namespace FASTER.core
                     request = await opCtx.readyResponses.DequeueAsync(token);
 
                     clientSession.UnsafeResumeThread();
-                    s = InternalContinuePendingRequestAndCallback(serialNo, opCtx, currentCtx, request);
+                    s = InternalCompleteIOPendingReadRequestsAsync(opCtx, currentCtx, request);
                     clientSession.UnsafeSuspendThread();
                 }
             }
@@ -446,8 +446,7 @@ namespace FASTER.core
         }
 
 
-        internal (Status, Output) InternalContinuePendingRequestAndCallback(
-                            long readSerialNo,
+        internal (Status, Output) InternalCompleteIOPendingReadRequestsAsync(
                             FasterExecutionContext opCtx,
                             FasterExecutionContext currentCtx,
                             AsyncIOContext<Key, Value> request)
@@ -509,11 +508,10 @@ namespace FASTER.core
                                                          ref pendingContext.output,
                                                          pendingContext.userContext,
                                                          status);
-                        if (pendingContext.serialNum == readSerialNo)
-                        {
-                            s.Item1 = status;
-                            s.Item2 = pendingContext.output;
-                        }
+                        
+                        s.Item1 = status;
+                        s.Item2 = pendingContext.output;
+                        
                     }
                     else
                     {
