@@ -79,28 +79,6 @@ namespace FASTER.core
         {
             bool done = true;
 
-            #region Previous pending requests
-            if (!RelaxedCPR)
-            {
-                if (clientSession.ctx.phase == Phase.IN_PROGRESS
-                    ||
-                    clientSession.ctx.phase == Phase.WAIT_PENDING)
-                {
-
-                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
-                    Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-
-                    if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
-                    {
-                        CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
-                    }
-
-                    done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-                    done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
-                }
-            }
-            #endregion
-
             var s = await CompleteIOPendingReadRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
             CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
 
