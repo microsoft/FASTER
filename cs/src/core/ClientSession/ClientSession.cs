@@ -367,14 +367,12 @@ namespace FASTER.core
             if (fht.epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
+            (Status, Output) s = await fht.CompletePendingReadAsync(this, token);
+
             if (waitForCommit)
-            {
-                (Status, Output) s = await fht.CompletePendingReadAsync(this, token);
                 await WaitForCommitAsync(token);
-                return s;
-            }
-            else
-                return await fht.CompletePendingReadAsync(this, token);
+                
+            return s;
         }
 
         /// <summary>
