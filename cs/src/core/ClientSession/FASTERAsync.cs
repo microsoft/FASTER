@@ -80,12 +80,10 @@ namespace FASTER.core
             bool done = true;
 
             var s = await CompleteIOPendingReadRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
-            CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
 
             Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
 
             done &= (clientSession.ctx.ioPendingRequests.Count == 0);
-            done &= (clientSession.ctx.retryRequests.Count == 0);
 
             if (!done)
             {
