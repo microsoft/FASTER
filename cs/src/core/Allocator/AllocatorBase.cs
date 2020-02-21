@@ -1450,44 +1450,56 @@ namespace FASTER.core
             Interlocked.Decrement(ref numPendingReads);
 
             var ctx = result.context;
-
-            var record = ctx.record.GetValidPointer();
-            int requiredBytes = GetRequiredRecordSize((long)record, ctx.record.available_bytes);
-            if (ctx.record.available_bytes >= requiredBytes)
+            try
             {
-                // We have the complete record.
-                if (RetrievedFullRecord(record, ref ctx))
+                var record = ctx.record.GetValidPointer();
+                int requiredBytes = GetRequiredRecordSize((long)record, ctx.record.available_bytes);
+                if (ctx.record.available_bytes >= requiredBytes)
                 {
-                    if (comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
+                    // We have the complete record.
+                    if (RetrievedFullRecord(record, ref ctx))
                     {
-                        // The keys are same, so I/O is complete
-                        // ctx.record = result.record;
-                        ctx.callbackQueue.Enqueue(ctx);
-                    }
-                    else
-                    {
-                        // Keys are not same. I/O is not complete
-                        ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                        if (ctx.logicalAddress >= BeginAddress)
+                        if (comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
                         {
-                            ctx.record.Return();
-                            ctx.record = ctx.objBuffer = default;
-                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+                            // The keys are same, so I/O is complete
+                            // ctx.record = result.record;
+                            if (ctx.callbackQueue != null)
+                                ctx.callbackQueue.Enqueue(ctx);
+                            else
+                                ctx.TrySetResult(0);
                         }
                         else
                         {
-                            ctx.callbackQueue.Enqueue(ctx);
+                            // Keys are not same. I/O is not complete
+                            ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
+                            if (ctx.logicalAddress >= BeginAddress)
+                            {
+                                ctx.record.Return();
+                                ctx.record = ctx.objBuffer = default;
+                                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+                            }
+                            else
+                            {
+                                if (ctx.callbackQueue != null)
+                                    ctx.callbackQueue.Enqueue(ctx);
+                                else
+                                    ctx.TrySetResult(0);
+                            }
                         }
                     }
                 }
-            }
-            else
-            {
-                ctx.record.Return();
-                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-            }
+                else
+                {
+                    ctx.record.Return();
+                    AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+                }
 
-            Overlapped.Free(overlap);
+                Overlapped.Free(overlap);
+            }
+            catch (Exception e)
+            {
+                ctx.TrySetException(e);
+            }
         }
 
         // static DateTime last = DateTime.Now;

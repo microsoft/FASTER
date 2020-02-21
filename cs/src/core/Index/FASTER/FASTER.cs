@@ -320,6 +320,90 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ValueTask<(Status, Output)> ReadAsync(
+            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            ref Key key, ref Input input, Context context = default, CancellationToken token = default)
+        {
+            var pcontext = default(PendingContext);
+            Output output = default;
+
+            clientSession.ctx.serialNum++;
+
+            OperationStatus internalStatus;
+
+            if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+            try
+            {
+                do
+                {
+                    internalStatus = InternalRead(ref key, ref input, ref output,
+                    ref context, ref pcontext, clientSession.ctx, clientSession.ctx.serialNum);
+                }
+                while (internalStatus == OperationStatus.CPR_SHIFT_DETECTED);
+            }
+            finally
+            {
+                if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+            }
+
+            switch (internalStatus)
+            {
+                case OperationStatus.SUCCESS:
+                case OperationStatus.NOTFOUND:
+
+                    return new ValueTask<(Status, Output)>(((Status)internalStatus, output));
+
+                case OperationStatus.RECORD_ON_DISK:
+                    return SlowReadAsync(this, clientSession, pcontext, token);
+                    
+                
+                default:
+                    throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
+
+            }
+
+            static async ValueTask<(Status, Output)> SlowReadAsync(
+                FasterKV<Key, Value, Input, Output, Context, Functions> @this,
+                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                PendingContext pendingContext, CancellationToken token = default)
+            {
+
+                var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, pendingContext);
+
+                token.ThrowIfCancellationRequested();
+
+                if (@this.epoch.ThisInstanceProtected())
+                    throw new NotSupportedException("Async operations not supported over protected epoch");
+
+                await diskRequest.ValueTaskOfT;
+
+                if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+                try
+                {
+                    #region RelaxedCPR
+                    if (!@this.RelaxedCPR)
+                    {
+                        if (clientSession.ctx.phase == Phase.IN_PROGRESS
+                            || clientSession.ctx.phase == Phase.WAIT_PENDING)
+                        {
+                            return @this.InternalCompleteIOPendingReadRequestsAsync(
+                                clientSession.ctx.prevCtx, clientSession.ctx, diskRequest, pendingContext);
+                        }
+                    }
+                    #endregion
+
+                    return @this.InternalCompleteIOPendingReadRequestsAsync(
+                        clientSession.ctx, clientSession.ctx, diskRequest, pendingContext);
+                }
+                finally
+                {
+                    if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+                }
+
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);

@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -1819,7 +1820,7 @@ namespace FASTER.core
                 opCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
                 // Issue asynchronous I/O request
-                AsyncIOContext<Key, Value> request = default;
+                AsyncIOContext<Key, Value> request = new AsyncIOContext<Key, Value>();
                 request.id = pendingContext.id;
                 request.request_key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
@@ -1840,6 +1841,23 @@ namespace FASTER.core
             {
                 return Status.ERROR;
             }
+        }
+
+        internal AsyncIOContext<Key, Value> ScheduleGetFromDisk(FasterExecutionContext opCtx,
+                    PendingContext pendingContext)
+        {
+            pendingContext.id = opCtx.totalPending++;
+
+            // Issue asynchronous I/O request
+            AsyncIOContext<Key, Value> request = new AsyncIOContext<Key, Value>();
+            request.id = pendingContext.id;
+            request.request_key = pendingContext.key;
+            request.logicalAddress = pendingContext.logicalAddress;
+            request.record = default;
+            hlog.AsyncGetFromDisk(pendingContext.logicalAddress,
+                             hlog.GetAverageRecordSize(),
+                             request);
+            return request;
         }
 
         private void AcquireSharedLatch(Key key)

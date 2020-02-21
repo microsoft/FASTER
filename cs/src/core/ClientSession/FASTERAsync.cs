@@ -71,26 +71,6 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// Complete outstanding pending operations
-        /// </summary>
-        /// <returns></returns>
-        internal async ValueTask<(Status, Output)> CompletePendingReadAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
-        {
-            bool done = true;
-
-            var s = await CompleteIOPendingReadRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
-
-            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
-
-            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
-
-            if (!done)
-            {
-                throw new Exception("CompletePendingAsync did not complete");
-            }
-            return s;
-        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal async ValueTask InternalRefreshAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)

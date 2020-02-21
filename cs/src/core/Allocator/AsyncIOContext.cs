@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core.Utilities;
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
@@ -10,8 +11,15 @@ namespace FASTER.core
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext<Key, Value>
+    public class AsyncIOContext<Key, Value> : FasterAsyncOperation<int>, IDisposable
     {
+        /// <summary>
+        /// Async Continuations are ensured
+        /// </summary>
+        public AsyncIOContext() : base(runContinuationsAsynchronously: true) { }
+
+
+
         /// <summary>
         /// Id
         /// </summary>
