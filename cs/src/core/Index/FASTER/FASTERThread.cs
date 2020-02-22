@@ -437,16 +437,7 @@ namespace FASTER.core
 
             ref Key key = ref pendingContext.key.Get();
 
-            OperationStatus internalStatus;
-            // Issue the continue command
-            if (pendingContext.type == OperationType.READ)
-            {
-                internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, currentCtx);
-            }
-            else
-            {
-                internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, currentCtx); ;
-            }
+            OperationStatus internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, currentCtx);
 
             request.Dispose();
 
@@ -458,35 +449,23 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
+                throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
             }
 
-            // If done, callback user code
-            if (status == Status.OK || status == Status.NOTFOUND)
-            {
-                if (handleLatches)
-                    ReleaseSharedLatch(key);
 
-                if (pendingContext.type == OperationType.READ)
-                {
-                    functions.ReadCompletionCallback(ref key,
-                                                     ref pendingContext.input,
-                                                     ref pendingContext.output,
-                                                     pendingContext.userContext,
-                                                     status);
+            if (handleLatches)
+                ReleaseSharedLatch(key);
 
-                    s.Item1 = status;
-                    s.Item2 = pendingContext.output;
 
-                }
-                else
-                {
-                    functions.RMWCompletionCallback(ref key,
-                                                    ref pendingContext.input,
-                                                    pendingContext.userContext,
-                                                    status);
-                }
-            }
+            functions.ReadCompletionCallback(ref key,
+                                             ref pendingContext.input,
+                                             ref pendingContext.output,
+                                             pendingContext.userContext,
+                                             status);
+
+            s.Item1 = status;
+            s.Item2 = pendingContext.output;
+
             pendingContext.Dispose();
 
 
