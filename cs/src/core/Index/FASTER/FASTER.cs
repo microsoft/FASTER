@@ -377,27 +377,31 @@ namespace FASTER.core
 
                 await diskRequest.ValueTaskOfT;
 
-                if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
-                try
+                lock (clientSession.ctx)
                 {
-                    #region RelaxedCPR
-                    if (!@this.RelaxedCPR)
-                    {
-                        if (clientSession.ctx.phase == Phase.IN_PROGRESS
-                            || clientSession.ctx.phase == Phase.WAIT_PENDING)
-                        {
-                            return @this.InternalCompleteIOPendingReadRequestsAsync(
-                                clientSession.ctx.prevCtx, clientSession.ctx, diskRequest, pendingContext);
-                        }
-                    }
-                    #endregion
 
-                    return @this.InternalCompleteIOPendingReadRequestsAsync(
-                        clientSession.ctx, clientSession.ctx, diskRequest, pendingContext);
-                }
-                finally
-                {
-                    if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+                    if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+                    try
+                    {
+                        #region RelaxedCPR
+                        if (!@this.RelaxedCPR)
+                        {
+                            if (clientSession.ctx.phase == Phase.IN_PROGRESS
+                                || clientSession.ctx.phase == Phase.WAIT_PENDING)
+                            {
+                                return @this.InternalCompleteIOPendingReadRequestsAsync(
+                                    clientSession.ctx.prevCtx, clientSession.ctx, diskRequest, pendingContext);
+                            }
+                        }
+                        #endregion
+
+                        return @this.InternalCompleteIOPendingReadRequestsAsync(
+                            clientSession.ctx, clientSession.ctx, diskRequest, pendingContext);
+                    }
+                    finally
+                    {
+                        if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+                    }
                 }
 
             }
