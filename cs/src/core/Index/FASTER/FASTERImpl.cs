@@ -1844,10 +1844,10 @@ namespace FASTER.core
         }
 
         internal AsyncIOContext<Key, Value> ScheduleGetFromDisk(FasterExecutionContext opCtx,
-                    PendingContext pendingContext)
+                    ref PendingContext pendingContext)
         {
-            pendingContext.id = opCtx.totalPending++;
-
+            pendingContext.id = opCtx.serialNum;
+            
             // Issue asynchronous I/O request
             AsyncIOContext<Key, Value> request = new AsyncIOContext<Key, Value>();
             request.id = pendingContext.id;

@@ -105,6 +105,7 @@ namespace FASTER.core
                     ctx.retryRequests = new Queue<PendingContext>();
                     ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
                     ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
+                    ctx.pendingReads = new AsyncCountDown<long, PendingContext>();
                 }
             }
             else
@@ -113,6 +114,7 @@ namespace FASTER.core
                 ctx.retryRequests = new Queue<PendingContext>();
                 ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
                 ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
+                ctx.pendingReads = new AsyncCountDown<long, PendingContext>();
             }
         }
 
@@ -131,9 +133,15 @@ namespace FASTER.core
                 dst.retryRequests = src.retryRequests;
                 dst.readyResponses = src.readyResponses;
                 dst.ioPendingRequests = src.ioPendingRequests;
+                dst.pendingReads = src.pendingReads;
             }
             else
             {
+
+                foreach (var v in src.pendingReads)
+                {
+                    dst.excludedSerialNos.Add(v.Key);
+                }
                 foreach (var v in src.ioPendingRequests.Values)
                 {
                     dst.excludedSerialNos.Add(v.serialNum);
@@ -160,8 +168,7 @@ namespace FASTER.core
                         CompleteRetryRequests(ctx.prevCtx, ctx);
                         InternalRefresh(ctx);
 
-                        done &= (ctx.prevCtx.ioPendingRequests.Count == 0);
-                        done &= (ctx.prevCtx.retryRequests.Count == 0);
+                        done &= (ctx.prevCtx.HasNoPendingRequests);
                     }
                 }
                 #endregion
@@ -170,8 +177,7 @@ namespace FASTER.core
                 CompleteRetryRequests(ctx, ctx);
                 InternalRefresh(ctx);
 
-                done &= (ctx.ioPendingRequests.Count == 0);
-                done &= (ctx.retryRequests.Count == 0);
+                done &= (ctx.HasNoPendingRequests);
 
                 if (done)
                 {

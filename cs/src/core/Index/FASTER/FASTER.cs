@@ -368,40 +368,50 @@ namespace FASTER.core
                 PendingContext pendingContext, CancellationToken token = default)
             {
 
-                var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, pendingContext);
+                var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
 
-                token.ThrowIfCancellationRequested();
-
-                if (@this.epoch.ThisInstanceProtected())
-                    throw new NotSupportedException("Async operations not supported over protected epoch");
-
-                await diskRequest.ValueTaskOfT;
-
-                lock (clientSession.ctx)
+                try
                 {
 
-                    if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
-                    try
-                    {
-                        #region RelaxedCPR
-                        if (!@this.RelaxedCPR)
-                        {
-                            if (clientSession.ctx.phase == Phase.IN_PROGRESS
-                                || clientSession.ctx.phase == Phase.WAIT_PENDING)
-                            {
-                                return @this.InternalCompleteIOPendingReadRequestsAsync(
-                                    clientSession.ctx.prevCtx, clientSession.ctx, diskRequest, pendingContext);
-                            }
-                        }
-                        #endregion
+                    clientSession.ctx.pendingReads.Add(pendingContext.id, pendingContext);
 
-                        return @this.InternalCompleteIOPendingReadRequestsAsync(
-                            clientSession.ctx, clientSession.ctx, diskRequest, pendingContext);
-                    }
-                    finally
+                    token.ThrowIfCancellationRequested();
+
+                    if (@this.epoch.ThisInstanceProtected())
+                        throw new NotSupportedException("Async operations not supported over protected epoch");
+
+                    await diskRequest.ValueTaskOfT;
+
+                    lock (clientSession.ctx)
                     {
-                        if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+
+                        if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+                        try
+                        {
+                            #region RelaxedCPR
+                            if (!@this.RelaxedCPR)
+                            {
+                                if (clientSession.ctx.phase == Phase.IN_PROGRESS
+                                    || clientSession.ctx.phase == Phase.WAIT_PENDING)
+                                {
+                                    return @this.InternalCompleteIOPendingReadRequestsAsync(
+                                        clientSession.ctx.prevCtx, clientSession.ctx, diskRequest, pendingContext);
+                                }
+                            }
+                            #endregion
+
+                            return @this.InternalCompleteIOPendingReadRequestsAsync(
+                                clientSession.ctx, clientSession.ctx, diskRequest, pendingContext);
+                        }
+                        finally
+                        {
+                            if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+                        }
                     }
+                }
+                finally
+                {
+                    clientSession.ctx.pendingReads.Remove(pendingContext.id);
                 }
 
             }

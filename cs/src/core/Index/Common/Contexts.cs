@@ -100,8 +100,22 @@ namespace FASTER.core
             public long totalPending;
             public Queue<PendingContext> retryRequests;
             public Dictionary<long, PendingContext> ioPendingRequests;
+            public AsyncCountDown<long, PendingContext> pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
+
+            public bool HasNoPendingRequests
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    return pendingReads.IsEmpty
+                        && ioPendingRequests.Count == 0
+                        && retryRequests.Count == 0;
+
+                }
+
+            }
 
             public FasterExecutionContext prevCtx;
         }

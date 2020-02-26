@@ -285,11 +285,18 @@ namespace FASTER.core
         /// <returns></returns>
         public IEnumerable<long> GetPendingRequests()
         {
+            foreach (var val in ctx.prevCtx?.pendingReads)
+                yield return val.Key;
+
             foreach (var kvp in ctx.prevCtx?.ioPendingRequests)
                 yield return kvp.Value.serialNum;
 
             foreach (var val in ctx.prevCtx?.retryRequests)
                 yield return val.serialNum;
+
+
+            foreach (var val in ctx.pendingReads)
+                yield return val.Key;
 
             foreach (var kvp in ctx.ioPendingRequests)
                 yield return kvp.Value.serialNum;

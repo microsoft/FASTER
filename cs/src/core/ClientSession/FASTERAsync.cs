@@ -43,6 +43,8 @@ namespace FASTER.core
                     clientSession.ctx.phase == Phase.WAIT_PENDING)
                 {
 
+                    await clientSession.ctx.prevCtx.pendingReads.WaitEmptyAsync();
+
                     await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
                     Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
 
@@ -51,19 +53,19 @@ namespace FASTER.core
                         CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
                     }
 
-                    done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-                    done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
+                    done &= (clientSession.ctx.prevCtx.HasNoPendingRequests);
                 }
             }
             #endregion
 
+            await clientSession.ctx.pendingReads.WaitEmptyAsync();
+
             await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
             CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
 
-            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
+            Debug.Assert(clientSession.ctx.HasNoPendingRequests);
 
-            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
-            done &= (clientSession.ctx.retryRequests.Count == 0);
+            done &= (clientSession.ctx.HasNoPendingRequests);
 
             if (!done)
             {
@@ -246,8 +248,7 @@ namespace FASTER.core
                             {
                                 if (!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
                                 {
-                                    var notify = (ctx.prevCtx.ioPendingRequests.Count == 0);
-                                    notify = notify && (ctx.prevCtx.retryRequests.Count == 0);
+                                    var notify = (ctx.prevCtx.HasNoPendingRequests);
 
                                     if (notify)
                                     {
