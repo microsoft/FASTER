@@ -1466,7 +1466,7 @@ namespace FASTER.core
                             if (ctx.callbackQueue != null)
                                 ctx.callbackQueue.Enqueue(ctx);
                             else
-                                ctx.TrySetResult(0);
+                                ctx.asyncOperation.TrySetResult(ctx);
                         }
                         else
                         {
@@ -1483,7 +1483,7 @@ namespace FASTER.core
                                 if (ctx.callbackQueue != null)
                                     ctx.callbackQueue.Enqueue(ctx);
                                 else
-                                    ctx.TrySetResult(0);
+                                    ctx.asyncOperation.TrySetResult(ctx);
                             }
                         }
                     }
@@ -1498,7 +1498,10 @@ namespace FASTER.core
             }
             catch (Exception e)
             {
-                ctx.TrySetException(e);
+                if (ctx.asyncOperation != null)
+                    ctx.asyncOperation.TrySetException(e);
+                else
+                    throw;
             }
         }
 

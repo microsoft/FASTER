@@ -18,14 +18,15 @@ namespace FASTER.core
 
         ConcurrentDictionary<TKey, TValue> queue;
         TaskCompletionSource<int> tcs;
+        object lockObject;
 
         /// <summary>
         /// Yep
         /// </summary>
         public AsyncCountDown()
         {
+            lockObject = new object();
             queue = new ConcurrentDictionary<TKey, TValue>();
-            SetTaskCompletionSource();
         }
 
         private void SetTaskCompletionSource()
@@ -54,14 +55,13 @@ namespace FASTER.core
 
             if (queue.IsEmpty)
             {
-                var completedTcs = tcs;
-                try
+                lock (lockObject)
                 {
-                    SetTaskCompletionSource();
-                }
-                finally
-                {
-                    completedTcs.TrySetResult(0);
+                    if (tcs == null)
+                        return;
+
+                    tcs.TrySetResult(0);
+                    tcs = null;
                 }
             }
         }
@@ -73,12 +73,19 @@ namespace FASTER.core
         /// <returns>A Task that completes when the counter reaches zero</returns>
         public Task WaitEmptyAsync()
         {
-            var task = tcs.Task;
-
             if (IsEmpty)
                 return Task.CompletedTask;
 
-            return task;
+            lock (lockObject)
+            {
+                if (IsEmpty)
+                    return Task.CompletedTask;
+
+                if (tcs == null)
+                    tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                return tcs.Task;
+            }
         }
         
         /// <summary>

@@ -1820,7 +1820,7 @@ namespace FASTER.core
                 opCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
                 // Issue asynchronous I/O request
-                AsyncIOContext<Key, Value> request = new AsyncIOContext<Key, Value>();
+                AsyncIOContext<Key, Value> request = default;
                 request.id = pendingContext.id;
                 request.request_key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
@@ -1849,11 +1849,15 @@ namespace FASTER.core
             pendingContext.id = opCtx.serialNum;
             
             // Issue asynchronous I/O request
-            AsyncIOContext<Key, Value> request = new AsyncIOContext<Key, Value>();
+            AsyncIOContext<Key, Value> request = default;
+            
             request.id = pendingContext.id;
             request.request_key = pendingContext.key;
             request.logicalAddress = pendingContext.logicalAddress;
             request.record = default;
+
+            request.asyncOperation = new Utilities.FasterAsyncOperation<AsyncIOContext<Key, Value>>(runContinuationsAsynchronously: true);
+
             hlog.AsyncGetFromDisk(pendingContext.logicalAddress,
                              hlog.GetAverageRecordSize(),
                              request);

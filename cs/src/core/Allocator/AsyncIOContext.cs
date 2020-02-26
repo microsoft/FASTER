@@ -6,20 +6,14 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 
+
 namespace FASTER.core
 {
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public class AsyncIOContext<Key, Value> : FasterAsyncOperation<int>, IDisposable
+    public unsafe struct AsyncIOContext<Key, Value>
     {
-        /// <summary>
-        /// Async Continuations are ensured
-        /// </summary>
-        public AsyncIOContext() : base(runContinuationsAsynchronously: true) { }
-
-
-
         /// <summary>
         /// Id
         /// </summary>
@@ -59,6 +53,12 @@ namespace FASTER.core
         /// Callback queue
         /// </summary>
         public AsyncQueue<AsyncIOContext<Key, Value>> callbackQueue;
+
+
+        /// <summary>
+        /// Async Operation ValueTask backer
+        /// </summary>
+        public FasterAsyncOperation<AsyncIOContext<Key, Value>> asyncOperation;
 
         /// <summary>
         /// Dispose

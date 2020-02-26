@@ -327,7 +327,7 @@ namespace FASTER.core
             var pcontext = default(PendingContext);
             Output output = default;
 
-            clientSession.ctx.serialNum++;
+            var nextSerialNum = clientSession.ctx.serialNum + 1;
 
             OperationStatus internalStatus;
 
@@ -337,7 +337,7 @@ namespace FASTER.core
                 do
                 {
                     internalStatus = InternalRead(ref key, ref input, ref output,
-                    ref context, ref pcontext, clientSession.ctx, clientSession.ctx.serialNum);
+                    ref context, ref pcontext, clientSession.ctx, nextSerialNum);
                 }
                 while (internalStatus == OperationStatus.CPR_SHIFT_DETECTED);
             }
@@ -351,10 +351,12 @@ namespace FASTER.core
                 case OperationStatus.SUCCESS:
                 case OperationStatus.NOTFOUND:
 
+                    clientSession.ctx.serialNum = nextSerialNum;
+
                     return new ValueTask<(Status, Output)>(((Status)internalStatus, output));
 
                 case OperationStatus.RECORD_ON_DISK:
-                    return SlowReadAsync(this, clientSession, pcontext, token);
+                    return SlowReadAsync(this, clientSession, pcontext, nextSerialNum, token);
                     
                 
                 default:
@@ -365,10 +367,12 @@ namespace FASTER.core
             static async ValueTask<(Status, Output)> SlowReadAsync(
                 FasterKV<Key, Value, Input, Output, Context, Functions> @this,
                 ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                PendingContext pendingContext, CancellationToken token = default)
+                PendingContext pendingContext, long nextSerialNum, CancellationToken token = default)
             {
 
                 var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
+
+                clientSession.ctx.serialNum = nextSerialNum;
 
                 try
                 {
@@ -380,7 +384,7 @@ namespace FASTER.core
                     if (@this.epoch.ThisInstanceProtected())
                         throw new NotSupportedException("Async operations not supported over protected epoch");
 
-                    await diskRequest.ValueTaskOfT;
+                    diskRequest = await diskRequest.asyncOperation.ValueTaskOfT;
 
                     lock (clientSession.ctx)
                     {
