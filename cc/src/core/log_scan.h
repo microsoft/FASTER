@@ -140,9 +140,10 @@ class ScanIterator {
       // Issue reads to fill up the buffer and wait for them to complete.
       for (auto i = 0; i < numFrames; i++) {
         auto ctxt = Context(&completedIOs);
-        hLog->file->ReadAsync(current.control(),
-                            reinterpret_cast<void*>(frames[i]),
-                            hlog_t::kPageSize, cb, ctxt);
+        auto addr = current.control() + (i * hlog_t::kPageSize);
+        hLog->file->ReadAsync(addr,
+                              reinterpret_cast<void*>(frames[i]),
+                              hlog_t::kPageSize, cb, ctxt);
       }
 
       while (completedIOs.load() < numFrames) disk->TryComplete();
