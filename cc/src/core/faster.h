@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <type_traits>
+#include <algorithm>
 
 #include "device/file_system_disk.h"
 
@@ -2897,8 +2898,13 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
   // First, initialize a mini FASTER that will store all live records in
   // the range [beginAddress, untilAddress).
   Address begin = hlog.begin_address.load();
-  int size = 2 * (untilAddress - begin.control());
+  auto size = 2 * (untilAddress - begin.control());
   if (size < 0) return false;
+
+  auto pSize = PersistentMemoryMalloc<D>::kPageSize;
+  size = std::max(8 * pSize, size);
+
+  if (size % pSize != 0) size += pSize - (size % pSize);
 
   faster_t tempKv(min_table_size_, size, "");
   tempKv.StartSession();
@@ -3033,7 +3039,7 @@ bool FasterKv<K, V, D>::ContainsKeyInMemory(key_t key, Address offset)
   // First, retrieve the hash table entry corresponding to this key.
   KeyHash hash = key.GetHash();
   HashBucketEntry _entry;
-  AtomicHashBucketEntry* atomic_entry = FindEntry(hash, _entry);
+  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, _entry);
   if (!atomic_entry) return false;
 
   HashBucketEntry entry = atomic_entry->load();

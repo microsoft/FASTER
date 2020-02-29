@@ -7,7 +7,6 @@
 #include "core/log_scan.h"
 
 #include "device/null_disk.h"
-#include "device/file_system_disk.h"
 
 #include "test_types.h"
 

@@ -54,14 +54,14 @@ class CompactionUpsert : public IAsyncContext {
   /// typically invoked from within FASTER when a new record corresponding
   /// to the key-value pair is created at the tail of the hybrid log.
   inline void Put(V& val) {
-    val = value_;
+    new(&val) V(value_);
   }
 
   /// Atomically stores this context's value into a passed in reference. This
   /// is typically invoked from within FASTER when performing an Upsert on a
   /// key-value pair in the HybridLog's mutable region.
   inline bool PutAtomic(V& val) {
-    val = value_;
+    new(&val) V(value_);
   }
 
  protected:
