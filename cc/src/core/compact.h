@@ -62,6 +62,7 @@ class CompactionUpsert : public IAsyncContext {
   /// key-value pair in the HybridLog's mutable region.
   inline bool PutAtomic(V& val) {
     new(&val) V(value_);
+    return true;
   }
 
  protected:
