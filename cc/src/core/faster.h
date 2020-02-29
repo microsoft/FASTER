@@ -30,6 +30,8 @@
 #include "state_transitions.h"
 #include "status.h"
 #include "utility.h"
+#include "log_scan.h"
+#include "compact.h"
 
 using namespace std::chrono_literals;
 
@@ -146,6 +148,9 @@ class FasterKv {
   Status Recover(const Guid& index_token, const Guid& hybrid_log_token, uint32_t& version,
                  std::vector<Guid>& session_ids);
 
+  /// Log compaction entry method.
+  bool Compact(uint64_t untilAddress);
+
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
                          GcState::complete_callback_t complete_callback);
@@ -257,6 +262,9 @@ class FasterKv {
   void SplitHashTableBuckets();
   void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
                     HashBucketEntry entry);
+
+  Address LogScanForValidity(Address from, faster_t* temp);
+  bool ContainsKeyInMemory(key_t key, Address offset);
 
   /// Access the current and previous (thread-local) execution contexts.
   const ExecutionContext& thread_ctx() const {
@@ -2879,6 +2887,173 @@ inline std::ostream& operator << (std::ostream& out, const Guid guid) {
 
 inline std::ostream& operator << (std::ostream& out, const FixedPageAddress address) {
   return out << address.control();
+}
+
+/// When invoked, compacts the hybrid-log between the begin address and a
+/// passed in offset (`untilAddress`).
+template <class K, class V, class D>
+bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
+{
+  // First, initialize a mini FASTER that will store all live records in
+  // the range [beginAddress, untilAddress).
+  Address begin = hlog.begin_address.load();
+  int size = 2 * (untilAddress - begin.control());
+  if (size < 0) return false;
+
+  faster_t tempKv(min_table_size_, size, "");
+  tempKv.StartSession();
+
+  // In the first phase of compaction, scan the hybrid-log between addresses
+  // [beginAddress, untilAddress), adding all live records to the mini FASTER.
+  // On encountering a tombstone, we try to delete the record from the mini
+  // instance of FASTER.
+  int numOps = 0;
+  ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, begin,
+                              Address(untilAddress), &disk);
+  while (true) {
+    auto r = iter.GetNext();
+    if (r == nullptr) break;
+
+    if (!r->header.tombstone) {
+      CompactionUpsert<K, V> ctxt(r);
+      auto cb = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<CompactionUpsert<K, V>> context(ctxt);
+        assert(result == Status::Ok);
+      };
+      tempKv.Upsert(ctxt, cb, 0);
+    } else {
+      CompactionDelete<K, V> ctxt(r);
+      auto cb = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<CompactionDelete<K, V>> context(ctxt);
+        assert(result == Status::Ok);
+      };
+      tempKv.Delete(ctxt, cb, 0);
+    }
+
+    if (++numOps % 1000 == 0) {
+      tempKv.Refresh();
+      Refresh();
+    }
+  }
+
+  // Scan the remainder of the hybrid log, deleting all encountered records
+  // from the temporary/mini FASTER instance.
+  auto upto = LogScanForValidity(Address(untilAddress), &tempKv);
+
+  // Finally, scan through all records within the temporary FASTER instance,
+  // inserting those that don't already exist within FASTER's mutable region.
+  numOps = 0;
+  ScanIterator<faster_t> iter2(&tempKv.hlog, Buffering::DOUBLE_PAGE,
+                               tempKv.hlog.begin_address.load(),
+                               tempKv.hlog.GetTailAddress(), &tempKv.disk);
+  while (true) {
+    auto r = iter2.GetNext();
+    if (r == nullptr) break;
+
+    if (!r->header.tombstone && !ContainsKeyInMemory(r->key(), upto)) {
+      CompactionUpsert<K, V> ctxt(r);
+      auto cb = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<CompactionUpsert<K, V>> context(ctxt);
+        assert(result == Status::Ok);
+      };
+
+      Upsert(ctxt, cb, 0);
+    }
+
+    if (++numOps % 1000 == 0) {
+      tempKv.Refresh();
+      Refresh();
+    }
+
+    // The safe-read-only region might have moved forward since the previous
+    // log scan. If it has, perform another validity scan over the delta.
+    if (upto < hlog.safe_read_only_address.load()) {
+      upto = LogScanForValidity(upto, &tempKv);
+    }
+  }
+
+  tempKv.StopSession();
+  return true;
+}
+
+/// Scans the hybrid log starting at `from` until the safe-read-only address,
+/// deleting all encountered records from within a passed in temporary FASTER
+/// instance.
+///
+/// Useful for log compaction where the temporary instance contains potentially
+/// live records that were found before `from` on the log. This method will then
+/// delete all records from within that instance that are dead because they exist
+/// in the safe-read-only region of the main FASTER instance.
+///
+/// Returns the address upto which the scan was performed.
+template <class K, class V, class D>
+Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
+{
+  // Scan upto the safe read only region of the log, deleting all encountered
+  // records from the temporary instance of FASTER. Since the safe-read-only
+  // offset can advance while we're scanning, we repeat this operation until
+  // we converge.
+  Address sRO = hlog.safe_read_only_address.load();
+  while (from < sRO) {
+    int numOps = 0;
+    ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, from,
+                                sRO, &disk);
+    while (true) {
+      auto r = iter.GetNext();
+      if (r == nullptr) break;
+
+      CompactionDelete<K, V> ctxt(r);
+      auto cb = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<CompactionDelete<K, V>> context(ctxt);
+        assert(result == Status::Ok);
+      };
+      temp->Delete(ctxt, cb, 0);
+
+      if (++numOps % 1000 == 0) {
+        temp->Refresh();
+        Refresh();
+      }
+    }
+
+    // Refresh Faster, updating our start and end addresses for the convergence
+    // check in the while loop above.
+    Refresh();
+    from = sRO;
+    sRO = hlog.safe_read_only_address.load();
+  }
+
+  return sRO;
+}
+
+/// Checks if a key exists between a passed in address (`offset`) and the
+/// current tail of the hybrid log.
+template <class K, class V, class D>
+bool FasterKv<K, V, D>::ContainsKeyInMemory(key_t key, Address offset)
+{
+  // First, retrieve the hash table entry corresponding to this key.
+  KeyHash hash = key.GetHash();
+  HashBucketEntry _entry;
+  AtomicHashBucketEntry* atomic_entry = FindEntry(hash, _entry);
+  if (!atomic_entry) return false;
+
+  HashBucketEntry entry = atomic_entry->load();
+  Address address = entry.address();
+
+  if (address >= offset) {
+    // Look through the in-memory portion of the log, to find the first record
+    // (if any) whose key matches.
+    const record_t* record =
+              reinterpret_cast<const record_t*>(hlog.Get(address));
+    if(key != record->key()) {
+      address = TraceBackForKeyMatch(key, record->header.previous_address(),
+                                     offset);
+    }
+  }
+
+  // If we found a record after the passed in address then we succeeded.
+  // Otherwise, we failed and so return false.
+  if (address >= offset) return true;
+  return false;
 }
 
 }
