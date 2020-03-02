@@ -512,8 +512,8 @@ namespace FASTER.core
 
                 if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out long oldCurrentAddress))
                 {
+                    nextAddress = currentAddress;
                     currentAddress = oldCurrentAddress;
-                    nextAddress = NextAddress;
                     return true;
                 }
             }
