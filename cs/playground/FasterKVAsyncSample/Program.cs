@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -40,7 +40,7 @@ namespace FasterKVAsyncSample
                 Console.WriteLine($"Unobserved task exception: {e.Exception}");
                 e.SetObserved();
             };
-            
+
             Task[] tasks = new Task[NumParallelTasks];
             for (int i = 0; i < NumParallelTasks; i++)
             {
@@ -67,6 +67,8 @@ namespace FasterKVAsyncSample
 
             await Task.Yield();
 
+            var context = new CacheContext();
+
             if (!batched)
             {
                 // Single commit version - upsert each item and wait for commit
@@ -76,7 +78,11 @@ namespace FasterKVAsyncSample
                 {
                     try
                     {
-                        await session.UpsertAsync(new CacheKey(rand.Next()), new CacheValue(rand.Next()), true);
+
+                        var key = new CacheKey(rand.Next());
+                        var value = new CacheValue(rand.Next());
+                        await session.UpsertAsync(ref key, ref value, context, true);
+
                         Interlocked.Increment(ref numOps);
                     }
                     catch (Exception ex)
@@ -90,9 +96,14 @@ namespace FasterKVAsyncSample
                 // Batched version - we enqueue many entries to memory,
                 // then wait for commit periodically
                 int count = 0;
+
                 while (true)
                 {
-                    await session.UpsertAsync(new CacheKey(rand.Next()), new CacheValue(rand.Next()));
+
+                    var key = new CacheKey(rand.Next());
+                    var value = new CacheValue(rand.Next());
+                    await session.UpsertAsync(ref key, ref value, context);
+
                     if (count++ % 100 == 0)
                     {
                         await session.WaitForCommitAsync();
