@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #pragma warning disable 0162
@@ -32,7 +32,7 @@ namespace FASTER.core
 
         internal ClientSession(
             FasterKV<Key, Value, Input, Output, Context, Functions> fht,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx, 
+            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             bool supportAsync)
         {
             this.fht = fht;
@@ -84,21 +84,36 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="context"></param>
         /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask<(Status, Output)> ReadAsync(Key key, Input input, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask<(Status, Output)> ReadAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
             Output output = default;
-            Context context = default;
             var status = Read(ref key, ref input, ref output, context, ctx.serialNum + 1);
-            if (status == Status.PENDING)
-                return await CompletePendingReadAsync(ctx.serialNum, waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
-            return (status, output);
+
+            if ((status == Status.OK || status == Status.NOTFOUND) && !waitForCommit)
+                return new ValueTask<(Status, Output)>((status, output));
+
+            return SlowReadAsync(this, waitForCommit, output, status, token);
+
+            static async ValueTask<(Status, Output)> SlowReadAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this, 
+                bool waitForCommit, Output output, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    return await @this.CompletePendingReadAsync(@this.ctx.serialNum, waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+                return (status, output);
+            }
         }
+
+        
 
         /// <summary>
         /// Upsert operation
@@ -122,19 +137,34 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
+        /// <param name="context"></param>
         /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask UpsertAsync(Key key, Value desiredValue, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
-            Context context = default;
             var status = Upsert(ref key, ref desiredValue, context, ctx.serialNum + 1);
-            if (status == Status.PENDING)
-                await CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
+
+            if (status == Status.OK && !waitForCommit)
+                return default;
+
+            return SlowUpsertAsync(this, waitForCommit, status, token);
+
+            static async ValueTask SlowUpsertAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
+                bool waitForCommit, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    await @this.CompletePendingAsync(waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+            }
         }
+
+
 
         /// <summary>
         /// RMW operation
@@ -158,19 +188,34 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="context"></param>
         /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask RMWAsync(Key key, Input input, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask RMWAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
-            Context context = default;
             var status = RMW(ref key, ref input, context, ctx.serialNum + 1);
-            if (status == Status.PENDING)
-                await CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
+
+            if (status == Status.OK && !waitForCommit)
+                return default;
+
+            return SlowRMWAsync(this, waitForCommit, status, token);
+
+            static async ValueTask SlowRMWAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
+                bool waitForCommit, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    await @this.CompletePendingAsync(waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+            }
         }
+
+
 
         /// <summary>
         /// Delete operation
@@ -196,15 +241,29 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask DeleteAsync(Key key, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask DeleteAsync(ref Key key, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
-            Context context = default;
             var status = Delete(ref key, context, ctx.serialNum + 1);
-            if (status == Status.PENDING)
-                await CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await WaitForCommitAsync(token);
+
+            if (status == Status.OK && !waitForCommit)
+                return default;
+
+            return SlowDeleteAsync(this, waitForCommit, status, token);
+
+            static async ValueTask SlowDeleteAsync(
+                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
+                bool waitForCommit, Status status, CancellationToken token
+                )
+            {
+
+                if (status == Status.PENDING)
+                    await @this.CompletePendingAsync(waitForCommit, token);
+                else if (waitForCommit)
+                    await @this.WaitForCommitAsync(token);
+            }
         }
+
+
 
         /// <summary>
         /// Experimental feature

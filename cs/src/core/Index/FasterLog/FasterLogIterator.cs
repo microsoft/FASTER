@@ -185,8 +185,21 @@ namespace FASTER.core
         /// <returns></returns>
         public unsafe bool GetNext(out byte[] entry, out int entryLength, out long currentAddress)
         {
+            return GetNext(out entry, out entryLength, out currentAddress, out _);
+        }
+
+        /// <summary>
+        /// Get next record in iterator
+        /// </summary>
+        /// <param name="entry">Copy of entry, if found</param>
+        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="currentAddress">Logical address of entry</param>
+        /// <param name="nextAddress">Logical address of next entry</param>
+        /// <returns></returns>
+        public unsafe bool GetNext(out byte[] entry, out int entryLength, out long currentAddress, out long nextAddress)
+        {
             epoch.Resume();
-            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress))
+            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
             {
                 if (getMemory != null)
                 {
@@ -216,15 +229,29 @@ namespace FASTER.core
         /// <summary>
         /// GetNext supporting memory pools
         /// </summary>
-        /// <param name="pool"></param>
-        /// <param name="entry"></param>
-        /// <param name="entryLength"></param>
-        /// <param name="currentAddress"></param>
+        /// <param name="pool">Memory pool</param>
+        /// <param name="entry">Copy of entry, if found</param>
+        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="currentAddress">Logical address of entry</param>
         /// <returns></returns>
         public unsafe bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress)
         {
+            return GetNext(pool, out entry, out entryLength, out currentAddress, out _);
+        }
+
+        /// <summary>
+        /// GetNext supporting memory pools
+        /// </summary>
+        /// <param name="pool">Memory pool</param>
+        /// <param name="entry">Copy of entry, if found</param>
+        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="currentAddress">Logical address of entry</param>
+        /// <param name="nextAddress">Logical address of next entry</param>
+        /// <returns></returns>
+        public unsafe bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress, out long nextAddress)
+        {
             epoch.Resume();
-            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress))
+            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
             {
                 entry = pool.Rent(entryLength);
 
@@ -387,14 +414,16 @@ namespace FASTER.core
         /// <param name="physicalAddress"></param>
         /// <param name="entryLength"></param>
         /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
         /// <returns></returns>
-        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress)
+        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long nextAddress)
         {
             while (true)
             {
                 physicalAddress = 0;
                 entryLength = 0;
                 currentAddress = NextAddress;
+                nextAddress = NextAddress;
 
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
@@ -476,17 +505,18 @@ namespace FASTER.core
                     }
                 }
 
-                
                 if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
                     currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
                 else
                     currentAddress += recordSize;
 
-                if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _))
+                if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out long oldCurrentAddress))
+                {
+                    nextAddress = currentAddress;
+                    currentAddress = oldCurrentAddress;
                     return true;
+                }
             }
         }
     }
 }
-
-
