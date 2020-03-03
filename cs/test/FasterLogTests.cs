@@ -146,7 +146,7 @@ namespace FASTER.test
             byte[] data1 = new byte[100];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
-            for (int i=0; i<100; i++)
+            for (int i = 0; i < 100; i++)
             {
                 log.Enqueue(data1);
             }
@@ -205,6 +205,43 @@ namespace FASTER.test
 
             commit.Join();
             log.Dispose();
+        }
+
+        [Test]
+        public async Task ResumePersistedReaderSpec([Values]LogChecksumType logChecksum)
+        {
+            var input1 = new byte[] { 0, 1, 2, 3 };
+            var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
+            var input3 = new byte[] { 11, 12 };
+            string readerName = "abc";
+            string commitFilePath = TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit";
+
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitFilePath }))
+            {
+                await l.EnqueueAsync(input1);
+                await l.EnqueueAsync(input2);
+                await l.EnqueueAsync(input3);
+                await l.CommitAsync();
+                long recoveryAddress;
+
+                using (var originalIterator = l.Scan(0, long.MaxValue, readerName))
+                {
+                    originalIterator.GetNext(out _, out _, out _, out recoveryAddress);
+                    originalIterator.CompleteUntil(recoveryAddress);
+                    originalIterator.GetNext(out _, out _, out _, out _);  // move the reader ahead
+                    await l.CommitAsync();
+                }
+            }
+
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitFilePath }))
+            {
+                using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
+                {
+                    byte[] outBuf;
+                    recoveredIterator.GetNext(out outBuf, out _, out _, out _);
+                    Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
+                }
+            }
         }
     }
 }
