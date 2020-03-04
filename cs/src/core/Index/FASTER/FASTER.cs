@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -398,17 +399,7 @@ namespace FASTER.core
                         if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
                         try
                         {
-                            #region RelaxedCPR
-                            if (!@this.RelaxedCPR)
-                            {
-                                if (clientSession.ctx.phase == Phase.IN_PROGRESS
-                                    || clientSession.ctx.phase == Phase.WAIT_PENDING)
-                                {
-                                    return @this.InternalCompleteIOPendingReadRequestsAsync(
-                                        clientSession.ctx.prevCtx, clientSession.ctx, diskRequest, pendingContext);
-                                }
-                            }
-                            #endregion
+                            Debug.Assert(@this.RelaxedCPR);
 
                             return @this.InternalCompleteIOPendingReadRequestsAsync(
                                 clientSession.ctx, clientSession.ctx, diskRequest, pendingContext);
