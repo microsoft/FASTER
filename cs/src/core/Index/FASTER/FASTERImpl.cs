@@ -1767,14 +1767,7 @@ namespace FASTER.core
             if (status == OperationStatus.CPR_SHIFT_DETECTED)
             {
                 #region Epoch Synchronization
-                var version = opCtx.version;
-                Debug.Assert(currentCtx.version == version);
-                Debug.Assert(currentCtx.phase == Phase.PREPARE);
-                InternalRefresh(currentCtx);
-                Debug.Assert(currentCtx.version == version + 1);
-                Debug.Assert(currentCtx.phase == Phase.IN_PROGRESS);
-
-                pendingContext.version = currentCtx.version;
+                SynchronizeEpoch(opCtx, currentCtx, ref pendingContext);
                 #endregion
 
                 #region Retry as (v+1) Operation
@@ -1841,6 +1834,19 @@ namespace FASTER.core
             {
                 return Status.ERROR;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SynchronizeEpoch(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ref PendingContext pendingContext)
+        {
+            var version = opCtx.version;
+            Debug.Assert(currentCtx.version == version);
+            Debug.Assert(currentCtx.phase == Phase.PREPARE);
+            InternalRefresh(currentCtx);
+            Debug.Assert(currentCtx.version == version + 1);
+            Debug.Assert(currentCtx.phase == Phase.IN_PROGRESS);
+
+            pendingContext.version = currentCtx.version;
         }
 
         internal AsyncIOContext<Key, Value> ScheduleGetFromDisk(FasterExecutionContext opCtx,

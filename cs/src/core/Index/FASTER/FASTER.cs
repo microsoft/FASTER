@@ -334,12 +334,18 @@ namespace FASTER.core
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
             try
             {
-                do
+            
+            TryReadAgain:
+
+                internalStatus = InternalRead(ref key, ref input, ref output,
+                ref context, ref pcontext, clientSession.ctx, nextSerialNum);
+
+                if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
                 {
-                    internalStatus = InternalRead(ref key, ref input, ref output,
-                    ref context, ref pcontext, clientSession.ctx, nextSerialNum);
+                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext);
+                    goto TryReadAgain;
                 }
-                while (internalStatus == OperationStatus.CPR_SHIFT_DETECTED);
+
             }
             finally
             {
@@ -357,8 +363,8 @@ namespace FASTER.core
 
                 case OperationStatus.RECORD_ON_DISK:
                     return SlowReadAsync(this, clientSession, pcontext, nextSerialNum, token);
-                    
-                
+
+
                 default:
                     throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
 
