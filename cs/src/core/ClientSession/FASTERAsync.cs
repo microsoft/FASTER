@@ -259,6 +259,7 @@ namespace FASTER.core
                 catch
                 {
                     clientSession.ctx.pendingReads.Remove(pendingContext.id);
+                    throw;
                 }
 
                 return new ReadAsyncResult(@this, clientSession, pendingContext, diskRequest);
