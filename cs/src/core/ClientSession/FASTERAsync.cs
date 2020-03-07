@@ -172,7 +172,7 @@ namespace FASTER.core
                 }
 
                 return RetrieveResult();
-            }
+            } 
 
             private (Status, Output) RetrieveResult()
             {
