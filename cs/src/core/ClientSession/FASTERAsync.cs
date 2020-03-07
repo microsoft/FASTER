@@ -141,7 +141,7 @@ namespace FASTER.core
             /// <returns>The read result, or throws an exception, if one was captured while completing.</returns>
             public (Status, Output) CompleteRead()
             {
-                if (Interlocked.CompareExchange(ref _status, Completed, Pending) == Pending)
+                if (_status != Completed && Interlocked.CompareExchange(ref _status, Completed, Pending) == Pending)
                 {
                     try
                     {
