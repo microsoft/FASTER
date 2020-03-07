@@ -89,7 +89,7 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<(Status, Output)> ReadAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> ReadAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
             var readResult = fht.ReadAsync(this, ref key, ref input, context, token);
 
@@ -98,9 +98,10 @@ namespace FASTER.core
 
             return SlowReadAsync(this, readResult, waitForCommit, token);
 
-            static async ValueTask<(Status, Output)> SlowReadAsync(
+            static async ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> SlowReadAsync(
                 ClientSession<Key, Value, Input, Output, Context, Functions> @this,
-                ValueTask<(Status, Output)> readResult, bool waitForCommit, CancellationToken token
+                ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> readResult, 
+                bool waitForCommit, CancellationToken token
                 )
             {
                 var s = await readResult;
