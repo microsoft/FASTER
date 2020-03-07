@@ -97,6 +97,11 @@ namespace FASTER.core.Utilities
         /// </remarks>
         private short _currentId;
 
+        /// <summary>
+        /// Stores if completion compute logic is already carried out
+        /// </summary>
+        internal int CompletionComputeStatus;
+
         /// <summary>Initializes the interactor.</summary>
         /// <param name="runContinuationsAsynchronously">true if continuations should be forced to run asynchronously; otherwise, false.</param>
         /// <param name="cancellationToken">The cancellation token used to cancel the operation.</param>

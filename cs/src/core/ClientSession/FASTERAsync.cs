@@ -103,7 +103,7 @@ namespace FASTER.core
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
 
-            int _status;
+            
             (Status status, Output output) _result;
             FasterKV<Key, Value, Input, Output, Context, Functions> _fasterKV;
             ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
@@ -115,19 +115,18 @@ namespace FASTER.core
                 FasterKV<Key, Value, Input, Output, Context, Functions> fasterKV, 
                 ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, 
                 PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
-            {
-                _status = Pending;
+            {                 
                 _exception = default;
                 _result = default;
                 _fasterKV = fasterKV;
                 _clientSession = clientSession;
                 _pendingContext = pendingContext;
                 _diskRequest = diskRequest;
+                _diskRequest.asyncOperation.CompletionComputeStatus = Pending;
             }
 
             internal ReadAsyncResult(Status status, Output output)
             {
-                _status = Completed;
                 _exception = default;
                 _result = (status, output);
                 _fasterKV = default;
@@ -141,7 +140,9 @@ namespace FASTER.core
             /// <returns>The read result, or throws an exception, if one was captured while completing.</returns>
             public (Status, Output) CompleteRead()
             {
-                if (_status != Completed && Interlocked.CompareExchange(ref _status, Completed, Pending) == Pending)
+                if (_diskRequest.asyncOperation != null
+                    && _diskRequest.asyncOperation.CompletionComputeStatus != Completed 
+                    && Interlocked.CompareExchange(ref _diskRequest.asyncOperation.CompletionComputeStatus, Completed, Pending) == Pending)
                 {
                     try
                     {
