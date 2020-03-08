@@ -13,26 +13,22 @@ namespace FASTER.core
     /// Offers reactivity about when a counter reaches zero
     /// </summary>
     public sealed class AsyncCountDown<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
-        where TKey: struct
+        where TKey : struct
     {
 
         ConcurrentDictionary<TKey, TValue> queue;
         TaskCompletionSource<int> tcs;
-        object lockObject;
+        TaskCompletionSource<int> nextTcs;
 
         /// <summary>
         /// Yep
         /// </summary>
         public AsyncCountDown()
         {
-            lockObject = new object();
             queue = new ConcurrentDictionary<TKey, TValue>();
+            nextTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        private void SetTaskCompletionSource()
-        {
-            tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
 
 
         /// <summary>
@@ -44,7 +40,7 @@ namespace FASTER.core
                 throw new Exception($"{nameof(AsyncCountDown<TKey, TValue>)} key was not unique");
         }
 
-        
+
 
         /// <summary>
         /// Decrements the counter by 1
@@ -54,16 +50,17 @@ namespace FASTER.core
             queue.TryRemove(key, out _);
 
             if (queue.IsEmpty)
-            {
-                lock (lockObject)
-                {
-                    if (tcs == null)
-                        return;
+                TryCompleteAwaitingTask();
+        }
 
-                    tcs.TrySetResult(0);
-                    tcs = null;
-                }
-            }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void TryCompleteAwaitingTask()
+        {
+            //Complete the Task
+            Volatile.Read(ref tcs)?.TrySetResult(0);
+
+            //Reset TCS, so next awaiters produce a new one
+            Interlocked.Exchange(ref tcs, null);            
         }
 
 
@@ -76,30 +73,45 @@ namespace FASTER.core
             if (IsEmpty)
                 return Task.CompletedTask;
 
-            lock (lockObject)
-            {
-                if (IsEmpty)
-                    return Task.CompletedTask;
+            return GetOrCreateTaskCompletionSource();
 
-                if (tcs == null)
-                    tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-                return tcs.Task;
-            }
         }
-        
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Task GetOrCreateTaskCompletionSource()
+        {
+
+            //if tcs is not null, we'll get it in taskSource
+            var taskSource = Interlocked.CompareExchange(ref tcs, nextTcs, null);
+
+            if (taskSource == null) 
+            {
+                //tcs was null and nextTcs got assigned to it. 
+                taskSource = nextTcs;
+
+                //We need a new nextTcs
+                nextTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            if (IsEmpty)
+                return Task.CompletedTask;
+
+            return taskSource.Task;
+        }
+
         /// <summary>
         /// Returns false is the counter is zero
         /// </summary>
-        public bool IsEmpty 
-        { 
+        public bool IsEmpty
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 return queue.IsEmpty;
             }
         }
 
-        
+
 
         /// <summary>
         /// Returns an enumerator that iterates through the items waiting for completion.
@@ -109,6 +121,6 @@ namespace FASTER.core
 
 
         IEnumerator IEnumerable.GetEnumerator() => queue.GetEnumerator();
-        
+
     }
 }
