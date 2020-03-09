@@ -10,7 +10,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>FasterKVAsyncStructSample</RootNamespace>
+    <RootNamespace>FasterKVDiskReadBenchmark</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <Prefer32Bit>true</Prefer32Bit>
