@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -1766,14 +1767,7 @@ namespace FASTER.core
             if (status == OperationStatus.CPR_SHIFT_DETECTED)
             {
                 #region Epoch Synchronization
-                var version = opCtx.version;
-                Debug.Assert(currentCtx.version == version);
-                Debug.Assert(currentCtx.phase == Phase.PREPARE);
-                InternalRefresh(currentCtx);
-                Debug.Assert(currentCtx.version == version + 1);
-                Debug.Assert(currentCtx.phase == Phase.IN_PROGRESS);
-
-                pendingContext.version = currentCtx.version;
+                SynchronizeEpoch(opCtx, currentCtx, ref pendingContext);
                 #endregion
 
                 #region Retry as (v+1) Operation
@@ -1840,6 +1834,40 @@ namespace FASTER.core
             {
                 return Status.ERROR;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SynchronizeEpoch(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ref PendingContext pendingContext)
+        {
+            var version = opCtx.version;
+            Debug.Assert(currentCtx.version == version);
+            Debug.Assert(currentCtx.phase == Phase.PREPARE);
+            InternalRefresh(currentCtx);
+            Debug.Assert(currentCtx.version == version + 1);
+            Debug.Assert(currentCtx.phase == Phase.IN_PROGRESS);
+
+            pendingContext.version = currentCtx.version;
+        }
+
+        internal AsyncIOContext<Key, Value> ScheduleGetFromDisk(FasterExecutionContext opCtx,
+                    ref PendingContext pendingContext)
+        {
+            pendingContext.id = opCtx.totalPending++;
+            
+            // Issue asynchronous I/O request
+            AsyncIOContext<Key, Value> request = default;
+            
+            request.id = pendingContext.id;
+            request.request_key = pendingContext.key;
+            request.logicalAddress = pendingContext.logicalAddress;
+            request.record = default;
+
+            request.asyncOperation = new Utilities.FasterAsyncOperation<AsyncIOContext<Key, Value>>(runContinuationsAsynchronously: true);
+
+            hlog.AsyncGetFromDisk(pendingContext.logicalAddress,
+                             hlog.GetAverageRecordSize(),
+                             request);
+            return request;
         }
 
         private void AcquireSharedLatch(Key key)
@@ -1919,7 +1947,8 @@ namespace FASTER.core
                 else
                 {
                     foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
-                    Debug.WriteLine("Tracing back");
+                    //This makes testing REALLY slow
+                    //Debug.WriteLine("Tracing back");
                     continue;
                 }
             }

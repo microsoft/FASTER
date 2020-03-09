@@ -1,9 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core.Utilities;
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
+
 
 namespace FASTER.core
 {
@@ -51,6 +53,12 @@ namespace FASTER.core
         /// Callback queue
         /// </summary>
         public AsyncQueue<AsyncIOContext<Key, Value>> callbackQueue;
+
+
+        /// <summary>
+        /// Async Operation ValueTask backer
+        /// </summary>
+        public FasterAsyncOperation<AsyncIOContext<Key, Value>> asyncOperation;
 
         /// <summary>
         /// Dispose

@@ -413,6 +413,11 @@ namespace FASTER.core
 
         private void AcquireSharedLatchesForAllPendingRequests(FasterExecutionContext ctx)
         {
+            foreach (var _ctx in ctx.pendingReads)
+            {
+                AcquireSharedLatch(_ctx.Value.key.Get());
+            }
+
             foreach (var _ctx in ctx.retryRequests)
             {
                 AcquireSharedLatch(_ctx.key.Get());

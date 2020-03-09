@@ -7,6 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -43,6 +44,8 @@ namespace FASTER.core
                     clientSession.ctx.phase == Phase.WAIT_PENDING)
                 {
 
+                    await clientSession.ctx.prevCtx.pendingReads.WaitEmptyAsync();
+
                     await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
                     Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
 
@@ -51,19 +54,19 @@ namespace FASTER.core
                         CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
                     }
 
-                    done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-                    done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
+                    done &= (clientSession.ctx.prevCtx.HasNoPendingRequests);
                 }
             }
             #endregion
+
+            await clientSession.ctx.pendingReads.WaitEmptyAsync();
 
             await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
             CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
 
-            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
+            Debug.Assert(clientSession.ctx.HasNoPendingRequests);
 
-            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
-            done &= (clientSession.ctx.retryRequests.Count == 0);
+            done &= (clientSession.ctx.HasNoPendingRequests);
 
             if (!done)
             {
@@ -71,50 +74,6 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// Complete outstanding pending operations
-        /// </summary>
-        /// <returns></returns>
-        internal async ValueTask<(Status, Output)> CompletePendingReadAsync(long serialNo, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
-        {
-            bool done = true;
-
-            #region Previous pending requests
-            if (!RelaxedCPR)
-            {
-                if (clientSession.ctx.phase == Phase.IN_PROGRESS
-                    ||
-                    clientSession.ctx.phase == Phase.WAIT_PENDING)
-                {
-
-                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
-                    Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-
-                    if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
-                    {
-                        CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
-                    }
-
-                    done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-                    done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
-                }
-            }
-            #endregion
-
-            var s = await CompleteIOPendingReadRequestsAsync(serialNo, clientSession.ctx, clientSession.ctx, clientSession, token);
-            CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
-
-            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
-
-            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
-            done &= (clientSession.ctx.retryRequests.Count == 0);
-
-            if (!done)
-            {
-                throw new Exception("CompletePendingAsync did not complete");
-            }
-            return s;
-        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal async ValueTask InternalRefreshAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
@@ -135,6 +94,174 @@ namespace FASTER.core
             await HandleCheckpointingPhasesAsync(ctx, clientSession);
         }
 
+        /// <summary>
+        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
+        /// </summary>
+        public struct ReadAsyncResult
+        {
+            const int Completed = 1;
+            const int Pending = 0;
+            ExceptionDispatchInfo _exception;
+
+            
+            (Status status, Output output) _result;
+            FasterKV<Key, Value, Input, Output, Context, Functions> _fasterKV;
+            ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+            PendingContext _pendingContext;
+            AsyncIOContext<Key, Value> _diskRequest;
+            
+
+            internal ReadAsyncResult(
+                FasterKV<Key, Value, Input, Output, Context, Functions> fasterKV, 
+                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, 
+                PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            {                 
+                _exception = default;
+                _result = default;
+                _fasterKV = fasterKV;
+                _clientSession = clientSession;
+                _pendingContext = pendingContext;
+                _diskRequest = diskRequest;
+                _diskRequest.asyncOperation.CompletionComputeStatus = Pending;
+            }
+
+            internal ReadAsyncResult(Status status, Output output)
+            {
+                _exception = default;
+                _result = (status, output);
+                _fasterKV = default;
+                _clientSession = default;
+                _pendingContext = default;
+                _diskRequest = default;
+            }
+            /// <summary>
+            /// Complete the read operation, after any I/O is completed.
+            /// </summary>
+            /// <returns>The read result, or throws an exception if error encountered.</returns>
+            public (Status, Output) CompleteRead()
+            {
+                if (_diskRequest.asyncOperation != null
+                    && _diskRequest.asyncOperation.CompletionComputeStatus != Completed 
+                    && Interlocked.CompareExchange(ref _diskRequest.asyncOperation.CompletionComputeStatus, Completed, Pending) == Pending)
+                {
+                    try
+                    {
+
+                        if (_clientSession.SupportAsync) _clientSession.UnsafeResumeThread();
+                        try
+                        {
+                            Debug.Assert(_fasterKV.RelaxedCPR);
+
+                            _result = _fasterKV.InternalCompleteIOPendingReadRequestsAsync(
+                                _clientSession.ctx, _clientSession.ctx, _diskRequest, _pendingContext);
+                        }
+                        finally
+                        {
+                            if (_clientSession.SupportAsync) _clientSession.UnsafeSuspendThread();
+                        }
+
+                    }
+                    catch (Exception e)
+                    {
+                        _exception = ExceptionDispatchInfo.Capture(e);
+                    }
+                    finally
+                    {
+                        _clientSession.ctx.pendingReads.Remove(_pendingContext.id);
+                    }
+                }
+
+                if (_exception != default)
+                    _exception.Throw();
+                return _result;
+            }
+        }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ValueTask<ReadAsyncResult> ReadAsync(
+            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            ref Key key, ref Input input, Context context = default, CancellationToken token = default)
+        {
+            var pcontext = default(PendingContext);
+            Output output = default;
+
+            var nextSerialNum = clientSession.ctx.serialNum + 1;
+
+            OperationStatus internalStatus;
+
+            if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+            try
+            {
+
+            TryReadAgain:
+
+                internalStatus = InternalRead(ref key, ref input, ref output,
+                ref context, ref pcontext, clientSession.ctx, nextSerialNum);
+
+                if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
+                {
+                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext);
+                    goto TryReadAgain;
+                }
+
+            }
+            finally
+            {
+                if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+            }
+
+            switch (internalStatus)
+            {
+                case OperationStatus.SUCCESS:
+                case OperationStatus.NOTFOUND:
+
+                    clientSession.ctx.serialNum = nextSerialNum;
+
+                    return new ValueTask<ReadAsyncResult>(new ReadAsyncResult((Status)internalStatus, output));
+
+                case OperationStatus.RECORD_ON_DISK:
+                    return SlowReadAsync(this, clientSession, pcontext, nextSerialNum, token);
+
+
+                default:
+                    throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
+
+            }
+
+            static async ValueTask<ReadAsyncResult> SlowReadAsync(
+                FasterKV<Key, Value, Input, Output, Context, Functions> @this,
+                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                PendingContext pendingContext, long nextSerialNum, CancellationToken token = default)
+            {
+
+                var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
+
+                clientSession.ctx.serialNum = nextSerialNum;
+
+                clientSession.ctx.pendingReads.Add(pendingContext.id, pendingContext);
+
+                try
+                {
+
+                    token.ThrowIfCancellationRequested();
+
+                    if (@this.epoch.ThisInstanceProtected())
+                        throw new NotSupportedException("Async operations not supported over protected epoch");
+
+                    diskRequest = await diskRequest.asyncOperation.ValueTaskOfT;
+
+                }
+                catch
+                {
+                    clientSession.ctx.pendingReads.Remove(pendingContext.id);
+                    throw;
+                }
+
+                return new ReadAsyncResult(@this, clientSession, pendingContext, diskRequest);
+
+            }
+        }
 
         private bool AtomicSwitch(FasterExecutionContext fromCtx, FasterExecutionContext toCtx, int version)
         {
@@ -290,8 +417,7 @@ namespace FASTER.core
                             {
                                 if (!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
                                 {
-                                    var notify = (ctx.prevCtx.ioPendingRequests.Count == 0);
-                                    notify = notify && (ctx.prevCtx.retryRequests.Count == 0);
+                                    var notify = (ctx.prevCtx.HasNoPendingRequests);
 
                                     if (notify)
                                     {

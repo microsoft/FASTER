@@ -175,18 +175,21 @@ namespace FASTER.test
 
             var key1 = new MyKey { key = 1989 };
             var input = new MyInput();
-            var result = await session.ReadAsync(ref key1, ref input, Empty.Default);
+            var readResult = await session.ReadAsync(ref key1, ref input, Empty.Default);
+            var result = readResult.CompleteRead();
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 1989);
 
             var key2 = new MyKey { key = 23 };
-            result = await session.ReadAsync(ref key2, ref input, Empty.Default);
+            readResult = await session.ReadAsync(ref key2, ref input, Empty.Default);
+            result = readResult.CompleteRead();
 
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 23);
 
             var key3 = new MyKey { key = 9999 };
-            result = await session.ReadAsync(ref key3, ref input, Empty.Default);
+            readResult = await session.ReadAsync(ref key3, ref input, Empty.Default);
+            result = readResult.CompleteRead();
 
             Assert.IsTrue(result.Item1 == Status.NOTFOUND);
 
@@ -213,7 +216,8 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                result = await session.ReadAsync(ref key, ref input, Empty.Default);
+                readResult = await session.ReadAsync(ref key, ref input, Empty.Default);
+                result = readResult.CompleteRead();
                 Assert.IsTrue(result.Item1 == Status.OK);
                 if (i < 100 || i >= 1900)
                     Assert.IsTrue(result.Item2.value.value == value.value + 1);
