@@ -135,9 +135,9 @@ namespace FASTER.core
                 _diskRequest = default;
             }
             /// <summary>
-            /// Carries out the read continuation, if not completed. Always return the same result.
+            /// Complete the read operation, after any I/O is completed.
             /// </summary>
-            /// <returns>The read result, or throws an exception, if one was captured while completing.</returns>
+            /// <returns>The read result, or throws an exception if error encountered.</returns>
             public (Status, Output) CompleteRead()
             {
                 if (_diskRequest.asyncOperation != null
@@ -171,11 +171,6 @@ namespace FASTER.core
                     }
                 }
 
-                return RetrieveResult();
-            } 
-
-            private (Status, Output) RetrieveResult()
-            {
                 if (_exception != default)
                     _exception.Throw();
                 return _result;
