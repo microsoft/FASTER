@@ -1,0 +1,25 @@
+{
+  "ParameterSweeps": [
+    {
+      "UpsertCounts": [1000000, 5000000, 10000000],
+      "DataSizes": [8, 64, 128],
+      "ReadMultiples": [1, 5],
+      "ReadThreadCounts": [1, 4],
+      "IterationCounts": [1, 5],
+      "UseVarLenValues": [false, true],
+      "UseObjectValues": [false],
+      "UseReadCaches": [true],
+      "LogModes": ["Flush"]
+    }, {
+      "UpsertCounts": [5000000],
+      "DataSizes": [8, 32],
+      "ReadMultiples": [2],
+      "ReadThreadCounts": [1, 5],
+      "IterationCounts": [10],
+      "UseVarLenValues": [false],
+      "UseObjectValues": [false],
+      "UseReadCaches": [true],
+      "LogModes": ["Flush"]
+    }
+  ]
+}
