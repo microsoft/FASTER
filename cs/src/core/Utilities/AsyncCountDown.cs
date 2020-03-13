@@ -1,9 +1,7 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,54 +10,41 @@ namespace FASTER.core
     /// <summary>
     /// Offers reactivity about when a counter reaches zero
     /// </summary>
-    public sealed class AsyncCountDown<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
-        where TKey : struct
+    internal sealed class AsyncCountDown
     {
-
-        ConcurrentDictionary<TKey, TValue> queue;
+        int counter;
         TaskCompletionSource<int> tcs;
         TaskCompletionSource<int> nextTcs;
 
-        /// <summary>
-        /// Yep
-        /// </summary>
         public AsyncCountDown()
         {
-            queue = new ConcurrentDictionary<TKey, TValue>();
             nextTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
-
-
 
         /// <summary>
         /// Increments the counter by 1
         /// </summary>
-        public void Add(TKey key, TValue value)
+        public void Add()
         {
-            if (!queue.TryAdd(key, value))
-                throw new Exception($"{nameof(AsyncCountDown<TKey, TValue>)} key was not unique");
+            Interlocked.Increment(ref counter);
         }
-
-
 
         /// <summary>
         /// Decrements the counter by 1
         /// </summary>
-        public void Remove(TKey key)
+        public void Remove()
         {
-            queue.TryRemove(key, out _);
-
-            if (queue.IsEmpty)
+            if (Interlocked.Decrement(ref counter) == 0)
                 TryCompleteAwaitingTask();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void TryCompleteAwaitingTask()
         {
-            //Complete the Task
+            // Complete the Task
             Volatile.Read(ref tcs)?.TrySetResult(0);
 
-            //Reset TCS, so next awaiters produce a new one
+            // Reset TCS, so next awaiters produce a new one
             Interlocked.Exchange(ref tcs, null);            
         }
 
@@ -70,7 +55,7 @@ namespace FASTER.core
         /// <returns>A Task that completes when the counter reaches zero</returns>
         public Task WaitEmptyAsync()
         {
-            if (IsEmpty)
+            if (counter == 0)
                 return Task.CompletedTask;
 
             return GetOrCreateTaskCompletionSource();
@@ -81,46 +66,22 @@ namespace FASTER.core
         private Task GetOrCreateTaskCompletionSource()
         {
 
-            //if tcs is not null, we'll get it in taskSource
+            // If tcs is not null, we'll get it in taskSource
             var taskSource = Interlocked.CompareExchange(ref tcs, nextTcs, null);
 
             if (taskSource == null) 
             {
-                //tcs was null and nextTcs got assigned to it. 
+                // Tcs was null and nextTcs got assigned to it. 
                 taskSource = nextTcs;
 
-                //We need a new nextTcs
+                // We need a new nextTcs
                 nextTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
-            if (IsEmpty)
+            if (counter == 0)
                 return Task.CompletedTask;
 
             return taskSource.Task;
         }
-
-        /// <summary>
-        /// Returns false is the counter is zero
-        /// </summary>
-        public bool IsEmpty
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                return queue.IsEmpty;
-            }
-        }
-
-
-
-        /// <summary>
-        /// Returns an enumerator that iterates through the items waiting for completion.
-        /// </summary>
-        /// <returns>An enumerator for the the items waiting for completion.</returns>
-        public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator() => queue.GetEnumerator();
-
-
-        IEnumerator IEnumerable.GetEnumerator() => queue.GetEnumerator();
-
     }
 }

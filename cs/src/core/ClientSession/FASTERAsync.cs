@@ -94,59 +94,36 @@ namespace FASTER.core
             await HandleCheckpointingPhasesAsync(ctx, clientSession);
         }
 
-        /// <summary>
-        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
-        /// </summary>
-        public struct ReadAsyncResult
+        internal class ReadAsyncInternal
         {
             const int Completed = 1;
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
-
-            
-            (Status status, Output output) _result;
             FasterKV<Key, Value, Input, Output, Context, Functions> _fasterKV;
             ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
             PendingContext _pendingContext;
             AsyncIOContext<Key, Value> _diskRequest;
-            
+            int CompletionComputeStatus;
 
-            internal ReadAsyncResult(
-                FasterKV<Key, Value, Input, Output, Context, Functions> fasterKV, 
-                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, 
-                PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
-            {                 
+            internal ReadAsyncInternal(FasterKV<Key, Value, Input, Output, Context, Functions> fasterKV, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            {
                 _exception = default;
-                _result = default;
                 _fasterKV = fasterKV;
                 _clientSession = clientSession;
                 _pendingContext = pendingContext;
                 _diskRequest = diskRequest;
-                _diskRequest.asyncOperation.CompletionComputeStatus = Pending;
+                CompletionComputeStatus = Pending;
             }
 
-            internal ReadAsyncResult(Status status, Output output)
+            internal (Status, Output) CompleteRead()
             {
-                _exception = default;
-                _result = (status, output);
-                _fasterKV = default;
-                _clientSession = default;
-                _pendingContext = default;
-                _diskRequest = default;
-            }
-            /// <summary>
-            /// Complete the read operation, after any I/O is completed.
-            /// </summary>
-            /// <returns>The read result, or throws an exception if error encountered.</returns>
-            public (Status, Output) CompleteRead()
-            {
+                (Status, Output) _result = default;
                 if (_diskRequest.asyncOperation != null
-                    && _diskRequest.asyncOperation.CompletionComputeStatus != Completed 
-                    && Interlocked.CompareExchange(ref _diskRequest.asyncOperation.CompletionComputeStatus, Completed, Pending) == Pending)
+                    && CompletionComputeStatus != Completed
+                    && Interlocked.CompareExchange(ref CompletionComputeStatus, Completed, Pending) == Pending)
                 {
                     try
                     {
-
                         if (_clientSession.SupportAsync) _clientSession.UnsafeResumeThread();
                         try
                         {
@@ -159,7 +136,6 @@ namespace FASTER.core
                         {
                             if (_clientSession.SupportAsync) _clientSession.UnsafeSuspendThread();
                         }
-
                     }
                     catch (Exception e)
                     {
@@ -167,7 +143,7 @@ namespace FASTER.core
                     }
                     finally
                     {
-                        _clientSession.ctx.pendingReads.Remove(_pendingContext.id);
+                        _clientSession.ctx.ioPendingRequests.Remove(_pendingContext.id);
                     }
                 }
 
@@ -177,89 +153,109 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
+        /// </summary>
+        public struct ReadAsyncResult
+        {
+            Status status;
+            Output output;
+            ReadAsyncInternal readAsyncInternal;
+
+            internal ReadAsyncResult(Status status, Output output)
+            {
+                this.status = status;
+                this.output = output;
+                this.readAsyncInternal = default;
+            }
+
+            internal ReadAsyncResult(
+                FasterKV<Key, Value, Input, Output, Context, Functions> fasterKV, 
+                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, 
+                PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            {
+                status = Status.PENDING;
+                output = default;
+                readAsyncInternal = new ReadAsyncInternal(fasterKV, clientSession, pendingContext, diskRequest);
+            }
+
+            /// <summary>
+            /// Complete the read operation, after any I/O is completed.
+            /// </summary>
+            /// <returns>The read result, or throws an exception if error encountered.</returns>
+            public (Status, Output) CompleteRead()
+            {
+                if (status != Status.PENDING)
+                    return (status, output);
+
+                return readAsyncInternal.CompleteRead();
+            }
+        }
+
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<ReadAsyncResult> ReadAsync(
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal ValueTask<ReadAsyncResult> ReadAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
             var pcontext = default(PendingContext);
             Output output = default;
-
-            var nextSerialNum = clientSession.ctx.serialNum + 1;
-
             OperationStatus internalStatus;
+            var nextSerialNum = clientSession.ctx.serialNum + 1;
 
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
             try
             {
-
             TryReadAgain:
 
-                internalStatus = InternalRead(ref key, ref input, ref output,
-                ref context, ref pcontext, clientSession.ctx, nextSerialNum);
+                internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.ctx, nextSerialNum);
+                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+                {
+                    return new ValueTask<ReadAsyncResult>(new ReadAsyncResult((Status)internalStatus, output));
+                }
 
                 if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
                 {
                     SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext);
                     goto TryReadAgain;
                 }
-
             }
             finally
             {
+                clientSession.ctx.serialNum = nextSerialNum;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }
 
-            switch (internalStatus)
-            {
-                case OperationStatus.SUCCESS:
-                case OperationStatus.NOTFOUND:
-
-                    clientSession.ctx.serialNum = nextSerialNum;
-
-                    return new ValueTask<ReadAsyncResult>(new ReadAsyncResult((Status)internalStatus, output));
-
-                case OperationStatus.RECORD_ON_DISK:
-                    return SlowReadAsync(this, clientSession, pcontext, nextSerialNum, token);
-
-
-                default:
-                    throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
-
-            }
+            return SlowReadAsync(this, clientSession, pcontext, token);
 
             static async ValueTask<ReadAsyncResult> SlowReadAsync(
                 FasterKV<Key, Value, Input, Output, Context, Functions> @this,
                 ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                PendingContext pendingContext, long nextSerialNum, CancellationToken token = default)
+                PendingContext pendingContext, CancellationToken token = default)
             {
-
                 var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
-
-                clientSession.ctx.serialNum = nextSerialNum;
-
-                clientSession.ctx.pendingReads.Add(pendingContext.id, pendingContext);
+                clientSession.ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
+                clientSession.ctx.pendingReads.Add();
 
                 try
                 {
-
                     token.ThrowIfCancellationRequested();
 
                     if (@this.epoch.ThisInstanceProtected())
                         throw new NotSupportedException("Async operations not supported over protected epoch");
 
                     diskRequest = await diskRequest.asyncOperation.ValueTaskOfT;
-
                 }
                 catch
                 {
-                    clientSession.ctx.pendingReads.Remove(pendingContext.id);
+                    clientSession.ctx.ioPendingRequests.Remove(pendingContext.id);
                     throw;
+                }
+                finally 
+                {
+                    clientSession.ctx.pendingReads.Remove();
                 }
 
                 return new ReadAsyncResult(@this, clientSession, pendingContext, diskRequest);
-
             }
         }
 

@@ -74,9 +74,14 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextRead(ref key, ref input, ref output, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextRead(ref key, ref input, ref output, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
@@ -127,9 +132,14 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
@@ -178,9 +188,14 @@ namespace FASTER.core
         public Status RMW(ref Key key, ref Input input, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
@@ -228,9 +243,14 @@ namespace FASTER.core
         public Status Delete(ref Key key, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextDelete(ref key, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextDelete(ref key, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
@@ -286,18 +306,11 @@ namespace FASTER.core
         /// <returns></returns>
         public IEnumerable<long> GetPendingRequests()
         {
-            foreach (var val in ctx.prevCtx?.pendingReads)
-                yield return val.Key;
-
             foreach (var kvp in ctx.prevCtx?.ioPendingRequests)
                 yield return kvp.Value.serialNum;
 
             foreach (var val in ctx.prevCtx?.retryRequests)
                 yield return val.serialNum;
-
-
-            foreach (var val in ctx.pendingReads)
-                yield return val.Key;
 
             foreach (var kvp in ctx.ioPendingRequests)
                 yield return kvp.Value.serialNum;
@@ -326,27 +339,31 @@ namespace FASTER.core
         public bool CompletePending(bool spinWait = false, bool spinWaitForCommit = false)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var result = fht.InternalCompletePending(ctx, spinWait);
-            if (spinWaitForCommit)
+            try
             {
-                if (spinWait != true)
+                var result = fht.InternalCompletePending(ctx, spinWait);
+                if (spinWaitForCommit)
                 {
-                    if (SupportAsync) UnsafeSuspendThread();
-                    throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
-                }
-                do
-                {
-                    fht.InternalCompletePending(ctx, spinWait);
-                    if (fht.InRestPhase())
+                    if (spinWait != true)
+                    {
+                        throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
+                    }
+                    do
                     {
                         fht.InternalCompletePending(ctx, spinWait);
-                        if (SupportAsync) UnsafeSuspendThread();
-                        return true;
-                    }
-                } while (spinWait);
+                        if (fht.InRestPhase())
+                        {
+                            fht.InternalCompletePending(ctx, spinWait);
+                            return true;
+                        }
+                    } while (spinWait);
+                }
+                return result;
             }
-            if (SupportAsync) UnsafeSuspendThread();
-            return result;
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
