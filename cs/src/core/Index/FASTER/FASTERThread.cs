@@ -105,7 +105,7 @@ namespace FASTER.core
                     ctx.retryRequests = new Queue<PendingContext>();
                     ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
                     ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
-                    ctx.pendingReads = new AsyncCountDown<long, PendingContext>();
+                    ctx.pendingReads = new AsyncCountDown();
                 }
             }
             else
@@ -114,7 +114,7 @@ namespace FASTER.core
                 ctx.retryRequests = new Queue<PendingContext>();
                 ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
                 ctx.ioPendingRequests = new Dictionary<long, PendingContext>();
-                ctx.pendingReads = new AsyncCountDown<long, PendingContext>();
+                ctx.pendingReads = new AsyncCountDown();
             }
         }
 
@@ -137,11 +137,6 @@ namespace FASTER.core
             }
             else
             {
-
-                foreach (var v in src.pendingReads)
-                {
-                    dst.excludedSerialNos.Add(v.Key);
-                }
                 foreach (var v in src.ioPendingRequests.Values)
                 {
                     dst.excludedSerialNos.Add(v.serialNum);

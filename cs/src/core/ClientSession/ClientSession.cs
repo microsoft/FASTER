@@ -74,46 +74,30 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextRead(ref key, ref input, ref output, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextRead(ref key, ref input, ref output, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
-        /// Read operation
+        /// Async read operation, may return uncommitted result
+        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="context"></param>
-        /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
-        /// <returns></returns>
+        /// <returns>ReadAsyncResult - call CompleteRead on the return value to complete the read operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> ReadAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
-            var readResult = fht.ReadAsync(this, ref key, ref input, context, token);
-
-            if (readResult.IsCompleted && !waitForCommit)
-                return readResult;
-
-            return SlowReadAsync(this, readResult, waitForCommit, token);
-
-            static async ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> SlowReadAsync(
-                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
-                ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> readResult, 
-                bool waitForCommit, CancellationToken token
-                )
-            {
-                var s = await readResult;
-                
-                if (waitForCommit)
-                    await @this.WaitForCommitAsync(token);
-
-                return s;
-            }
-        }
-
-        
+            return fht.ReadAsync(this, ref key, ref input, context, token);
+        }        
 
         /// <summary>
         /// Upsert operation
@@ -127,9 +111,14 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
@@ -156,7 +145,6 @@ namespace FASTER.core
                 bool waitForCommit, Status status, CancellationToken token
                 )
             {
-
                 if (status == Status.PENDING)
                     await @this.CompletePendingAsync(waitForCommit, token);
                 else if (waitForCommit)
@@ -178,13 +166,19 @@ namespace FASTER.core
         public Status RMW(ref Key key, ref Input input, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
-        /// RMW operation
+        /// Async RMW operation
+        /// Await operation in session before issuing next one
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -228,13 +222,18 @@ namespace FASTER.core
         public Status Delete(ref Key key, Context userContext, long serialNo)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var status = fht.ContextDelete(ref key, userContext, serialNo, ctx);
-            if (SupportAsync) UnsafeSuspendThread();
-            return status;
+            try
+            {
+                return fht.ContextDelete(ref key, userContext, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
-        /// Delete operation
+        /// Async delete operation
         /// </summary>
         /// <param name="key"></param>
         /// <param name="waitForCommit"></param>
@@ -286,18 +285,11 @@ namespace FASTER.core
         /// <returns></returns>
         public IEnumerable<long> GetPendingRequests()
         {
-            foreach (var val in ctx.prevCtx?.pendingReads)
-                yield return val.Key;
-
             foreach (var kvp in ctx.prevCtx?.ioPendingRequests)
                 yield return kvp.Value.serialNum;
 
             foreach (var val in ctx.prevCtx?.retryRequests)
                 yield return val.serialNum;
-
-
-            foreach (var val in ctx.pendingReads)
-                yield return val.Key;
 
             foreach (var kvp in ctx.ioPendingRequests)
                 yield return kvp.Value.serialNum;
@@ -326,31 +318,36 @@ namespace FASTER.core
         public bool CompletePending(bool spinWait = false, bool spinWaitForCommit = false)
         {
             if (SupportAsync) UnsafeResumeThread();
-            var result = fht.InternalCompletePending(ctx, spinWait);
-            if (spinWaitForCommit)
+            try
             {
-                if (spinWait != true)
+                var result = fht.InternalCompletePending(ctx, spinWait);
+                if (spinWaitForCommit)
                 {
-                    if (SupportAsync) UnsafeSuspendThread();
-                    throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
-                }
-                do
-                {
-                    fht.InternalCompletePending(ctx, spinWait);
-                    if (fht.InRestPhase())
+                    if (spinWait != true)
+                    {
+                        throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
+                    }
+                    do
                     {
                         fht.InternalCompletePending(ctx, spinWait);
-                        if (SupportAsync) UnsafeSuspendThread();
-                        return true;
-                    }
-                } while (spinWait);
+                        if (fht.InRestPhase())
+                        {
+                            fht.InternalCompletePending(ctx, spinWait);
+                            return true;
+                        }
+                    } while (spinWait);
+                }
+                return result;
             }
-            if (SupportAsync) UnsafeSuspendThread();
-            return result;
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
-        /// Async complete outstanding pending operations
+        /// Complete all outstanding pending operations asynchronously
+        /// Async operations (ReadAsync) must be completed individually
         /// </summary>
         /// <returns></returns>
         public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
@@ -369,7 +366,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Wait for commit of all operations until current point in session.
+        /// Wait for commit of all operations completed until the current point in session.
         /// Does not itself issue checkpoint/commits.
         /// </summary>
         /// <returns></returns>

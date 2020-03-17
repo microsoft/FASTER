@@ -50,7 +50,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterKVAsyncSample", "play
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClassRecoveryDurablity", "playground\ClassRecoveryDurablity\ClassRecoveryDurablity.csproj", "{95AC8766-84F9-4E95-B2E9-2169B6375FB2}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterKVDiskReadBenchmark", "playground\FasterKVAsyncStructSample\FasterKVDiskReadBenchmark.csproj", "{993A6898-4B90-4112-8E3F-D43C764953A4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterKVDiskReadBenchmark", "playground\FasterKVDiskReadBenchmark\FasterKVDiskReadBenchmark.csproj", "{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -188,14 +188,14 @@ Global
 		{95AC8766-84F9-4E95-B2E9-2169B6375FB2}.Release|Any CPU.Build.0 = Release|x64
 		{95AC8766-84F9-4E95-B2E9-2169B6375FB2}.Release|x64.ActiveCfg = Release|x64
 		{95AC8766-84F9-4E95-B2E9-2169B6375FB2}.Release|x64.Build.0 = Release|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Debug|Any CPU.ActiveCfg = Debug|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Debug|Any CPU.Build.0 = Debug|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Debug|x64.ActiveCfg = Debug|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Debug|x64.Build.0 = Debug|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Release|Any CPU.ActiveCfg = Release|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Release|Any CPU.Build.0 = Release|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Release|x64.ActiveCfg = Release|x64
-		{993A6898-4B90-4112-8E3F-D43C764953A4}.Release|x64.Build.0 = Release|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Debug|Any CPU.Build.0 = Debug|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Debug|x64.ActiveCfg = Debug|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Debug|x64.Build.0 = Debug|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Release|Any CPU.ActiveCfg = Release|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Release|Any CPU.Build.0 = Release|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Release|x64.ActiveCfg = Release|x64
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -219,7 +219,7 @@ Global
 		{25C5C6B6-4A8A-46DD-88C1-EB247033FE58} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{859F76F4-93D8-4D60-BF9A-363E217FA247} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{95AC8766-84F9-4E95-B2E9-2169B6375FB2} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
-		{993A6898-4B90-4112-8E3F-D43C764953A4} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
+		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}
