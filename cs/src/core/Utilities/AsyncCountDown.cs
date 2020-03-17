@@ -48,7 +48,6 @@ namespace FASTER.core
             Interlocked.Exchange(ref tcs, null);            
         }
 
-
         /// <summary>
         /// Provides a way to execute a continuation when the counter reaches zero
         /// </summary>

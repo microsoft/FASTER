@@ -29,7 +29,8 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         /// <summary>
-        /// Complete outstanding pending operations
+        /// Complete outstanding pending operations that were issued synchronously
+        /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
         internal async ValueTask CompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
@@ -58,8 +59,6 @@ namespace FASTER.core
                 }
             }
             #endregion
-
-            await clientSession.ctx.pendingReads.WaitEmptyAsync();
 
             await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
             CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);

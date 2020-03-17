@@ -85,40 +85,19 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Read operation
+        /// Async read operation, may return uncommitted result
+        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="context"></param>
-        /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
-        /// <returns></returns>
+        /// <returns>ReadAsyncResult - call CompleteRead on the return value to complete the read operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> ReadAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
-            var readResult = fht.ReadAsync(this, ref key, ref input, context, token);
-
-            if (readResult.IsCompleted && !waitForCommit)
-                return readResult;
-
-            return SlowReadAsync(this, readResult, waitForCommit, token);
-
-            static async ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> SlowReadAsync(
-                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
-                ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> readResult, 
-                bool waitForCommit, CancellationToken token
-                )
-            {
-                var s = await readResult;
-                
-                if (waitForCommit)
-                    await @this.WaitForCommitAsync(token);
-
-                return s;
-            }
-        }
-
-        
+            return fht.ReadAsync(this, ref key, ref input, context, token);
+        }        
 
         /// <summary>
         /// Upsert operation
@@ -166,7 +145,6 @@ namespace FASTER.core
                 bool waitForCommit, Status status, CancellationToken token
                 )
             {
-
                 if (status == Status.PENDING)
                     await @this.CompletePendingAsync(waitForCommit, token);
                 else if (waitForCommit)
@@ -367,7 +345,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Async complete outstanding pending operations
+        /// Complete all outstanding pending operations asynchronously
+        /// Async operations (e.g., ReadAsync) must be completed individually
         /// </summary>
         /// <returns></returns>
         public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
@@ -386,7 +365,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Wait for commit of all operations until current point in session.
+        /// Wait for commit of all operations completed until the current point in session.
         /// Does not itself issue checkpoint/commits.
         /// </summary>
         /// <returns></returns>
