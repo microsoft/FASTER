@@ -177,7 +177,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// RMW operation
+        /// Async RMW operation
+        /// Await operation in session before issuing next one
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -232,7 +233,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Delete operation
+        /// Async delete operation
         /// </summary>
         /// <param name="key"></param>
         /// <param name="waitForCommit"></param>
@@ -346,7 +347,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Complete all outstanding pending operations asynchronously
-        /// Async operations (e.g., ReadAsync) must be completed individually
+        /// Async operations (ReadAsync) must be completed individually
         /// </summary>
         /// <returns></returns>
         public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
