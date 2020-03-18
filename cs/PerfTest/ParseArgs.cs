@@ -27,7 +27,7 @@ namespace PerfTest
 
         private static bool ParseArgs(string[] argv)
         {
-            static bool Usage(string message = null)
+            bool Usage(string message = null)
             {
                 Console.WriteLine();
                 if (!string.IsNullOrEmpty(message))

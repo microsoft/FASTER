@@ -53,7 +53,7 @@ namespace PerfTest
 
     public interface ICacheOutput<T>
     {
-        public T Value { get; set; }
+        T Value { get; set; }
     }
 
     public struct CacheContext

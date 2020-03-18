@@ -42,7 +42,7 @@ namespace PerfTest
 
         public bool Verify()
         {
-            static bool fail(string message)
+            bool fail(string message)
             {
                 Console.WriteLine(message);
                 return false;
@@ -68,15 +68,19 @@ namespace PerfTest
 
         // Outputs
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double UpsertsPerSecond { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double ReadsPerSecond { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double PendingReadsPerIteration { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double PendingReadsPerIterationPercent { get; set; }
 
         internal void Write(string filename) => File.WriteAllText(filename, JsonConvert.SerializeObject(this, PerfTest.jsonSerializerSettings));
@@ -131,5 +135,24 @@ namespace PerfTest
 
         internal static TestResultComparisons CompareSequence(IEnumerable<(TestResult, TestResult)> results) 
             => new TestResultComparisons { Comparisons = results.Select(result => new TestResultComparison(result.Item1, result.Item2)).ToArray() };
+    }
+
+    public class DoubleRoundingConverter : JsonConverter
+    {
+        private const int Precision = 2;
+
+        public DoubleRoundingConverter() { }
+
+        public override bool CanRead => false;
+
+        public override bool CanWrite => true;
+
+        public override bool CanConvert(Type propertyType) => propertyType == typeof(double);
+
+        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+            => throw new NotImplementedException();
+
+        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+            => writer.WriteValue(Math.Round((double)value, Precision));
     }
 }

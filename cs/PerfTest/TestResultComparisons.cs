@@ -17,21 +17,27 @@ namespace PerfTest
         public TestResult Second { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double UpsertsPerSecondDiff { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double UpsertsPerSecondDiffPercent { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double ReadsPerSecondDiff { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double ReadsPerSecondDiffPercent { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double PendingReadsPerIterationDiff { get; set; }
 
         [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double PendingReadsPerIterationDiffPercent { get; set; }
 
         public TestResultComparison() { } // For JSON
