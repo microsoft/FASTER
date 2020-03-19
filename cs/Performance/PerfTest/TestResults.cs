@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     [JsonObject(MemberSerialization.OptIn)]
     class TestResult

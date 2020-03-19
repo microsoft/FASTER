@@ -4,7 +4,7 @@
 using FASTER.core;
 using System.IO;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     class LogFiles
     {

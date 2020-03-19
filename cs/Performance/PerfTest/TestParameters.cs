@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     // Used to override TestParameter values with command-line arguments, to reduce
     // proliferation/duplication of test files.

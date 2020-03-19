@@ -3,7 +3,7 @@
 
 using System;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     internal class TestRun
     {

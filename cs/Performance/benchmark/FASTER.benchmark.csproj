@@ -1,19 +1,21 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp2.2</TargetFramework>
+    <TargetFramework>net46</TargetFramework>
     <Platforms>x64</Platforms>
-    <LangVersion>preview</LangVersion>
-    <RuntimeIdentifiers>win7-x64;linux-x64</RuntimeIdentifiers>
+    <RuntimeIdentifier>win7-x64</RuntimeIdentifier>
   </PropertyGroup>
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>PerfTest</RootNamespace>
+    <RootNamespace>FASTER.benchmark</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <Prefer32Bit>true</Prefer32Bit>
+    <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <SignAssembly>true</SignAssembly>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
@@ -34,15 +36,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\core\FASTER.core.csproj" />
+    <PackageReference Include="CommandLineParser" Version="2.6.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+    <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="testfiles\" />
-  </ItemGroup>
-
 </Project>

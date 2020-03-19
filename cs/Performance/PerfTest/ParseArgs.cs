@@ -3,7 +3,7 @@
 
 using System;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     partial class PerfTest
     {

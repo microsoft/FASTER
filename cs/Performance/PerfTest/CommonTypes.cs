@@ -4,7 +4,7 @@
 using FASTER.core;
 using System;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     internal static class CacheGlobals
     {

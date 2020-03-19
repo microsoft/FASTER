@@ -7,7 +7,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     /// <summary>
     /// Represents a variable length value type, with direct access to the first two

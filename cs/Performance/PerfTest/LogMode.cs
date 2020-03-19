@@ -4,7 +4,7 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     [JsonConverter(typeof(StringEnumConverter))]
     public enum LogMode

@@ -4,7 +4,7 @@
 using FASTER.core;
 using System;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     public class CacheObjectValue : ICacheValue<CacheObjectValue>
     {

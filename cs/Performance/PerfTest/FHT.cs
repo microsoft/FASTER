@@ -4,7 +4,7 @@
 using FASTER.core;
 using System;
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     class FHT<TValue, TOutput, TFunctions, TSerializer>
         where TValue : ICacheValue<TValue>, new() 

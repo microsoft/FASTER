@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-namespace PerfTest
+namespace FASTER.PerfTest
 {
     enum ResultComparisonMode {
         None,
