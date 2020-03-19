@@ -59,6 +59,7 @@ jobs:
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
        !**\*TestAdapter.dll
+       !**\*PerfTest.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
       otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
@@ -71,6 +72,7 @@ jobs:
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
        !**\*TestAdapter.dll
+       !**\*PerfTest.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
       otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.0'
