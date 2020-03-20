@@ -143,7 +143,9 @@ public class Funcs : IFunctions<long, long, long, long, Empty>
 
 ## More Examples
 
-Several example projects are located in [cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground) (available through the solution). You can also check out more samples in the unit tests in [/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test), which can be run through the solution or using NUnit-Console. A basic YCSB benchmark is located in [cs/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/benchmark), also available through the main solution.
+Several example projects are located in [cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground) (available through the solution). You can also check out more samples in the unit tests in [/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test), which can be run through the solution or using NUnit-Console. 
+
+A basic YCSB benchmark is located in [cs/performance/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/performance/benchmark), and a performance test configurable with multiple parameter combinations is located in [cs/performance/PerfTest](https://github.com/Microsoft/FASTER/tree/master/cs/performance/PerfTest). Both are available through the main solution.
 
 ## Checkpointing and Recovery
 

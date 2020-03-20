@@ -54,6 +54,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClassRecoveryDurablity", "p
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterKVDiskReadBenchmark", "playground\FasterKVDiskReadBenchmark\FasterKVDiskReadBenchmark.csproj", "{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8968024E-063F-43EC-9CCD-90FC97303AC2}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
