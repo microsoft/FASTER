@@ -65,6 +65,7 @@ namespace FASTER.core
 
         private enum CheckpointType
         {
+            SYNC_ONLY,
             INDEX_ONLY,
             HYBRID_LOG_ONLY,
             FULL
@@ -191,6 +192,11 @@ namespace FASTER.core
             _systemState.phase = Phase.REST;
             _systemState.version = 1;
             _checkpointType = CheckpointType.HYBRID_LOG_ONLY;
+        }
+
+        public bool SyncVersions()
+        {
+            return InternalTakeCheckpoint(CheckpointType.SYNC_ONLY);
         }
 
         /// <summary>

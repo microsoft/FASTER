@@ -28,14 +28,15 @@ namespace FASTER.core
         public Task<LinkedCheckpointInfo> NextTask;
     }
 
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase,
+        IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-
         private TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
             = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
         private class EpochPhaseIdx
@@ -54,12 +55,13 @@ namespace FASTER.core
         }
 
         #region Starting points
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool InternalTakeCheckpoint(CheckpointType type)
         {
             if (_systemState.phase == Phase.REST)
             {
-                var context = (long)type;
+                var context = (long) type;
                 var currentState = SystemState.Make(Phase.REST, _systemState.version);
                 var nextState = GetNextState(currentState, type);
                 return GlobalMoveToNextState(currentState, nextState, ref context);
@@ -86,6 +88,7 @@ namespace FASTER.core
 
             return false;
         }
+
         #endregion
 
         /// <summary>
@@ -146,229 +149,237 @@ namespace FASTER.core
                 switch (nextState.phase)
                 {
                     case Phase.PREP_INDEX_CHECKPOINT:
+                    {
+                        _checkpointType = (CheckpointType) context;
+
+                        switch (_checkpointType)
                         {
-                            _checkpointType = (CheckpointType)context;
-
-                            switch (_checkpointType)
+                            case CheckpointType.INDEX_ONLY:
                             {
-                                case CheckpointType.INDEX_ONLY:
-                                    {
-                                        _indexCheckpointToken = Guid.NewGuid();
-                                        InitializeIndexCheckpoint(_indexCheckpointToken);
-                                        break;
-                                    }
-                                case CheckpointType.FULL:
-                                    {
-                                        var fullCheckpointToken = Guid.NewGuid();
-                                        _indexCheckpointToken = fullCheckpointToken;
-                                        _hybridLogCheckpointToken = fullCheckpointToken;
-                                        InitializeIndexCheckpoint(_indexCheckpointToken);
-                                        InitializeHybridLogCheckpoint(_hybridLogCheckpointToken, currentState.version);
-                                        break;
-                                    }
-                                default:
-                                    throw new FasterException();
+                                _indexCheckpointToken = Guid.NewGuid();
+                                InitializeIndexCheckpoint(_indexCheckpointToken);
+                                break;
                             }
-
-                            ObtainCurrentTailAddress(ref _indexCheckpoint.info.startLogicalAddress);
-
-                            MakeTransition(intermediateState, nextState);
-                            break;
+                            case CheckpointType.FULL:
+                            {
+                                var fullCheckpointToken = Guid.NewGuid();
+                                _indexCheckpointToken = fullCheckpointToken;
+                                _hybridLogCheckpointToken = fullCheckpointToken;
+                                InitializeIndexCheckpoint(_indexCheckpointToken);
+                                InitializeHybridLogCheckpoint(_hybridLogCheckpointToken, currentState.version);
+                                break;
+                            }
+                            default:
+                                throw new FasterException();
                         }
+
+                        ObtainCurrentTailAddress(ref _indexCheckpoint.info.startLogicalAddress);
+
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
                     case Phase.INDEX_CHECKPOINT:
+                    {
+                        if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
                         {
-                            if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
-                            {
-                                throw new FasterException("Index checkpoint with read cache is not supported");
-                            }
-                            TakeIndexFuzzyCheckpoint();
-
-                            MakeTransition(intermediateState, nextState);
-                            break;
+                            throw new FasterException("Index checkpoint with read cache is not supported");
                         }
+
+                        TakeIndexFuzzyCheckpoint();
+
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
                     case Phase.PREPARE:
+                    {
+                        switch (currentState.phase)
                         {
-                            switch (currentState.phase)
+                            case Phase.REST:
                             {
-                                case Phase.REST:
-                                    {
-                                        _checkpointType = (CheckpointType)context;
+                                _checkpointType = (CheckpointType) context;
 
-                                        Debug.Assert(_checkpointType == CheckpointType.HYBRID_LOG_ONLY);
-                                        _hybridLogCheckpointToken = Guid.NewGuid();
-                                        InitializeHybridLogCheckpoint(_hybridLogCheckpointToken, currentState.version);
-                                        break;
-                                    }
-                                case Phase.PREP_INDEX_CHECKPOINT:
-                                    {
-                                        if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
-                                        {
-                                            throw new FasterException("Index checkpoint with read cache is not supported");
-                                        }
-                                        TakeIndexFuzzyCheckpoint();
-                                        break;
-                                    }
-                                default:
-                                    throw new FasterException();
+                                Debug.Assert(_checkpointType == CheckpointType.HYBRID_LOG_ONLY);
+                                _hybridLogCheckpointToken = Guid.NewGuid();
+                                InitializeHybridLogCheckpoint(_hybridLogCheckpointToken, currentState.version);
+                                break;
                             }
-
-                            ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.startLogicalAddress);
-
-                            if (!FoldOverSnapshot)
+                            case Phase.PREP_INDEX_CHECKPOINT:
                             {
-                                _hybridLogCheckpoint.info.flushedLogicalAddress = hlog.FlushedUntilAddress;
-                                _hybridLogCheckpoint.info.useSnapshotFile = 1;
-                            }
+                                if (UseReadCache && this.ReadCache.BeginAddress != this.ReadCache.TailAddress)
+                                {
+                                    throw new FasterException("Index checkpoint with read cache is not supported");
+                                }
 
-                            MakeTransition(intermediateState, nextState);
-                            break;
+                                TakeIndexFuzzyCheckpoint();
+                                break;
+                            }
+                            default:
+                                throw new FasterException();
                         }
+
+                        ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.startLogicalAddress);
+
+                        if (!FoldOverSnapshot)
+                        {
+                            _hybridLogCheckpoint.info.flushedLogicalAddress = hlog.FlushedUntilAddress;
+                            _hybridLogCheckpoint.info.useSnapshotFile = 1;
+                        }
+
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
                     case Phase.IN_PROGRESS:
-                        {
-                            MakeTransition(intermediateState, nextState);
-                            break;
-                        }
+                    {
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
                     case Phase.WAIT_PENDING:
-                        {
-                            MakeTransition(intermediateState, nextState);
-                            break;
-                        }
+                    {
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
                     case Phase.WAIT_FLUSH:
+                    {
+                        if (_checkpointType == CheckpointType.FULL)
                         {
-                            if (_checkpointType == CheckpointType.FULL)
+                            _indexCheckpoint.info.num_buckets = overflowBucketsAllocator.GetMaxValidAddress();
+                            ObtainCurrentTailAddress(ref _indexCheckpoint.info.finalLogicalAddress);
+                        }
+
+                        _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
+                        _hybridLogCheckpoint.info.beginAddress = hlog.BeginAddress;
+
+                        if (FoldOverSnapshot)
+                        {
+                            hlog.ShiftReadOnlyToTail(out long tailAddress, out _hybridLogCheckpoint.flushedSemaphore);
+                            _hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
+                        }
+                        else
+                        {
+                            ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
+
+                            _hybridLogCheckpoint.snapshotFileDevice =
+                                checkpointManager.GetSnapshotLogDevice(_hybridLogCheckpointToken);
+                            _hybridLogCheckpoint.snapshotFileObjectLogDevice =
+                                checkpointManager.GetSnapshotObjectLogDevice(_hybridLogCheckpointToken);
+                            _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
+                            _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
+
+                            long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
+                            long endPage = hlog.GetPage(_hybridLogCheckpoint.info.finalLogicalAddress);
+                            if (_hybridLogCheckpoint.info.finalLogicalAddress > hlog.GetStartLogicalAddress(endPage))
+                            {
+                                endPage++;
+                            }
+
+                            // This can be run on a new thread if we want to immediately parallelize 
+                            // the rest of the log flush
+                            hlog.AsyncFlushPagesToDevice(
+                                startPage,
+                                endPage,
+                                _hybridLogCheckpoint.info.finalLogicalAddress,
+                                _hybridLogCheckpoint.snapshotFileDevice,
+                                _hybridLogCheckpoint.snapshotFileObjectLogDevice,
+                                out _hybridLogCheckpoint.flushedSemaphore);
+                        }
+                        
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
+                    case Phase.PERSISTENCE_CALLBACK:
+                    {
+                        // Collect object log offsets only after flushes
+                        // are completed
+                        var seg = hlog.GetSegmentOffsets();
+                        if (seg != null)
+                        {
+                            _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                            Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+                        }
+
+                        if (_activeSessions != null)
+                        {
+                            // write dormant sessions to checkpoint
+                            foreach (var kvp in _activeSessions)
+                            {
+                                AtomicSwitch(kvp.Value.ctx, kvp.Value.ctx.prevCtx, currentState.version - 1);
+                            }
+                        }
+
+                        WriteHybridLogMetaInfo();
+
+                        if (_checkpointType == CheckpointType.FULL)
+                            WriteIndexMetaInfo();
+
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
+                    case Phase.PREPARE_GROW:
+                    {
+                        // Note that the transition must be done before bumping epoch here!
+                        MakeTransition(intermediateState, nextState);
+                        epoch.BumpCurrentEpoch(() =>
+                        {
+                            long _context = 0;
+                            GlobalMoveToNextState(nextState,
+                                SystemState.Make(Phase.IN_PROGRESS_GROW, nextState.version), ref _context);
+                        });
+                        break;
+                    }
+                    case Phase.IN_PROGRESS_GROW:
+                    {
+                        // Set up the transition to new version of HT
+                        int numChunks = (int) (state[resizeInfo.version].size / Constants.kSizeofChunk);
+                        if (numChunks == 0) numChunks = 1; // at least one chunk
+
+                        numPendingChunksToBeSplit = numChunks;
+                        splitStatus = new long[numChunks];
+
+                        Initialize(1 - resizeInfo.version, state[resizeInfo.version].size * 2, sectorSize);
+
+                        resizeInfo.version = 1 - resizeInfo.version;
+
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
+                    case Phase.REST:
+                    {
+                        switch (_checkpointType)
+                        {
+                            case CheckpointType.INDEX_ONLY:
                             {
                                 _indexCheckpoint.info.num_buckets = overflowBucketsAllocator.GetMaxValidAddress();
                                 ObtainCurrentTailAddress(ref _indexCheckpoint.info.finalLogicalAddress);
-                            }
-
-                            _hybridLogCheckpoint.info.headAddress = hlog.HeadAddress;
-                            _hybridLogCheckpoint.info.beginAddress = hlog.BeginAddress;
-
-                            if (FoldOverSnapshot)
-                            {
-                                hlog.ShiftReadOnlyToTail(out long tailAddress, out _hybridLogCheckpoint.flushedSemaphore);
-                                _hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
-                            }
-                            else
-                            {
-                                ObtainCurrentTailAddress(ref _hybridLogCheckpoint.info.finalLogicalAddress);
-
-                                _hybridLogCheckpoint.snapshotFileDevice = checkpointManager.GetSnapshotLogDevice(_hybridLogCheckpointToken);
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice = checkpointManager.GetSnapshotObjectLogDevice(_hybridLogCheckpointToken);
-                                _hybridLogCheckpoint.snapshotFileDevice.Initialize(hlog.GetSegmentSize());
-                                _hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
-
-                                long startPage = hlog.GetPage(_hybridLogCheckpoint.info.flushedLogicalAddress);
-                                long endPage = hlog.GetPage(_hybridLogCheckpoint.info.finalLogicalAddress);
-                                if (_hybridLogCheckpoint.info.finalLogicalAddress > hlog.GetStartLogicalAddress(endPage))
-                                {
-                                    endPage++;
-                                }
-
-                                // This can be run on a new thread if we want to immediately parallelize 
-                                // the rest of the log flush
-                                hlog.AsyncFlushPagesToDevice(
-                                    startPage,
-                                    endPage,
-                                    _hybridLogCheckpoint.info.finalLogicalAddress,
-                                    _hybridLogCheckpoint.snapshotFileDevice,
-                                    _hybridLogCheckpoint.snapshotFileObjectLogDevice,
-                                    out _hybridLogCheckpoint.flushedSemaphore);
-                            }
-
-                            
-                            MakeTransition(intermediateState, nextState);
-                            break;
-                        }
-                    case Phase.PERSISTENCE_CALLBACK:
-                        {
-                            // Collect object log offsets only after flushes
-                            // are completed
-                            var seg = hlog.GetSegmentOffsets();
-                            if (seg != null)
-                            {
-                                _hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                                Array.Copy(seg, _hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-                            }
-
-                            if (_activeSessions != null)
-                            {
-                                // write dormant sessions to checkpoint
-                                foreach (var kvp in _activeSessions)
-                                {
-                                    AtomicSwitch(kvp.Value.ctx, kvp.Value.ctx.prevCtx, currentState.version - 1);
-                                }
-                            }
-                            WriteHybridLogMetaInfo();
-
-                            if (_checkpointType == CheckpointType.FULL)
                                 WriteIndexMetaInfo();
-
-                            MakeTransition(intermediateState, nextState);
-                            break;
-                        }
-                    case Phase.PREPARE_GROW:
-                        {
-                            // Note that the transition must be done before bumping epoch here!
-                            MakeTransition(intermediateState, nextState);
-                            epoch.BumpCurrentEpoch(() =>
-                            {
-                                long _context = 0;
-                                GlobalMoveToNextState(nextState, SystemState.Make(Phase.IN_PROGRESS_GROW, nextState.version), ref _context);
-                            });
-                            break;
-                        }
-                    case Phase.IN_PROGRESS_GROW:
-                        {
-                            // Set up the transition to new version of HT
-                            int numChunks = (int)(state[resizeInfo.version].size / Constants.kSizeofChunk);
-                            if (numChunks == 0) numChunks = 1; // at least one chunk
-
-                            numPendingChunksToBeSplit = numChunks;
-                            splitStatus = new long[numChunks];
-
-                            Initialize(1 - resizeInfo.version, state[resizeInfo.version].size * 2, sectorSize);
-
-                            resizeInfo.version = 1 - resizeInfo.version;
-
-                            MakeTransition(intermediateState, nextState);
-                            break;
-                        }
-                    case Phase.REST:
-                        {
-                            switch (_checkpointType)
-                            {
-                                case CheckpointType.INDEX_ONLY:
-                                    {
-                                        _indexCheckpoint.info.num_buckets = overflowBucketsAllocator.GetMaxValidAddress();
-                                        ObtainCurrentTailAddress(ref _indexCheckpoint.info.finalLogicalAddress);
-                                        WriteIndexMetaInfo();
-                                        _indexCheckpoint.Reset();
-                                        break;
-                                    }
-                                case CheckpointType.FULL:
-                                    {
-                                        _indexCheckpoint.Reset();
-                                        _hybridLogCheckpoint.Reset();
-                                        break;
-                                    }
-                                case CheckpointType.HYBRID_LOG_ONLY:
-                                    {
-                                        _hybridLogCheckpoint.Reset();
-                                        break;
-                                    }
-                                default:
-                                    throw new FasterException();
+                                _indexCheckpoint.Reset();
+                                break;
                             }
-
-                            var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-                            checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
-                            checkpointTcs = nextTcs;
-
-                            MakeTransition(intermediateState, nextState);
-                            break;
+                            case CheckpointType.FULL:
+                            {
+                                _indexCheckpoint.Reset();
+                                _hybridLogCheckpoint.Reset();
+                                break;
+                            }
+                            case CheckpointType.HYBRID_LOG_ONLY:
+                            {
+                                _hybridLogCheckpoint.Reset();
+                                break;
+                            }
+                            default:
+                                throw new FasterException();
                         }
+
+                        var nextTcs =
+                            new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions
+                                .RunContinuationsAsynchronously);
+                        checkpointTcs.SetResult(new LinkedCheckpointInfo {NextTask = nextTcs.Task});
+                        checkpointTcs = nextTcs;
+
+                        MakeTransition(intermediateState, nextState);
+                        break;
+                    }
                 }
+
                 return true;
             }
             else
@@ -381,13 +392,14 @@ namespace FASTER.core
         /// Corresponding thread-local actions that must be performed when any state machine is active
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void HandleCheckpointingPhases(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        private void HandleCheckpointingPhases(FasterExecutionContext ctx,
+            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             var _ = HandleCheckpointingPhasesAsync(ctx, clientSession, false);
             return;
         }
 
-        #region Helper functions 
+        #region Helper functions
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool GlobalMoveToNextCheckpointState(SystemState currentState)
@@ -400,7 +412,8 @@ namespace FASTER.core
         private bool MakeTransition(SystemState currentState, SystemState nextState)
         {
             // Move from I to P2
-            if (Interlocked.CompareExchange(ref _systemState.word, nextState.word, currentState.word) == currentState.word)
+            if (Interlocked.CompareExchange(ref _systemState.word, nextState.word, currentState.word) ==
+                currentState.word)
             {
                 Debug.WriteLine("Moved to {0}, {1}", nextState.phase, nextState.version);
                 return true;
@@ -417,6 +430,7 @@ namespace FASTER.core
             {
                 AcquireSharedLatch(_ctx.key.Get());
             }
+
             foreach (var _ctx in ctx.ioPendingRequests.Values)
             {
                 AcquireSharedLatch(_ctx.key.Get());
@@ -445,7 +459,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState GetNextState(SystemState start, CheckpointType type = CheckpointType.FULL)
         {
-
             var nextState = default(SystemState);
             nextState.word = start.word;
             switch (start.phase)
@@ -454,6 +467,7 @@ namespace FASTER.core
                     switch (type)
                     {
                         case CheckpointType.HYBRID_LOG_ONLY:
+                        case CheckpointType.SYNC_ONLY:
                             nextState.phase = Phase.PREPARE;
                             break;
                         case CheckpointType.FULL:
@@ -461,6 +475,7 @@ namespace FASTER.core
                             nextState.phase = Phase.PREP_INDEX_CHECKPOINT;
                             break;
                     }
+
                     break;
                 case Phase.PREP_INDEX_CHECKPOINT:
                     switch (type)
@@ -472,9 +487,10 @@ namespace FASTER.core
                             nextState.phase = Phase.PREPARE;
                             break;
                     }
+
                     break;
                 case Phase.INDEX_CHECKPOINT:
-                    switch(type)
+                    switch (type)
                     {
                         case CheckpointType.FULL:
                             nextState.phase = Phase.PREPARE;
@@ -484,16 +500,23 @@ namespace FASTER.core
                             nextState.version = start.version + 1;
                             break;
                     }
+
                     break;
                 case Phase.PREPARE:
                     nextState.phase = Phase.IN_PROGRESS;
                     nextState.version = start.version + 1;
                     break;
                 case Phase.IN_PROGRESS:
-                    nextState.phase = RelaxedCPR ? Phase.WAIT_FLUSH : Phase.WAIT_PENDING;
+                    if (type == CheckpointType.SYNC_ONLY)
+                        nextState.phase = RelaxedCPR ? Phase.REST : Phase.WAIT_PENDING;
+                    else
+                        nextState.phase = RelaxedCPR ? Phase.WAIT_FLUSH : Phase.WAIT_PENDING;
                     break;
                 case Phase.WAIT_PENDING:
-                    nextState.phase = Phase.WAIT_FLUSH;
+                    if (type == CheckpointType.SYNC_ONLY)
+                        nextState.phase = Phase.REST;
+                    else
+                        nextState.phase = Phase.WAIT_FLUSH;
                     break;
                 case Phase.WAIT_FLUSH:
                     nextState.phase = Phase.PERSISTENCE_CALLBACK;
@@ -508,6 +531,7 @@ namespace FASTER.core
                     nextState.phase = Phase.REST;
                     break;
             }
+
             return nextState;
         }
 
