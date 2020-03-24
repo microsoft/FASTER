@@ -205,10 +205,10 @@ namespace FASTER.core
 
         private void InternalRelease(FasterExecutionContext ctx)
         {
-            Debug.Assert(ctx.retryRequests.Count == 0 && ctx.ioPendingRequests.Count == 0);
+            Debug.Assert(ctx.HasNoPendingRequests);
             if (ctx.prevCtx != null)
             {
-                Debug.Assert(ctx.prevCtx.retryRequests.Count == 0 && ctx.prevCtx.ioPendingRequests.Count == 0);
+                Debug.Assert(ctx.prevCtx.HasNoPendingRequests);
             }
             Debug.Assert(ctx.phase == Phase.REST);
 

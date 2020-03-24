@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -318,6 +319,8 @@ namespace FASTER.core
             sessionCtx.serialNum = serialNo;
             return status;
         }
+
+        
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
