@@ -27,6 +27,22 @@ namespace FASTER.core
         /// </summary>
         public Task<LinkedCheckpointInfo> NextTask;
     }
+    
+    internal class EpochPhaseIdx
+    {
+        public const int PrepareForIndexCheckpt = 0;
+
+        public const int Prepare = 1;
+
+        public const int InProgress = 2;
+
+        public const int WaitPending = 3;
+
+        public const int WaitFlush = 4;
+
+        public const int CheckpointCompletionCallback = 5;
+    }
+
 
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase,
         IFasterKV<Key, Value, Input, Output, Context, Functions>
@@ -34,30 +50,16 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
+        internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
             = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
-        private class EpochPhaseIdx
-        {
-            public const int PrepareForIndexCheckpt = 0;
-
-            public const int Prepare = 1;
-
-            public const int InProgress = 2;
-
-            public const int WaitPending = 3;
-
-            public const int WaitFlush = 4;
-
-            public const int CheckpointCompletionCallback = 5;
-        }
 
         #region Starting points
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InternalTakeCheckpoint(CheckpointType type)
+        private bool SynchronizeThreads(CheckpointType type)
         {
             if (_systemState.phase == Phase.REST)
             {
@@ -71,24 +73,6 @@ namespace FASTER.core
                 return false;
             }
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool InternalGrowIndex()
-        {
-            if (_systemState.phase == Phase.REST)
-            {
-                var version = _systemState.version;
-                long context = 0;
-                SystemState nextState = SystemState.Make(Phase.PREPARE_GROW, version);
-                if (GlobalMoveToNextState(SystemState.Make(Phase.REST, version), nextState, ref context))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         #endregion
 
         /// <summary>
@@ -408,23 +392,7 @@ namespace FASTER.core
             return GlobalMoveToNextState(currentState, GetNextState(currentState, _checkpointType), ref context);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool MakeTransition(SystemState currentState, SystemState nextState)
-        {
-            // Move from I to P2
-            if (Interlocked.CompareExchange(ref _systemState.word, nextState.word, currentState.word) ==
-                currentState.word)
-            {
-                Debug.WriteLine("Moved to {0}, {1}", nextState.phase, nextState.version);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        private void AcquireSharedLatchesForAllPendingRequests(FasterExecutionContext ctx)
+        internal void AcquireSharedLatchesForAllPendingRequests(FasterExecutionContext ctx)
         {
             foreach (var _ctx in ctx.retryRequests)
             {
@@ -540,23 +508,23 @@ namespace FASTER.core
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
 
-        private void WriteIndexMetaInfo()
+        internal void WriteIndexMetaInfo()
         {
             checkpointManager.CommitIndexCheckpoint(_indexCheckpointToken, _indexCheckpoint.info.ToByteArray());
         }
 
-        private bool ObtainCurrentTailAddress(ref long location)
+        internal bool ObtainCurrentTailAddress(ref long location)
         {
             var tailAddress = hlog.GetTailAddress();
             return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
         }
 
-        private void InitializeIndexCheckpoint(Guid indexToken)
+        internal void InitializeIndexCheckpoint(Guid indexToken)
         {
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, checkpointManager);
         }
 
-        private void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
+        internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
         }

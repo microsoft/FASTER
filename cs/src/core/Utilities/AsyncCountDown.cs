@@ -10,7 +10,7 @@ namespace FASTER.core
     /// <summary>
     /// Offers reactivity about when a counter reaches zero
     /// </summary>
-    internal sealed class AsyncCountDown
+    public sealed class AsyncCountDown
     {
         int counter;
         TaskCompletionSource<int> tcs;

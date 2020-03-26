@@ -28,7 +28,7 @@ namespace FASTER.core
         public long word;
     }
 
-    internal enum Phase : int {
+    public enum Phase : int {
         IN_PROGRESS, WAIT_PENDING, WAIT_FLUSH, PERSISTENCE_CALLBACK, REST,
         PREP_INDEX_CHECKPOINT, INDEX_CHECKPOINT, PREPARE,
         PREPARE_GROW, IN_PROGRESS_GROW,
@@ -36,7 +36,7 @@ namespace FASTER.core
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    internal unsafe struct SystemState
+    public unsafe struct SystemState
     {
         [FieldOffset(0)]
         public Phase phase;

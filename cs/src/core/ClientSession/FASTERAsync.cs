@@ -258,7 +258,7 @@ namespace FASTER.core
             }
         }
 
-        private bool AtomicSwitch(FasterExecutionContext fromCtx, FasterExecutionContext toCtx, int version)
+        internal bool AtomicSwitch(FasterExecutionContext fromCtx, FasterExecutionContext toCtx, int version)
         {
             lock (toCtx)
             {

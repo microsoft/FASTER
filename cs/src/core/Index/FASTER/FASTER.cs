@@ -18,17 +18,17 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private readonly Functions functions;
-        private readonly AllocatorBase<Key, Value> hlog;
+        internal readonly Functions functions;
+        internal readonly AllocatorBase<Key, Value> hlog;
         private readonly AllocatorBase<Key, Value> readcache;
         private readonly IFasterEqualityComparer<Key> comparer;
 
-        private readonly bool UseReadCache = false;
+        internal readonly bool UseReadCache = false;
         private readonly bool CopyReadsToTail = false;
         private readonly bool FoldOverSnapshot = false;
-        private readonly int sectorSize;
+        internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete = false;
-        private bool RelaxedCPR = false;
+        internal bool RelaxedCPR = false;
 
         /// <summary>
         /// Use relaxed version of CPR, where ops pending I/O
@@ -63,7 +63,7 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context, Functions> ReadCache { get; }
 
-        private enum CheckpointType
+        internal enum CheckpointType
         {
             SYNC_ONLY,
             INDEX_ONLY,
@@ -71,12 +71,12 @@ namespace FASTER.core
             FULL
         }
 
-        private CheckpointType _checkpointType;
-        private Guid _indexCheckpointToken;
-        private Guid _hybridLogCheckpointToken;
-        private SystemState _systemState;
-        private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        private ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
+        internal CheckpointType _checkpointType;
+        internal Guid _indexCheckpointToken;
+        internal Guid _hybridLogCheckpointToken;
+        internal SystemState _systemState;
+        internal HybridLogCheckpointInfo _hybridLogCheckpoint;
+        internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>
         /// Create FASTER instance
@@ -196,7 +196,7 @@ namespace FASTER.core
 
         public bool SyncVersions()
         {
-            return InternalTakeCheckpoint(CheckpointType.SYNC_ONLY);
+            return SynchronizeThreads(CheckpointType.SYNC_ONLY);
         }
 
         /// <summary>
@@ -210,7 +210,7 @@ namespace FASTER.core
         /// </returns>
         public bool TakeFullCheckpoint(out Guid token)
         {
-            if (InternalTakeCheckpoint(CheckpointType.FULL))
+            if (SynchronizeThreads(CheckpointType.FULL))
             {
                 token = _indexCheckpointToken;
                 return true;
@@ -229,7 +229,7 @@ namespace FASTER.core
         /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeIndexCheckpoint(out Guid token)
         {
-            if (InternalTakeCheckpoint(CheckpointType.INDEX_ONLY))
+            if (SynchronizeThreads(CheckpointType.INDEX_ONLY))
             {
                 token = _indexCheckpointToken;
                 return true;
@@ -248,7 +248,7 @@ namespace FASTER.core
         /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeHybridLogCheckpoint(out Guid token)
         {
-            if (InternalTakeCheckpoint(CheckpointType.HYBRID_LOG_ONLY))
+            if (SynchronizeThreads(CheckpointType.HYBRID_LOG_ONLY))
             {
                 token = _hybridLogCheckpointToken;
                 return true;
@@ -386,7 +386,7 @@ namespace FASTER.core
         /// <returns>Whether the request succeeded</returns>
         public bool GrowIndex()
         {
-            return InternalGrowIndex();
+            return StartStateMachine(new IndexResizeStateMachine());
         }
 
         /// <summary>

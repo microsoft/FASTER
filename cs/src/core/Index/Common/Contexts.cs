@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    internal enum OperationType
+    public enum OperationType
     {
         READ,
         RMW,
@@ -32,7 +32,7 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
-    internal class SerializedFasterExecutionContext
+    public class SerializedFasterExecutionContext
     {
         public int version;
         public long serialNum;
@@ -62,7 +62,7 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
 
-        internal struct PendingContext
+        public struct PendingContext
         {
             // User provided information
 
@@ -91,9 +91,10 @@ namespace FASTER.core
                 key?.Dispose();
                 value?.Dispose();
             }
+            
         }
 
-        internal class FasterExecutionContext : SerializedFasterExecutionContext
+        public class FasterExecutionContext : SerializedFasterExecutionContext
         {
             public Phase phase;
             public bool[] markers;

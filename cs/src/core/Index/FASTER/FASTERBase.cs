@@ -139,7 +139,7 @@ namespace FASTER.core
     // Long value layout: [1-bit tentative][15-bit TAG][48-bit address]
     // Physical little endian memory layout: [48-bit address][15-bit TAG][1-bit tentative]
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    internal struct HashBucketEntry
+    public struct HashBucketEntry
     {
         [FieldOffset(0)]
         public long word;
@@ -326,7 +326,7 @@ namespace FASTER.core
         /// <param name="version"></param>
         /// <param name="size"></param>
         /// <param name="sector_size"></param>
-        protected void Initialize(int version, long size, int sector_size)
+        internal void Initialize(int version, long size, int sector_size)
         {
             long size_bytes = size * sizeof(HashBucket);
             long aligned_size_bytes = sector_size +
