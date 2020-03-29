@@ -7,9 +7,9 @@ namespace FASTER.core
 {
     public class IndexSnapshotTask : ISynchronizationTask
     {
-        public void GlobalBeforeEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
+        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where T : ISynchronizationStateMachine
+            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -17,8 +17,12 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    faster._indexCheckpointToken = Guid.NewGuid();
-                    faster.InitializeIndexCheckpoint(faster._indexCheckpointToken);
+                    if (faster._indexCheckpointToken == default)
+                    {
+                        faster._indexCheckpointToken = Guid.NewGuid();
+                        faster.InitializeIndexCheckpoint(faster._indexCheckpointToken);
+                    }
+
                     faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.startLogicalAddress);
                     break;
                 case Phase.INDEX_CHECKPOINT:
@@ -26,46 +30,51 @@ namespace FASTER.core
                         throw new FasterException("Index checkpoint with read cache is not supported");
                     faster.TakeIndexFuzzyCheckpoint();
                     break;
+                    
                 case Phase.REST:
-                    faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
-                    faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress);
+                    // If the tail address has already been obtained, because another task on the state machine
+                    // has done so earlier (e.g. FullCheckpoint captures log tail at WAIT_FLUSH), don't update
+                    // the tail address.
+                    if (faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress))
+                        faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
                     faster.WriteIndexMetaInfo();
+                    faster._indexCheckpointToken = default;
                     faster._indexCheckpoint.Reset();
                     break;
             }
         }
 
-        public void GlobalAfterEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
+        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where T : ISynchronizationStateMachine
+            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
-        public async ValueTask OnThreadEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
-            SystemState entering,
+        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
-            CancellationToken token = default) where T : ISynchronizationStateMachine
+            CancellationToken token = default)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            switch (entering.phase)
+            switch (current.phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
                     if (ctx != null)
                     {
                         if (!ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
                             ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
-                        faster.epoch.Mark(EpochPhaseIdx.PrepareForIndexCheckpt, entering.version);
+                        faster.epoch.Mark(EpochPhaseIdx.PrepareForIndexCheckpt, current.version);
                     }
 
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, entering.version))
-                        faster.GlobalStateMachineStep(entering);
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, current.version))
+                        faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.INDEX_CHECKPOINT:
                     if (ctx != null)
@@ -81,7 +90,7 @@ namespace FASTER.core
                         clientSession?.UnsafeResumeThread();
                     }
 
-                    faster.GlobalStateMachineStep(entering);
+                    faster.GlobalStateMachineStep(current);
                     break;
             }
         }
@@ -89,8 +98,10 @@ namespace FASTER.core
 
     public class IndexSnapshotStateMachine : SynchronizationStateMachineBase
     {
-        public IndexSnapshotStateMachine() : base(new IndexSnapshotTask()) {}
-        
+        public IndexSnapshotStateMachine() : base(new IndexSnapshotTask())
+        {
+        }
+
         public override SystemState NextState(SystemState start)
         {
             var result = SystemState.Copy(ref start);

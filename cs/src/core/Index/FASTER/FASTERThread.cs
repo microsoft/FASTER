@@ -79,14 +79,7 @@ namespace FASTER.core
                 return;
             }
 
-            // Moving to non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
-            {
-                ctx.phase = newPhaseInfo.phase;
-                return;
-            }
-
-            HandleCheckpointingPhases(ctx, clientSession);
+            ThreadStateMachineStep(ctx, clientSession, clientSession?.SupportAsync ?? true);
         }
 
 

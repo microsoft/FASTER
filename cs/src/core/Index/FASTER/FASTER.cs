@@ -5,8 +5,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -63,15 +61,6 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context, Functions> ReadCache { get; }
 
-        internal enum CheckpointType
-        {
-            SYNC_ONLY,
-            INDEX_ONLY,
-            HYBRID_LOG_ONLY,
-            FULL
-        }
-
-        internal CheckpointType _checkpointType;
         internal Guid _indexCheckpointToken;
         internal Guid _hybridLogCheckpointToken;
         internal SystemState _systemState;
@@ -191,12 +180,11 @@ namespace FASTER.core
             _systemState = default;
             _systemState.phase = Phase.REST;
             _systemState.version = 1;
-            _checkpointType = CheckpointType.HYBRID_LOG_ONLY;
         }
 
-        public bool SyncVersions()
+        public bool ChangeVersion(long targetVersion = -1)
         {
-            return SynchronizeThreads(CheckpointType.SYNC_ONLY);
+            return StartStateMachine(new VersionChangeStateMachine(targetVersion));
         }
 
         /// <summary>
@@ -208,18 +196,17 @@ namespace FASTER.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index).
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token)
+        public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1)
         {
-            if (SynchronizeThreads(CheckpointType.FULL))
-            {
-                token = _indexCheckpointToken;
-                return true;
-            }
+            ISynchronizationTask backend;
+            if (FoldOverSnapshot)
+                backend = new FoldOverCheckpointTask();
             else
-            {
-                token = default;
-                return false;
-            }
+                backend = new SnapshotCheckpointTask();
+            
+            var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
+            token = _hybridLogCheckpointToken;
+            return result;
         }
 
         /// <summary>
@@ -229,16 +216,9 @@ namespace FASTER.core
         /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeIndexCheckpoint(out Guid token)
         {
-            if (SynchronizeThreads(CheckpointType.INDEX_ONLY))
-            {
-                token = _indexCheckpointToken;
-                return true;
-            }
-            else
-            {
-                token = default;
-                return false;
-            }
+            var result = StartStateMachine(new IndexSnapshotStateMachine());
+            token = _indexCheckpointToken;
+            return result;
         }
 
         /// <summary>
@@ -246,18 +226,17 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <returns>Whether we could initiate the checkpoint</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token)
+        public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
         {
-            if (SynchronizeThreads(CheckpointType.HYBRID_LOG_ONLY))
-            {
-                token = _hybridLogCheckpointToken;
-                return true;
-            }
+            ISynchronizationTask backend;
+            if (FoldOverSnapshot)
+                backend = new FoldOverCheckpointTask();
             else
-            {
-                token = default;
-                return false;
-            }
+                backend = new SnapshotCheckpointTask();
+            
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
+            token = _hybridLogCheckpointToken;
+            return result;
         }
 
         /// <summary>
@@ -304,7 +283,7 @@ namespace FASTER.core
                 if (systemState.phase == Phase.REST || systemState.phase == Phase.PREPARE_GROW || systemState.phase == Phase.IN_PROGRESS_GROW)
                     return;
 
-                await HandleCheckpointingPhasesAsync(null, null);
+                await ThreadStateMachineStep(null, null, true, token);
             }
         }
 

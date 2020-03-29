@@ -31,38 +31,32 @@ namespace FASTER.core
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
     }
-    
+
 
     public interface ISynchronizationTask
     {
-        void GlobalBeforeEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
 
-        void GlobalAfterEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
-            where Key : new()
-            where Value : new()
+            where Key : new ()
+            where Value : new ()
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
 
-        ValueTask OnThreadEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
-            SystemState entering,
+        ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             bool async = true,
             CancellationToken token = default)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
@@ -86,7 +80,7 @@ namespace FASTER.core
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             foreach (var task in tasks)
-                task.GlobalBeforeEnteringState(this, next, faster);
+                task.GlobalBeforeEnteringState(next, faster);
         }
 
         public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
@@ -95,7 +89,7 @@ namespace FASTER.core
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             foreach (var task in tasks)
-                task.GlobalAfterEnteringState(this, next, faster);
+                task.GlobalAfterEnteringState(next, faster);
         }
 
         public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, Functions>(
@@ -109,7 +103,7 @@ namespace FASTER.core
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             foreach (var task in tasks)
-                await task.OnThreadEnteringState(this, entering, prev, faster, ctx, clientSession, async, token);
+                await task.OnThreadState(entering, prev, faster, ctx, clientSession, async, token);
         }
     }
 }

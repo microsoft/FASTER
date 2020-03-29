@@ -50,11 +50,12 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
+        
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
             = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
-
+        /*
 
         #region Starting points
 
@@ -391,7 +392,7 @@ namespace FASTER.core
             long context = 0;
             return GlobalMoveToNextState(currentState, GetNextState(currentState, _checkpointType), ref context);
         }
-
+        */
         internal void AcquireSharedLatchesForAllPendingRequests(FasterExecutionContext ctx)
         {
             foreach (var _ctx in ctx.retryRequests)
@@ -405,6 +406,7 @@ namespace FASTER.core
             }
         }
 
+        
         /*
          * We have several state machines supported by this function.
          * Full Checkpoint:
@@ -424,6 +426,7 @@ namespace FASTER.core
          * GC: 
          * REST -> GC -> REST
          */
+        /*
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState GetNextState(SystemState start, CheckpointType type = CheckpointType.FULL)
         {
@@ -502,8 +505,9 @@ namespace FASTER.core
 
             return nextState;
         }
+        */
 
-        private void WriteHybridLogMetaInfo()
+        internal void WriteHybridLogMetaInfo()
         {
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
@@ -529,6 +533,6 @@ namespace FASTER.core
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
         }
 
-        #endregion
+        // #endregion
     }
 }

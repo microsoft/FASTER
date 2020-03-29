@@ -12,14 +12,19 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private SpinLock taskMutex = new SpinLock();
+        private volatile int stateMachineActive = 0;
         private ISynchronizationStateMachine currentSyncStateMachine;
+
+        internal ISynchronizationStateMachine CurrentStateMachine()
+        {
+            return currentSyncStateMachine;
+        }
 
         internal bool StartStateMachine(ISynchronizationStateMachine stateMachine)
         {
-            bool acquired = false;
-            taskMutex.TryEnter(ref acquired);
-            if (!acquired) return false;
+            // return immediately if there is a state machine under way.
+            if (Interlocked.CompareExchange(ref stateMachineActive, 1, 0) != 0) return false;
+
             currentSyncStateMachine = stateMachine;
             // No latch required because the taskMutex guards against other tasks starting, and only a new task
             // is allowed to change faster global state from REST
@@ -52,6 +57,8 @@ namespace FASTER.core
             // Guaranteed to succeed, because other threads will always block while the system is in intermediate.
             Debug.Assert(success);
             currentSyncStateMachine.GlobalAfterEnteringState(nextState, this);
+
+            if (nextState.phase == Phase.REST) stateMachineActive = 0;
         }
 
 
@@ -107,7 +114,6 @@ namespace FASTER.core
             // If the thread was in the middle of handling some older, unrelated task, fast-forward to the current task
             // as the old one is no longer relevant
             threadState = FastForwardToCurrentCycle(threadState, targetState);
-            // TODO(Tianyu): WTF is this previous state thing
             var previousState = threadState;
             do
             {
@@ -121,7 +127,7 @@ namespace FASTER.core
 
                 previousState.word = threadState.word;
                 threadState = currentTask.NextState(threadState);
-            } while (threadState.word != targetState.word);
+            } while (previousState.word != targetState.word);
         }
     }
 }

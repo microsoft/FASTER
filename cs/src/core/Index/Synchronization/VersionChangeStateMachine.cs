@@ -8,42 +8,36 @@ namespace FASTER.core
 {
     public class VersionChangeTask : ISynchronizationTask
     {
-        public void GlobalBeforeEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
-        public void GlobalAfterEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState start,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
-        public ValueTask OnThreadEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
-            SystemState entering, SystemState prev,
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current, SystemState prev,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             bool async = true,
             CancellationToken token = default)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            switch (entering.phase)
+            switch (current.phase)
             {
                 case Phase.PREPARE:
                     if (ctx != null)
@@ -55,11 +49,11 @@ namespace FASTER.core
                             ctx.markers[EpochPhaseIdx.Prepare] = true;
                         }
 
-                        faster.epoch.Mark(EpochPhaseIdx.Prepare, entering.version);
+                        faster.epoch.Mark(EpochPhaseIdx.Prepare, current.version);
                     }
 
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, entering.version))
-                        faster.GlobalStateMachineStep(entering);
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.version))
+                        faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.IN_PROGRESS:
                     if (ctx != null)
@@ -76,12 +70,12 @@ namespace FASTER.core
                             ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
                         }
 
-                        faster.epoch.Mark(EpochPhaseIdx.InProgress, entering.version);
+                        faster.epoch.Mark(EpochPhaseIdx.InProgress, current.version);
                     }
 
                     // Has to be prevCtx, not ctx
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, entering.version))
-                        faster.GlobalStateMachineStep(entering);
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.version))
+                        faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.WAIT_PENDING:
                     if (ctx != null)
@@ -94,11 +88,18 @@ namespace FASTER.core
                                 break;
                         }
 
-                        faster.epoch.Mark(EpochPhaseIdx.WaitPending, entering.version);
+                        faster.epoch.Mark(EpochPhaseIdx.WaitPending, current.version);
                     }
 
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, entering.version))
-                        faster.GlobalStateMachineStep(entering);
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, current.version))
+                        faster.GlobalStateMachineStep(current);
+                    break;
+                case Phase.REST:
+                    var nextTcs =
+                        new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions
+                            .RunContinuationsAsynchronously);
+                    faster.checkpointTcs.SetResult(new LinkedCheckpointInfo {NextTask = nextTcs.Task});
+                    faster.checkpointTcs = nextTcs;
                     break;
             }
 
@@ -108,11 +109,9 @@ namespace FASTER.core
 
     public class FoldOverTask : ISynchronizationTask
     {
-        public void GlobalBeforeEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -122,24 +121,20 @@ namespace FASTER.core
                 faster.hlog.ShiftReadOnlyToTail(out _, out _);
         }
 
-        public void GlobalAfterEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context> { }
 
-        public ValueTask OnThreadEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
-            SystemState entering,
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
             CancellationToken token = default)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>

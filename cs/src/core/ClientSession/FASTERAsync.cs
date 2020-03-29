@@ -84,13 +84,7 @@ namespace FASTER.core
                 return;
             }
 
-            // In non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
-            {
-                return;
-            }
-
-            await HandleCheckpointingPhasesAsync(ctx, clientSession);
+            await ThreadStateMachineStep(ctx, clientSession, clientSession.SupportAsync);
         }
 
         internal class ReadAsyncInternal
@@ -280,6 +274,7 @@ namespace FASTER.core
             return false;
         }
 
+        /*
         private SystemState GetStartState(SystemState state)
         {
             if (state.phase <= Phase.REST)
@@ -540,5 +535,6 @@ namespace FASTER.core
             if (async)
                 clientSession?.UnsafeSuspendThread();
         }
+        */
     }
 }

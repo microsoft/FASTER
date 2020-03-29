@@ -143,7 +143,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
         /// <returns>Whether checkpoint was initiated</returns>
-        bool TakeFullCheckpoint(out Guid token);
+        bool TakeFullCheckpoint(out Guid token, long proposedVersion = -1);
 
         /// <summary>
         /// Take checkpoint of FASTER index only (not log)
@@ -157,7 +157,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Token describing checkpoin</param>
         /// <returns>Whether checkpoint was initiated</returns>
-        bool TakeHybridLogCheckpoint(out Guid token);
+        bool TakeHybridLogCheckpoint(out Guid token, long proposedVersion = -1);
 
         /// <summary>
         /// Recover from last successfuly checkpoints

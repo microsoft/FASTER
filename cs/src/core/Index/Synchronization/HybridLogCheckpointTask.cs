@@ -2,35 +2,31 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Win32;
 
 namespace FASTER.core
 {
-    public class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
+    public abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
-        public void GlobalBeforeEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
-            SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where T : ISynchronizationStateMachine
+        public virtual void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            // TODO(Tianyu): The cast makes this setup not as extensible as one would expect, where are templates
-            // when you need them....
-            if (!(stateMachine is HybridLogCheckpointStateMachine checkpointStateMachine))
-                throw new ArgumentException();
-
             switch (next.phase)
             {
                 case Phase.PREPARE:
-                    checkpointStateMachine.checkpointToken = Guid.NewGuid();
-                    checkpointStateMachine.checkpoint.Initialize(checkpointStateMachine.checkpointToken, next.version,
-                        faster.checkpointManager);
-                    faster.ObtainCurrentTailAddress(ref checkpointStateMachine.checkpoint.info.startLogicalAddress);
+                    if (faster._hybridLogCheckpointToken == default)
+                    {
+                        faster._hybridLogCheckpointToken = Guid.NewGuid();
+                        faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
+                    }
+
+                    faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.startLogicalAddress);
                     break;
                 case Phase.WAIT_FLUSH:
-                    checkpointStateMachine.checkpoint.info.headAddress = faster.hlog.HeadAddress;
-                    checkpointStateMachine.checkpoint.info.beginAddress = faster.hlog.BeginAddress;
+                    faster._hybridLogCheckpoint.info.headAddress = faster.hlog.HeadAddress;
+                    faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     // Collect object log offsets only after flushes
@@ -38,8 +34,8 @@ namespace FASTER.core
                     var seg = faster.hlog.GetSegmentOffsets();
                     if (seg != null)
                     {
-                        checkpointStateMachine.checkpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                        Array.Copy(seg, checkpointStateMachine.checkpoint.info.objectLogSegmentOffsets, seg.Length);
+                        faster._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                        Array.Copy(seg, faster._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
                     }
 
                     if (faster._activeSessions != null)
@@ -50,40 +46,35 @@ namespace FASTER.core
                             faster.AtomicSwitch(kvp.Value.ctx, kvp.Value.ctx.prevCtx, next.version - 1);
                         }
                     }
-
-                    faster.checkpointManager.CommitLogCheckpoint(checkpointStateMachine.checkpointToken,
-                        checkpointStateMachine.checkpoint.info.ToByteArray());
+                    
+                    faster.WriteHybridLogMetaInfo();
                     break;
                 case Phase.REST:
-                    var nextTcs =
-                        new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions
-                            .RunContinuationsAsynchronously);
-                    faster.checkpointTcs.SetResult(new LinkedCheckpointInfo {NextTask = nextTcs.Task});
-                    faster.checkpointTcs = nextTcs;
+                    faster._hybridLogCheckpointToken = default;
+                    faster._hybridLogCheckpoint.Reset();
                     break;
             }
         }
 
-        public void GlobalAfterEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
-            SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where T : ISynchronizationStateMachine
+        public virtual void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
-        public ValueTask OnThreadEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
-            SystemState entering,
+        public virtual ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
-            CancellationToken token = default) where T : ISynchronizationStateMachine
+            CancellationToken token = default)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            if (entering.phase != Phase.PERSISTENCE_CALLBACK) return default;
+            if (current.phase != Phase.PERSISTENCE_CALLBACK) return default;
 
             if (ctx != null)
             {
@@ -105,96 +96,158 @@ namespace FASTER.core
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                 }
 
-                faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, entering.version);
+                faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.version);
             }
 
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, entering.version))
-                faster.GlobalStateMachineStep(entering);
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.version))
+                faster.GlobalStateMachineStep(current);
             return default;
         }
     }
 
-    public class FoldOverCheckpointTask : ISynchronizationTask
+    public class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
-        public void GlobalBeforeEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
-            SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where T : ISynchronizationStateMachine
-            where Key : new()
-            where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
         {
-            if (!(stateMachine is HybridLogCheckpointStateMachine checkpointStateMachine))
-                throw new ArgumentException();
+            base.GlobalBeforeEnteringState(next, faster);
             if (next.phase != Phase.WAIT_FLUSH) return;
 
             faster.hlog.ShiftReadOnlyToTail(out var tailAddress,
-                out checkpointStateMachine.checkpoint.flushedSemaphore);
-            checkpointStateMachine.checkpoint.info.finalLogicalAddress = tailAddress;
+                out faster._hybridLogCheckpoint.flushedSemaphore);
+            faster._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
         }
 
-        public void GlobalAfterEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
-            SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where T : ISynchronizationStateMachine
-            where Key : new()
-            where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-        {
-        }
-
-        public async ValueTask OnThreadEnteringState<T, Key, Value, Input, Output, Context, Functions>(T stateMachine,
-            SystemState entering,
+        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
-            CancellationToken token = default) where T : ISynchronizationStateMachine
-            where Key : new()
-            where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            CancellationToken token = default)
         {
-            if (!(stateMachine is HybridLogCheckpointStateMachine checkpointStateMachine))
-                throw new ArgumentException();
-            if (entering.phase != Phase.WAIT_FLUSH) return;
+            await base.OnThreadState(current, prev, faster, ctx, clientSession, async, token);
+            if (current.phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
-                bool notify;
-
-                notify = (faster.hlog.FlushedUntilAddress >=
-                          checkpointStateMachine.checkpoint.info.finalLogicalAddress);
+                var notify = faster.hlog.FlushedUntilAddress >=
+                             faster._hybridLogCheckpoint.info.finalLogicalAddress;
 
                 if (async && !notify)
                 {
-                    Debug.Assert(checkpointStateMachine.checkpoint.flushedSemaphore != null);
+                    Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
                     clientSession?.UnsafeSuspendThread();
-                    await checkpointStateMachine.checkpoint.flushedSemaphore.WaitAsync(token);
+                    await faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
                     clientSession?.UnsafeResumeThread();
-                    checkpointStateMachine.checkpoint.flushedSemaphore.Release();
+                    faster._hybridLogCheckpoint.flushedSemaphore.Release();
                     notify = true;
                 }
 
+                if (!notify) return;
 
-                if (notify)
-                {
-                    if (ctx != null)
-                        ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
-                }
+                if (ctx != null)
+                    ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
             if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, entering.version);
+                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
 
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, entering.version))
-                faster.GlobalStateMachineStep(entering);
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
+                faster.GlobalStateMachineStep(current);
+        }
+    }
+
+    public class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
+    {
+        public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+        {
+            base.GlobalBeforeEnteringState(next, faster);
+            switch (next.phase)
+            {
+                case Phase.PREPARE:
+                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
+                    faster._hybridLogCheckpoint.info.useSnapshotFile = 1;
+                    break;
+                case Phase.WAIT_FLUSH:
+                    faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
+
+                    faster._hybridLogCheckpoint.snapshotFileDevice =
+                        faster.checkpointManager.GetSnapshotLogDevice(faster._hybridLogCheckpointToken);
+                    faster._hybridLogCheckpoint.snapshotFileObjectLogDevice =
+                        faster.checkpointManager.GetSnapshotObjectLogDevice(faster._hybridLogCheckpointToken);
+                    faster._hybridLogCheckpoint.snapshotFileDevice.Initialize(faster.hlog.GetSegmentSize());
+                    faster._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
+
+                    long startPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.flushedLogicalAddress);
+                    long endPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.finalLogicalAddress);
+                    if (faster._hybridLogCheckpoint.info.finalLogicalAddress >
+                        faster.hlog.GetStartLogicalAddress(endPage))
+                    {
+                        endPage++;
+                    }
+
+                    // This can be run on a new thread if we want to immediately parallelize 
+                    // the rest of the log flush
+                    faster.hlog.AsyncFlushPagesToDevice(
+                        startPage,
+                        endPage,
+                        faster._hybridLogCheckpoint.info.finalLogicalAddress,
+                        faster._hybridLogCheckpoint.snapshotFileDevice,
+                        faster._hybridLogCheckpoint.snapshotFileObjectLogDevice,
+                        out faster._hybridLogCheckpoint.flushedSemaphore);
+                    break;
+            }
+        }
+
+        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current,
+            SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
+            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
+            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            CancellationToken token = default)
+        {
+            await base.OnThreadState(current, prev, faster, ctx, clientSession, async, token);
+            if (current.phase != Phase.WAIT_FLUSH) return;
+
+            if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
+            {
+                var notify = faster._hybridLogCheckpoint.flushedSemaphore != null &&
+                             faster._hybridLogCheckpoint.flushedSemaphore.CurrentCount > 0;
+
+                if (async && !notify)
+                {
+                    Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
+                    clientSession?.UnsafeSuspendThread();
+                    await faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
+                    clientSession?.UnsafeResumeThread();
+                    faster._hybridLogCheckpoint.flushedSemaphore.Release();
+                    notify = true;
+                }
+
+                if (!notify) return;
+                
+                if (ctx != null)
+                    ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
+            }
+
+            if (ctx != null)
+                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
+
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
+                faster.GlobalStateMachineStep(current);
         }
     }
 
     public class HybridLogCheckpointStateMachine : VersionChangeStateMachine
     {
-        internal Guid checkpointToken = default;
-        internal HybridLogCheckpointInfo checkpoint = default;
+        public HybridLogCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1)
+            : base(targetVersion, new VersionChangeTask(), checkpointBackend)
+        {
+        }
 
-        public HybridLogCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1) : base(
-            targetVersion, new VersionChangeTask(), new HybridLogCheckpointOrchestrationTask(), checkpointBackend)
+        protected HybridLogCheckpointStateMachine(long targetVersion, params ISynchronizationTask[] tasks)
+            : base(targetVersion, tasks)
         {
         }
 

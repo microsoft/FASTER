@@ -6,11 +6,9 @@ namespace FASTER.core
 {
     public class IndexResizeTask : ISynchronizationTask
     {
-        public void GlobalBeforeEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -41,11 +39,9 @@ namespace FASTER.core
             }
         }
 
-        public void GlobalAfterEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
+        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -64,21 +60,19 @@ namespace FASTER.core
             }
         }
 
-        public ValueTask OnThreadEnteringState<T, Key, Value, Input, Output, Context, Functions>(
-            T stateMachine,
-            SystemState entering,
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+            SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster,
             FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             bool async = true,
             CancellationToken token = default)
-            where T : ISynchronizationStateMachine
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            switch (entering.phase)
+            switch (current.phase)
             {
                 case Phase.PREPARE_GROW:
                 case Phase.IN_PROGRESS_GROW:
