@@ -79,7 +79,11 @@ namespace FASTER.core
                 return;
             }
 
+            
+            // await is never invoked when calling the function with async = false
+            #pragma warning disable 4014
             ThreadStateMachineStep(ctx, clientSession, false);
+            #pragma warning restore 4014
         }
 
 

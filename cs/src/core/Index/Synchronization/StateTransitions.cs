@@ -28,25 +28,69 @@ namespace FASTER.core
         public long word;
     }
 
+    /// <summary>
+    /// </summary>
     public enum Phase : int {
-        IN_PROGRESS, WAIT_PENDING, WAIT_FLUSH, PERSISTENCE_CALLBACK, REST,
-        PREP_INDEX_CHECKPOINT, INDEX_CHECKPOINT, WAIT_INDEX_CHECKPOINT, PREPARE,
-        PREPARE_GROW, IN_PROGRESS_GROW, WAIT_GROW,
+        /// <summary>
+        /// </summary>
+        IN_PROGRESS, 
+        /// <summary>
+        /// </summary>
+        WAIT_PENDING, 
+        /// <summary>
+        /// </summary>
+        WAIT_FLUSH, 
+        /// <summary>
+        /// </summary>
+        PERSISTENCE_CALLBACK, 
+        /// <summary>
+        /// </summary>
+        WAIT_INDEX_CHECKPOINT,
+        /// <summary>
+        /// </summary>
+        REST,
+        /// <summary>
+        /// </summary>
+        PREP_INDEX_CHECKPOINT, 
+        /// <summary>
+        /// </summary>
+        INDEX_CHECKPOINT, 
+        /// <summary>
+        /// </summary>
+        PREPARE,
+        /// <summary>
+        /// </summary>
+        PREPARE_GROW, 
+        /// <summary>
+        /// </summary>
+        IN_PROGRESS_GROW, 
+        /// <summary>
+        /// </summary>
         INTERMEDIATE,
     };
 
+    /// <summary>
+    /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public unsafe struct SystemState
+    public struct SystemState
     {
+        /// <summary>
+        /// </summary>
         [FieldOffset(0)]
         public Phase phase;
 
+        /// <summary>
+        /// </summary>
         [FieldOffset(4)]
         public int version;
 
+        /// <summary>
+        /// </summary>
         [FieldOffset(0)]
         public long word;
 
+        /// <summary>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static SystemState Copy(ref SystemState other)
         {
@@ -55,6 +99,8 @@ namespace FASTER.core
             return info;
         }
 
+        /// <summary>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static SystemState Make(Phase status, int version)
         {
@@ -63,7 +109,5 @@ namespace FASTER.core
             info.version = version;
             return info;
         }
-
     }
-
 }

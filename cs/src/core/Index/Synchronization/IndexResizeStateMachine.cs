@@ -4,8 +4,12 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Resizes an index
+    /// </summary>
     public class IndexResizeTask : ISynchronizationTask
     {
+        /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -39,6 +43,7 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
         public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -60,6 +65,7 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
         public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev,
@@ -84,10 +90,17 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// Resizes the index
+    /// </summary>
     public class IndexResizeStateMachine : SynchronizationStateMachineBase
     {
+        /// <summary>
+        /// Constructs a new IndexResizeStateMachine
+        /// </summary>
         public IndexResizeStateMachine() : base(new IndexResizeTask()) {}
-        
+
+        /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {
             var nextState = SystemState.Copy(ref start);

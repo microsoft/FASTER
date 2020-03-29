@@ -5,8 +5,13 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// This task is the base class for a checkpoint "backend", which decides how a captured version is
+    /// persisted on disk.
+    /// </summary>
     public abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
+        /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
             where Key : new()
@@ -56,6 +61,7 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
         public virtual void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
             where Key : new()
@@ -64,6 +70,7 @@ namespace FASTER.core
         {
         }
 
+        /// <inheritdoc />
         public virtual ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
@@ -105,8 +112,14 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// A FoldOver checkpoint persists a version by setting the read-only marker past the last entry of that
+    /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
+    /// in garbage entries on the log, and a slower recovery of performance.
+    /// </summary>
     public class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
+        /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
         {
@@ -118,6 +131,7 @@ namespace FASTER.core
             faster._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
         }
 
+        /// <inheritdoc />
         public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
@@ -157,8 +171,14 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// A Snapshot persists a version by making a copy for every entry of that version separate from the log. It is
+    /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
+    /// update performance as it does not advance the readonly marker unnecessarily.
+    /// </summary>
     public class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
+        /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
         {
@@ -200,6 +220,7 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
         public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
@@ -239,18 +260,29 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
     public class HybridLogCheckpointStateMachine : VersionChangeStateMachine
     {
+        /// <summary>
+        /// Construct a new HybridLogCheckpointStateMachine to use the given checkpoint backend (either fold-over or
+        /// snapshot), drawing boundary at targetVersion.
+        /// </summary>
+        /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         public HybridLogCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1)
-            : base(targetVersion, new VersionChangeTask(), checkpointBackend)
-        {
-        }
+            : base(targetVersion, new VersionChangeTask(), checkpointBackend) {}
 
+        /// <summary>
+        /// Construct a new HybridLogCheckpointStateMachine with the given tasks. Does not load any tasks by default.
+        /// </summary>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
+        /// <param name="tasks">The tasks to load onto the state machine</param>
         protected HybridLogCheckpointStateMachine(long targetVersion, params ISynchronizationTask[] tasks)
-            : base(targetVersion, tasks)
-        {
-        }
+            : base(targetVersion, tasks) {}
 
+        /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {
             var result = SystemState.Copy(ref start);

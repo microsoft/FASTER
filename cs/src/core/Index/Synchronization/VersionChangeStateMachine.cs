@@ -6,8 +6,14 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// A Version change captures a version on the log by forcing all threads to coordinate a move to the next
+    /// version. It is used as the basis of many other tasks, which decides what they do with the captured
+    /// version.
+    /// </summary>
     public class VersionChangeTask : ISynchronizationTask
     {
+        /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -17,6 +23,7 @@ namespace FASTER.core
         {
         }
 
+        /// <inheritdoc />
         public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState start,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -26,6 +33,7 @@ namespace FASTER.core
         {
         }
 
+        /// <inheritdoc />
         public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current, SystemState prev,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster,
@@ -107,8 +115,13 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// The FoldOver task simply sets the read only offset to the current end of the log, so a captured version
+    /// is immutable and will eventually be flushed to disk.
+    /// </summary>
     public class FoldOverTask : ISynchronizationTask
     {
+        /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -121,6 +134,7 @@ namespace FASTER.core
                 faster.hlog.ShiftReadOnlyToTail(out _, out _);
         }
 
+        /// <inheritdoc />
         public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -128,6 +142,7 @@ namespace FASTER.core
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context> { }
 
+        /// <inheritdoc />
         public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev,
@@ -143,17 +158,30 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// A VersionChangeStateMachine orchestrates to capture a version, but does not flush to disk.
+    /// </summary>
     public class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
         private readonly long targetVersion;
-
+        
+        /// <summary>
+        /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
+        /// </summary>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
+        /// <param name="tasks">The tasks to load onto the state machine</param>
         protected VersionChangeStateMachine(long targetVersion = -1, params ISynchronizationTask[] tasks) : base(tasks)
         {
             this.targetVersion = targetVersion;
         }
 
+        /// <summary>
+        /// Construct a new VersionChangeStateMachine that folds over the log at the end without waiting for flush. 
+        /// </summary>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         public VersionChangeStateMachine(long targetVersion = -1) : this(targetVersion, new VersionChangeTask(), new FoldOverTask()) { }
 
+        /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {
             var nextState = SystemState.Copy(ref start);

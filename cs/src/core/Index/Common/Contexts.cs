@@ -11,12 +11,24 @@ using System.Threading;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// </summary>
     public enum OperationType
     {
+        /// <summary>
+        /// </summary>
         READ,
+        /// <summary>
+        /// </summary>
         RMW,
+        /// <summary>
+        /// </summary>
         UPSERT,
+        /// <summary>
+        /// </summary>
         INSERT,
+        /// <summary>
+        /// </summary>
         DELETE
     }
 
@@ -32,12 +44,23 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
+    /// <summary>
+    /// </summary>
     public class SerializedFasterExecutionContext
     {
+        /// <summary>
+        /// </summary>
         public int version;
+        /// <summary>
+        /// </summary>
         public long serialNum;
+        /// <summary>
+        /// </summary>
         public string guid;
 
+        /// <summary>
+        /// </summary>
+        /// <param name="writer"></param>
         public void Write(StreamWriter writer)
         {
             writer.WriteLine(version);
@@ -45,6 +68,9 @@ namespace FASTER.core
             writer.WriteLine(serialNum);
         }
 
+        /// <summary>
+        /// </summary>
+        /// <param name="reader"></param>
         public void Load(StreamReader reader)
         {
             string value = reader.ReadLine();
@@ -56,55 +82,98 @@ namespace FASTER.core
         }
     }
 
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
 
+        /// <summary>
+        /// </summary>
         public struct PendingContext
         {
             // User provided information
-
+            /// <summary>
+            /// </summary>
             public OperationType type;
 
+            /// <summary>
+            /// </summary>
             public IHeapContainer<Key> key;
+            /// <summary>
+            /// </summary>
             public IHeapContainer<Value> value;
+            /// <summary>
+            /// </summary>
             public Input input;
+            /// <summary>
+            /// </summary>
             public Output output;
+            /// <summary>
+            /// </summary>
             public Context userContext;
 
             // Some additional information about the previous attempt
 
+            /// <summary>
+            /// </summary>
             public long id;
 
+            /// <summary>
+            /// </summary>
             public int version;
 
+            /// <summary>
+            /// </summary>
             public long logicalAddress;
 
+            /// <summary>
+            /// </summary>
             public long serialNum;
 
+            /// <summary>
+            /// </summary>
             public HashBucketEntry entry;
 
+            /// <summary>
+            /// </summary>
             public void Dispose()
             {
                 key?.Dispose();
                 value?.Dispose();
             }
-            
         }
 
+        /// <inheritdoc />
         public class FasterExecutionContext : SerializedFasterExecutionContext
         {
+            /// <summary>
+            /// </summary>
             public Phase phase;
+            /// <summary>
+            /// </summary>
             public bool[] markers;
+            /// <summary>
+            /// </summary>
             public long totalPending;
+            /// <summary>
+            /// </summary>
             public Queue<PendingContext> retryRequests;
+            /// <summary>
+            /// </summary>
             public Dictionary<long, PendingContext> ioPendingRequests;
+            /// <summary>
+            /// </summary>
             public AsyncCountDown pendingReads;
+            /// <summary>
+            /// </summary>
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
+            /// <summary>
+            /// </summary>
             public List<long> excludedSerialNos;
 
+            /// <summary>
+            /// </summary>
             public bool HasNoPendingRequests
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -115,6 +184,8 @@ namespace FASTER.core
                 }
             }
 
+            /// <summary>
+            /// </summary>
             public FasterExecutionContext prevCtx;
         }
     }

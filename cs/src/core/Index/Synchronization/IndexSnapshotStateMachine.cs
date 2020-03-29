@@ -5,8 +5,12 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// This task performs an index checkpoint.
+    /// </summary>
     public class IndexSnapshotTask : ISynchronizationTask
     {
+        /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -44,6 +48,7 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
         public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -53,6 +58,7 @@ namespace FASTER.core
         {
         }
 
+        /// <inheritdoc />
         public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
@@ -96,12 +102,19 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// This state machine performs an index checkpoint
+    /// </summary>
     public class IndexSnapshotStateMachine : SynchronizationStateMachineBase
     {
+        /// <summary>
+        /// Create a new IndexSnapshotStateMachine
+        /// </summary>
         public IndexSnapshotStateMachine() : base(new IndexSnapshotTask())
         {
         }
 
+        /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {
             var result = SystemState.Copy(ref start);

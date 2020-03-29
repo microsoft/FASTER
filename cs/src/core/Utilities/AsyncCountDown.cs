@@ -12,10 +12,12 @@ namespace FASTER.core
     /// </summary>
     public sealed class AsyncCountDown
     {
-        int counter;
-        TaskCompletionSource<int> tcs;
-        TaskCompletionSource<int> nextTcs;
+        private int counter;
+        private TaskCompletionSource<int> tcs;
+        private TaskCompletionSource<int> nextTcs;
 
+        /// <summary>
+        /// </summary>
         public AsyncCountDown()
         {
             nextTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);

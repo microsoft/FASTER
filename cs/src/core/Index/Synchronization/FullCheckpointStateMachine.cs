@@ -5,8 +5,12 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// This task contains logic to orchestrate the index and hybrid log checkpoint in parallel
+    /// </summary>
     public class FullCheckpointOrchestrationTask : ISynchronizationTask
     {
+        /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -37,6 +41,7 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
         public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster)
@@ -46,6 +51,7 @@ namespace FASTER.core
         {
         }
 
+        /// <inheritdoc />
         public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context, Functions> faster,
@@ -67,13 +73,23 @@ namespace FASTER.core
             faster.GlobalStateMachineStep(current);
         }
     }
-
+    
+    /// <summary>
+    /// The state machine orchestrates a full checkpoint
+    /// </summary>
     public class FullCheckpointStateMachine : HybridLogCheckpointStateMachine
     {
+        /// <summary>
+        /// Construct a new FullCheckpointStateMachine to use the given checkpoint backend (either fold-over or snapshot),
+        /// drawing boundary at targetVersion.
+        /// </summary>
+        /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         public FullCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1) : base(
             targetVersion, new VersionChangeTask(), new FullCheckpointOrchestrationTask(), checkpointBackend,
             new IndexSnapshotTask()) {}
 
+        /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {
             var result = SystemState.Copy(ref start);
