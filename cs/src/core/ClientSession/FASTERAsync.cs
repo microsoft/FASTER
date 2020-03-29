@@ -73,20 +73,6 @@ namespace FASTER.core
             }
         }
 
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal async ValueTask InternalRefreshAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
-        {
-            // We check if we are in normal mode
-            var newPhaseInfo = SystemState.Copy(ref _systemState);
-            if (clientSession.ctx.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && clientSession.ctx.version == newPhaseInfo.version)
-            {
-                return;
-            }
-
-            await ThreadStateMachineStep(ctx, clientSession, clientSession.SupportAsync);
-        }
-
         internal class ReadAsyncInternal
         {
             const int Completed = 1;

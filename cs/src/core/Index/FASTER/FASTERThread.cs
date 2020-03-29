@@ -79,7 +79,7 @@ namespace FASTER.core
                 return;
             }
 
-            ThreadStateMachineStep(ctx, clientSession, clientSession?.SupportAsync ?? true);
+            ThreadStateMachineStep(ctx, clientSession, false);
         }
 
 
