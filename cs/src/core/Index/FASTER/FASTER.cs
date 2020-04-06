@@ -60,10 +60,7 @@ namespace FASTER.core
         /// Read cache used by this FASTER instance
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context, Functions> ReadCache { get; }
-
-        internal Guid _indexCheckpointToken;
-        internal Guid _hybridLogCheckpointToken;
-        internal HybridLogCheckpointInfo _hybridLogCheckpoint;
+        
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>

@@ -44,8 +44,7 @@ namespace FASTER.core
     }
 
 
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase,
-        IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -53,9 +52,13 @@ namespace FASTER.core
         
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
             = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+            
+        internal Guid _indexCheckpointToken;
+        internal Guid _hybridLogCheckpointToken;
+        internal HybridLogCheckpointInfo _hybridLogCheckpoint;
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
-        
+
         internal void AcquireSharedLatchesForAllPendingRequests(FasterExecutionContext ctx)
         {
             foreach (var _ctx in ctx.retryRequests)

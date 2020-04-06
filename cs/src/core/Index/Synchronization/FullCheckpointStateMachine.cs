@@ -38,6 +38,10 @@ namespace FASTER.core
                     faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
                     faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress);
                     break;
+                case Phase.PERSISTENCE_CALLBACK:
+                    faster.WriteIndexMetaInfo();
+                    faster._indexCheckpointToken = default;
+                    break;
             }
         }
 

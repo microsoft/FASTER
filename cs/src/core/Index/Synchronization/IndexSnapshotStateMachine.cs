@@ -41,7 +41,10 @@ namespace FASTER.core
                     // the tail address.
                     if (faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress))
                         faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
-                    faster.WriteIndexMetaInfo();
+                    if (faster._indexCheckpointToken != default)
+                    {
+                        faster.WriteIndexMetaInfo();
+                    }
                     faster._indexCheckpointToken = default;
                     faster._indexCheckpoint.Reset();
                     break;
