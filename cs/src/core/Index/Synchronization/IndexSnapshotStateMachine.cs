@@ -44,9 +44,13 @@ namespace FASTER.core
                     if (faster._indexCheckpointToken != default)
                     {
                         faster.WriteIndexMetaInfo();
+                        faster._indexCheckpointToken = default;
+                        var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        faster.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
+                        faster.checkpointTcs = nextTcs;
                     }
-                    faster._indexCheckpointToken = default;
                     faster._indexCheckpoint.Reset();
+
                     break;
             }
         }
