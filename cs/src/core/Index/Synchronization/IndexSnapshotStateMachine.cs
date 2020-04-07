@@ -135,7 +135,6 @@ namespace FASTER.core
                     break;
                 case Phase.INDEX_CHECKPOINT:
                     result.phase = Phase.REST;
-                    // TODO(Tianyu): What's the logic behind increasing the version here?
                     result.version++;
                     break;
                 default:

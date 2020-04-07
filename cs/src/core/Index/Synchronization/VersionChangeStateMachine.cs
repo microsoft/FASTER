@@ -192,7 +192,7 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE:
                     nextState.phase = Phase.IN_PROGRESS;
-                    // TODO(Tianyu): Move to long for system state as well. 
+                    // TODO: Move to long for system state as well. 
                     nextState.version = (int) (targetVersion == -1 ? start.version + 1 : targetVersion + 1);
                     break;
                 case Phase.IN_PROGRESS:
