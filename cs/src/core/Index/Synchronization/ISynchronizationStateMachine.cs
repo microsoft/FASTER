@@ -9,7 +9,7 @@ namespace FASTER.core
     /// synchronize and agree on certain time points. A full run of the state machine is defined as a cycle
     /// starting from REST and ending in REST, and only one state machine can be active at a given time.
     /// </summary>
-    public interface ISynchronizationStateMachine
+    internal interface ISynchronizationStateMachine
     {
         /// <summary>
         /// This function models the transition function of a state machine.
@@ -90,7 +90,7 @@ namespace FASTER.core
     /// multiple state machines, or to choose the task at runtime and achieve polymorphism in the behavior
     /// of a concrete state machine class.
     /// </summary>
-    public interface ISynchronizationTask
+    internal interface ISynchronizationTask
     {
         /// <summary>
         /// This function is invoked immediately before the global state machine enters the given state.
@@ -165,7 +165,7 @@ namespace FASTER.core
     /// Abstract base class for ISynchronizationStateMachine that implements that state machine logic
     /// with ISynchronizationTasks
     /// </summary>
-    public abstract class SynchronizationStateMachineBase : ISynchronizationStateMachine
+    internal abstract class SynchronizationStateMachineBase : ISynchronizationStateMachine
     {
         private ISynchronizationTask[] tasks;
 

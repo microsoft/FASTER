@@ -11,24 +11,12 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    /// <summary>
-    /// </summary>
-    public enum OperationType
+    internal enum OperationType
     {
-        /// <summary>
-        /// </summary>
         READ,
-        /// <summary>
-        /// </summary>
         RMW,
-        /// <summary>
-        /// </summary>
         UPSERT,
-        /// <summary>
-        /// </summary>
         INSERT,
-        /// <summary>
-        /// </summary>
         DELETE
     }
 
@@ -44,19 +32,11 @@ namespace FASTER.core
         CPR_PENDING_DETECTED
     }
 
-    /// <summary>
-    /// </summary>
-    public class SerializedFasterExecutionContext
+    internal class SerializedFasterExecutionContext
     {
-        /// <summary>
-        /// </summary>
-        public int version;
-        /// <summary>
-        /// </summary>
-        public long serialNum;
-        /// <summary>
-        /// </summary>
-        public string guid;
+        internal int version;
+        internal long serialNum;
+        internal string guid;
 
         /// <summary>
         /// </summary>
@@ -88,55 +68,24 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
 
-        /// <summary>
-        /// </summary>
-        public struct PendingContext
+        internal struct PendingContext
         {
             // User provided information
-            /// <summary>
-            /// </summary>
-            public OperationType type;
+            internal OperationType type;
 
-            /// <summary>
-            /// </summary>
-            public IHeapContainer<Key> key;
-            /// <summary>
-            /// </summary>
-            public IHeapContainer<Value> value;
-            /// <summary>
-            /// </summary>
-            public Input input;
-            /// <summary>
-            /// </summary>
-            public Output output;
-            /// <summary>
-            /// </summary>
-            public Context userContext;
+            internal IHeapContainer<Key> key;
+            internal IHeapContainer<Value> value;
+            internal Input input;
+            internal Output output;
+            internal Context userContext;
 
             // Some additional information about the previous attempt
+            internal long id;
+            internal int version;
+            internal long logicalAddress;
+            internal long serialNum;
+            internal HashBucketEntry entry;
 
-            /// <summary>
-            /// </summary>
-            public long id;
-
-            /// <summary>
-            /// </summary>
-            public int version;
-
-            /// <summary>
-            /// </summary>
-            public long logicalAddress;
-
-            /// <summary>
-            /// </summary>
-            public long serialNum;
-
-            /// <summary>
-            /// </summary>
-            public HashBucketEntry entry;
-
-            /// <summary>
-            /// </summary>
             public void Dispose()
             {
                 key?.Dispose();
@@ -144,37 +93,18 @@ namespace FASTER.core
             }
         }
 
-        /// <inheritdoc />
-        public class FasterExecutionContext : SerializedFasterExecutionContext
+        internal class FasterExecutionContext : SerializedFasterExecutionContext
         {
-            /// <summary>
-            /// </summary>
-            public Phase phase;
-            /// <summary>
-            /// </summary>
-            public bool[] markers;
-            /// <summary>
-            /// </summary>
-            public long totalPending;
-            /// <summary>
-            /// </summary>
-            public Queue<PendingContext> retryRequests;
-            /// <summary>
-            /// </summary>
-            public Dictionary<long, PendingContext> ioPendingRequests;
-            /// <summary>
-            /// </summary>
-            public AsyncCountDown pendingReads;
-            /// <summary>
-            /// </summary>
-            public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
-            /// <summary>
-            /// </summary>
-            public List<long> excludedSerialNos;
+            internal Phase phase;
+            internal bool[] markers;
+            internal long totalPending;
+            internal Queue<PendingContext> retryRequests;
+            internal Dictionary<long, PendingContext> ioPendingRequests;
+            internal AsyncCountDown pendingReads;
+            internal AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
+            internal List<long> excludedSerialNos;
 
-            /// <summary>
-            /// </summary>
-            public bool HasNoPendingRequests
+            internal bool HasNoPendingRequests
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
@@ -184,9 +114,7 @@ namespace FASTER.core
                 }
             }
 
-            /// <summary>
-            /// </summary>
-            public FasterExecutionContext prevCtx;
+            internal FasterExecutionContext prevCtx;
         }
     }
 

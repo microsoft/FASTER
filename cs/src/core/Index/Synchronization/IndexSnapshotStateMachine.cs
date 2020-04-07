@@ -8,7 +8,7 @@ namespace FASTER.core
     /// <summary>
     /// This task performs an index checkpoint.
     /// </summary>
-    public class IndexSnapshotTask : ISynchronizationTask
+    internal class IndexSnapshotTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
@@ -112,7 +112,7 @@ namespace FASTER.core
     /// <summary>
     /// This state machine performs an index checkpoint
     /// </summary>
-    public class IndexSnapshotStateMachine : SynchronizationStateMachineBase
+    internal class IndexSnapshotStateMachine : SynchronizationStateMachineBase
     {
         /// <summary>
         /// Create a new IndexSnapshotStateMachine

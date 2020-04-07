@@ -11,7 +11,7 @@ namespace FASTER.core
     /// version. It is used as the basis of many other tasks, which decides what they do with the captured
     /// version.
     /// </summary>
-    public class VersionChangeTask : ISynchronizationTask
+    internal class VersionChangeTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
@@ -119,7 +119,7 @@ namespace FASTER.core
     /// The FoldOver task simply sets the read only offset to the current end of the log, so a captured version
     /// is immutable and will eventually be flushed to disk.
     /// </summary>
-    public class FoldOverTask : ISynchronizationTask
+    internal class FoldOverTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
@@ -161,7 +161,7 @@ namespace FASTER.core
     /// <summary>
     /// A VersionChangeStateMachine orchestrates to capture a version, but does not flush to disk.
     /// </summary>
-    public class VersionChangeStateMachine : SynchronizationStateMachineBase
+    internal class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
         private readonly long targetVersion;
         

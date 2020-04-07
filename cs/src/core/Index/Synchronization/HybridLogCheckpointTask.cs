@@ -9,7 +9,7 @@ namespace FASTER.core
     /// This task is the base class for a checkpoint "backend", which decides how a captured version is
     /// persisted on disk.
     /// </summary>
-    public abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
+    internal abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
@@ -117,7 +117,7 @@ namespace FASTER.core
     /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
     /// in garbage entries on the log, and a slower recovery of performance.
     /// </summary>
-    public class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
+    internal class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
@@ -176,7 +176,7 @@ namespace FASTER.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    public class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
+    internal class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
@@ -263,7 +263,7 @@ namespace FASTER.core
     /// <summary>
     /// 
     /// </summary>
-    public class HybridLogCheckpointStateMachine : VersionChangeStateMachine
+    internal class HybridLogCheckpointStateMachine : VersionChangeStateMachine
     {
         /// <summary>
         /// Construct a new HybridLogCheckpointStateMachine to use the given checkpoint backend (either fold-over or
