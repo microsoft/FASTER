@@ -10,14 +10,12 @@ namespace FASTER.core
     /// <summary>
     /// Offers reactivity about when a counter reaches zero
     /// </summary>
-    public sealed class AsyncCountDown
+    internal sealed class AsyncCountDown
     {
-        private int counter;
-        private TaskCompletionSource<int> tcs;
-        private TaskCompletionSource<int> nextTcs;
-
-        /// <summary>
-        /// </summary>
+        int counter;
+        TaskCompletionSource<int> tcs;
+        TaskCompletionSource<int> nextTcs;
+        
         public AsyncCountDown()
         {
             nextTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,7 +45,7 @@ namespace FASTER.core
             Volatile.Read(ref tcs)?.TrySetResult(0);
 
             // Reset TCS, so next awaiters produce a new one
-            Interlocked.Exchange(ref tcs, null);            
+            Interlocked.Exchange(ref tcs, null);
         }
 
         /// <summary>
@@ -60,17 +58,15 @@ namespace FASTER.core
                 return Task.CompletedTask;
 
             return GetOrCreateTaskCompletionSource();
-
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Task GetOrCreateTaskCompletionSource()
         {
-
             // If tcs is not null, we'll get it in taskSource
             var taskSource = Interlocked.CompareExchange(ref tcs, nextTcs, null);
 
-            if (taskSource == null) 
+            if (taskSource == null)
             {
                 // Tcs was null and nextTcs got assigned to it. 
                 taskSource = nextTcs;

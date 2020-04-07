@@ -43,22 +43,20 @@ namespace FASTER.core
         INTERMEDIATE,
     };
 
-    /// <summary>
-    /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     internal struct SystemState
     {
         [FieldOffset(0)]
-        internal Phase phase;
+        public Phase phase;
 
         [FieldOffset(4)]
-        internal int version;
+        public int version;
         
         [FieldOffset(0)]
-        internal long word;
+        public long word;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static SystemState Copy(ref SystemState other)
+        public static SystemState Copy(ref SystemState other)
         {
             var info = default(SystemState);
             info.word = other.word;
@@ -66,7 +64,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static SystemState Make(Phase status, int version)
+        public static SystemState Make(Phase status, int version)
         {
             var info = default(SystemState);
             info.phase = status;

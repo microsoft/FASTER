@@ -34,7 +34,7 @@ namespace FASTER.core
         /// us to eliminate the WAIT_PENDING phase, and allows
         /// sessions to be suspended. Do not modify during checkpointing.
         /// </summary>
-        private void UseRelaxedCPR() => RelaxedCPR = true;
+        internal void UseRelaxedCPR() => RelaxedCPR = true;
 
         /// <summary>
         /// Number of used entries in hash index
@@ -183,16 +183,6 @@ namespace FASTER.core
             _systemState = default;
             _systemState.phase = Phase.REST;
             _systemState.version = 1;
-        }
-
-        /// <summary>
-        /// Creates a new version that is eventually recoverable on the hybrid log. Does not flush to disk.
-        /// </summary>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        /// <returns>true if the version change is started successfully, false otherwise</returns>
-        public bool ChangeVersion(long targetVersion = -1)
-        {
-            return StartStateMachine(new VersionChangeStateMachine(targetVersion));
         }
 
         /// <summary>

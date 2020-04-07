@@ -95,16 +95,16 @@ namespace FASTER.core
 
         internal class FasterExecutionContext : SerializedFasterExecutionContext
         {
-            internal Phase phase;
-            internal bool[] markers;
-            internal long totalPending;
-            internal Queue<PendingContext> retryRequests;
-            internal Dictionary<long, PendingContext> ioPendingRequests;
-            internal AsyncCountDown pendingReads;
-            internal AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
-            internal List<long> excludedSerialNos;
+            public Phase phase;
+            public bool[] markers;
+            public long totalPending;
+            public Queue<PendingContext> retryRequests;
+            public Dictionary<long, PendingContext> ioPendingRequests;
+            public AsyncCountDown pendingReads;
+            public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
+            public List<long> excludedSerialNos;
 
-            internal bool HasNoPendingRequests
+            public bool HasNoPendingRequests
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
@@ -114,7 +114,7 @@ namespace FASTER.core
                 }
             }
 
-            internal FasterExecutionContext prevCtx;
+            public FasterExecutionContext prevCtx;
         }
     }
 

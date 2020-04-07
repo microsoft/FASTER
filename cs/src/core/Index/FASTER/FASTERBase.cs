@@ -138,17 +138,11 @@ namespace FASTER.core
 
     // Long value layout: [1-bit tentative][15-bit TAG][48-bit address]
     // Physical little endian memory layout: [48-bit address][15-bit TAG][1-bit tentative]
-    /// <summary>
-    /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct HashBucketEntry
+    internal struct HashBucketEntry
     {
-        /// <summary>
-        /// </summary>
         [FieldOffset(0)]
         public long word;
-        /// <summary>
-        /// </summary>
         public long Address
         {
             get
@@ -163,8 +157,6 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// </summary>
         public ushort Tag
         {
             get
@@ -179,8 +171,6 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// </summary>
         public bool Pending
         {
             get
@@ -201,8 +191,6 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// </summary>
         public bool Tentative
         {
             get
@@ -223,8 +211,6 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// </summary>
         public bool ReadCache
         {
             get
