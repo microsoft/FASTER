@@ -138,7 +138,7 @@ namespace FASTER.core
                     result.version++;
                     break;
                 default:
-                    throw new InvalidEnumArgumentException();
+                    throw new FasterException("Invalid Enum Argument");
             }
 
             return result;

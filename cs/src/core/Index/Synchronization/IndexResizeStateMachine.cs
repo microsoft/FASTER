@@ -39,7 +39,7 @@ namespace FASTER.core
                     // nothing to do
                     break;
                 default:
-                    throw new InvalidEnumArgumentException();
+                    throw new FasterException("Invalid Enum Argument");
             }
         }
 
@@ -61,7 +61,7 @@ namespace FASTER.core
                     // nothing to do
                     break;
                 default:
-                    throw new InvalidEnumArgumentException();
+                    throw new FasterException("Invalid Enum Argument");
             }
         }
 
@@ -85,7 +85,7 @@ namespace FASTER.core
                 case Phase.REST:
                     return default;
                 default:
-                    throw new InvalidEnumArgumentException();
+                    throw new FasterException("Invalid Enum Argument");
             }
         }
     }
@@ -116,7 +116,7 @@ namespace FASTER.core
                     nextState.phase = Phase.REST;
                     break;
                 default:
-                    throw new InvalidEnumArgumentException();
+                    throw new FasterException("Invalid Enum Argument");
             }
 
             return nextState;

@@ -203,7 +203,7 @@ namespace FASTER.core
                     nextState.phase = Phase.REST;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new FasterException("Invalid Enum Argument");
             }
 
             return nextState;
