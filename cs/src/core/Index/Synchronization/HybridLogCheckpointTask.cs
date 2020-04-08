@@ -57,6 +57,9 @@ namespace FASTER.core
                 case Phase.REST:
                     faster._hybridLogCheckpointToken = default;
                     faster._hybridLogCheckpoint.Reset();
+                    var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    faster.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
+                    faster.checkpointTcs = nextTcs;
                     break;
             }
         }

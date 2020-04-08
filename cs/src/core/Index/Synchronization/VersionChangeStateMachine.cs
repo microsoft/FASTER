@@ -103,11 +103,6 @@ namespace FASTER.core
                         faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.REST:
-                    var nextTcs =
-                        new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions
-                            .RunContinuationsAsynchronously);
-                    faster.checkpointTcs.SetResult(new LinkedCheckpointInfo {NextTask = nextTcs.Task});
-                    faster.checkpointTcs = nextTcs;
                     break;
             }
 
