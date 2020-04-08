@@ -79,14 +79,11 @@ namespace FASTER.core
                 return;
             }
 
-            // Moving to non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
-            {
-                ctx.phase = newPhaseInfo.phase;
-                return;
-            }
-
-            HandleCheckpointingPhases(ctx, clientSession);
+            
+            // await is never invoked when calling the function with async = false
+            #pragma warning disable 4014
+            ThreadStateMachineStep(ctx, clientSession, false);
+            #pragma warning restore 4014
         }
 
 

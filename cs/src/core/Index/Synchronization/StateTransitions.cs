@@ -16,7 +16,7 @@ namespace FASTER.core
     internal enum ResizeOperationStatus : int { IN_PROGRESS, DONE };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    internal unsafe struct ResizeInfo
+    internal struct ResizeInfo
     {
         [FieldOffset(0)]
         public ResizeOperationStatus status;
@@ -29,21 +29,29 @@ namespace FASTER.core
     }
 
     internal enum Phase : int {
-        IN_PROGRESS, WAIT_PENDING, WAIT_FLUSH, PERSISTENCE_CALLBACK, REST,
-        PREP_INDEX_CHECKPOINT, INDEX_CHECKPOINT, PREPARE,
-        PREPARE_GROW, IN_PROGRESS_GROW,
+        IN_PROGRESS, 
+        WAIT_PENDING, 
+        WAIT_FLUSH, 
+        PERSISTENCE_CALLBACK, 
+        WAIT_INDEX_CHECKPOINT,
+        REST,
+        PREP_INDEX_CHECKPOINT, 
+        INDEX_CHECKPOINT, 
+        PREPARE,
+        PREPARE_GROW, 
+        IN_PROGRESS_GROW, 
         INTERMEDIATE,
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    internal unsafe struct SystemState
+    internal struct SystemState
     {
         [FieldOffset(0)]
         public Phase phase;
 
         [FieldOffset(4)]
         public int version;
-
+        
         [FieldOffset(0)]
         public long word;
 
@@ -63,7 +71,5 @@ namespace FASTER.core
             info.version = version;
             return info;
         }
-
     }
-
 }
