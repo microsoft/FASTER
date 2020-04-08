@@ -3,7 +3,7 @@
 
 using FASTER.core;
 using System;
-using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -14,70 +14,36 @@ namespace FASTER.PerfTest
     /// reinterpret_cast{integer} fields in the variable length chunk of memory
     /// </summary>
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct VarLenValue : ICacheValue<VarLenValue>
+    public unsafe struct VarLenValue
     {
-        [FieldOffset(0)]
-        public int Length;
+        // Note that we assume Globals.MinDataSize is 8
+        [FieldOffset(0)] internal int Length;
+        [FieldOffset(4)] internal int field1;
 
-        [FieldOffset(4)]
-        internal int field1;
+        internal static int MaxLen => Globals.MaxDataSize / sizeof(int);
 
-        public long Value
-        {
-            get => field1;
-            set => field1 = (int)value;
-        }
-
-        public int[] ToIntArray()
-        {
-            var dst = new int[Length];
-            int* src = (int*)Unsafe.AsPointer(ref this);
-            for (int i = 0; i < Length; ++i, ++src)
-                dst[i] = *src;
-            return dst;
-        }
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(ref VarLenValue dst)
         {
+            if (this.Length == 0)
+            {
+                dst.Length = 0;
+                dst.field1 = 0;
+                return;
+            }
             var fullLength = Length * sizeof(int);
             Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fullLength, fullLength);
         }
 
-        public VarLenValue Clone()
+        public void SetValueAndLength(long value)
         {
-            int* dst = stackalloc int[this.Length];
-            int* self = (int*)Unsafe.AsPointer(ref this);
-            for (int j = 0; j < this.Length; j++)
-                *(dst + j) = *(self + j);
-            ref VarLenValue value = ref *(VarLenValue*)dst;
-            return value;
-        }
-
-        public bool CompareValue(long returnedValue)
-        {
-            if ((int)returnedValue != this.field1)
-                return false;
-#if false // For debugging only; for long data lengths we don't want to distort speed
-            int* self = (int*)Unsafe.AsPointer(ref this);
-            for (int ii = 2; ii < this.Length; ++ii, ++self)
-            {
-                if (self[ii] != this.Length)
-                    return false;
-            }
-#endif
-            return true;
-        }
-
-        public VarLenValue Create(long first)
-        {
-            // To keep with the average of CacheGlobals.DataSize, modulo across the range 2x that.
-            var len = Math.Max(CacheGlobals.MinDataSize, (int)first % (((CacheGlobals.DataSize - 2) / sizeof(int)) * 2));
-            int* intMem = stackalloc int[len];
-            ref VarLenValue value = ref *(VarLenValue*)intMem;
-            for (int j = 0; j < len; j++)
-                *(intMem + j) = len;
-            value.Value = first;
-            return value;
+            // The single instance must be created in the driving program due to the use of stackalloc.
+            // There, it is created at max size; here, we are just modifying the length to be written/read.
+            // To keep with the average of Globals.DataSize, modulo across the range 2x that.
+            var len = Math.Max(Globals.MinDataSize, (int)value % (((Globals.DataSize - 2) / sizeof(int)) * 2));
+            int* thisPtr = (int*)Unsafe.AsPointer(ref this);
+            for (int ii = 0; ii < len; ii++)
+                *(thisPtr + ii) = len;
         }
     }
 
@@ -103,7 +69,7 @@ namespace FASTER.PerfTest
 
     public struct VarLenValueLength<TValue> : IVariableLengthStruct<TValue>
     {
-        public int GetAverageLength() => CacheGlobals.DataSize;
+        public int GetAverageLength() => Globals.DataSize;
 
         public int GetInitialLength<Input>(ref Input input) => 2 * sizeof(int);
 
@@ -114,52 +80,112 @@ namespace FASTER.PerfTest
     {
     }
 
-    public struct VarLenOutput : ICacheOutput<VarLenValue>
+    public struct VarLenOutput
     {
-        public VarLenValue Value { get; set; }
-    }
+        internal GetVarLenValueRef getValueRef;
+        internal int threadIndex;
 
-    public class VarLenFunctions : IFunctions<CacheKey, VarLenValue, CacheInput, VarLenOutput, CacheContext>
-    {
-        public void RMWCompletionCallback(ref CacheKey key, ref CacheInput _, CacheContext ctx, Status status) { }
-
-        public void ReadCompletionCallback(ref CacheKey key, ref CacheInput _, ref VarLenOutput output, CacheContext ctx, Status status)
+        internal VarLenOutput(GetVarLenValueRef getValueRef, int threadIndex)
         {
-            if (status != Status.OK)
-                Console.WriteLine("Sample1 error! Status != OK");
-            else if (!output.Value.CompareValue(key.key))
-                Console.WriteLine($"Sample1 error! Output value {output.Value.Value} != key {key.key}");
+            this.getValueRef = getValueRef;
+            this.threadIndex = threadIndex;
         }
 
-        public void UpsertCompletionCallback(ref CacheKey key, ref VarLenValue output, CacheContext ctx) { }
+        internal ref VarLenValue GetValueRef() => ref this.getValueRef.GetRef(this.threadIndex);
+    }
 
-        public void DeleteCompletionCallback(ref CacheKey key, CacheContext ctx) { }
+    unsafe class GetVarLenValueRef : IGetValueRef<VarLenValue, VarLenOutput>, IDisposable
+    {
+        // This class is why we need the whole IGetValueRef idea; allocating unmanaged memory
+        // for VarLenValue. These are per-thread (that's why we keep an array, and that also
+        // makes it easier to free on Dispose(). During operations, Upserts can copy from this
+        // to the store (in VERIFY mode we can write values to be copied) and Reads can copy from
+        // the store to this (in VERIFY mode, verifying the values read), without fear of conflict.
+        IntPtr[] values;
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) 
-            => Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
+        internal GetVarLenValueRef(int count)
+        {
+            values = Enumerable.Range(0, count).Select(ii => Marshal.AllocHGlobal(sizeof(int) * VarLenValue.MaxLen)).ToArray();
+            for (var ii = 0; ii < count; ++ii)
+            {
+                var ptr = values[ii];
+                for (var jj = 0; jj < VarLenValue.MaxLen; ++jj)
+                    Marshal.WriteInt32(ptr, jj * sizeof(int), 0);
+            }
+        }
+
+        public ref VarLenValue GetRef(int threadIndex) => ref *(VarLenValue*)values[threadIndex].ToPointer();
+
+        public VarLenOutput GetOutput(int threadIndex) => new VarLenOutput(this, threadIndex);
+
+        public void Dispose()
+        {
+            if (!(values is null))
+            {
+                foreach (var intptr in values)
+                    Marshal.FreeHGlobal(intptr);
+                values = null;
+            }
+        }
+    }
+
+    public class VarLenFunctions : IFunctions<Key, VarLenValue, Input, VarLenOutput, Empty>
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void RMWCompletionCallback(ref Key key, ref Input _, Empty ctx, Status status)
+        { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ReadCompletionCallback(ref Key key, ref Input _, ref VarLenOutput output, Empty ctx, Status status)
+        { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UpsertCompletionCallback(ref Key key, ref VarLenValue output, Empty ctx)
+        { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DeleteCompletionCallback(ref Key key, Empty ctx)
+            => throw new InvalidOperationException("Delete not implemented");
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
+        { }
 
         // Read functions
-        public void SingleReader(ref CacheKey key, ref CacheInput _, ref VarLenValue value, ref VarLenOutput dst) 
-            => dst.Value = value.Clone();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleReader(ref Key key, ref Input _, ref VarLenValue value, ref VarLenOutput dst)
+            => value.CopyTo(ref dst.GetValueRef());
 
-        public void ConcurrentReader(ref CacheKey key, ref CacheInput _, ref VarLenValue value, ref VarLenOutput dst)
-            => dst.Value = value.Clone();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ConcurrentReader(ref Key key, ref Input _, ref VarLenValue value, ref VarLenOutput dst) 
+            => value.CopyTo(ref dst.GetValueRef());
 
         // Upsert functions
-        public void SingleWriter(ref CacheKey key, ref VarLenValue src, ref VarLenValue dst) 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleWriter(ref Key key, ref VarLenValue src, ref VarLenValue dst) 
             => src.CopyTo(ref dst);
 
-        public bool ConcurrentWriter(ref CacheKey key, ref VarLenValue src, ref VarLenValue dst)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ConcurrentWriter(ref Key key, ref VarLenValue src, ref VarLenValue dst)
         {
             src.CopyTo(ref dst);
             return true;
         }
 
         // RMW functions
-        public void InitialUpdater(ref CacheKey key, ref CacheInput _, ref VarLenValue value) { }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitialUpdater(ref Key key, ref Input input, ref VarLenValue value)
+            => value.field1 = input.value;
 
-        public bool InPlaceUpdater(ref CacheKey key, ref CacheInput _, ref VarLenValue value) => true;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref VarLenValue value)
+        {
+            value.field1 += input.value;
+            return true;
+        }
 
-        public void CopyUpdater(ref CacheKey key, ref CacheInput _, ref VarLenValue oldValue, ref VarLenValue newValue) { }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyUpdater(ref Key key, ref Input input, ref VarLenValue oldValue, ref VarLenValue newValue)
+            => newValue.field1 = input.value + oldValue.field1;
     }
 }

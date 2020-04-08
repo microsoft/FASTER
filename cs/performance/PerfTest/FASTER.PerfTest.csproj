@@ -13,7 +13,6 @@
     <RootNamespace>FASTER.PerfTest</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
-    <Prefer32Bit>true</Prefer32Bit>
     <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <SignAssembly>true</SignAssembly>
@@ -31,6 +30,9 @@
     <Optimize>true</Optimize>
     <OutputPath>bin\x64\Release\</OutputPath>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\benchmark\RandomGenerator.cs" Link="RandomGenerator.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="App.config" />

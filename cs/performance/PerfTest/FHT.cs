@@ -7,35 +7,38 @@ using System;
 namespace FASTER.PerfTest
 {
     class FHT<TValue, TOutput, TFunctions, TSerializer>
-        where TValue : ICacheValue<TValue>, new() 
-        where TFunctions : IFunctions<CacheKey, TValue, CacheInput, TOutput, CacheContext>, new()
+        where TValue : new() 
+        where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
         where TSerializer : BinaryObjectSerializer<TValue>, new()
     {
-        internal IFasterKV<CacheKey, TValue, CacheInput, TOutput, CacheContext, TFunctions> Faster { get; set; }
+        internal IFasterKV<Key, TValue, Input, TOutput, Empty, TFunctions> Faster { get; set; }
 
-        const long FhtSize = 1L << 20;
+        private readonly long fhtSize;
 
         private LogFiles logFiles;
 
-        internal FHT(bool usePsf, bool useVarLenValues, bool useObjectValues, bool useReadCache)
+        internal FHT(bool usePsf, int sizeShift, bool useVarLenValues, bool useObjectValues, bool useReadCache)
         {
+            this.fhtSize = 1L << sizeShift;
             this.logFiles = new LogFiles(useObjectValues, useReadCache);
 
             var varLenSettings = useVarLenValues
-                ? new VariableLengthStructSettings<CacheKey, TValue> { valueLength = new VarLenValueLength<TValue>() }
+                ? new VariableLengthStructSettings<Key, TValue> { valueLength = new VarLenValueLength<TValue>() }
                 : null;
 
             var serializerSettings = useObjectValues
-                ? new SerializerSettings<CacheKey, TValue> { valueSerializer = () => new TSerializer() }
+                ? new SerializerSettings<Key, TValue> { valueSerializer = () => new TSerializer() }
                 : null;
 
             this.Faster = usePsf
                 ? throw new NotImplementedException("FasterPSF")
-                : new FasterKV<CacheKey, TValue, CacheInput, TOutput, CacheContext, TFunctions>(
-                                FhtSize, new TFunctions(), this.logFiles.LogSettings,
+                : new FasterKV<Key, TValue, Input, TOutput, Empty, TFunctions>(
+                                fhtSize, new TFunctions(), this.logFiles.LogSettings,
                                 null, // TODO: add checkpoints
                                 serializerSettings, null, varLenSettings);
         }
+
+        internal long LogTailAddress => this.Faster.Log.TailAddress;
 
         internal void Close()
         {

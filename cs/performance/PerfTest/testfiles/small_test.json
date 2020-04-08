@@ -1,25 +1,36 @@
 {
   "ParameterSweeps": [
     {
+      "HashSizeShifts": [ 15, 20 ],
+      "NumaModes": [ "None", "RoundRobin" ],
+      "Distributions": [ "Uniform", "ZipfSmooth" ],
+      "DistributionParameters": [ 0.99 ],
+      "DistributionSeed": 42,
+      "ThreadCounts": [ 1 ],
+      "InitKeyCounts": [ 1000000 ],
+      "OperationKeyCounts": [ 200000 ],
       "UpsertCounts": [ 100000, 200000 ],
+      "ReadCounts": [ 110000 ],
+      "RMWCounts": [ 111000 ],
+      "MIxOperations": [ true, false ],
       "DataSizes": [ 8, 32 ],
-      "ReadMultiples": [ 1, 2 ],
-      "ReadThreadCounts": [ 1, 2 ],
-      "IterationCounts": [ 1, 2 ],
       "UseVarLenValues": [ false ],
       "UseObjectValues": [ false ],
       "UseReadCaches": [ true ],
-      "LogModes": [ "Flush" ]
+      "LogModes": [ "None" ],
+      "IterationCounts": [ 1 ]
     }, {
-      "UpsertCounts": [100000],
-      "DataSizes": [16],
-      "ReadMultiples": [2],
-      "ReadThreadCounts": [1],
-      "IterationCounts": [1],
-      "UseVarLenValues": [true],
-      "UseObjectValues": [true],
-      "UseReadCaches": [true],
-      "LogModes": ["Flush"]
+      "HashSizeShifts": [ 20 ],
+      "NumaModes": [ "Sharded2" ],
+      "Distributions": [ "ZipfShuffled" ],
+      "InitKeyCounts": [ 1000000 ],
+      "OperationKeyCounts": [ 200000 ],
+      "UpsertCounts": [ 100000 ],
+      "ReadCounts": [ 110000 ],
+      "RMWCounts": [ 111000 ],
+      "DataSizes": [ 8 ],
+      "LogModes": [ "Flush" ],
+      "IterationCounts": [ 1, 2 ]
     }
   ]
 }

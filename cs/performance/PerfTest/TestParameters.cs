@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿    // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using Newtonsoft.Json;
@@ -13,32 +13,68 @@ namespace FASTER.PerfTest
     // proliferation/duplication of test files.
     [Flags] enum TestParameterFlags
     {
-        None =              0x0000,
-        Upsert =            0x0001,
-        DataSize =          0x0002,
-        ReadMultiple =      0x0004,
-        ReadThreadCount =   0x0008,
-        UseVarLenValue =    0x0010,
-        UseObjectValue =    0x0020,
-        UseReadCache =      0x0040,
-        LogMode =           0x0080,
-        IterationCount =    0x0100
+        None =                  0x00000000,
+        HashSize =              0x00000001,
+        NumaMode =              0x00000002,
+        Distribution =          0x00000004,
+        DistributionParameter = 0x00000008,
+        DistributionSeed =      0x00000010,
+        ThreadCount =           0x00000020,
+        InitKeyCount =          0x00000040,
+        OpKeyCount =            0x00000080,
+        UpsertCount =           0x00000100,
+        ReadCount =             0x00000200,
+        RmwCount =              0x00000400,
+        MixOperations =         0x00000800,
+        DataSize =              0x00001000,
+        UseVarLenValue =        0x00002000,
+        UseObjectValue =        0x00004000,
+        UseReadCache =          0x00008000,
+        LogMode =               0x00010000,
+        IterationCount =        0x00020000
     }
 
     [JsonObject(MemberSerialization.OptIn)]
     public class TestParameterSweep
     {
         [JsonProperty]
-        public int[] UpsertCounts { get; set; }
+        public int[] HashSizeShifts { get; set; } = new[] { Globals.DefaultHashSizeShift };
 
         [JsonProperty]
-        public int[] DataSizes { get; set; }
+        public NumaMode[] NumaModes { get; set; } = new[] { NumaMode.None };
 
         [JsonProperty]
-        public int[] ReadMultiples { get; set; }
+        public Distribution[] Distributions { get; set; } = new[] { Distribution.Uniform };
 
         [JsonProperty]
-        public int[] ReadThreadCounts { get; set; }
+        public double[] DistributionParameters { get; set; } = new[] { Globals.DefaultDistributionParameter };
+
+        [JsonProperty]
+        public int DistributionSeed { get; set; } = Globals.DefaultDistributionSeed;
+
+        [JsonProperty]
+        public int[] ThreadCounts { get; set; } = new[] { 1 };
+
+        [JsonProperty]
+        public int[] InitKeyCounts { get; set; } = new[] { Globals.DefaultInitKeyCount };
+
+        [JsonProperty]
+        public int[] OperationKeyCounts { get; set; } = new[] { Globals.DefaultOpKeyCount };
+
+        [JsonProperty]
+        public int[] UpsertCounts { get; set; } = new[] { Globals.DefaultOpCount };
+
+        [JsonProperty]
+        public int[] ReadCounts { get; set; } = new[] { Globals.DefaultOpCount };
+
+        [JsonProperty]
+        public int[] RmwCounts { get; set; } = new[] { Globals.DefaultOpCount };
+
+        [JsonProperty]
+        public bool[] MixOperations { get; set; } = new [] { false };
+
+        [JsonProperty]
+        public int[] DataSizes { get; set; } = new[] { Globals.MinDataSize };
 
         [JsonProperty]
         public bool[] UseVarLenValues { get; set; } = new[] { false };
@@ -50,64 +86,75 @@ namespace FASTER.PerfTest
         public bool[] UseReadCaches { get; set; } = new[] { true };
 
         [JsonProperty]
-        public LogMode[] LogModes { get; set; } = new[] { LogMode.Flush };
+        public LogMode[] LogModes { get; set; } = new[] { LogMode.None };
 
         [JsonProperty]
-        public int[] IterationCounts { get; set; }
+        public int[] IterationCounts { get; set; } = new int[] { 1 };
 
         public override string ToString() 
-            => $"ups[{string.Join(", ", this.UpsertCounts)}]" +
+            => $" hs[{string.Join(", ", this.HashSizeShifts)}]" +
+               $" nma[{string.Join(", ", this.NumaModes)}]" +
+               $" dst[{string.Join(", ", this.Distributions)}]" +
+               $" dstp[{string.Join(", ", this.DistributionParameters)}]" +
+               $" tc[{string.Join(", ", this.ThreadCounts)}]" +
+               $" ikc[{string.Join(", ", this.InitKeyCounts)}]" +
+               $" okc[{string.Join(", ", this.OperationKeyCounts)}]" +
+               $" uc[{string.Join(", ", this.UpsertCounts)}]" +
+               $" rc[{string.Join(", ", this.ReadCounts)}]" +
+               $" mc[{string.Join(", ", this.RmwCounts)}]" +
+               $" mix[{string.Join(", ", this.MixOperations)}]" +
                $" ds[{string.Join(", ", this.DataSizes)}]" +
-               $" rm[{string.Join(", ", this.ReadMultiples)}]" +
-               $" rtc[{string.Join(", ", this.ReadThreadCounts)}]" +
-               $" it[{string.Join(", ", this.IterationCounts)}]" +
                $" var[{string.Join(", ", this.UseVarLenValues)}]" +
                $" obj[{string.Join(", ", this.UseObjectValues)}]" +
                $" urc[{string.Join(", ", this.UseReadCaches)}]" +
-               $" lm[{string.Join(", ", this.LogModes)}]";
+               $" lm[{string.Join(", ", this.LogModes)}]" +
+               $" it[{string.Join(", ", this.IterationCounts)}]" +
+               $" rs[{string.Join(", ", this.DistributionSeed)}]"
+            ;
 
         internal IEnumerable<TestResult> GetParamSweeps()
         {
             IEnumerable<TestResult> getResults()
             {
+                foreach (var hashSize in this.HashSizeShifts)
+                foreach (var numa in this.NumaModes)
+                foreach (var dist in this.Distributions)
+                foreach (var distParam in this.DistributionParameters)
+                foreach (var threadCount in this.ThreadCounts)
+                foreach (var initKeyCount in this.InitKeyCounts)
+                foreach (var opKeyCount in this.OperationKeyCounts)
                 foreach (var upsertCount in this.UpsertCounts)
-                {
-                    foreach (var dataSize in this.DataSizes)
+                foreach (var readCount in this.ReadCounts)
+                foreach (var rmwCount in this.RmwCounts)
+                foreach (var mixOps in this.MixOperations)
+                foreach (var dataSize in this.DataSizes)
+                foreach (var useVarLenValue in this.UseVarLenValues)
+                foreach (var useObjectValue in this.UseObjectValues)
+                foreach (var useReadCache in this.UseReadCaches)
+                foreach (var logMode in this.LogModes)
+                foreach (var iters in this.IterationCounts)
+                { 
+                    yield return new TestResult
                     {
-                        foreach (var readMult in this.ReadMultiples)
-                        {
-                            foreach (var readThreads in this.ReadThreadCounts)
-                            {
-                                foreach (var useVarLenValue in this.UseVarLenValues)
-                                {
-                                    foreach (var useObjectValue in this.UseObjectValues)
-                                    {
-                                        foreach (var useReadCache in this.UseReadCaches)
-                                        {
-                                            foreach (var logMode in this.LogModes)
-                                            {
-                                                foreach (var iters in this.IterationCounts)
-                                                {
-                                                    yield return new TestResult
-                                                    {
-                                                        UpsertCount = upsertCount,
-                                                        DataSize = dataSize,
-                                                        ReadMultiple = readMult,
-                                                        ReadThreadCount = readThreads,
-                                                        UseVarLenValue = useVarLenValue,
-                                                        UseObjectValue = useObjectValue,
-                                                        UseReadCache = useReadCache,
-                                                        LogMode = logMode,
-                                                        IterationCount = iters
-                                                    };
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                        HashSizeShift = hashSize,
+                        NumaMode = numa,
+                        Distribution = dist,
+                        DistributionParameter = distParam,
+                        ThreadCount = threadCount,
+                        InitKeyCount = initKeyCount,
+                        OperationKeyCount = opKeyCount,
+                        UpsertCount = upsertCount,
+                        ReadCount = readCount,
+                        RMWCount = rmwCount,
+                        MixOperations = mixOps,
+                        DataSize = dataSize,
+                        UseVarLenValue = useVarLenValue,
+                        UseObjectValue = useObjectValue,
+                        UseReadCache = useReadCache,
+                        LogMode = logMode,
+                        IterationCount = iters,
+                        DistributionSeed = this.DistributionSeed
+                    };
                 }
             }
 
@@ -115,9 +162,11 @@ namespace FASTER.PerfTest
             return results.Any(result => !result.Verify()) ? Enumerable.Empty<TestResult>() : results;
         }
 
-        internal void Write(string filename) => File.WriteAllText(filename, JsonConvert.SerializeObject(this, PerfTest.jsonSerializerSettings));
+        internal void Write(string filename) 
+            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
 
-        internal static TestParameterSweep Read(string filename) => JsonConvert.DeserializeObject<TestParameterSweep>(File.ReadAllText(filename));
+        internal static TestParameterSweep Read(string filename) 
+            => JsonConvert.DeserializeObject<TestParameterSweep>(File.ReadAllText(filename));
     }
 
     [JsonObject(MemberSerialization.OptIn)]
@@ -132,9 +181,11 @@ namespace FASTER.PerfTest
         internal IEnumerable<TestResult> GetParamSweeps() 
             => this.ParameterSweeps.SelectMany(sweep => sweep.GetParamSweeps());
 
-        internal void Write(string filename) => File.WriteAllText(filename, JsonConvert.SerializeObject(this, PerfTest.jsonSerializerSettings));
+        internal void Write(string filename) 
+            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
 
-        internal static TestParameters Read(string filename) => JsonConvert.DeserializeObject<TestParameters>(File.ReadAllText(filename));
+        internal static TestParameters Read(string filename) 
+            => JsonConvert.DeserializeObject<TestParameters>(File.ReadAllText(filename));
 
         internal static TestParameterFlags CommandLineOverrides = TestParameterFlags.None;
 
@@ -143,16 +194,32 @@ namespace FASTER.PerfTest
                 return;
             foreach (var parameter in this.ParameterSweeps)
             {
-                if (CommandLineOverrides.HasFlag(TestParameterFlags.Upsert))
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.HashSize))
+                    parameter.HashSizeShifts = new[] { commandLineArgs.HashSizeShift };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.NumaMode))
+                    parameter.NumaModes = new[] { commandLineArgs.NumaMode };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.Distribution))
+                    parameter.Distributions = new[] { commandLineArgs.Distribution };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.DistributionParameter))
+                    parameter.DistributionParameters = new[] { commandLineArgs.DistributionParameter };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.DistributionSeed))
+                    parameter.DistributionSeed = commandLineArgs.DistributionSeed;
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.ThreadCount))
+                    parameter.ThreadCounts = new[] { commandLineArgs.ThreadCount };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.InitKeyCount))
+                    parameter.InitKeyCounts = new[] { commandLineArgs.InitKeyCount };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.OpKeyCount))
+                    parameter.OperationKeyCounts = new[] { commandLineArgs.OperationKeyCount };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.UpsertCount))
                     parameter.UpsertCounts = new[] { commandLineArgs.UpsertCount };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.ReadCount))
+                    parameter.ReadCounts = new[] { commandLineArgs.ReadCount };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.RmwCount))
+                    parameter.RmwCounts = new[] { commandLineArgs.RMWCount };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.MixOperations))
+                    parameter.MixOperations = new[] { commandLineArgs.MixOperations};
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.DataSize))
                     parameter.DataSizes = new[] { commandLineArgs.DataSize };
-                if (CommandLineOverrides.HasFlag(TestParameterFlags.ReadMultiple))
-                    parameter.ReadMultiples = new[] { commandLineArgs.ReadMultiple };
-                if (CommandLineOverrides.HasFlag(TestParameterFlags.ReadThreadCount))
-                    parameter.ReadThreadCounts = new[] { commandLineArgs.ReadThreadCount };
-                if (CommandLineOverrides.HasFlag(TestParameterFlags.IterationCount))
-                    parameter.IterationCounts = new[] { commandLineArgs.IterationCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseVarLenValue))
                     parameter.UseVarLenValues = new[] { commandLineArgs.UseVarLenValue };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseObjectValue))
@@ -161,6 +228,8 @@ namespace FASTER.PerfTest
                     parameter.UseReadCaches = new[] { commandLineArgs.UseReadCache };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.LogMode))
                     parameter.LogModes = new[] { commandLineArgs.LogMode };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.IterationCount))
+                    parameter.IterationCounts = new[] { commandLineArgs.IterationCount };
             }
         }
     }

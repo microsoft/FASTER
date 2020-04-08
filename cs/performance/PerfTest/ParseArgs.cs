@@ -7,15 +7,24 @@ namespace FASTER.PerfTest
 {
     partial class PerfTest
     {
+        const string HashSizeArg = "--hash";
+        const string NumaArg = "--numa";
+        const string DistArg = "--dist";
+        const string DistParamArg = "--distparam";
+        const string DistSeedArg = "--distseed";
+        const string ThreadsArg = "--threads";
+        const string InitKeysArg = "--initkeys";
+        const string OpKeysArg = "--opkeys";
         const string UpsertsArg = "--upserts";
+        const string ReadsArg = "--reads";
+        const string RmwsArg = "--rmws";
+        const string MixOpsArg = "--mixOps";
         const string DataArg = "--data";
-        const string ReadMultArg = "--readmult";
-        const string ReadThreadsArg = "--readthreads";
-        const string ItersArg = "--iters";
         const string UseVarLenArg = "--useVarLen";
         const string UseObjArg = "--useObj";
         const string NoRcArg = "--noRC";
         const string LogArg = "--log";
+        const string ItersArg = "--iters";
         const string TestFileArg = "--testfile";
         const string ResultsFileArg = "--resultsfile";
         const string CompareResultsExactArg = "--compareResultsExact";
@@ -23,19 +32,13 @@ namespace FASTER.PerfTest
         const string VerboseArg = "-v";
         const string PromptArg = "-p";
 
-        private static TestResult parseResult = new TestResult();
+        private static readonly TestResult parseResult = new TestResult();
 
         private static bool ParseArgs(string[] argv)
         {
-            bool Usage(string message = null)
+            static bool Usage(string message = null)
             {
                 Console.WriteLine();
-                if (!string.IsNullOrEmpty(message))
-                {
-                    Console.WriteLine("====== Invalid Argument(s) ======");
-                    Console.WriteLine(message);
-                    Console.WriteLine();
-                }
                 Console.WriteLine($"Usage: Specify parameters for one or more test runs, from either a {TestFileArg} or from command-line arguments.");
                 Console.WriteLine("       Parameter values default to the fastest configuration (use read cache, flush-only log, no object values).");
                 Console.WriteLine();
@@ -43,29 +46,51 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"    {TestFileArg} <fname>: The name of a JSON file containing {nameof(TestParameters)}, such as in the 'testfiles' subdirectory.");
                 Console.WriteLine();
                 Console.WriteLine($"  Test parameters from individual command-line arguments (overrides those specified in {TestFileArg} (if any)):");
-                Console.WriteLine($"    {UpsertsArg} <num>: The number of Upserts for keys in 0..({UpsertsArg})-1; default is {defaultTestResult.UpsertCount}");
-                Console.WriteLine($"    {DataArg} <bytes>: How many bytes of per CacheValue; default {CacheGlobals.MinDataSize} (minimum; sizeof(long))");
-                Console.WriteLine($"    {ReadMultArg} <mult>: How many multiples of {UpsertsArg} (default: {defaultTestResult.ReadMultiple}) to read after insert and log flush");
-                Console.WriteLine($"    {ReadThreadsArg} <threads>: Number of read threads (default: {defaultTestResult.ReadThreadCount}); {ReadMultArg} * {UpsertsArg} are read per thread");
+                Console.WriteLine($"    {HashSizeArg} <size>: The size of the FasterKV hash table; 1 << <size>. Default is {defaultTestResult.HashSizeShift}");
+                Console.WriteLine($"    {NumaArg} <mode>: Which Numa mode to use; default is {defaultTestResult.NumaMode}");
+                Console.WriteLine($"        {NumaMode.None}: Do not affinitize");
+                Console.WriteLine($"        {NumaMode.RoundRobin}: Round-robin affinitization by thread ordinal");
+                Console.WriteLine($"        {NumaMode.Sharded2}: Sharded affinitization across 2 groups");
+                Console.WriteLine($"        {NumaMode.Sharded4}: Sharded affinitization across 4 groups");
+                Console.WriteLine($"    Distribution of data among the key values: ");
+                Console.WriteLine($"        {DistArg} <mode>: The distribution of the data among the keys; default is {defaultTestResult.Distribution}");
+                Console.WriteLine($"            {Distribution.Uniform}: Uniformly random distribution of keys");
+                Console.WriteLine($"            {Distribution.ZipfSmooth}: Smooth curve (most localized keys)");
+                Console.WriteLine($"            {Distribution.ZipfShuffled}: Shuffle keys after curve generation");
+                Console.WriteLine($"        {DistParamArg} <double value>: A parameter for the distribution of the keys; default is {defaultTestResult.DistributionParameter}");
+                Console.WriteLine($"            Currently used for Zipf theta and must be > 0.0 and != 1.0 (note: benchmark (YCSB) uses 0.99; higher values are more skewed).");
+                Console.WriteLine($"        {DistSeedArg} <seed>: The distribution rng seed; 0 means create one based on current timestamp. Default is {defaultTestResult.DistributionSeed}");
+                Console.WriteLine($"    {ThreadsArg} <threads>: Number of threads for initialization and operations; default is {defaultTestResult.ThreadCount}");
+                Console.WriteLine($"        On initialization (the initial Upserts (which are Inserts) to populate the store), threads divide the full operation count.");
+                Console.WriteLine($"        On subsequent operations (Upsert, Read, and RMW), each thread runs the full operation counts.");
+                Console.WriteLine($"    Key and Operation counts. Shortcut: use an 'm' suffix (e.g. 20m) to mean million.");
+                Console.WriteLine($"        {InitKeysArg} <num>: The number of Keys loaded into the Faster hash table during initialization; default is {defaultTestResult.InitKeyCount}");
+                Console.WriteLine($"        {OpKeysArg} <num>: The number of Keys to be selected from during operations; default is {defaultTestResult.InitKeyCount}");
+                Console.WriteLine($"            The opKey indices are limited to 0..{InitKeysArg}; they are distributed according to {DistArg}");
+                Console.WriteLine($"        {UpsertsArg} <count>: The number of Upsert operations to run after the initial upserts are done; default is {defaultTestResult.UpsertCount}");
+                Console.WriteLine($"        {ReadsArg} <count>: The number of Read operations to run after the initial upserts are done; default is {defaultTestResult.ReadCount}");
+                Console.WriteLine($"        {RmwsArg} <count>: The number of RMW operations to run after the initial upserts are done; default is {defaultTestResult.RMWCount}");
+                Console.WriteLine($"    {MixOpsArg} [value]: Mix upsert, read, and rmw operations, rather than one after the other; default is {defaultTestResult.MixOperations}");
+                Console.WriteLine($"        If true, the sum of {UpsertsArg}, {ReadsArg}, and {RmwsArg} operations are run, intermixed, on each thread specified.");
+                Console.WriteLine($"    {DataArg} <bytes>: How many bytes per Value; must be in [{string.Join(", ", Globals.ValidDataSizes)}], Default is {Globals.MinDataSize}");
                 Console.WriteLine($"    {UseVarLenArg} [value]: Use variable instead of fixed-length blittable Values; default is {defaultTestResult.UseVarLenValue}");
                 Console.WriteLine($"    {UseObjArg} [value]: Use objects instead of blittable Value; default is {defaultTestResult.UseObjectValue}");
                 Console.WriteLine($"    {NoRcArg} [value]: Do not use ReadCache; default is {!defaultTestResult.UseReadCache}");
-                Console.WriteLine($"    {LogArg} <mode>: The disposition of the log after Upserts; default is {defaultTestResult.LogMode}");
-                Console.WriteLine($"        {LogMode.Flush.ToString()}: Copy entire log to disk, but retain tail of log in memory");
-                Console.WriteLine($"        {LogMode.FlushAndEvict.ToString()}: Move entire log to disk and eliminate data from memory as");
-                Console.WriteLine("             well. This will serve workload entirely from disk using read cache if enabled.");
-                Console.WriteLine("             This will *allow* future updates to the store.");
-                Console.WriteLine($"        {LogMode.DisposeFromMemory.ToString()}: move entire log to disk and eliminate data from memory as");
-                Console.WriteLine("             well. This will serve workload entirely from disk using read cache if enabled.");
-                Console.WriteLine("             This will *prevent* future updates to the store.");
+                Console.WriteLine($"    {LogArg} <mode>: The disposition of the log after initial Inserts; default is {defaultTestResult.LogMode}");
+                Console.WriteLine($"        {LogMode.None}: Do not flush log");
+                Console.WriteLine($"        {LogMode.Flush}: Copy entire log to disk, but retain tail of log in memory");
+                Console.WriteLine($"        {LogMode.FlushAndEvict}: Move entire log to disk and eliminate data from memory as well. This will serve workload");
+                Console.WriteLine("              entirely from disk using read cache if enabled. This will *allow* future updates to the store.");
+                Console.WriteLine($"        {LogMode.DisposeFromMemory}: move entire log to disk and eliminate data from memory as well. This will serve workload");
+                Console.WriteLine("              entirely from disk using read cache if enabled. This will *prevent* future updates to the store.");
                 Console.WriteLine($"    {ItersArg} <iters>: Number of iterations of the test; default = {defaultTestResult.IterationCount}");
                 Console.WriteLine();
                 Console.WriteLine($"  To compare result files (both options compare two JSON files containing {nameof(TestResults)}, where the difference is reported");
                 Console.WriteLine("             as 'second minus first', so if second does more operations per second, the difference is positive. If either of these");
                 Console.WriteLine("             is specified, no other non-Common parameters are allowed):");
-                Console.WriteLine($"    {CompareResultsExactArg} fnFirst fnSecond: Compare only {nameof(TestResults)} where the parameter specifications match exactly.");
+                Console.WriteLine($"    {CompareResultsExactArg} <fnFirst> <fnSecond>: Compare only {nameof(TestResults)} where the parameter specifications match exactly.");
                 Console.WriteLine("             Useful for comparing code change impact.");
-                Console.WriteLine($"    {CompareResultsSequenceArg} fnFirst fnSecond: Compare all {nameof(TestResults)} in sequence (to the length of the shorter sequence).");
+                Console.WriteLine($"    {CompareResultsSequenceArg} <fnFirst> <fnSecond>: Compare all {nameof(TestResults)} in sequence (to the length of the shorter sequence).");
                 Console.WriteLine("             Useful for comparing test-parameter change impact.");
                 Console.WriteLine();
                 Console.WriteLine("  Common parameters:");
@@ -75,6 +100,12 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"    {VerboseArg}: Verbose; print status messages; default = {verbose}");
                 Console.WriteLine($"    {PromptArg}: Print a message and wait before exiting; default = {prompt}");
                 Console.WriteLine();
+
+                if (!string.IsNullOrEmpty(message))
+                {
+                    Console.WriteLine("====== Invalid Argument(s) ======");
+                    Console.WriteLine(message);
+                }
                 return false;
             }
 
@@ -84,7 +115,7 @@ namespace FASTER.PerfTest
 
                 bool hasValue(out string value, bool required = true)
                 {
-                    if (ii >= argv.Length - 1)
+                    if (ii >= argv.Length - 1 || argv[ii + 1].StartsWith("-"))
                     {
                         value = null;
                         if (required)
@@ -95,71 +126,180 @@ namespace FASTER.PerfTest
                     return true;
                 }
 
+                bool hasIntValue(out int num)
+                {
+                    num = 0;
+                    if (!hasValue(out string value))
+                        return false;
+                    var mult = value.EndsWith("m", StringComparison.OrdinalIgnoreCase) ? 1_000_000 : 1;
+                    if (mult != 1)
+                        value = value.Substring(0, value.Length - 1);
+                    if (int.TryParse(value, out num))
+                    {
+                        num *= mult;
+                        return true;
+                    }
+                    return Usage($"{arg} requires a valid int value");
+                }
+
+                bool hasDoubleValue(out double num)
+                {
+                    num = 0;
+                    return hasValue(out string value) && double.TryParse(value, out num)
+                            ? true
+                            : Usage($"{arg} requires a valid floating-point value");
+                }
+
+                bool hasBoolValue(out bool wanted)
+                {
+                    wanted = true;
+                    return hasValue(out string value, required: false) && !bool.TryParse(value, out wanted)
+                        ? Usage($"If {arg} has a value it must be a valid bool")
+                        : true;
+                }
+
+                bool hasEnumValue<T>(out T member) where T : struct
+                {
+                    member = default;
+                    return hasValue(out string value) && Enum.TryParse<T>(value, true, out member)
+                        ? true
+                        : Usage($"{arg} requires a valid LogMode value");
+                }
+
                 //
                 // Test-parameter arguments
                 //
+                if (string.Compare(arg, HashSizeArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.HashSizeShift = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.HashSize;
+                    continue;
+                }
+                if (string.Compare(arg, NumaArg, ignoreCase: true) == 0)
+                {
+                    if (!hasEnumValue(out NumaMode mode))
+                        return Usage($"{arg} requires a valid NumaMode value");
+                    parseResult.NumaMode = mode;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.NumaMode;
+                    continue;
+                }
+                if (string.Compare(arg, DistArg, ignoreCase: true) == 0)
+                {
+                    if (!hasEnumValue(out Distribution mode))
+                        return Usage($"{arg} requires a valid DistributionMode value");
+                    parseResult.Distribution = mode;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.Distribution;
+                    continue;
+                }
+                if (string.Compare(arg, DistParamArg, ignoreCase: true) == 0)
+                {
+                    if (!hasDoubleValue(out var value))
+                        return false;
+                    parseResult.DistributionParameter = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.DistributionParameter;
+                    continue;
+                }
+                if (string.Compare(arg, DistSeedArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.DistributionSeed = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.DistributionSeed;
+                    continue;
+                }
+                if (string.Compare(arg, ThreadsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.ThreadCount = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.ThreadCount;
+                    continue;
+                }
+                if (string.Compare(arg, InitKeysArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.InitKeyCount = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.InitKeyCount;
+                    continue;
+                }
+                if (string.Compare(arg, OpKeysArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.OperationKeyCount = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.OpKeyCount;
+                    continue;
+                }
                 if (string.Compare(arg, UpsertsArg, ignoreCase: true) == 0)
                 {
-                    if (!hasValue(out string value) || !int.TryParse(value, out var count))
-                        return Usage($"{arg} requires a valid int value");
-                    parseResult.UpsertCount = count;
-                    TestParameters.CommandLineOverrides |= TestParameterFlags.Upsert;
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.UpsertCount = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.UpsertCount;
+                    continue;
+                }
+                if (string.Compare(arg, ReadsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.ReadCount = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.ReadCount;
+                    continue;
+                }
+                if (string.Compare(arg, RmwsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.RMWCount = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.RmwCount;
+                    continue;
+                }
+                if (string.Compare(arg, MixOpsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasBoolValue(out var wanted))
+                        return false;
+                    parseResult.MixOperations = wanted;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.MixOperations;
                     continue;
                 }
                 if (string.Compare(arg, DataArg, ignoreCase: true) == 0)
                 {
-                    if (!hasValue(out string value) || !int.TryParse(value, out var count))
-                        return Usage($"{arg} requires a valid int value");
-                    parseResult.DataSize = count;
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.DataSize = value;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.DataSize;
-                    continue;
-                }
-                if (string.Compare(arg, ReadMultArg, ignoreCase: true) == 0)
-                {
-                    if (!hasValue(out string value) || !int.TryParse(value, out var count))
-                        return Usage($"{arg} requires a valid int value");
-                    parseResult.ReadMultiple = count;
-                    TestParameters.CommandLineOverrides |= TestParameterFlags.ReadMultiple;
-                    continue;
-                }
-                if (string.Compare(arg, ReadThreadsArg, ignoreCase: true) == 0)
-                {
-                    if (!hasValue(out string value) || !int.TryParse(value, out var count))
-                        return Usage($"{arg} requires a valid int value");
-                    parseResult.ReadThreadCount = count;
-                    TestParameters.CommandLineOverrides |= TestParameterFlags.ReadThreadCount;
                     continue;
                 }
                 if (string.Compare(arg, UseVarLenArg, ignoreCase: true) == 0)
                 {
-                    var wanted = true;
-                    if (hasValue(out string value, required:false) && !bool.TryParse(value, out wanted))
-                        return Usage($"If {arg} has a value it must be a valid bool");
+                    if (!hasBoolValue(out var wanted))
+                        return false;
                     parseResult.UseVarLenValue = wanted;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.UseVarLenValue;
                     continue;
                 }
                 if (string.Compare(arg, UseObjArg, ignoreCase: true) == 0)
                 {
-                    var wanted = true;
-                    if (hasValue(out string value, required: false) && !bool.TryParse(value, out wanted))
-                        return Usage($"If {arg} has a value it must be a valid bool");
+                    if (!hasBoolValue(out var wanted))
+                        return false;
                     parseResult.UseObjectValue = wanted;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.UseObjectValue;
                     continue;
                 }
                 if (string.Compare(arg, NoRcArg, ignoreCase: true) == 0)
                 {
-                    var wanted = true;
-                    if (hasValue(out string value, required: false) && !bool.TryParse(value, out wanted))
-                        return Usage($"If {arg} has a value it must be a valid bool");
+                    if (!hasBoolValue(out var wanted))
+                        return false;
                     parseResult.UseReadCache = wanted;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.UseReadCache;
                     continue;
                 }
                 if (string.Compare(arg, LogArg, ignoreCase: true) == 0)
                 {
-                    if (!hasValue(out string value) || !Enum.TryParse(value, out LogMode mode))
+                    if (!hasEnumValue(out LogMode mode))
                         return Usage($"{arg} requires a valid LogMode value");
                     parseResult.LogMode = mode;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.LogMode;
@@ -167,9 +307,9 @@ namespace FASTER.PerfTest
                 }
                 if (string.Compare(arg, ItersArg, ignoreCase: true) == 0)
                 {
-                    if (!hasValue(out string value) || !int.TryParse(value, out var count))
-                        return Usage($"{arg} requires a valid iteration count");
-                    parseResult.IterationCount = count;
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.IterationCount = value;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.IterationCount;
                     continue;
                 }
@@ -214,7 +354,7 @@ namespace FASTER.PerfTest
                 return Usage($"Unknown argument: {arg}");
             }
 
-            if (!parseResult.Verify())
+            if (!parseResult.Verify(comparisonMode != ResultComparisonMode.None || !(testFilename is null)))
                 return false;
 
             if (!(testFilename is null))

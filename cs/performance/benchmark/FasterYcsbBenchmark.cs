@@ -31,8 +31,8 @@ namespace FASTER.benchmark
         const bool kUseSmallData = false;
         const bool kUseSyntheticData = false;
 #endif
-        const long kInitCount = kUseSmallData ? 2500480 : 250000000;
-        const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
+        const long kInitCount = kUseSmallData ? 2_500_480 :   250_000_000;
+        const long kTxnCount = kUseSmallData ? 10_000_000 : 1_000_000_000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
 
         const int kFileChunkSize = 4096;
@@ -119,6 +119,7 @@ namespace FASTER.benchmark
 
             while (!done)
             {
+                // We run until timeout reached, so wrap around the end of the transactions if we get there
                 long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 while (chunk_idx >= kTxnCount)
                 {
@@ -201,8 +202,8 @@ namespace FASTER.benchmark
 
             sw.Stop();
 
-            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
-                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, " +
+                              $" {writes_done} writes, in {sw.ElapsedMilliseconds / 1000.0:0.000} sec.");
             Interlocked.Add(ref total_ops_done, reads_done + writes_done);
         }
 
@@ -236,6 +237,7 @@ namespace FASTER.benchmark
 
             Stopwatch sw = new Stopwatch();
             sw.Start();
+
             // Start threads.
             foreach (Thread worker in workers)
             {
@@ -246,7 +248,14 @@ namespace FASTER.benchmark
                 worker.Join();
             }
             sw.Stop();
-            Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
+
+            {
+                var ms = sw.ElapsedMilliseconds;
+                var sec = ms / 1000.0;
+                var upserts_sec = kInitCount / sec;
+                var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
+                Console.WriteLine($"Loading time: {sec:0.000} sec ({upserts_sec:0.00} inserts/sec), working set {workingSetMB}MB");
+            }
 
             long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
@@ -302,12 +311,12 @@ namespace FASTER.benchmark
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
             long endTailAddress = store.Log.TailAddress;
-            Console.WriteLine("End tail address = " + endTailAddress);
+            Console.WriteLine($"End tail address = {endTailAddress}");
 
-            Console.WriteLine("Total " + total_ops_done + " ops done " + " in " + seconds + " secs.");
-            Console.WriteLine("##, " + distribution + ", " + numaStyle + ", " + readPercent + ", "
-                + threadCount + ", " + total_ops_done / seconds + ", "
-                + (endTailAddress - startTailAddress));
+            Console.WriteLine($"Total {total_ops_done} ops done in {seconds} secs.");
+            Console.WriteLine($"##, dist = {distribution}, numa = {numaStyle}, read% = {readPercent}, " +
+                              $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds:0.00}, " +
+                              $"logGrowth = {endTailAddress - startTailAddress}");
         }
 
         private void SetupYcsb(int thread_idx)
@@ -558,14 +567,15 @@ namespace FASTER.benchmark
         {
             Console.WriteLine("Loading synthetic data (uniform distribution)");
 
+            var sw = new Stopwatch();
+            sw.Start();
+
             init_keys_ = new Key[kInitCount];
             long val = 0;
             for (int idx = 0; idx < kInitCount; idx++)
             {
                 init_keys_[idx] = new Key { value = val++ };
             }
-
-            Console.WriteLine("loaded " + kInitCount + " keys.");
 
             RandomGenerator generator = new RandomGenerator();
 
@@ -576,11 +586,11 @@ namespace FASTER.benchmark
                 txn_keys_[idx] = new Key { value = (long)generator.Generate64(kInitCount) };
             }
 
-            Console.WriteLine("loaded " + kTxnCount + " txns.");
-
+            sw.Stop();
+            var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
+            Console.WriteLine($"Loaded {kInitCount} keys and {kTxnCount} txns in {sw.ElapsedMilliseconds / 1000.0:0.000} sec;" +
+                              $" working set {workingSetMB}MB");
         }
 #endregion
-
-
     }
 }

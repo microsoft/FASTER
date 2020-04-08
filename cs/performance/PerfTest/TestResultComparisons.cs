@@ -18,11 +18,51 @@ namespace FASTER.PerfTest
 
         [JsonProperty]
         [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double InitialInsertsPerSecondDiff { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double InitialInsertsPerSecondDiffPercent { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double InitialInsertsPerSecondPerThreadDiff { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double InitialInsertsPerSecondPerThreadDiffPercent { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double TotalOperationsPerSecondDiff { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double TotalOperationsPerSecondDiffPercent { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double TotalOperationsPerSecondPerThreadDiff { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double TotalOperationsPerSecondPerThreadDiffPercent { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
         public double UpsertsPerSecondDiff { get; set; }
 
         [JsonProperty]
         [JsonConverter(typeof(DoubleRoundingConverter))]
         public double UpsertsPerSecondDiffPercent { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double UpsertsPerSecondPerThreadDiff { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double UpsertsPerSecondPerThreadDiffPercent { get; set; }
 
         [JsonProperty]
         [JsonConverter(typeof(DoubleRoundingConverter))]
@@ -34,11 +74,27 @@ namespace FASTER.PerfTest
 
         [JsonProperty]
         [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double PendingReadsPerIterationDiff { get; set; }
+        public double ReadsPerSecondPerThreadDiff { get; set; }
 
         [JsonProperty]
         [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double PendingReadsPerIterationDiffPercent { get; set; }
+        public double ReadsPerSecondPerThreadDiffPercent { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double RMWsPerSecondDiff { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double RMWsPerSecondDiffPercent { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double RMWsPerSecondPerThreadDiff { get; set; }
+
+        [JsonProperty]
+        [JsonConverter(typeof(DoubleRoundingConverter))]
+        public double RMWsPerSecondPerThreadDiffPercent { get; set; }
 
         public TestResultComparison() { } // For JSON
 
@@ -47,17 +103,38 @@ namespace FASTER.PerfTest
             // Speed is calculated as "Second minus First", so if Second is faster, the results show as positive (more operations per second).
             this.First = first;
             this.Second = second;
+
+            this.InitialInsertsPerSecondDiff = second.InitialInsertsPerSecond - first.InitialInsertsPerSecond;
+            this.InitialInsertsPerSecondDiffPercent = (this.InitialInsertsPerSecondDiff / first.InitialInsertsPerSecond) * 100;
+            this.InitialInsertsPerSecondPerThreadDiff = second.InitialInsertsPerSecondPerThread - first.InitialInsertsPerSecondPerThread;
+            this.InitialInsertsPerSecondPerThreadDiffPercent = (this.InitialInsertsPerSecondPerThreadDiff / first.InitialInsertsPerSecondPerThread) * 100;
+
+            this.TotalOperationsPerSecondDiff = second.TotalOperationsPerSecond - first.TotalOperationsPerSecond;
+            this.TotalOperationsPerSecondDiffPercent = (this.TotalOperationsPerSecondDiff / first.TotalOperationsPerSecond) * 100;
+            this.TotalOperationsPerSecondPerThreadDiff = second.TotalOperationsPerSecondPerThread - first.TotalOperationsPerSecondPerThread;
+            this.TotalOperationsPerSecondPerThreadDiffPercent = (this.TotalOperationsPerSecondPerThreadDiff / first.TotalOperationsPerSecondPerThread) * 100;
+
             this.UpsertsPerSecondDiff = second.UpsertsPerSecond - first.UpsertsPerSecond;
             this.UpsertsPerSecondDiffPercent = (this.UpsertsPerSecondDiff / first.UpsertsPerSecond) * 100;
+            this.UpsertsPerSecondPerThreadDiff = second.UpsertsPerSecondPerThread - first.UpsertsPerSecondPerThread;
+            this.UpsertsPerSecondPerThreadDiffPercent = (this.UpsertsPerSecondPerThreadDiff / first.UpsertsPerSecondPerThread) * 100;
+
             this.ReadsPerSecondDiff = second.ReadsPerSecond - first.ReadsPerSecond;
             this.ReadsPerSecondDiffPercent = (this.ReadsPerSecondDiff / first.ReadsPerSecond) * 100;
-            this.PendingReadsPerIterationDiff = second.PendingReadsPerIteration - first.PendingReadsPerIteration;
-            this.PendingReadsPerIterationDiffPercent = first.PendingReadsPerIteration == 0 ? 0 : (this.PendingReadsPerIterationDiff / first.PendingReadsPerIteration) * 100;
+            this.ReadsPerSecondPerThreadDiff = second.ReadsPerSecondPerThread - first.ReadsPerSecondPerThread;
+            this.ReadsPerSecondPerThreadDiffPercent = (this.ReadsPerSecondPerThreadDiff / first.ReadsPerSecondPerThread) * 100;
+
+            this.RMWsPerSecondDiff = second.RMWsPerSecond - first.RMWsPerSecond;
+            this.RMWsPerSecondDiffPercent = (this.RMWsPerSecondDiff / first.RMWsPerSecond) * 100;
+            this.RMWsPerSecondPerThreadDiff = second.RMWsPerSecondPerThread - first.RMWsPerSecondPerThread;
+            this.RMWsPerSecondPerThreadDiffPercent = (this.RMWsPerSecondPerThreadDiff / first.RMWsPerSecondPerThread) * 100;
         }
 
-        internal void Write(string filename) => File.WriteAllText(filename, JsonConvert.SerializeObject(this, PerfTest.jsonSerializerSettings));
+        internal void Write(string filename) 
+            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
 
-        internal static TestResultComparison Read(string filename) => JsonConvert.DeserializeObject<TestResultComparison>(File.ReadAllText(filename));
+        internal static TestResultComparison Read(string filename) 
+            => JsonConvert.DeserializeObject<TestResultComparison>(File.ReadAllText(filename));
     }
 
     [JsonObject(MemberSerialization.OptIn)]
@@ -79,8 +156,10 @@ namespace FASTER.PerfTest
             comparisons.Write(resultsFile);
         }
 
-        internal void Write(string filename) => File.WriteAllText(filename, JsonConvert.SerializeObject(this, PerfTest.jsonSerializerSettings));
+        internal void Write(string filename) 
+            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
 
-        internal static TestResultComparisons Read(string filename) => JsonConvert.DeserializeObject<TestResultComparisons>(File.ReadAllText(filename));
+        internal static TestResultComparisons Read(string filename) 
+            => JsonConvert.DeserializeObject<TestResultComparisons>(File.ReadAllText(filename));
     }
 }

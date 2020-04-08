@@ -3,108 +3,150 @@
 
 using FASTER.core;
 using System;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+// For the long value
+#pragma warning disable IDE0051 // Remove unused private members
 
 namespace FASTER.PerfTest
 {
-    public struct CacheBlittableValue8 : ICacheValue<CacheBlittableValue8>
+    public interface IBlittableValue   // Needed for RMW
     {
-        public long Value { get; set; }
-
-        public bool CompareValue(long returnedValue) => returnedValue == this.Value;
-        public CacheBlittableValue8 Create(long first) => new CacheBlittableValue8 { Value = first };
+        long Value { get; set; }
     }
 
-    public struct CacheBlittableValue16 : ICacheValue<CacheBlittableValue16>
+    [StructLayout(LayoutKind.Sequential, Size = 8)]
+    public struct BlittableValue8 : IBlittableValue
     {
-        public long Value { get; set; }
+        public long Value { get => this.value; set => this.value = value; }
+
+        internal long value;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Size = 16)]
+    public struct BlittableValue16 : IBlittableValue
+    {
+        public long Value { get => this.value; set => this.value = value; }
+
+        public long value;
         public readonly long extra1;
-
-        public bool CompareValue(long returnedValue) => returnedValue == this.Value;
-        public CacheBlittableValue16 Create(long first) => new CacheBlittableValue16 { Value = first };
     }
 
-    public struct CacheBlittableValue32 : ICacheValue<CacheBlittableValue32>
+    [StructLayout(LayoutKind.Sequential, Size = 32)]
+    public struct BlittableValue32 : IBlittableValue
     {
-        public long Value { get; set; }
+        public long Value { get => this.value; set => this.value = value; }
+
+        public long value;
         public readonly long extra1, extra2, extra3;
-
-        public bool CompareValue(long returnedValue) => returnedValue == this.Value;
-        public CacheBlittableValue32 Create(long first) => new CacheBlittableValue32 { Value = first };
     }
 
-    public struct CacheBlittableValue64 : ICacheValue<CacheBlittableValue64>
+    [StructLayout(LayoutKind.Sequential, Size = 64)]
+    public struct BlittableValue64 : IBlittableValue
     {
-        public long Value { get; set; }
+        public long Value { get => this.value; set => this.value = value; }
+
+        public long value;
         public readonly long extra1, extra2, extra3, extra4, extra5, extra6, extra7;
-
-        public bool CompareValue(long returnedValue) => returnedValue == this.Value;
-        public CacheBlittableValue64 Create(long first) => new CacheBlittableValue64 { Value = first };
     }
 
-    public struct CacheBlittableValue128 : ICacheValue<CacheBlittableValue128>
+    [StructLayout(LayoutKind.Sequential, Size = 128)]
+    public struct BlittableValue128 : IBlittableValue
     {
-        public long Value { get; set; }
+        public long Value { get => this.value; set => this.value = value; }
+
+        public long value;
         public readonly long extra1, extra2, extra3, extra4, extra5, extra6, extra7;
         public readonly long extra10, extra11, extra12, extra13, extra14, extra15, extra16, extra17;
-
-        public bool CompareValue(long returnedValue) => returnedValue == this.Value;
-        public CacheBlittableValue128 Create(long first) => new CacheBlittableValue128 { Value = first };
     }
 
-    public struct CacheBlittableValue256 : ICacheValue<CacheBlittableValue256>
+    [StructLayout(LayoutKind.Sequential, Size = 256)]
+    public struct BlittableValue256 : IBlittableValue
     {
-        public long Value { get; set; }
+        public long Value { get => this.value; set => this.value = value; }
+
+        public long value;
         public readonly long extra1, extra2, extra3, extra4, extra5, extra6, extra7;
         public readonly long extra10, extra11, extra12, extra13, extra14, extra15, extra16, extra17;
         public readonly long extra20, extra21, extra22, extra23, extra24, extra25, extra26, extra27;
         public readonly long extra30, extra31, extra32, extra33, extra34, extra35, extra36, extra37;
-
-        public bool CompareValue(long returnedValue) => returnedValue == this.Value;
-        public CacheBlittableValue256 Create(long first) => new CacheBlittableValue256 { Value = first };
     }
 
-    public struct CacheBlittableOutput<T> : ICacheOutput<T>
+    public struct BlittableOutput<TBlittableValue>
     {
-        public T Value { get; set; }
+        public TBlittableValue Value { get; set; }
     }
 
-
-    public class CacheBlittableFunctions<TBlittableValue> : IFunctions<CacheKey, TBlittableValue, CacheInput, CacheBlittableOutput<TBlittableValue>, CacheContext>
-        where TBlittableValue : ICacheValue<TBlittableValue>
+    class GetBlittableValueRef<TBlittableValue> : IGetValueRef<TBlittableValue, BlittableOutput<TBlittableValue>>
+        where TBlittableValue : new()
     {
-        public void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref TBlittableValue value, ref CacheBlittableOutput<TBlittableValue> dst)
+        readonly TBlittableValue[] values;
+
+        internal GetBlittableValueRef(int count)
+            => values = Enumerable.Range(0, count).Select(ii => new TBlittableValue()).ToArray();
+
+        public ref TBlittableValue GetRef(int threadIndex) => ref values[threadIndex];
+
+        public BlittableOutput<TBlittableValue> GetOutput(int threadIndex) => new BlittableOutput<TBlittableValue>();
+    }
+
+    public class BlittableFunctions<TBlittableValue> : IFunctions<Key, TBlittableValue, Input, BlittableOutput<TBlittableValue>, Empty>
+        where TBlittableValue : IBlittableValue
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ConcurrentReader(ref Key key, ref Input input, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
             => dst.Value = value;
 
-        public bool ConcurrentWriter(ref CacheKey key, ref TBlittableValue src, ref TBlittableValue dst)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ConcurrentWriter(ref Key key, ref TBlittableValue src, ref TBlittableValue dst)
         {
             dst = src;
             return true;
         }
 
-        public void CopyUpdater(ref CacheKey key, ref CacheInput input, ref TBlittableValue oldValue, ref TBlittableValue newValue) => throw new NotImplementedException();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitialUpdater(ref Key key, ref Input input, ref TBlittableValue value)
+            => value.Value = input.value;
 
-        public void InitialUpdater(ref CacheKey key, ref CacheInput input, ref TBlittableValue value) => throw new NotImplementedException();
-
-        public bool InPlaceUpdater(ref CacheKey key, ref CacheInput input, ref TBlittableValue value) => throw new NotImplementedException();
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) => throw new NotImplementedException();
-
-        public void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheBlittableOutput<TBlittableValue> output, CacheContext ctx, Status status)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref TBlittableValue value)
         {
-            if (output.Value.Value != key.key)
-                throw new Exception("Read error!");
+            value.Value += input.value;
+            return true;
         }
 
-        public void RMWCompletionCallback(ref CacheKey key, ref CacheInput input, CacheContext ctx, Status status) => throw new NotImplementedException();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyUpdater(ref Key key, ref Input input, ref TBlittableValue oldValue, ref TBlittableValue newValue)
+            => newValue.Value = input.value + oldValue.Value;
 
-        public void SingleReader(ref CacheKey key, ref CacheInput input, ref TBlittableValue value, ref CacheBlittableOutput<TBlittableValue> dst)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
+        { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref BlittableOutput<TBlittableValue> output, Empty ctx, Status status)
+        { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleReader(ref Key key, ref Input input, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
             => dst.Value = value;
 
-        public void SingleWriter(ref CacheKey key, ref TBlittableValue src, ref TBlittableValue dst)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SingleWriter(ref Key key, ref TBlittableValue src, ref TBlittableValue dst)
             => dst = src;
 
-        public void UpsertCompletionCallback(ref CacheKey key, ref TBlittableValue value, CacheContext ctx) => throw new NotImplementedException();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UpsertCompletionCallback(ref Key key, ref TBlittableValue value, Empty ctx)
+        { }
 
-        public void DeleteCompletionCallback(ref CacheKey key, CacheContext ctx) => throw new NotImplementedException();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DeleteCompletionCallback(ref Key key, Empty ctx)
+            => throw new InvalidOperationException("Delete not implemented");
     }
 }

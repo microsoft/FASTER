@@ -2,44 +2,49 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using Newtonsoft.Json;
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace FASTER.PerfTest
 {
-    internal static class CacheGlobals
+    internal static class Globals
     {
-        public const int MinDataSize = 8;
-        public static int DataSize = MinDataSize;
+        public const int DefaultHashSizeShift = 20;
+        public const int DefaultInitKeyCount = 10_000_000;
+        public const int DefaultOpKeyCount = 100_000_000;
+        public const int DefaultOpCount = 0;    // Require specifying the desired operations
+        public const double DefaultDistributionParameter = 0.99; // For Zipf only, now; same as YCSB to match benchmark
+        public const int DefaultDistributionSeed = 10193;
+        public const long ChunkSize = 500;
 
-        public static int[] BlittableDataSizes = new[] { 8, 16, 32, 64, 128, 256 };
+        internal static JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented };
+
+        public static int[] ValidDataSizes = new[] { 8, 16, 32, 64, 128, 256 };
+        public const int MinDataSize = 8;   // Cannot be less or VarLenValue breaks
+        public static int MaxDataSize = ValidDataSizes[ValidDataSizes.Length - 1];
+
+        public static int DataSize = MinDataSize;   // This has the data size for the current test iteration
     }
 
-    public struct CacheKey : IFasterEqualityComparer<CacheKey>
+    [StructLayout(LayoutKind.Explicit, Size = 8)]
+    public struct Key : IFasterEqualityComparer<Key>
     {
+        [FieldOffset(0)]
         public long key;
 
-        public CacheKey(long first) => key = first;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Key(long k) => this.key = k;
 
-        public long GetHashCode64(ref CacheKey key) => Utility.GetHashCode(key.key);
-        public bool Equals(ref CacheKey k1, ref CacheKey k2) => k1.key == k2.key;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetHashCode64(ref Key key) => Utility.GetHashCode(key.key);
 
-        public class Serializer : BinaryObjectSerializer<CacheKey>
-        {
-            public override void Deserialize(ref CacheKey obj) => obj.key = reader.ReadInt64();
-
-            public override void Serialize(ref CacheKey obj) => writer.Write(obj.key);
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Equals(ref Key k1, ref Key k2) => k1.key == k2.key;
     }
 
-    public interface ICacheValue<TValue>
-    {
-        long Value { get; set; }
-        bool CompareValue(long returnedValue);
-
-        TValue Create(long first);
-    }
-
-    public class UnusedSerializer<T> : BinaryObjectSerializer<T>
+    public class NoSerializer<T> : BinaryObjectSerializer<T>
     {
         // Should never be instantiated
         public override void Deserialize(ref T obj) => throw new NotImplementedException();
@@ -47,18 +52,15 @@ namespace FASTER.PerfTest
         public override void Serialize(ref T obj) => throw new NotImplementedException();
     }
 
-    public struct CacheInput
+    public struct Input
     {
+        internal int value;
     }
 
-    public interface ICacheOutput<T>
+    interface IGetValueRef<TValue, TOutput>
     {
-        T Value { get; set; }
-    }
+        ref TValue GetRef(int threadIndex);
 
-    public struct CacheContext
-    {
-        // For now we do not use Context in this test.
-        public static readonly CacheContext None = default;
+        TOutput GetOutput(int threadIndex);
     }
 }

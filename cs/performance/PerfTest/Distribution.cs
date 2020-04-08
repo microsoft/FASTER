@@ -7,11 +7,10 @@ using Newtonsoft.Json.Converters;
 namespace FASTER.PerfTest
 {
     [JsonConverter(typeof(StringEnumConverter))]
-    public enum LogMode
+    public enum Distribution
     {
-        None,
-        Flush,
-        FlushAndEvict,
-        DisposeFromMemory
-    };
+        Uniform,        // Uniformly random distribution of keys
+        ZipfSmooth,     // Smooth curve (most localized keys)
+        ZipfShuffled    // Shuffle keys after curve generation
+    }
 }

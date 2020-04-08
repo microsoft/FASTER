@@ -1,9 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.benchmark;
 using FASTER.core;
-using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -22,8 +23,13 @@ namespace FASTER.PerfTest
 
         static bool verbose = false;
         static bool prompt = false;
+        static long verboseInterval;
 
-        internal static JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented };
+        static Key[] initKeys;
+        static Key[] opKeys;
+        static TestResult prevTestResult;
+
+        static long NextChunkStart = 0;
 
         static void Main(string[] argv)
         {
@@ -35,7 +41,6 @@ namespace FASTER.PerfTest
                 TestResultComparisons.Compare(compareFirstFilename, compareSecondFilename, comparisonMode, resultsFilename);
                 return;
             }
-
             ExecuteTestRuns();
         }
 
@@ -46,6 +51,8 @@ namespace FASTER.PerfTest
                 testParams.Override(parseResult);
             var testRuns = (testParams is null ? new[] { new TestRun(parseResult) } : testParams.GetParamSweeps().Select(sweep => new TestRun(sweep))).ToArray();
 
+            // This overall time includes overhead for allocating and distributing the keys, 
+            // which has to be done per-test-run.
             var sw = new Stopwatch();
             sw.Start();
 
@@ -54,54 +61,65 @@ namespace FASTER.PerfTest
             {
                 Console.WriteLine($"Test {++testNum} of {testRuns.Length}");
 
-                CacheGlobals.DataSize = testRun.TestResult.DataSize;
+                Globals.DataSize = testRun.TestResult.DataSize;
+                verboseInterval = 1L << (testRun.TestResult.HashSizeShift - 1);
+
+                CreateKeys(testRun.TestResult);
+
                 for (testRun.currentIter = 0; testRun.currentIter < testRun.TestResult.IterationCount; ++testRun.currentIter)
                 {
-                    if (testRun.currentIter > 0)
+                    const int pauseMs = 1000;
+                    if (verbose)
                     {
-                        const int pauseMs = 1000;
-                        if (verbose)
-                            Console.WriteLine($"GC and pausing for {pauseMs} before starting iteration {testRun.currentIter}");
-                        GC.Collect();
-                        Thread.Sleep(pauseMs);
+                        var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
+                        Console.Write($"GC.Collect and pausing for {pauseMs}ms before starting iteration {testRun.currentIter}." +
+                                      $" Working set: before {workingSetMB}MB, ");
                     }
+                    GC.Collect();
+                    if (verbose)
+                    {
+                        var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
+                        Console.WriteLine($"after {workingSetMB}MB");
+                    }
+                    Thread.Sleep(pauseMs);
 
                     if (testRun.TestResult.UseVarLenValue)
                     {
-                        var fht = new FHT<VarLenValue, VarLenOutput, VarLenFunctions, UnusedSerializer<VarLenValue>>(
-                            false, testRun.TestResult.UseVarLenValue, testRun.TestResult.UseObjectValue, useReadCache: testRun.TestResult.UseReadCache);
-                        RunIteration(fht, testRun);
-
+                        var fht = new FHT<VarLenValue, VarLenOutput, VarLenFunctions, NoSerializer<VarLenValue>>(
+                            false, testRun.TestResult.HashSizeShift, testRun.TestResult.UseVarLenValue, 
+                            testRun.TestResult.UseObjectValue, useReadCache: testRun.TestResult.UseReadCache);
+                        RunIteration(fht, testRun, new GetVarLenValueRef(testRun.TestResult.ThreadCount));
                     }
                     else if (testRun.TestResult.UseObjectValue)
                     {
-                        var fht = new FHT<CacheObjectValue, CacheObjectOutput, CacheObjectFunctions, CacheObjectSerializer>(
-                            false, testRun.TestResult.UseVarLenValue, testRun.TestResult.UseObjectValue, useReadCache: testRun.TestResult.UseReadCache);
-                        RunIteration(fht, testRun);
+                        var fht = new FHT<ObjectValue, ObjectValueOutput, ObjectValueFunctions, ObjectValueSerializer>(
+                            false, testRun.TestResult.HashSizeShift, testRun.TestResult.UseVarLenValue, 
+                            testRun.TestResult.UseObjectValue, useReadCache: testRun.TestResult.UseReadCache);
+                        RunIteration(fht, testRun, new GetObjectValueRef(testRun.TestResult.ThreadCount));
 
                     } else
                     {
-                        switch (CacheGlobals.DataSize) {
+                        switch (Globals.DataSize) {
                             case 8:
-                                RunBlittableIteration<CacheBlittableValue8>(testRun);
+                                RunBlittableIteration<BlittableValue8>(testRun);
                                 break;
                             case 16:
-                                RunBlittableIteration<CacheBlittableValue16>(testRun);
+                                RunBlittableIteration<BlittableValue16>(testRun);
                                 break;
                             case 32:
-                                RunBlittableIteration<CacheBlittableValue32>(testRun);
+                                RunBlittableIteration<BlittableValue32>(testRun);
                                 break;
                             case 64:
-                                RunBlittableIteration<CacheBlittableValue64>(testRun);
+                                RunBlittableIteration<BlittableValue64>(testRun);
                                 break;
                             case 128:
-                                RunBlittableIteration<CacheBlittableValue128>(testRun);
+                                RunBlittableIteration<BlittableValue128>(testRun);
                                 break;
                             case 256:
-                                RunBlittableIteration<CacheBlittableValue256>(testRun);
+                                RunBlittableIteration<BlittableValue256>(testRun);
                                 break;
                             default:
-                                throw new InvalidOperationException($"Unexpected Blittable data size: {CacheGlobals.DataSize}");
+                                throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.DataSize}");
                         }
                     }
                 }
@@ -125,23 +143,68 @@ namespace FASTER.PerfTest
             }
         }
 
-        static void RunBlittableIteration<BVT>(TestRun testRun) where BVT : ICacheValue<BVT>, new()
+        static void CreateKeys(TestResult testResult)
         {
-            var fht = new FHT<BVT, CacheBlittableOutput<BVT>, CacheBlittableFunctions<BVT>, UnusedSerializer<BVT>>(
-                            usePsf: false, useVarLenValues: false, useObjectValues: false, useReadCache: testRun.TestResult.UseReadCache);
-            RunIteration(fht, testRun);
+            // Just to make the test complete a little faster, don't rebuild if we don't have to.
+            // This is not part of the timed test.
+            if (!(prevTestResult is null)
+                    && prevTestResult.InitKeyCount == testResult.InitKeyCount
+                    && prevTestResult.OperationKeyCount == testResult.OperationKeyCount
+                    && prevTestResult.DistributionInfo == testResult.DistributionInfo)
+            {
+                Console.WriteLine("Reusing keys from prior run");
+                return;
+            }
+
+            var sw = new Stopwatch();
+            sw.Start();
+
+            prevTestResult = null;
+
+            initKeys = new Key[testResult.InitKeyCount];
+            for (var ii = 0; ii < testResult.InitKeyCount; ++ii)
+                initKeys[ii] = new Key(ii);
+
+            var rng = new RandomGenerator((uint)testResult.DistributionSeed);
+            if (testResult.Distribution == Distribution.Uniform)
+            {
+                opKeys = new Key[testResult.OperationKeyCount];
+                for (var ii = 0; ii < opKeys.Length; ++ii)
+                    opKeys[ii] = new Key ((long)rng.Generate64((ulong)testResult.InitKeyCount));
+            } else
+            {
+                opKeys = new Zipf<Key>().GenerateOpKeys(initKeys, testResult.OperationKeyCount,
+                                                        testResult.DistributionParameter, rng,
+                                                        testResult.Distribution == Distribution.ZipfShuffled, verbose);
+            }
+            prevTestResult = testResult;
+
+            sw.Stop();
+            var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
+            Console.WriteLine($"Initialization: Time to generate {testResult.InitKeyCount} keys" + 
+                              $" and {testResult.OperationKeyCount} operation keys in {testResult.Distribution} distribution:" +
+                              $" {sw.ElapsedMilliseconds / 1000.0:0.000} sec; working set {workingSetMB}MB");
+        }
+
+        static void RunBlittableIteration<TBV>(TestRun testRun) where TBV : IBlittableValue, new()
+        {
+            var fht = new FHT<TBV, BlittableOutput<TBV>, BlittableFunctions<TBV>, NoSerializer<TBV>>(
+                            usePsf: false, sizeShift: testRun.TestResult.HashSizeShift, useVarLenValues: false, 
+                            useObjectValues: false, useReadCache: testRun.TestResult.UseReadCache);
+            RunIteration(fht, testRun, new GetBlittableValueRef<TBV>(testRun.TestResult.ThreadCount));
         }
 
         static void RunIteration<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun)
-            where TValue : ICacheValue<TValue>, new()
-            where TOutput : ICacheOutput<TValue>, new()
-            where TFunctions : IFunctions<CacheKey, TValue, CacheInput, TOutput, CacheContext>, new()
+                    FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
+                    IGetValueRef<TValue, TOutput> getValueRef)
+            where TValue : new()
+            where TOutput : new()
+            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
-            RunUpserts(fht, testRun);
+            Initialize(fht, testRun, getValueRef);
             FlushLog(fht, testRun);
-            RunRandomReads(fht, testRun);
+            RunOperations(fht, testRun, getValueRef);
 
             fht.Close();
 
@@ -152,58 +215,91 @@ namespace FASTER.PerfTest
             }
         }
 
-        private static void RunUpserts<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun)
-            where TValue : ICacheValue<TValue>, new()
-            where TOutput : ICacheOutput<TValue>, new()
-            where TFunctions : IFunctions<CacheKey, TValue, CacheInput, TOutput, CacheContext>, new()
+        private static void Initialize<TValue, TOutput, TFunctions, TSerializer>(
+                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
+                IGetValueRef<TValue, TOutput> getValueRef)
+            where TValue : new()
+            where TOutput : new()
+            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
-            // Thread starts session with FASTER
-            var session = fht.Faster.NewSession();
-
-            // We use context to store and report latency of async operations
             if (verbose)
-                Console.WriteLine($"Writing keys from 0 to {testRun.TestResult.UpsertCount} to FASTER");
-
-            var creator = new TValue();
+                Console.WriteLine($"Writing initial key values from 0 to {testRun.TestResult.InitKeyCount} to FASTER");
 
             var sw = new Stopwatch();
             sw.Start();
-            for (int i = 0; i < testRun.TestResult.UpsertCount; i++)
-            {
-                if (verbose && i > 0 && i % (1 << 19) == 0)
-                {
-                    long workingSet = Process.GetCurrentProcess().WorkingSet64;
-                    Console.WriteLine($"{i}: {workingSet / 1048576}M");
-                }
-                var key = new CacheKey(i);
-                var value = creator.Create(i);
-                session.Upsert(ref key, ref value, CacheContext.None, 0);
-            }
+
+            // Reset the global chunk tracker.
+            NextChunkStart = 0;
+
+            var tasks = Enumerable.Range(0, testRun.TestResult.ThreadCount)
+                                  .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun,
+                                                                                 ref getValueRef.GetRef(threadIdx))));
+            Task.WaitAll(tasks.ToArray());
+
             sw.Stop();
 
-            session.Dispose();
-
-            testRun.totalUpsertMs += (ulong)sw.ElapsedMilliseconds;
+            testRun.InitializeMs += (ulong)sw.ElapsedMilliseconds;
             var numSec = sw.ElapsedMilliseconds / 1000.0;
             var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            testRun.totalWorkingSetMB += workingSetMB;
-            Console.WriteLine("Iteration {4} time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec), working set {3}MB",
-                              testRun.TestResult.UpsertCount, numSec, testRun.TestResult.UpsertCount / numSec, workingSetMB, testRun.currentIter);
+            Console.WriteLine($"Initialization: Time to insert {testRun.TestResult.InitKeyCount} initial key values:" +
+                              $" {numSec:0.000} sec ({testRun.TestResult.InitKeyCount / numSec:0.00} inserts/sec;" +
+                              $" {testRun.TestResult.InitKeyCount / (numSec * testRun.TestResult.ThreadCount):0.00} thread/sec);" +
+                              $" working set {workingSetMB}MB");
+        }
+
+        private static void Initialize<TValue, TOutput, TFunctions, TSerializer>(
+                FHT<TValue, TOutput, TFunctions, TSerializer> fht, int threadIndex, TestRun testRun, ref TValue value)
+            where TValue : new()
+            where TOutput : new()
+            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
+            where TSerializer : BinaryObjectSerializer<TValue>, new()
+        {
+            // Each thread needs to set NUMA and create a FASTER session
+            Numa.AffinitizeThread(testRun.TestResult.NumaMode, threadIndex);
+            using var session = fht.Faster.NewSession(null, true);
+
+            // We just do one iteration through the KeyCount to load the initial keys. If there are
+            // multiple threads, each thread does (KeyCount / #threads) Inserts (on average).
+            for (long chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
+                chunkStart < testRun.TestResult.InitKeyCount;
+                chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize)
+            {
+                var chunkEnd = chunkStart + Globals.ChunkSize;
+                for (var ii = chunkStart; ii < chunkEnd; ii++)
+                {
+                    if (ii % 256 == 0 && ii > 0)
+                    {
+                        session.Refresh();
+                        if (ii % 65536 == 0)
+                        {
+                            session.CompletePending(false);
+                            if (verbose && ii % verboseInterval == 0)
+                            {
+                                long workingSetMB = Process.GetCurrentProcess().WorkingSet64 / 1048576;
+                                Console.WriteLine($"Insert: {ii}, {workingSetMB}MB");
+                            }
+                        }
+                    }
+                    session.Upsert(ref initKeys[ii], ref value, Empty.Default, 1);
+                }
+            }
+            session.CompletePending(true);
         }
 
         private static void FlushLog<TValue, TOutput, TFunctions, TSerializer>(
                 FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun)
-            where TValue : ICacheValue<TValue>, new()
-            where TOutput : ICacheOutput<TValue>, new()
-            where TFunctions : IFunctions<CacheKey, TValue, CacheInput, TOutput, CacheContext>, new()
+            where TValue : new()
+            where TOutput : new()
+            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             if (verbose)
                 Console.WriteLine("Flushing log");
             switch (testRun.TestResult.LogMode)
             {
+                case LogMode.None:
+                    break;
                 case LogMode.Flush:
                     fht.Faster.Log.Flush(true);
                     break;
@@ -219,75 +315,175 @@ namespace FASTER.PerfTest
             }
         }
 
-        private static void RunRandomReads<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun)
-            where TValue : ICacheValue<TValue>, new()
-            where TOutput : ICacheOutput<TValue>, new()
-            where TFunctions : IFunctions<CacheKey, TValue, CacheInput, TOutput, CacheContext>, new()
+        private static void RunOperations<TValue, TOutput, TFunctions, TSerializer>(
+                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
+                IGetValueRef<TValue, TOutput> getValueRef)
+            where TValue : new()
+            where TOutput : new()
+            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
+            IEnumerable<(Operations, string, int)> prepareOps()
+            {
+                if (testRun.TestResult.MixOperations)
+                {
+                    IEnumerable<string> getMixedOpNames()
+                    {
+                        if (testRun.TestResult.UpsertCount > 0)
+                            yield return "Upsert";
+                        if (testRun.TestResult.ReadCount > 0)
+                            yield return "Read";
+                        if (testRun.TestResult.RMWCount > 0)
+                            yield return "RMW";
+                    }
+                    yield return (Operations.Mixed, "mixed " + string.Join(", ", getMixedOpNames()), testRun.TestResult.TotalOpCount);
+                    yield break;
+                }
+                if (testRun.TestResult.UpsertCount > 0)
+                    yield return (Operations.Upsert, "Upsert", testRun.TestResult.UpsertCount);
+                if (testRun.TestResult.ReadCount > 0)
+                    yield return (Operations.Read, "Read", testRun.TestResult.ReadCount);
+                if (testRun.TestResult.RMWCount > 0)
+                    yield return (Operations.RMW, "RMW", testRun.TestResult.RMWCount);
+            }
+
+            var ops = prepareOps();
+
             var sw = new Stopwatch();
-            sw.Start();
 
-            var tasks = Enumerable.Range(0, testRun.TestResult.ReadThreadCount)
-                                  .Select(ii => Task.Run(() => RunRandomReads<TValue, TOutput, TFunctions, TSerializer>(fht, ii, testRun))).ToArray();
-            Task.WaitAll(tasks);
-            var statusPending = tasks.Select(task => task.Result).Sum();
+            // Reset the global chunk tracker here (outside the loop).
+            NextChunkStart = 0;
 
-            sw.Stop();
+            foreach (var (op, opName, opCount) in ops)
+            {
+                long startTailAddress = fht.LogTailAddress;
 
-            var numSec = sw.ElapsedMilliseconds / 1000.0;
-            testRun.totalReadMs += (ulong)sw.ElapsedMilliseconds;
-            testRun.totalReadsPending += (ulong)statusPending;
+                sw.Restart();
 
-            Console.WriteLine("Iteration {5} time to read {0} elements: {1:0.000} secs ({2:0.00} reads/sec), PENDING {3} ({4:0.00}%)",
-                              testRun.numReadsPerIteration, numSec, testRun.numReadsPerIteration / numSec, statusPending,
-                              ((double)statusPending / testRun.numReadsPerIteration) * 100, testRun.currentIter);
+                // Split the counts to be per-thread (that is, if we have --reads 100m and --threads 4,
+                // each thread will get 25m reads).
+                long threadOpCount = (long)opCount / testRun.TestResult.ThreadCount;
+                var tasks = Enumerable.Range(0, testRun.TestResult.ThreadCount)
+                                      .Select(threadIdx => Task.Run(() => RunOperations(fht, op, threadOpCount,
+                                                                                        threadIdx, testRun, getValueRef)));
+                Task.WaitAll(tasks.ToArray());
+
+                sw.Stop();
+
+                var numSec = sw.ElapsedMilliseconds / 1000.0;
+
+                // Total Ops/Second is always reported 
+                testRun.TotalOpsMs += (ulong)sw.ElapsedMilliseconds;
+
+                switch (op)
+                {
+                    case Operations.Mixed: break;
+                    case Operations.Upsert: testRun.TotalUpsertMs += (ulong)sw.ElapsedMilliseconds; break;
+                    case Operations.Read: testRun.TotalReadMs += (ulong)sw.ElapsedMilliseconds; break;
+                    case Operations.RMW: testRun.TotalRMWMs += (ulong)sw.ElapsedMilliseconds; break;
+                    default:
+                        throw new InvalidOperationException($"Unexpected Operations value: {op}");
+                }
+
+                var suffix = op == Operations.Mixed ? "" : "s";
+                Console.WriteLine($"Iteration {testRun.currentIter}: Time for {opCount} {opName} operations:" +
+                                  $" {numSec:0.000} sec ({opCount / numSec:0.00} {op}{suffix}/sec)");
+                var endTailAddress = fht.LogTailAddress;
+                if (endTailAddress != startTailAddress)
+                {
+                    var isExpected = testRun.TestResult.LogMode != LogMode.None
+                        ? $"expected due to"
+                        : $"*** UNEXPECTED *** with";
+                    Console.WriteLine($"Log growth: {endTailAddress - startTailAddress}; {isExpected} {nameof(LogMode)}.{testRun.TestResult.LogMode}");
+                }
+            }
         }
 
-        private static int RunRandomReads<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, int threadId, TestRun testRun)
-            where TValue : ICacheValue<TValue>, new()
-            where TOutput : ICacheOutput<TValue>, new()
-            where TFunctions : IFunctions<CacheKey, TValue, CacheInput, TOutput, CacheContext>, new()
+        private static void RunOperations<TValue, TOutput, TFunctions, TSerializer>(
+                FHT<TValue, TOutput, TFunctions, TSerializer> fht, Operations op, long opCount,
+                int threadIndex, TestRun testRun, IGetValueRef<TValue, TOutput> getValueRef)
+            where TValue : new()
+            where TOutput : new()
+            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
-            var numReads = testRun.TestResult.UpsertCount * testRun.TestResult.ReadMultiple;
+            // Each thread needs to set NUMA and create a FASTER session
+            Numa.AffinitizeThread(testRun.TestResult.NumaMode, threadIndex);
+            using var session = fht.Faster.NewSession(null, true);
+
             if (verbose)
-                Console.WriteLine($"Issuing uniform random read workload of {numReads} reads for threadId {threadId}");
+                Console.WriteLine($"Running Operation {op} count {opCount} for threadId {threadIndex}");
 
-            int statusPending = 0;
-            var rng = new Random(threadId);
-            using (var session = fht.Faster.NewSession())
+            var rng = new RandomGenerator((uint)threadIndex);
+            var totalOpCount = testRun.TestResult.TotalOpCount;
+            var upsertThreshold = testRun.TestResult.UpsertCount;
+            var readThreshold = upsertThreshold + testRun.TestResult.ReadCount;
+            var rmwThreshold = readThreshold + testRun.TestResult.RMWCount;
+
+            ref TValue value = ref getValueRef.GetRef(threadIndex);
+            var input = default(Input);
+            var output = getValueRef.GetOutput(threadIndex);
+
+            long currentCount = 0;
+
+            // We multiply the number of operations by the number of threads, so we will wrap around
+            // the end of the operations keys if we get there
+            for (long chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
+                currentCount < opCount;
+                chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize)
             {
-                var output = new TOutput();
-                var input = default(CacheInput);
-
-                for (int i = 0; i < numReads; i++)
+                chunkStart %= opKeys.Length;
+                currentCount += Globals.ChunkSize;
+                var chunkEnd = chunkStart + Globals.ChunkSize;
+                for (var ii = chunkStart; ii < chunkEnd; ii++)
                 {
-                    if (verbose && i > 0 && i % (1 << 19) == 0)
-                        Console.WriteLine($"{i}");
-
-                    var key = new CacheKey(rng.Next(testRun.TestResult.UpsertCount));
-                    var status = session.Read(ref key, ref input, ref output, CacheContext.None, 0);
-
-                    switch (status)
+                    var thisOp = op;
+                    if (thisOp == Operations.Mixed)
                     {
-                        case Status.PENDING:
-                            if (++statusPending % 1000 == 0)
-                                session.CompletePending(false);
-                            break;
-                        case Status.OK:
-                            if (output.Value.Value != key.key)
-                                throw new Exception($"Error: Value does not match key in {nameof(RunRandomReads)}");
-                            break;
-                        default:
-                            throw new Exception($"Error: Unexpected status in {nameof(RunRandomReads)}");
+                        var rand = rng.Generate((uint)totalOpCount);
+                        if (rand < upsertThreshold)
+                            thisOp = Operations.Upsert;
+                        else if (rand <= readThreshold)
+                            thisOp = Operations.Read;
+                        else if (rand <= rmwThreshold)
+                            thisOp = Operations.RMW;
+                        else
+                            throw new InvalidOperationException($"rand {rand} out of threshold ranges: u {upsertThreshold} r {readThreshold} m {rmwThreshold}");
                     }
+
+                    if (ii % 256 == 0 && ii > 0)
+                    {
+                        session.Refresh();
+                        if (ii % 65536 == 0)
+                        {
+                            session.CompletePending(false);
+                            if (verbose && ii % verboseInterval == 0)
+                            {
+                                Console.WriteLine($"{thisOp}: {ii}");
+                            }
+                        }
+                    }
+
+                    Status status = Status.OK;
+                    switch (thisOp)
+                    {
+                        case Operations.Upsert:
+                            status = session.Upsert(ref opKeys[ii], ref value, Empty.Default, 1);
+                            break;
+                        case Operations.Read:
+                            status = session.Read(ref opKeys[ii], ref input, ref output, Empty.Default, 0);
+                            break;
+                        case Operations.RMW:
+                            input.value = (int)(ii & 7);
+                            status = session.RMW(ref opKeys[ii], ref input, Empty.Default, 0);
+                            break;
+                    }
+
+                    if (status != Status.OK && status != Status.PENDING)
+                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)}: {status}");
                 }
-                session.CompletePending(true);
             }
-            return statusPending;
+            session.CompletePending(true);
         }
     }
 }

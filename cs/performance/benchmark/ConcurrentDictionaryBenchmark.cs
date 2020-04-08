@@ -223,8 +223,10 @@ namespace FASTER.benchmark
                 int x = idx;
                 workers[idx] = new Thread(() => SetupYcsb(x));
             }
+
             Stopwatch sw = new Stopwatch();
             sw.Start();
+
             // Start threads.
             foreach (Thread worker in workers)
             {
@@ -236,7 +238,12 @@ namespace FASTER.benchmark
             }
             sw.Stop();
 
-            Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
+            {
+                var ms = sw.ElapsedMilliseconds;
+                var sec = ms / 1000.0;
+                var upserts_sec = kInitCount / sec;
+                Console.WriteLine($"Loading time: {ms}ms ({upserts_sec} upserts/sec)");
+            }
 
             idx_ = 0;
 
@@ -286,9 +293,9 @@ namespace FASTER.benchmark
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
 
-            Console.WriteLine("Total " + total_ops_done + " ops done " + " in " + seconds + " secs.");
-            Console.WriteLine("##, " + distribution + ", " + numaStyle + ", " + readPercent + ", "
-                + threadCount + ", " + total_ops_done / seconds);
+            Console.WriteLine($"Total {total_ops_done} ops done in {seconds} secs.");
+            Console.WriteLine($"##, dist = {distribution}, numa = {numaStyle}, read% = {readPercent}, " +
+                              $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds}");
         }
 
         private void SetupYcsb(int thread_idx)
