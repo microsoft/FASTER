@@ -13,7 +13,6 @@ namespace FASTER.core
 {
     internal enum OperationType
     {
-        NONE,
         READ,
         RMW,
         UPSERT,
