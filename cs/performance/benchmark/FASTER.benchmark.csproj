@@ -37,9 +37,12 @@
 
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.6.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
   </ItemGroup>
+
+  <Import Project="..\Common\Common.projitems" Label="Shared" />
 </Project>

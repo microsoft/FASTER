@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Newtonsoft.Json;
+using Performance.Common;
 using System;
 using System.Collections.Generic;
 using System.IO;

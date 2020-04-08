@@ -4,7 +4,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace FASTER.benchmark
+namespace Performance.Common
 {
     public class RandomGenerator
     {

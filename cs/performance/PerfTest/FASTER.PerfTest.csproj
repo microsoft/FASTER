@@ -30,9 +30,6 @@
     <Optimize>true</Optimize>
     <OutputPath>bin\x64\Release\</OutputPath>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Include="..\benchmark\RandomGenerator.cs" Link="RandomGenerator.cs" />
-  </ItemGroup>
 
   <ItemGroup>
     <None Include="App.config" />
@@ -49,5 +46,7 @@
   <ItemGroup>
     <Folder Include="testfiles\" />
   </ItemGroup>
+
+  <Import Project="..\Common\Common.projitems" Label="Shared" />
 
 </Project>

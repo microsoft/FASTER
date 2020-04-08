@@ -6,6 +6,7 @@
 //#define DASHBOARD
 
 using FASTER.core;
+using Performance.Common;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -34,6 +35,7 @@ namespace FASTER.benchmark
         const long kInitCount = kUseSmallData ? 2_500_480 :   250_000_000;
         const long kTxnCount = kUseSmallData ? 10_000_000 : 1_000_000_000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
+        const double theta = 0.99;  // Matches YCSB
 
         const int kFileChunkSize = 4096;
         const long kChunkSize = 640;
@@ -52,7 +54,7 @@ namespace FASTER.benchmark
         long total_ops_done = 0;
 
         readonly int threadCount;
-        readonly int numaStyle;
+        readonly NumaMode numaMode;
         readonly string distribution;
         readonly int readPercent;
 
@@ -64,7 +66,7 @@ namespace FASTER.benchmark
         public FASTER_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_)
         {
             threadCount = threadCount_;
-            numaStyle = numaStyle_;
+            numaMode = numaStyle_ == 0 ? NumaMode.RoundRobin : NumaMode.Sharded2;
             distribution = distribution_;
             readPercent = readPercent_;
 
@@ -92,10 +94,7 @@ namespace FASTER.benchmark
         {
             RandomGenerator rng = new RandomGenerator((uint)(1 + thread_idx));
 
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            Numa.AffinitizeThread(numaMode, thread_idx);
 
             Stopwatch sw = new Stopwatch();
             sw.Start();
@@ -209,7 +208,7 @@ namespace FASTER.benchmark
 
         public unsafe void Run()
         {
-            Native32.AffinitizeThreadShardedNuma((uint)0, 2);
+            Numa.AffinitizeThread(NumaMode.Sharded2, 0);
 
             RandomGenerator rng = new RandomGenerator();
 
@@ -314,17 +313,14 @@ namespace FASTER.benchmark
             Console.WriteLine($"End tail address = {endTailAddress}");
 
             Console.WriteLine($"Total {total_ops_done} ops done in {seconds} secs.");
-            Console.WriteLine($"##, dist = {distribution}, numa = {numaStyle}, read% = {readPercent}, " +
+            Console.WriteLine($"##, dist = {distribution}, numa = {numaMode}, read% = {readPercent}, " +
                               $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds:0.00}, " +
                               $"logGrowth = {endTailAddress - startTailAddress}");
         }
 
         private void SetupYcsb(int thread_idx)
         {
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            Numa.AffinitizeThread(numaMode, thread_idx);
 
             var session = store.NewSession(null, true);
 
@@ -389,11 +385,7 @@ namespace FASTER.benchmark
 
         void DoContinuousMeasurements()
         {
-
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)threadCount + 1);
-            else
-                Native32.AffinitizeThreadShardedTwoNuma((uint)threadCount + 1);
+            Numa.AffinitizeThread(numaMode, threadCount + 1);
 
             double totalThroughput, totalLatency, maximumLatency;
             double totalProgress;
@@ -446,7 +438,7 @@ namespace FASTER.benchmark
         }
 #endif
 
-#region Load Data
+        #region Load Data
 
         private unsafe void LoadDataFromFile(string filePath)
         {
@@ -565,7 +557,7 @@ namespace FASTER.benchmark
 
         private void LoadSyntheticData()
         {
-            Console.WriteLine("Loading synthetic data (uniform distribution)");
+            Console.WriteLine($"Loading synthetic data ({distribution} distribution)");
 
             var sw = new Stopwatch();
             sw.Start();
@@ -579,11 +571,18 @@ namespace FASTER.benchmark
 
             RandomGenerator generator = new RandomGenerator();
 
-            txn_keys_ = new Key[kTxnCount];
-
-            for (int idx = 0; idx < kTxnCount; idx++)
+            if (distribution == "uniform")
             {
-                txn_keys_[idx] = new Key { value = (long)generator.Generate64(kInitCount) };
+                txn_keys_ = new Key[kTxnCount];
+                for (int idx = 0; idx < kTxnCount; idx++)
+                {
+                    txn_keys_[idx] = new Key { value = (long)generator.Generate64(kInitCount) };
+                }
+            }
+            else
+            {
+                Console.WriteLine("  (zipf (smooth) takes a couple minutes)");
+                txn_keys_ = new Zipf<Key>().GenerateOpKeys(init_keys_, (int)kTxnCount, theta, generator, shuffle: false);
             }
 
             sw.Stop();

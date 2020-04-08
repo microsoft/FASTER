@@ -59,7 +59,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 	EndProjectSection
 EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Common", "performance\Common\Common.shproj", "{05D2109B-DC08-4E09-9B86-96C4BFDBE975}"
+EndProject
 Global
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		performance\Common\Common.projitems*{05d2109b-dc08-4e09-9b86-96c4bfdbe975}*SharedItemsImports = 13
+		performance\Common\Common.projitems*{33a732d1-2b58-4fee-9696-b9483496229f}*SharedItemsImports = 5
+		performance\Common\Common.projitems*{57b03a3f-d8c3-4f7e-949d-c687b92568e8}*SharedItemsImports = 5
+	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Debug|x64 = Debug|x64
@@ -234,6 +241,7 @@ Global
 		{859F76F4-93D8-4D60-BF9A-363E217FA247} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{95AC8766-84F9-4E95-B2E9-2169B6375FB2} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
+		{05D2109B-DC08-4E09-9B86-96C4BFDBE975} = {48B3F2D3-5286-4E56-916B-8503E27F80FE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}

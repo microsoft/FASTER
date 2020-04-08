@@ -6,7 +6,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using System;
 
-namespace FASTER.PerfTest
+namespace Performance.Common
 {
     [JsonConverter(typeof(StringEnumConverter))]
     public enum NumaMode

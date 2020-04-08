@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Performance.Common;
 using System;
 
 namespace FASTER.PerfTest
@@ -22,7 +23,7 @@ namespace FASTER.PerfTest
         internal const string DataArg = "--data";
         internal const string UseVarLenArg = "--useVarLen";
         internal const string UseObjArg = "--useObj";
-        internal const string NoRcArg = "--noRC";
+        internal const string UseRcArg = "--useRC";
         internal const string LogArg = "--log";
         internal const string ItersArg = "--iters";
         const string TestFileArg = "--testfile";
@@ -75,7 +76,7 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"    {DataArg} <bytes>: How many bytes per Value; must be in [{string.Join(", ", Globals.ValidDataSizes)}], Default is {Globals.MinDataSize}");
                 Console.WriteLine($"    {UseVarLenArg} [value]: Use variable instead of fixed-length blittable Values; default is {defaultTestResult.UseVarLenValue}");
                 Console.WriteLine($"    {UseObjArg} [value]: Use objects instead of blittable Value; default is {defaultTestResult.UseObjectValue}");
-                Console.WriteLine($"    {NoRcArg} [value]: Do not use ReadCache; default is {!defaultTestResult.UseReadCache}");
+                Console.WriteLine($"    {UseRcArg} [value]: Use ReadCache; default is {defaultTestResult.UseReadCache}");
                 Console.WriteLine($"    {LogArg} <mode>: The disposition of the log after initial Inserts; default is {defaultTestResult.LogMode}");
                 Console.WriteLine($"        {LogMode.None}: Do not flush log");
                 Console.WriteLine($"        {LogMode.Flush}: Copy entire log to disk, but retain tail of log in memory");
@@ -289,7 +290,7 @@ namespace FASTER.PerfTest
                     TestParameters.CommandLineOverrides |= TestParameterFlags.UseObjectValue;
                     continue;
                 }
-                if (string.Compare(arg, NoRcArg, ignoreCase: true) == 0)
+                if (string.Compare(arg, UseRcArg, ignoreCase: true) == 0)
                 {
                     if (!hasBoolValue(out var wanted))
                         return false;

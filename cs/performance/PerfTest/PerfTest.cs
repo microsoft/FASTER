@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using FASTER.benchmark;
 using FASTER.core;
+using Performance.Common;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

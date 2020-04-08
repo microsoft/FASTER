@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Newtonsoft.Json;
+using Performance.Common;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -172,7 +173,7 @@ namespace FASTER.PerfTest
                $" {PerfTest.DataArg} {this.DataSize}" +
                $" {PerfTest.UseVarLenArg} {this.UseVarLenValue}" +
                $" {PerfTest.UseObjArg} {this.UseObjectValue}" +
-               $" {PerfTest.NoRcArg} {this.UseReadCache}" +
+               $" {PerfTest.UseRcArg} {this.UseReadCache}" +
                $" {PerfTest.LogArg} {this.LogMode}" +
                $" {PerfTest.ItersArg} {this.IterationCount}"
             ;
