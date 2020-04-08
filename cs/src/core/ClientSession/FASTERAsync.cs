@@ -47,12 +47,12 @@ namespace FASTER.core
 
                     await clientSession.ctx.prevCtx.pendingReads.WaitEmptyAsync();
 
-                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
+                    await InternalCompletePendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
                     Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
 
                     if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
                     {
-                        CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
+                        InternalCompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
                     }
 
                     done &= (clientSession.ctx.prevCtx.HasNoPendingRequests);
@@ -60,8 +60,8 @@ namespace FASTER.core
             }
             #endregion
 
-            await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
-            CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
+            await InternalCompletePendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
+            InternalCompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
 
             Debug.Assert(clientSession.ctx.HasNoPendingRequests);
 
@@ -128,7 +128,7 @@ namespace FASTER.core
                         {
                             Debug.Assert(_fasterKV.RelaxedCPR);
 
-                            _result = _fasterKV.InternalCompleteIOPendingReadRequestsAsync(
+                            _result = _fasterKV.InternalCompletePendingReadRequestAsync(
                                 _clientSession.ctx, _clientSession.ctx, _diskRequest, _pendingContext);
                         }
                         finally

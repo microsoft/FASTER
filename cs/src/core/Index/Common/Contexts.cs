@@ -13,6 +13,7 @@ namespace FASTER.core
 {
     internal enum OperationType
     {
+        NONE,
         READ,
         RMW,
         UPSERT,
@@ -73,7 +74,7 @@ namespace FASTER.core
             public Input input;
             public Output output;
             public Context userContext;
-
+            
             // Some additional information about the previous attempt
 
             public long id;
@@ -85,6 +86,8 @@ namespace FASTER.core
             public long serialNum;
 
             public HashBucketEntry entry;
+
+            internal LatchOperation heldLatch;
 
             public void Dispose()
             {
