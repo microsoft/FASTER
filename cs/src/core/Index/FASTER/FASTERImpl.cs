@@ -1741,9 +1741,7 @@ namespace FASTER.core
                     {
                         // GC old version of hash table
                         state[1 - resizeInfo.version] = default;
-
-                        long context = 0;
-                        GlobalMoveToNextState(_systemState, SystemState.Make(Phase.REST, _systemState.version), ref context);
+                        GlobalStateMachineStep(_systemState);
                         return;
                     }
                     break;

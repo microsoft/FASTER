@@ -16,7 +16,7 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private Dictionary<string, ClientSession<Key, Value, Input, Output, Context, Functions>> _activeSessions;
+        internal Dictionary<string, ClientSession<Key, Value, Input, Output, Context, Functions>> _activeSessions;
 
         /// <summary>
         /// Start a new client session with FASTER.
