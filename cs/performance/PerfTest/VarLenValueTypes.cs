@@ -26,11 +26,7 @@ namespace FASTER.PerfTest
         public void CopyTo(ref VarLenValue dst)
         {
             if (this.Length == 0)
-            {
-                dst.Length = 0;
-                dst.field1 = 0;
-                return;
-            }
+                throw new ApplicationException("0-length VarLen");
             var fullLength = Length * sizeof(int);
             Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fullLength, fullLength);
         }
@@ -111,6 +107,8 @@ namespace FASTER.PerfTest
                 var ptr = values[ii];
                 for (var jj = 0; jj < VarLenValue.MaxLen; ++jj)
                     Marshal.WriteInt32(ptr, jj * sizeof(int), 0);
+                ref var varlen = ref *(VarLenValue*)ptr.ToPointer();
+                varlen.SetValueAndLength(8);
             }
         }
 

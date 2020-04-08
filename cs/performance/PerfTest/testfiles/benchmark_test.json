@@ -11,7 +11,7 @@
       "ReadCounts": [50000000],
       "MIxOperations": [ true, false ],
       "DataSizes": [8, 64, 128],
-      "UseVarLenValues": [false, true]
+      "UseVarLenValues": [false, true],
       "IterationCounts": [3],
     }
   ]

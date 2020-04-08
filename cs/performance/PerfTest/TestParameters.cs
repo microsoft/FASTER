@@ -68,7 +68,7 @@ namespace FASTER.PerfTest
         public int[] ReadCounts { get; set; } = new[] { Globals.DefaultOpCount };
 
         [JsonProperty]
-        public int[] RmwCounts { get; set; } = new[] { Globals.DefaultOpCount };
+        public int[] RMWCounts { get; set; } = new[] { Globals.DefaultOpCount };
 
         [JsonProperty]
         public bool[] MixOperations { get; set; } = new [] { false };
@@ -91,27 +91,6 @@ namespace FASTER.PerfTest
         [JsonProperty]
         public int[] IterationCounts { get; set; } = new int[] { 1 };
 
-        public override string ToString() 
-            => $" hs[{string.Join(", ", this.HashSizeShifts)}]" +
-               $" nma[{string.Join(", ", this.NumaModes)}]" +
-               $" dst[{string.Join(", ", this.Distributions)}]" +
-               $" dstp[{string.Join(", ", this.DistributionParameters)}]" +
-               $" tc[{string.Join(", ", this.ThreadCounts)}]" +
-               $" ikc[{string.Join(", ", this.InitKeyCounts)}]" +
-               $" okc[{string.Join(", ", this.OperationKeyCounts)}]" +
-               $" uc[{string.Join(", ", this.UpsertCounts)}]" +
-               $" rc[{string.Join(", ", this.ReadCounts)}]" +
-               $" mc[{string.Join(", ", this.RmwCounts)}]" +
-               $" mix[{string.Join(", ", this.MixOperations)}]" +
-               $" ds[{string.Join(", ", this.DataSizes)}]" +
-               $" var[{string.Join(", ", this.UseVarLenValues)}]" +
-               $" obj[{string.Join(", ", this.UseObjectValues)}]" +
-               $" urc[{string.Join(", ", this.UseReadCaches)}]" +
-               $" lm[{string.Join(", ", this.LogModes)}]" +
-               $" it[{string.Join(", ", this.IterationCounts)}]" +
-               $" rs[{string.Join(", ", this.DistributionSeed)}]"
-            ;
-
         internal IEnumerable<TestResult> GetParamSweeps()
         {
             IEnumerable<TestResult> getResults()
@@ -125,7 +104,7 @@ namespace FASTER.PerfTest
                 foreach (var opKeyCount in this.OperationKeyCounts)
                 foreach (var upsertCount in this.UpsertCounts)
                 foreach (var readCount in this.ReadCounts)
-                foreach (var rmwCount in this.RmwCounts)
+                foreach (var rmwCount in this.RMWCounts)
                 foreach (var mixOps in this.MixOperations)
                 foreach (var dataSize in this.DataSizes)
                 foreach (var useVarLenValue in this.UseVarLenValues)
@@ -215,7 +194,7 @@ namespace FASTER.PerfTest
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.ReadCount))
                     parameter.ReadCounts = new[] { commandLineArgs.ReadCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.RmwCount))
-                    parameter.RmwCounts = new[] { commandLineArgs.RMWCount };
+                    parameter.RMWCounts = new[] { commandLineArgs.RMWCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.MixOperations))
                     parameter.MixOperations = new[] { commandLineArgs.MixOperations};
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.DataSize))

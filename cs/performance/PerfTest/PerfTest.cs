@@ -61,6 +61,10 @@ namespace FASTER.PerfTest
             {
                 Console.WriteLine($"Test {++testNum} of {testRuns.Length}");
 
+                // If running from a testfile, print command line for investigating testfile failures
+                if (!(testParams is null))
+                    Console.WriteLine(testRun.TestResult);  
+
                 Globals.DataSize = testRun.TestResult.DataSize;
                 verboseInterval = 1L << (testRun.TestResult.HashSizeShift - 1);
 
@@ -480,7 +484,7 @@ namespace FASTER.PerfTest
                     }
 
                     if (status != Status.OK && status != Status.PENDING)
-                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)}: {status}");
+                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)} {thisOp}; key[{ii}] = {opKeys[ii].key}: {status}");
                 }
             }
             session.CompletePending(true);

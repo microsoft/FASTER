@@ -156,7 +156,26 @@ namespace FASTER.PerfTest
         internal static TestResult Read(string filename) 
             => JsonConvert.DeserializeObject<TestResult>(File.ReadAllText(filename));
 
-        public override string ToString() => MemberTuple.ToString();
+        public override string ToString()
+            => $" {PerfTest.HashSizeArg} {this.HashSizeShift}" +
+               $" {PerfTest.NumaArg} {this.NumaMode}" +
+               $" {PerfTest.DistArg} {this.Distribution}" +
+               $" {PerfTest.DistParamArg} {this.DistributionParameter}" +
+               $" {PerfTest.HashSizeArg} {this.DistributionSeed}" +
+               $" {PerfTest.ThreadsArg} {this.ThreadCount}" +
+               $" {PerfTest.InitKeysArg} {this.InitKeyCount}" +
+               $" {PerfTest.OpKeysArg} {this.OperationKeyCount}" +
+               $" {PerfTest.UpsertsArg} {this.UpsertCount}" +
+               $" {PerfTest.ReadsArg} {this.ReadCount}" +
+               $" {PerfTest.RMWsArg} {this.RMWCount}" +
+               $" {PerfTest.MixOpsArg} {this.MixOperations}" +
+               $" {PerfTest.DataArg} {this.DataSize}" +
+               $" {PerfTest.UseVarLenArg} {this.UseVarLenValue}" +
+               $" {PerfTest.UseObjArg} {this.UseObjectValue}" +
+               $" {PerfTest.NoRcArg} {this.UseReadCache}" +
+               $" {PerfTest.LogArg} {this.LogMode}" +
+               $" {PerfTest.ItersArg} {this.IterationCount}"
+            ;
 
         (int, NumaMode, Distribution, double, int, int, int, int, int, int, int, bool, int, bool, bool, bool, LogMode, int) MemberTuple
             => (this.HashSizeShift, this.NumaMode,

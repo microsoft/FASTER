@@ -12,8 +12,8 @@
       "RMWCounts": [10000000],
       "MIxOperations": [ true, false ],
       "DataSizes": [8, 64, 128],
-      "UseVarLenValues": [false, true]
-      "IterationCounts": [1, 5],
+      "UseVarLenValues": [false, true],
+      "IterationCounts": [3],
     }
   ]
 }

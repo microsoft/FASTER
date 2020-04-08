@@ -7,24 +7,24 @@ namespace FASTER.PerfTest
 {
     partial class PerfTest
     {
-        const string HashSizeArg = "--hash";
-        const string NumaArg = "--numa";
-        const string DistArg = "--dist";
-        const string DistParamArg = "--distparam";
-        const string DistSeedArg = "--distseed";
-        const string ThreadsArg = "--threads";
-        const string InitKeysArg = "--initkeys";
-        const string OpKeysArg = "--opkeys";
-        const string UpsertsArg = "--upserts";
-        const string ReadsArg = "--reads";
-        const string RmwsArg = "--rmws";
-        const string MixOpsArg = "--mixOps";
-        const string DataArg = "--data";
-        const string UseVarLenArg = "--useVarLen";
-        const string UseObjArg = "--useObj";
-        const string NoRcArg = "--noRC";
-        const string LogArg = "--log";
-        const string ItersArg = "--iters";
+        internal const string HashSizeArg = "--hash";
+        internal const string NumaArg = "--numa";
+        internal const string DistArg = "--dist";
+        internal const string DistParamArg = "--distparam";
+        internal const string DistSeedArg = "--distseed";
+        internal const string ThreadsArg = "--threads";
+        internal const string InitKeysArg = "--initkeys";
+        internal const string OpKeysArg = "--opkeys";
+        internal const string UpsertsArg = "--upserts";
+        internal const string ReadsArg = "--reads";
+        internal const string RMWsArg = "--rmws";
+        internal const string MixOpsArg = "--mixOps";
+        internal const string DataArg = "--data";
+        internal const string UseVarLenArg = "--useVarLen";
+        internal const string UseObjArg = "--useObj";
+        internal const string NoRcArg = "--noRC";
+        internal const string LogArg = "--log";
+        internal const string ItersArg = "--iters";
         const string TestFileArg = "--testfile";
         const string ResultsFileArg = "--resultsfile";
         const string CompareResultsExactArg = "--compareResultsExact";
@@ -69,9 +69,9 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"            The opKey indices are limited to 0..{InitKeysArg}; they are distributed according to {DistArg}");
                 Console.WriteLine($"        {UpsertsArg} <count>: The number of Upsert operations to run after the initial upserts are done; default is {defaultTestResult.UpsertCount}");
                 Console.WriteLine($"        {ReadsArg} <count>: The number of Read operations to run after the initial upserts are done; default is {defaultTestResult.ReadCount}");
-                Console.WriteLine($"        {RmwsArg} <count>: The number of RMW operations to run after the initial upserts are done; default is {defaultTestResult.RMWCount}");
+                Console.WriteLine($"        {RMWsArg} <count>: The number of RMW operations to run after the initial upserts are done; default is {defaultTestResult.RMWCount}");
                 Console.WriteLine($"    {MixOpsArg} [value]: Mix upsert, read, and rmw operations, rather than one after the other; default is {defaultTestResult.MixOperations}");
-                Console.WriteLine($"        If true, the sum of {UpsertsArg}, {ReadsArg}, and {RmwsArg} operations are run, intermixed, on each thread specified.");
+                Console.WriteLine($"        If true, the sum of {UpsertsArg}, {ReadsArg}, and {RMWsArg} operations are run, intermixed, on each thread specified.");
                 Console.WriteLine($"    {DataArg} <bytes>: How many bytes per Value; must be in [{string.Join(", ", Globals.ValidDataSizes)}], Default is {Globals.MinDataSize}");
                 Console.WriteLine($"    {UseVarLenArg} [value]: Use variable instead of fixed-length blittable Values; default is {defaultTestResult.UseVarLenValue}");
                 Console.WriteLine($"    {UseObjArg} [value]: Use objects instead of blittable Value; default is {defaultTestResult.UseObjectValue}");
@@ -249,7 +249,7 @@ namespace FASTER.PerfTest
                     TestParameters.CommandLineOverrides |= TestParameterFlags.ReadCount;
                     continue;
                 }
-                if (string.Compare(arg, RmwsArg, ignoreCase: true) == 0)
+                if (string.Compare(arg, RMWsArg, ignoreCase: true) == 0)
                 {
                     if (!hasIntValue(out var value))
                         return false;
