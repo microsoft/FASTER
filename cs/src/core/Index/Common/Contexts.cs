@@ -72,12 +72,12 @@ namespace FASTER.core
         {
             // User provided information
             internal OperationType type;
-
             internal IHeapContainer<Key> key;
             internal IHeapContainer<Value> value;
             internal Input input;
             internal Output output;
             internal Context userContext;
+
 
             // Some additional information about the previous attempt
             internal long id;
@@ -85,6 +85,7 @@ namespace FASTER.core
             internal long logicalAddress;
             internal long serialNum;
             internal HashBucketEntry entry;
+            internal LatchOperation heldLatch;
 
             public void Dispose()
             {
