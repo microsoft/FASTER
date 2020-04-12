@@ -2,81 +2,144 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 
 namespace FASTER.PerfTest
 {
+    using OperationResults = TestOutputs.OperationResults;
+    using ResultStats = TestOutputs.ResultStats;
+
     internal class TestRun
     {
         internal TestResult TestResult = new TestResult();
 
         // Time for the initial upserts (which will be inserts)
-        internal ulong InitializeMs;
+        internal ulong[] initializeMs;
+        internal ulong InitializeMs { set => this.initializeMs[this.currentIter] = value; }
 
-        // We'll use either OpsMs or Upsert/Read/RMWMs depending on whether MixOoperations was specified
-        internal ulong TotalOpsMs;
-        internal ulong TotalUpsertMs;
-        internal ulong TotalReadMs;
-        internal ulong TotalRMWMs;
+        // We'll always record opsMs, and record Upsert/Read/RMWMs depending on whether MixOoperations was specified
+        private readonly ulong[] totalOpsMs;
+        internal ulong TotalOpsMs { set => this.totalOpsMs[this.currentIter] = value; }
+        private readonly ulong[] upsertMs;
+        internal ulong UpsertMs { set => this.upsertMs[this.currentIter] = value; }
+        private readonly ulong[] readMs;
+        internal ulong ReadMs { set => this.readMs[this.currentIter] = value; }
+        private readonly ulong[] rmwMs;
+        internal ulong RMWMs { set => this.rmwMs[this.currentIter] = value; }
 
         // Current iteration of the test.
         internal int currentIter;
 
-        internal TestRun(TestResult testResult) => this.TestResult = testResult;
+        internal TestRun(TestResult testResult)
+        {
+            this.TestResult = testResult;
+            this.initializeMs = new ulong[testResult.Inputs.IterationCount];
+            this.totalOpsMs = new ulong[testResult.Inputs.IterationCount];
+            this.upsertMs = new ulong[testResult.Inputs.IterationCount];
+            this.readMs = new ulong[testResult.Inputs.IterationCount];
+            this.rmwMs = new ulong[testResult.Inputs.IterationCount];
+        }
 
         internal void Finish()
         {
-            // Calculate per-second stats
-            var initSec = this.InitializeMs / (TestResult.IterationCount * 1000.0);
-            this.TestResult.InitialInsertsPerSecond = TestResult.InitKeyCount / initSec;
-            this.TestResult.InitialInsertsPerSecondPerThread = this.TestResult.InitialInsertsPerSecond / this.TestResult.ThreadCount;
+            ResultStats calcPerSecondStatsFull(ulong[] runMs, int opCount) 
+                => ResultStats.Create(runMs.Select(ms => ms == 0 ? 0.0 : opCount / (ms / 1000.0)).ToArray());
 
-            var totalOpSec = this.TotalOpsMs / (TestResult.IterationCount * 1000.0);
-            this.TestResult.TotalOperationsPerSecond = TestResult.TotalOpCount / totalOpSec;
-            this.TestResult.TotalOperationsPerSecondPerThread = this.TestResult.TotalOperationsPerSecond / this.TestResult.ThreadCount;
-
-            var upsertSec = this.TotalUpsertMs / (TestResult.IterationCount * 1000.0);
-            this.TestResult.UpsertsPerSecond = TestResult.MixOperations || TestResult.UpsertCount == 0 
-                                                ? 0 : TestResult.UpsertCount / upsertSec;
-            this.TestResult.UpsertsPerSecondPerThread = this.TestResult.UpsertsPerSecond / this.TestResult.ThreadCount;
-
-            var readSec = this.TotalReadMs / (TestResult.IterationCount * 1000.0);
-            this.TestResult.ReadsPerSecond = TestResult.MixOperations || TestResult.ReadCount == 0 
-                                                ? 0 : TestResult.ReadCount / readSec;
-            this.TestResult.ReadsPerSecondPerThread = this.TestResult.ReadsPerSecond / this.TestResult.ThreadCount;
-
-            var rmwSec = this.TotalRMWMs / (TestResult.IterationCount * 1000.0);
-            this.TestResult.RMWsPerSecond = TestResult.MixOperations || TestResult.RMWCount == 0 
-                                                ? 0 : TestResult.RMWCount / rmwSec;
-            this.TestResult.RMWsPerSecondPerThread = this.TestResult.RMWsPerSecond / this.TestResult.ThreadCount;
-
-            var valueType = TestResult.UseVarLenValue
-                ? "varLenVals"
-                : TestResult.UseObjectValue ? "objVals" : "fixBlitVals";
-
-            // Try to keep this in one line...
-            var tCount = TestResult.TotalOpCount > 1_000_000 ? $"{(TestResult.TotalOpCount / 1_000_000)}m" : $"{TestResult.TotalOpCount}";
-            var uCount = TestResult.UpsertCount > 1_000_000 ? $"{(TestResult.UpsertCount / 1_000_000)}m" : $"{TestResult.UpsertCount}";
-            var rCount = TestResult.ReadCount > 1_000_000 ? $"{(TestResult.ReadCount / 1_000_000)}m" : $"{TestResult.ReadCount}";
-            var mCount = TestResult.RMWCount > 1_000_000 ? $"{(TestResult.RMWCount / 1_000_000)}m" : $"{TestResult.RMWCount}";
-            Console.WriteLine($"----- Summary: totOps {tCount} (u {uCount}, r {rCount}, m {mCount})," +
-                              $" inkeys {TestResult.InitKeyCount}, opKeys {TestResult.OperationKeyCount}," +
-                              $" {valueType}, data {Globals.DataSize}, threads {TestResult.ThreadCount}," + 
-                              $" rCache {TestResult.UseReadCache}, log.{TestResult.LogMode}, iters {currentIter}");
-
-            Console.WriteLine($"{TestResult.InitKeyCount} Initial Keys inserted in {initSec:0.000} sec ({this.TestResult.InitialInsertsPerSecond:0.00} Inserts/sec; {this.TestResult.InitialInsertsPerSecondPerThread:0.00} thread/sec)");
-            if (TestResult.MixOperations)
+            ResultStats calcPerSecondStatsTrimmed(ulong[] runMs, int opCount)
             {
-                Console.WriteLine($"{TestResult.TotalOpCount} Mixed Operations in {totalOpSec:0.000} sec ({this.TestResult.TotalOperationsPerSecond:0.00} Operations/sec; {this.TestResult.TotalOperationsPerSecondPerThread:0.00} thread/sec)");
-                Console.WriteLine($"    {TestResult.UpsertCount} Upserts ({((double)TestResult.UpsertCount / TestResult.TotalOpCount) * 100:0.00}%)");
-                Console.WriteLine($"    {TestResult.ReadCount} Reads ({((double)TestResult.ReadCount / TestResult.TotalOpCount) * 100:0.00}%)");
-                Console.WriteLine($"    {TestResult.RMWCount} RMWs ({((double)TestResult.RMWCount/ TestResult.TotalOpCount) * 100:0.00}%)");
+                if (runMs.Length < 3)
+                    return calcPerSecondStatsFull(runMs, opCount);
+
+                // Trim the highest and lowest values. There may be ties so can't just delete at min/max value.
+                ulong max = 0, min = ulong.MaxValue;
+                int maxIndex = 0, minIndex = 0;
+                for (int ii = 0; ii < runMs.Length; ++ii)
+                {
+                    if (runMs[ii] > max)
+                    {
+                        max = runMs[ii];
+                        maxIndex = ii;
+                    }
+                    else if (runMs[ii] < min)
+                    {
+                        min = runMs[ii];
+                        minIndex = ii;
+                    }
+                }
+                var trimmedMs = runMs.Where((ms, ii) => ii != maxIndex && ii != minIndex).ToArray();
+                 return calcPerSecondStatsFull(trimmedMs, opCount);
+            }
+
+            ResultStats calcPerThreadStats(ResultStats allThreads)
+                => ResultStats.Create(allThreads.OperationsPerSecond.Select(n => n / this.TestResult.Inputs.ThreadCount).ToArray());
+
+            var inputs = this.TestResult.Inputs;
+            var outputs = this.TestResult.Outputs;
+
+            void calcStats(Func<OperationResults> opResultsSelector, ulong[] runMs, int opCount)
+            {
+                OperationResults opResults = opResultsSelector();
+                opResults.AllThreadsFull = calcPerSecondStatsFull(runMs, opCount);
+                opResults.PerThreadFull = calcPerThreadStats(opResults.AllThreadsFull);
+                opResults.AllThreadsTrimmed = calcPerSecondStatsTrimmed(runMs, opCount);
+                opResults.PerThreadTrimmed = calcPerThreadStats(opResults.AllThreadsTrimmed);
+            }
+
+            calcStats(() => outputs.InitialInserts, this.initializeMs, inputs.InitKeyCount);
+            calcStats(() => outputs.TotalOperations, this.totalOpsMs, inputs.TotalOpCount);
+            calcStats(() => outputs.Upserts, this.upsertMs, inputs.UpsertCount);
+            calcStats(() => outputs.Reads, this.readMs, inputs.ReadCount);
+            calcStats(() => outputs.RMWs, this.rmwMs, inputs.RMWCount);
+
+            var valueType = (TestResult.Inputs.UseVarLenValue, TestResult.Inputs.UseObjectValue) switch { 
+                (true, _) => "varLenVals",
+                (_, true) => "objVals",
+                _ => "fixBlitVals" 
+            };
+
+            // Keep this in one readable line...
+            var tCount = inputs.TotalOpCount > 1_000_000 ? $"{(inputs.TotalOpCount / 1_000_000)}m" : $"{inputs.TotalOpCount}";
+            var uCount = inputs.UpsertCount > 1_000_000 ? $"{(inputs.UpsertCount / 1_000_000)}m" : $"{inputs.UpsertCount}";
+            var rCount = inputs.ReadCount > 1_000_000 ? $"{(inputs.ReadCount / 1_000_000)}m" : $"{inputs.ReadCount}";
+            var mCount = inputs.RMWCount > 1_000_000 ? $"{(inputs.RMWCount / 1_000_000)}m" : $"{inputs.RMWCount}";
+            Console.WriteLine($"----- Summary: totOps {tCount} (u {uCount}, r {rCount}, m {mCount})," +
+                                $" inkeys {inputs.InitKeyCount}, opKeys {inputs.OperationKeyCount}," +
+                                $" {valueType}, data {Globals.DataSize}, threads {inputs.ThreadCount}," +
+                                $" rCache {inputs.UseReadCache}, log.{inputs.LogMode}, iters {currentIter}");
+
+            // LINQ does not have ulong Average() or Sum().
+            static double meanSec(ulong[] ms) 
+                => ms.Aggregate<ulong, ulong>(0, (total, current) => total + current) / (ms.Length * 1000.0);
+
+            var initSec = meanSec(this.initializeMs);
+            var totalOpSec = meanSec(this.totalOpsMs);
+            var upsertSec = meanSec(this.upsertMs);
+            var readSec = meanSec(this.readMs);
+            var rmwSec = meanSec(this.rmwMs);
+
+            Console.WriteLine($"{inputs.InitKeyCount} Initial Keys inserted in {initSec:0.000} sec" +
+                              $" ({outputs.InitialInserts.AllThreadsFull.Mean:0.00} Inserts/sec;" +
+                              $" {outputs.InitialInserts.PerThreadFull.Mean:0.00} thread/sec)");
+            if (inputs.MixOperations)
+            {
+                Console.WriteLine($"{inputs.TotalOpCount} Mixed Operations in {totalOpSec:0.000} sec" +
+                                  $" ({outputs.TotalOperations.AllThreadsFull.Mean:0.00} Operations/sec;" +
+                                  $" {outputs.TotalOperations.PerThreadFull.Mean:0.00} thread/sec)");
+                Console.WriteLine($"    {inputs.UpsertCount} Upserts ({((double)inputs.UpsertCount / inputs.TotalOpCount) * 100:0.00}%)");
+                Console.WriteLine($"    {inputs.ReadCount} Reads ({((double)inputs.ReadCount / inputs.TotalOpCount) * 100:0.00}%)");
+                Console.WriteLine($"    {inputs.RMWCount} RMWs ({((double)inputs.RMWCount / inputs.TotalOpCount) * 100:0.00}%)");
             }
             else
             {
-                Console.WriteLine($"{TestResult.TotalOpCount} Separate Operations in {totalOpSec:0.000} sec ({this.TestResult.TotalOperationsPerSecond:0.00} Operations/sec; {this.TestResult.TotalOperationsPerSecondPerThread:0.00} thread/sec)");
-                Console.WriteLine($"{TestResult.UpsertCount} Upserts in {upsertSec:0.000} sec ({this.TestResult.UpsertsPerSecond:0.00} Upserts/sec; {this.TestResult.UpsertsPerSecondPerThread:0.00} thread/sec)");
-                Console.WriteLine($"{TestResult.ReadCount} Reads in {readSec:0.000} sec ({this.TestResult.ReadsPerSecond:0.00} Reads/sec; {this.TestResult.ReadsPerSecondPerThread:0.00} thread/sec)");
-                Console.WriteLine($"{TestResult.RMWCount} RMWs in {rmwSec:0.000} sec ({this.TestResult.RMWsPerSecond:0.00} RMWs/sec; {this.TestResult.RMWsPerSecondPerThread:0.00} thread/sec)");
+                Console.WriteLine($"{inputs.TotalOpCount} Separate Operations in {totalOpSec:0.000} sec" +
+                                  $" ({outputs.TotalOperations.AllThreadsFull.Mean:0.00} Operations/sec;" +
+                                  $" {outputs.TotalOperations.PerThreadFull.Mean:0.00} thread/sec)");
+                Console.WriteLine($"{inputs.UpsertCount} Upserts in {upsertSec:0.000} sec" +
+                                  $" ({outputs.Upserts.AllThreadsFull.Mean:0.00} Upserts/sec; {outputs.Upserts.PerThreadFull.Mean:0.00} thread/sec)");
+                Console.WriteLine($"{inputs.ReadCount} Reads in {readSec:0.000} sec ({outputs.Reads.AllThreadsFull.Mean:0.00} Reads/sec;" +
+                                  $" {outputs.Reads.PerThreadFull.Mean:0.00} thread/sec)");
+                Console.WriteLine($"{inputs.RMWCount} RMWs in {rmwSec:0.000} sec ({outputs.RMWs.AllThreadsFull.Mean:0.00} RMWs/sec;" +
+                                  $" {outputs.RMWs.PerThreadFull.Mean:0.00} thread/sec)");
             }
             Console.WriteLine();
         }

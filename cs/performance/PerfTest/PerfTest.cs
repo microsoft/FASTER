@@ -20,6 +20,7 @@ namespace FASTER.PerfTest
         static string resultsFilename;
         static string compareFirstFilename, compareSecondFilename;
         static ResultComparisonMode comparisonMode = ResultComparisonMode.None;
+        static readonly List<string> mergeResultsFilespecs = new List<string>();
 
         static bool verbose = false;
         static bool prompt = false;
@@ -39,6 +40,11 @@ namespace FASTER.PerfTest
             if (comparisonMode != ResultComparisonMode.None)
             {
                 TestResultComparisons.Compare(compareFirstFilename, compareSecondFilename, comparisonMode, resultsFilename);
+                return;
+            }
+            if (mergeResultsFilespecs.Count > 0)
+            {
+                TestResults.Merge(mergeResultsFilespecs.ToArray(), resultsFilename);
                 return;
             }
             ExecuteTestRuns();
@@ -65,12 +71,12 @@ namespace FASTER.PerfTest
                 if (!(testParams is null))
                     Console.WriteLine(testRun.TestResult);  
 
-                Globals.DataSize = testRun.TestResult.DataSize;
-                verboseInterval = 1L << (testRun.TestResult.HashSizeShift - 1);
+                Globals.DataSize = testRun.TestResult.Inputs.DataSize;
+                verboseInterval = 1L << (testRun.TestResult.Inputs.HashSizeShift - 1);
 
                 CreateKeys(testRun.TestResult);
 
-                for (testRun.currentIter = 0; testRun.currentIter < testRun.TestResult.IterationCount; ++testRun.currentIter)
+                for (testRun.currentIter = 0; testRun.currentIter < testRun.TestResult.Inputs.IterationCount; ++testRun.currentIter)
                 {
                     const int pauseMs = 1000;
                     if (verbose)
@@ -87,19 +93,19 @@ namespace FASTER.PerfTest
                     }
                     Thread.Sleep(pauseMs);
 
-                    if (testRun.TestResult.UseVarLenValue)
+                    if (testRun.TestResult.Inputs.UseVarLenValue)
                     {
                         var fht = new FHT<VarLenValue, VarLenOutput, VarLenFunctions, NoSerializer<VarLenValue>>(
-                            false, testRun.TestResult.HashSizeShift, testRun.TestResult.UseVarLenValue, 
-                            testRun.TestResult.UseObjectValue, useReadCache: testRun.TestResult.UseReadCache);
-                        RunIteration(fht, testRun, new GetVarLenValueRef(testRun.TestResult.ThreadCount));
+                            false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseVarLenValue, 
+                            testRun.TestResult.Inputs.UseObjectValue, useReadCache: testRun.TestResult.Inputs.UseReadCache);
+                        RunIteration(fht, testRun, new GetVarLenValueRef(testRun.TestResult.Inputs.ThreadCount));
                     }
-                    else if (testRun.TestResult.UseObjectValue)
+                    else if (testRun.TestResult.Inputs.UseObjectValue)
                     {
                         var fht = new FHT<ObjectValue, ObjectValueOutput, ObjectValueFunctions, ObjectValueSerializer>(
-                            false, testRun.TestResult.HashSizeShift, testRun.TestResult.UseVarLenValue, 
-                            testRun.TestResult.UseObjectValue, useReadCache: testRun.TestResult.UseReadCache);
-                        RunIteration(fht, testRun, new GetObjectValueRef(testRun.TestResult.ThreadCount));
+                            false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseVarLenValue, 
+                            testRun.TestResult.Inputs.UseObjectValue, useReadCache: testRun.TestResult.Inputs.UseReadCache);
+                        RunIteration(fht, testRun, new GetObjectValueRef(testRun.TestResult.Inputs.ThreadCount));
 
                     } else
                     {
@@ -152,9 +158,9 @@ namespace FASTER.PerfTest
             // Just to make the test complete a little faster, don't rebuild if we don't have to.
             // This is not part of the timed test.
             if (!(prevTestResult is null)
-                    && prevTestResult.InitKeyCount == testResult.InitKeyCount
-                    && prevTestResult.OperationKeyCount == testResult.OperationKeyCount
-                    && prevTestResult.DistributionInfo == testResult.DistributionInfo)
+                    && prevTestResult.Inputs.InitKeyCount == testResult.Inputs.InitKeyCount
+                    && prevTestResult.Inputs.OperationKeyCount == testResult.Inputs.OperationKeyCount
+                    && prevTestResult.Inputs.DistributionInfo == testResult.Inputs.DistributionInfo)
             {
                 Console.WriteLine("Reusing keys from prior run");
                 return;
@@ -165,37 +171,37 @@ namespace FASTER.PerfTest
 
             prevTestResult = null;
 
-            initKeys = new Key[testResult.InitKeyCount];
-            for (var ii = 0; ii < testResult.InitKeyCount; ++ii)
+            initKeys = new Key[testResult.Inputs.InitKeyCount];
+            for (var ii = 0; ii < testResult.Inputs.InitKeyCount; ++ii)
                 initKeys[ii] = new Key(ii);
 
-            var rng = new RandomGenerator((uint)testResult.DistributionSeed);
-            if (testResult.Distribution == Distribution.Uniform)
+            var rng = new RandomGenerator((uint)testResult.Inputs.DistributionSeed);
+            if (testResult.Inputs.Distribution == Distribution.Uniform)
             {
-                opKeys = new Key[testResult.OperationKeyCount];
+                opKeys = new Key[testResult.Inputs.OperationKeyCount];
                 for (var ii = 0; ii < opKeys.Length; ++ii)
-                    opKeys[ii] = new Key ((long)rng.Generate64((ulong)testResult.InitKeyCount));
+                    opKeys[ii] = new Key ((long)rng.Generate64((ulong)testResult.Inputs.InitKeyCount));
             } else
             {
-                opKeys = new Zipf<Key>().GenerateOpKeys(initKeys, testResult.OperationKeyCount,
-                                                        testResult.DistributionParameter, rng,
-                                                        testResult.Distribution == Distribution.ZipfShuffled, verbose);
+                opKeys = new Zipf<Key>().GenerateOpKeys(initKeys, testResult.Inputs.OperationKeyCount,
+                                                        testResult.Inputs.DistributionParameter, rng,
+                                                        testResult.Inputs.Distribution == Distribution.ZipfShuffled, verbose);
             }
             prevTestResult = testResult;
 
             sw.Stop();
             var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            Console.WriteLine($"Initialization: Time to generate {testResult.InitKeyCount} keys" + 
-                              $" and {testResult.OperationKeyCount} operation keys in {testResult.Distribution} distribution:" +
+            Console.WriteLine($"Initialization: Time to generate {testResult.Inputs.InitKeyCount} keys" + 
+                              $" and {testResult.Inputs.OperationKeyCount} operation keys in {testResult.Inputs.Distribution} distribution:" +
                               $" {sw.ElapsedMilliseconds / 1000.0:0.000} sec; working set {workingSetMB}MB");
         }
 
         static void RunBlittableIteration<TBV>(TestRun testRun) where TBV : IBlittableValue, new()
         {
             var fht = new FHT<TBV, BlittableOutput<TBV>, BlittableFunctions<TBV>, NoSerializer<TBV>>(
-                            usePsf: false, sizeShift: testRun.TestResult.HashSizeShift, useVarLenValues: false, 
-                            useObjectValues: false, useReadCache: testRun.TestResult.UseReadCache);
-            RunIteration(fht, testRun, new GetBlittableValueRef<TBV>(testRun.TestResult.ThreadCount));
+                            usePsf: false, sizeShift: testRun.TestResult.Inputs.HashSizeShift, useVarLenValues: false, 
+                            useObjectValues: false, useReadCache: testRun.TestResult.Inputs.UseReadCache);
+            RunIteration(fht, testRun, new GetBlittableValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
         }
 
         static void RunIteration<TValue, TOutput, TFunctions, TSerializer>(
@@ -228,7 +234,7 @@ namespace FASTER.PerfTest
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             if (verbose)
-                Console.WriteLine($"Writing initial key values from 0 to {testRun.TestResult.InitKeyCount} to FASTER");
+                Console.WriteLine($"Writing initial key values from 0 to {testRun.TestResult.Inputs.InitKeyCount} to FASTER");
 
             var sw = new Stopwatch();
             sw.Start();
@@ -236,19 +242,19 @@ namespace FASTER.PerfTest
             // Reset the global chunk tracker.
             NextChunkStart = 0;
 
-            var tasks = Enumerable.Range(0, testRun.TestResult.ThreadCount)
+            var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
                                   .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun,
                                                                                  ref getValueRef.GetRef(threadIdx))));
             Task.WaitAll(tasks.ToArray());
 
             sw.Stop();
 
-            testRun.InitializeMs += (ulong)sw.ElapsedMilliseconds;
+            testRun.InitializeMs = (ulong)sw.ElapsedMilliseconds;
             var numSec = sw.ElapsedMilliseconds / 1000.0;
             var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            Console.WriteLine($"Initialization: Time to insert {testRun.TestResult.InitKeyCount} initial key values:" +
-                              $" {numSec:0.000} sec ({testRun.TestResult.InitKeyCount / numSec:0.00} inserts/sec;" +
-                              $" {testRun.TestResult.InitKeyCount / (numSec * testRun.TestResult.ThreadCount):0.00} thread/sec);" +
+            Console.WriteLine($"Initialization: Time to insert {testRun.TestResult.Inputs.InitKeyCount} initial key values:" +
+                              $" {numSec:0.000} sec ({testRun.TestResult.Inputs.InitKeyCount / numSec:0.00} inserts/sec;" +
+                              $" {testRun.TestResult.Inputs.InitKeyCount / (numSec * testRun.TestResult.Inputs.ThreadCount):0.00} thread/sec);" +
                               $" working set {workingSetMB}MB");
         }
 
@@ -260,13 +266,13 @@ namespace FASTER.PerfTest
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             // Each thread needs to set NUMA and create a FASTER session
-            Numa.AffinitizeThread(testRun.TestResult.NumaMode, threadIndex);
+            Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
             using var session = fht.Faster.NewSession(null, true);
 
             // We just do one iteration through the KeyCount to load the initial keys. If there are
             // multiple threads, each thread does (KeyCount / #threads) Inserts (on average).
             for (long chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
-                chunkStart < testRun.TestResult.InitKeyCount;
+                chunkStart < testRun.TestResult.Inputs.InitKeyCount;
                 chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize)
             {
                 var chunkEnd = chunkStart + Globals.ChunkSize;
@@ -300,7 +306,7 @@ namespace FASTER.PerfTest
         {
             if (verbose)
                 Console.WriteLine("Flushing log");
-            switch (testRun.TestResult.LogMode)
+            switch (testRun.TestResult.Inputs.LogMode)
             {
                 case LogMode.None:
                     break;
@@ -314,7 +320,7 @@ namespace FASTER.PerfTest
                     fht.Faster.Log.DisposeFromMemory();
                     break;
                 default:
-                    Console.WriteLine($"Missing LogMode case: {testRun.TestResult.LogMode}");
+                    Console.WriteLine($"Missing LogMode case: {testRun.TestResult.Inputs.LogMode}");
                     return;
             }
         }
@@ -329,26 +335,26 @@ namespace FASTER.PerfTest
         {
             IEnumerable<(Operations, string, int)> prepareOps()
             {
-                if (testRun.TestResult.MixOperations)
+                if (testRun.TestResult.Inputs.MixOperations)
                 {
                     IEnumerable<string> getMixedOpNames()
                     {
-                        if (testRun.TestResult.UpsertCount > 0)
+                        if (testRun.TestResult.Inputs.UpsertCount > 0)
                             yield return "Upsert";
-                        if (testRun.TestResult.ReadCount > 0)
+                        if (testRun.TestResult.Inputs.ReadCount > 0)
                             yield return "Read";
-                        if (testRun.TestResult.RMWCount > 0)
+                        if (testRun.TestResult.Inputs.RMWCount > 0)
                             yield return "RMW";
                     }
-                    yield return (Operations.Mixed, "mixed " + string.Join(", ", getMixedOpNames()), testRun.TestResult.TotalOpCount);
+                    yield return (Operations.Mixed, "mixed " + string.Join(", ", getMixedOpNames()), testRun.TestResult.Inputs.TotalOpCount);
                     yield break;
                 }
-                if (testRun.TestResult.UpsertCount > 0)
-                    yield return (Operations.Upsert, "Upsert", testRun.TestResult.UpsertCount);
-                if (testRun.TestResult.ReadCount > 0)
-                    yield return (Operations.Read, "Read", testRun.TestResult.ReadCount);
-                if (testRun.TestResult.RMWCount > 0)
-                    yield return (Operations.RMW, "RMW", testRun.TestResult.RMWCount);
+                if (testRun.TestResult.Inputs.UpsertCount > 0)
+                    yield return (Operations.Upsert, "Upsert", testRun.TestResult.Inputs.UpsertCount);
+                if (testRun.TestResult.Inputs.ReadCount > 0)
+                    yield return (Operations.Read, "Read", testRun.TestResult.Inputs.ReadCount);
+                if (testRun.TestResult.Inputs.RMWCount > 0)
+                    yield return (Operations.RMW, "RMW", testRun.TestResult.Inputs.RMWCount);
             }
 
             var ops = prepareOps();
@@ -366,8 +372,8 @@ namespace FASTER.PerfTest
 
                 // Split the counts to be per-thread (that is, if we have --reads 100m and --threads 4,
                 // each thread will get 25m reads).
-                long threadOpCount = (long)opCount / testRun.TestResult.ThreadCount;
-                var tasks = Enumerable.Range(0, testRun.TestResult.ThreadCount)
+                long threadOpCount = (long)opCount / testRun.TestResult.Inputs.ThreadCount;
+                var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
                                       .Select(threadIdx => Task.Run(() => RunOperations(fht, op, threadOpCount,
                                                                                         threadIdx, testRun, getValueRef)));
                 Task.WaitAll(tasks.ToArray());
@@ -377,14 +383,14 @@ namespace FASTER.PerfTest
                 var numSec = sw.ElapsedMilliseconds / 1000.0;
 
                 // Total Ops/Second is always reported 
-                testRun.TotalOpsMs += (ulong)sw.ElapsedMilliseconds;
+                testRun.TotalOpsMs = (ulong)sw.ElapsedMilliseconds;
 
                 switch (op)
                 {
                     case Operations.Mixed: break;
-                    case Operations.Upsert: testRun.TotalUpsertMs += (ulong)sw.ElapsedMilliseconds; break;
-                    case Operations.Read: testRun.TotalReadMs += (ulong)sw.ElapsedMilliseconds; break;
-                    case Operations.RMW: testRun.TotalRMWMs += (ulong)sw.ElapsedMilliseconds; break;
+                    case Operations.Upsert: testRun.UpsertMs = (ulong)sw.ElapsedMilliseconds; break;
+                    case Operations.Read: testRun.ReadMs = (ulong)sw.ElapsedMilliseconds; break;
+                    case Operations.RMW: testRun.RMWMs = (ulong)sw.ElapsedMilliseconds; break;
                     default:
                         throw new InvalidOperationException($"Unexpected Operations value: {op}");
                 }
@@ -395,10 +401,10 @@ namespace FASTER.PerfTest
                 var endTailAddress = fht.LogTailAddress;
                 if (endTailAddress != startTailAddress)
                 {
-                    var isExpected = testRun.TestResult.LogMode != LogMode.None
+                    var isExpected = testRun.TestResult.Inputs.LogMode != LogMode.None
                         ? $"expected due to"
                         : $"*** UNEXPECTED *** with";
-                    Console.WriteLine($"Log growth: {endTailAddress - startTailAddress}; {isExpected} {nameof(LogMode)}.{testRun.TestResult.LogMode}");
+                    Console.WriteLine($"Log growth: {endTailAddress - startTailAddress}; {isExpected} {nameof(LogMode)}.{testRun.TestResult.Inputs.LogMode}");
                 }
             }
         }
@@ -412,17 +418,17 @@ namespace FASTER.PerfTest
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             // Each thread needs to set NUMA and create a FASTER session
-            Numa.AffinitizeThread(testRun.TestResult.NumaMode, threadIndex);
+            Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
             using var session = fht.Faster.NewSession(null, true);
 
             if (verbose)
                 Console.WriteLine($"Running Operation {op} count {opCount} for threadId {threadIndex}");
 
             var rng = new RandomGenerator((uint)threadIndex);
-            var totalOpCount = testRun.TestResult.TotalOpCount;
-            var upsertThreshold = testRun.TestResult.UpsertCount;
-            var readThreshold = upsertThreshold + testRun.TestResult.ReadCount;
-            var rmwThreshold = readThreshold + testRun.TestResult.RMWCount;
+            var totalOpCount = testRun.TestResult.Inputs.TotalOpCount;
+            var upsertThreshold = testRun.TestResult.Inputs.UpsertCount;
+            var readThreshold = upsertThreshold + testRun.TestResult.Inputs.ReadCount;
+            var rmwThreshold = readThreshold + testRun.TestResult.Inputs.RMWCount;
 
             ref TValue value = ref getValueRef.GetRef(threadIndex);
             var input = default(Input);

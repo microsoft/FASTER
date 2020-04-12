@@ -2,13 +2,17 @@
 // Licensed under the MIT license.
 
 using Newtonsoft.Json;
+using System;
 using System.IO;
 using System.Linq;
 
 namespace FASTER.PerfTest
 {
+    using OperationResults = TestOutputs.OperationResults;
+    using ResultStats = TestOutputs.ResultStats;
+
     [JsonObject(MemberSerialization.OptIn)]
-    class TestResultComparison
+    internal partial class TestResultComparison
     {
         [JsonProperty]
         public TestResult First { get; set; }
@@ -17,86 +21,9 @@ namespace FASTER.PerfTest
         public TestResult Second { get; set; }
 
         [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double InitialInsertsPerSecondDiff { get; set; }
+        public OperationComparisons OperationComparisons { get; set; } = new OperationComparisons();
 
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double InitialInsertsPerSecondDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double InitialInsertsPerSecondPerThreadDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double InitialInsertsPerSecondPerThreadDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double TotalOperationsPerSecondDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double TotalOperationsPerSecondDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double TotalOperationsPerSecondPerThreadDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double TotalOperationsPerSecondPerThreadDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double UpsertsPerSecondDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double UpsertsPerSecondDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double UpsertsPerSecondPerThreadDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double UpsertsPerSecondPerThreadDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double ReadsPerSecondDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double ReadsPerSecondDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double ReadsPerSecondPerThreadDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double ReadsPerSecondPerThreadDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double RMWsPerSecondDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double RMWsPerSecondDiffPercent { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double RMWsPerSecondPerThreadDiff { get; set; }
-
-        [JsonProperty]
-        [JsonConverter(typeof(DoubleRoundingConverter))]
-        public double RMWsPerSecondPerThreadDiffPercent { get; set; }
-
-        public TestResultComparison() { } // For JSON
+        public TestResultComparison() { } // Needed for JSON because we define one taking params
 
         public TestResultComparison(TestResult first, TestResult second)
         {
@@ -104,47 +31,63 @@ namespace FASTER.PerfTest
             this.First = first;
             this.Second = second;
 
-            this.InitialInsertsPerSecondDiff = second.InitialInsertsPerSecond - first.InitialInsertsPerSecond;
-            this.InitialInsertsPerSecondDiffPercent = (this.InitialInsertsPerSecondDiff / first.InitialInsertsPerSecond) * 100;
-            this.InitialInsertsPerSecondPerThreadDiff = second.InitialInsertsPerSecondPerThread - first.InitialInsertsPerSecondPerThread;
-            this.InitialInsertsPerSecondPerThreadDiffPercent = (this.InitialInsertsPerSecondPerThreadDiff / first.InitialInsertsPerSecondPerThread) * 100;
+            void compare(Func<TestOutputs, OperationResults> opResultsSelector,
+                         Func<OperationComparisons, OperationComparison> opComparisonSelector)
+            {
+                OperationResults leftResults = opResultsSelector(first.Outputs);
+                OperationResults rightResults = opResultsSelector(second.Outputs);
 
-            this.TotalOperationsPerSecondDiff = second.TotalOperationsPerSecond - first.TotalOperationsPerSecond;
-            this.TotalOperationsPerSecondDiffPercent = (this.TotalOperationsPerSecondDiff / first.TotalOperationsPerSecond) * 100;
-            this.TotalOperationsPerSecondPerThreadDiff = second.TotalOperationsPerSecondPerThread - first.TotalOperationsPerSecondPerThread;
-            this.TotalOperationsPerSecondPerThreadDiffPercent = (this.TotalOperationsPerSecondPerThreadDiff / first.TotalOperationsPerSecondPerThread) * 100;
+                static OperationComparisonStats createComparisonStats(ResultStats leftResultStats, ResultStats rightResultStats)
+                {
+                    var stats = new OperationComparisonStats
+                    {
+                        MeanDiff = rightResultStats.Mean - leftResultStats.Mean,
+                        StdDevDiff = rightResultStats.StdDev - leftResultStats.StdDev
+                    };
+                    stats.MeanDiffPercent = leftResultStats.Mean == 0.0 ? 0.0 : (stats.MeanDiff / leftResultStats.Mean) * 100;
+                    stats.StdDevDiffPercent = leftResultStats.StdDev == 0.0 ? 0.0 : (stats.StdDevDiff / leftResultStats.StdDev) * 100;
+                    return stats;
+                }
 
-            this.UpsertsPerSecondDiff = second.UpsertsPerSecond - first.UpsertsPerSecond;
-            this.UpsertsPerSecondDiffPercent = (this.UpsertsPerSecondDiff / first.UpsertsPerSecond) * 100;
-            this.UpsertsPerSecondPerThreadDiff = second.UpsertsPerSecondPerThread - first.UpsertsPerSecondPerThread;
-            this.UpsertsPerSecondPerThreadDiffPercent = (this.UpsertsPerSecondPerThreadDiff / first.UpsertsPerSecondPerThread) * 100;
+                OperationComparison opComp = opComparisonSelector(this.OperationComparisons);
+                opComp.AllThreadsFull = createComparisonStats(leftResults.AllThreadsFull, rightResults.AllThreadsFull);
+                opComp.AllThreadsTrimmed = createComparisonStats(leftResults.AllThreadsTrimmed, rightResults.AllThreadsTrimmed);
+                opComp.PerThreadFull = createComparisonStats(leftResults.PerThreadFull, rightResults.PerThreadFull);
+                opComp.PerThreadTrimmed = createComparisonStats(leftResults.PerThreadTrimmed, rightResults.PerThreadTrimmed);
+            }
 
-            this.ReadsPerSecondDiff = second.ReadsPerSecond - first.ReadsPerSecond;
-            this.ReadsPerSecondDiffPercent = (this.ReadsPerSecondDiff / first.ReadsPerSecond) * 100;
-            this.ReadsPerSecondPerThreadDiff = second.ReadsPerSecondPerThread - first.ReadsPerSecondPerThread;
-            this.ReadsPerSecondPerThreadDiffPercent = (this.ReadsPerSecondPerThreadDiff / first.ReadsPerSecondPerThread) * 100;
-
-            this.RMWsPerSecondDiff = second.RMWsPerSecond - first.RMWsPerSecond;
-            this.RMWsPerSecondDiffPercent = (this.RMWsPerSecondDiff / first.RMWsPerSecond) * 100;
-            this.RMWsPerSecondPerThreadDiff = second.RMWsPerSecondPerThread - first.RMWsPerSecondPerThread;
-            this.RMWsPerSecondPerThreadDiffPercent = (this.RMWsPerSecondPerThreadDiff / first.RMWsPerSecondPerThread) * 100;
+            compare(outputs => outputs.InitialInserts, opc => opc.InitialInserts);
+            compare(outputs => outputs.TotalOperations, opc => opc.TotalOperations);
+            compare(outputs => outputs.Upserts, opc => opc.Upserts);
+            compare(outputs => outputs.Reads, opc => opc.Reads);
+            compare(outputs => outputs.RMWs, opc => opc.RMWs);
         }
+    }
 
-        internal void Write(string filename) 
-            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
+    [JsonObject(MemberSerialization.OptIn)]
+    class OperationComparisons
+    {
+        [JsonProperty]
+        public OperationComparison InitialInserts { get; set; } = new OperationComparison();
 
-        internal static TestResultComparison Read(string filename) 
-            => JsonConvert.DeserializeObject<TestResultComparison>(File.ReadAllText(filename));
+        [JsonProperty]
+        public OperationComparison TotalOperations { get; set; } = new OperationComparison();
+
+        [JsonProperty]
+        public OperationComparison Upserts { get; set; } = new OperationComparison();
+
+        [JsonProperty]
+        public OperationComparison Reads { get; set; } = new OperationComparison();
+
+        [JsonProperty]
+        public OperationComparison RMWs { get; set; } = new OperationComparison();
     }
 
     [JsonObject(MemberSerialization.OptIn)]
     class TestResultComparisons
     {
         [JsonProperty]
-        public TestResultComparison[] Comparisons { get; set; }
-
-        internal void Add(TestResultComparison comparison) 
-            => this.Comparisons = this.Comparisons is null ? new[] { comparison } : this.Comparisons.Concat(new[] { comparison }).ToArray();
+        public TestResultComparison[] ResultComparisons { get; set; }
 
         internal static void Compare(string firstFile, string secondFile, ResultComparisonMode comparisonMode, string resultsFile)
         {
@@ -153,13 +96,55 @@ namespace FASTER.PerfTest
             var comparisons = comparisonMode == ResultComparisonMode.Exact
                 ? firstResults.CompareExact(secondResults)
                 : firstResults.CompareSequence(secondResults);
+
+            // Report how many on either side did not match.
+            if (comparisonMode == ResultComparisonMode.Exact)
+            {
+                Console.Write($"{comparisons.ResultComparisons.Length} exact result comparisons matched. Mismatches: ");
+                var firstDiff = firstResults.Results.Length - comparisons.ResultComparisons.Length;
+                var secondDiff = secondResults.Results.Length - comparisons.ResultComparisons.Length;
+                Console.WriteLine(firstDiff == 0 && secondDiff == 0
+                                  ? "None"
+                                  : $" first file {firstDiff}, second file {secondDiff}");
+            }
+            else
+            {
+                var diff = firstResults.Results.Length - secondResults.Results.Length;
+                var longFile = diff > 0 ? "first" : "second";
+                Console.Write($"{comparisons.ResultComparisons.Length} sequential result comparisons matched. Mismatches: ");
+                Console.WriteLine(diff == 0
+                                  ? "None"
+                                  : $"{longFile} {Math.Abs(diff)}");
+            }
+
+            if (comparisons.ResultComparisons.Length > 0)
+            {
+                // Rank within each operation, across all parameter permutations.
+                void rank(Func<OperationComparisons, OperationComparison> opComparisonSelector)
+                {
+                    foreach (var pair in comparisons.ResultComparisons.Select(opc => opComparisonSelector(opc.OperationComparisons))
+                                                                .OrderByDescending(op => op.AllThreadsTrimmed.MeanDiffPercent)
+                                                                .Select((op, rank) => new { op, rank }))
+                    {
+                        // We base the rank on the trimmed (outliers excluded, if 3 or more) results.
+                        pair.op.Rank = pair.rank;
+                    }
+                }
+
+                rank(opc => opc.InitialInserts);
+                rank(opc => opc.TotalOperations);
+                rank(opc => opc.Upserts);
+                rank(opc => opc.Reads);
+                rank(opc => opc.RMWs);
+            }
+
             comparisons.Write(resultsFile);
         }
 
         internal void Write(string filename) 
-            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
+            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.outputJsonSerializerSettings));
 
         internal static TestResultComparisons Read(string filename) 
-            => JsonConvert.DeserializeObject<TestResultComparisons>(File.ReadAllText(filename));
+            => JsonConvert.DeserializeObject<TestResultComparisons>(File.ReadAllText(filename), Globals.inputJsonSerializerSettings);
     }
 }

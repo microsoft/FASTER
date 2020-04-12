@@ -116,37 +116,34 @@ namespace FASTER.PerfTest
                 { 
                     yield return new TestResult
                     {
-                        HashSizeShift = hashSize,
-                        NumaMode = numa,
-                        Distribution = dist,
-                        DistributionParameter = distParam,
-                        ThreadCount = threadCount,
-                        InitKeyCount = initKeyCount,
-                        OperationKeyCount = opKeyCount,
-                        UpsertCount = upsertCount,
-                        ReadCount = readCount,
-                        RMWCount = rmwCount,
-                        MixOperations = mixOps,
-                        DataSize = dataSize,
-                        UseVarLenValue = useVarLenValue,
-                        UseObjectValue = useObjectValue,
-                        UseReadCache = useReadCache,
-                        LogMode = logMode,
-                        IterationCount = iters,
-                        DistributionSeed = this.DistributionSeed
+                        Inputs = new TestInputs
+                        {
+                            HashSizeShift = hashSize,
+                            NumaMode = numa,
+                            Distribution = dist,
+                            DistributionParameter = distParam,
+                            ThreadCount = threadCount,
+                            InitKeyCount = initKeyCount,
+                            OperationKeyCount = opKeyCount,
+                            UpsertCount = upsertCount,
+                            ReadCount = readCount,
+                            RMWCount = rmwCount,
+                            MixOperations = mixOps,
+                            DataSize = dataSize,
+                            UseVarLenValue = useVarLenValue,
+                            UseObjectValue = useObjectValue,
+                            UseReadCache = useReadCache,
+                            LogMode = logMode,
+                            IterationCount = iters,
+                            DistributionSeed = this.DistributionSeed
+                        },
                     };
                 }
             }
 
             var results = getResults().ToArray();
-            return results.Any(result => !result.Verify()) ? Enumerable.Empty<TestResult>() : results;
+            return results.Any(result => !result.Inputs.Verify()) ? Enumerable.Empty<TestResult>() : results;
         }
-
-        internal void Write(string filename) 
-            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
-
-        internal static TestParameterSweep Read(string filename) 
-            => JsonConvert.DeserializeObject<TestParameterSweep>(File.ReadAllText(filename));
     }
 
     [JsonObject(MemberSerialization.OptIn)]
@@ -162,7 +159,7 @@ namespace FASTER.PerfTest
             => this.ParameterSweeps.SelectMany(sweep => sweep.GetParamSweeps());
 
         internal void Write(string filename) 
-            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.jsonSerializerSettings));
+            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.outputJsonSerializerSettings));
 
         internal static TestParameters Read(string filename) 
             => JsonConvert.DeserializeObject<TestParameters>(File.ReadAllText(filename));
@@ -175,41 +172,41 @@ namespace FASTER.PerfTest
             foreach (var parameter in this.ParameterSweeps)
             {
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.HashSize))
-                    parameter.HashSizeShifts = new[] { commandLineArgs.HashSizeShift };
+                    parameter.HashSizeShifts = new[] { commandLineArgs.Inputs.HashSizeShift };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.NumaMode))
-                    parameter.NumaModes = new[] { commandLineArgs.NumaMode };
+                    parameter.NumaModes = new[] { commandLineArgs.Inputs.NumaMode };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.Distribution))
-                    parameter.Distributions = new[] { commandLineArgs.Distribution };
+                    parameter.Distributions = new[] { commandLineArgs.Inputs.Distribution };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.DistributionParameter))
-                    parameter.DistributionParameters = new[] { commandLineArgs.DistributionParameter };
+                    parameter.DistributionParameters = new[] { commandLineArgs.Inputs.DistributionParameter };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.DistributionSeed))
-                    parameter.DistributionSeed = commandLineArgs.DistributionSeed;
+                    parameter.DistributionSeed = commandLineArgs.Inputs.DistributionSeed;
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.ThreadCount))
-                    parameter.ThreadCounts = new[] { commandLineArgs.ThreadCount };
+                    parameter.ThreadCounts = new[] { commandLineArgs.Inputs.ThreadCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.InitKeyCount))
-                    parameter.InitKeyCounts = new[] { commandLineArgs.InitKeyCount };
+                    parameter.InitKeyCounts = new[] { commandLineArgs.Inputs.InitKeyCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.OpKeyCount))
-                    parameter.OperationKeyCounts = new[] { commandLineArgs.OperationKeyCount };
+                    parameter.OperationKeyCounts = new[] { commandLineArgs.Inputs.OperationKeyCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UpsertCount))
-                    parameter.UpsertCounts = new[] { commandLineArgs.UpsertCount };
+                    parameter.UpsertCounts = new[] { commandLineArgs.Inputs.UpsertCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.ReadCount))
-                    parameter.ReadCounts = new[] { commandLineArgs.ReadCount };
+                    parameter.ReadCounts = new[] { commandLineArgs.Inputs.ReadCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.RmwCount))
-                    parameter.RMWCounts = new[] { commandLineArgs.RMWCount };
+                    parameter.RMWCounts = new[] { commandLineArgs.Inputs.RMWCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.MixOperations))
-                    parameter.MixOperations = new[] { commandLineArgs.MixOperations};
+                    parameter.MixOperations = new[] { commandLineArgs.Inputs.MixOperations};
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.DataSize))
-                    parameter.DataSizes = new[] { commandLineArgs.DataSize };
+                    parameter.DataSizes = new[] { commandLineArgs.Inputs.DataSize };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseVarLenValue))
-                    parameter.UseVarLenValues = new[] { commandLineArgs.UseVarLenValue };
+                    parameter.UseVarLenValues = new[] { commandLineArgs.Inputs.UseVarLenValue };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseObjectValue))
-                    parameter.UseObjectValues = new[] { commandLineArgs.UseObjectValue };
+                    parameter.UseObjectValues = new[] { commandLineArgs.Inputs.UseObjectValue };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseReadCache))
-                    parameter.UseReadCaches = new[] { commandLineArgs.UseReadCache };
+                    parameter.UseReadCaches = new[] { commandLineArgs.Inputs.UseReadCache };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.LogMode))
-                    parameter.LogModes = new[] { commandLineArgs.LogMode };
+                    parameter.LogModes = new[] { commandLineArgs.Inputs.LogMode };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.IterationCount))
-                    parameter.IterationCounts = new[] { commandLineArgs.IterationCount };
+                    parameter.IterationCounts = new[] { commandLineArgs.Inputs.IterationCount };
             }
         }
     }

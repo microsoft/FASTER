@@ -19,7 +19,8 @@ namespace FASTER.PerfTest
         public const int DefaultDistributionSeed = 10193;
         public const long ChunkSize = 500;
 
-        internal static JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented };
+        internal static JsonSerializerSettings outputJsonSerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented };
+        internal static JsonSerializerSettings inputJsonSerializerSettings = new JsonSerializerSettings { ObjectCreationHandling = ObjectCreationHandling.Replace };
 
         public static int[] ValidDataSizes = new[] { 8, 16, 32, 64, 128, 256 };
         public const int MinDataSize = 8;   // Cannot be less or VarLenValue breaks
