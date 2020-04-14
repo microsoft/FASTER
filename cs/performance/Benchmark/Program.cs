@@ -5,7 +5,7 @@ using System;
 using CommandLine;
 using CommandLine.Text;
 
-namespace FASTER.benchmark
+namespace FASTER.Benchmark
 {
     class Options
     {

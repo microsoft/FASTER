@@ -62,7 +62,7 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"            {Distribution.ZipfSmooth}: Smooth curve (most localized keys)");
                 Console.WriteLine($"            {Distribution.ZipfShuffled}: Shuffle keys after curve generation");
                 Console.WriteLine($"        {DistParamArg} <double value>: A parameter for the distribution of the keys; default is {defaultTestResult.Inputs.DistributionParameter}");
-                Console.WriteLine($"            Currently used for Zipf theta and must be > 0.0 and != 1.0 (note: benchmark (YCSB) uses 0.99; higher values are more skewed).");
+                Console.WriteLine($"            Currently used for Zipf theta and must be > 0.0 and != 1.0 (note: Benchmark (YCSB) uses 0.99; higher values are more skewed).");
                 Console.WriteLine($"        {DistSeedArg} <seed>: The distribution rng seed; 0 means create one based on current timestamp. Default is {defaultTestResult.Inputs.DistributionSeed}");
                 Console.WriteLine($"    {ThreadsArg} <threads>: Number of threads for initialization and operations; default is {defaultTestResult.Inputs.ThreadCount}");
                 Console.WriteLine($"        On initialization (the initial Upserts (which are Inserts) to populate the store), threads divide the full operation count.");

@@ -13,7 +13,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FASTER.core;
 
-namespace FASTER.benchmark
+namespace FASTER.Benchmark
 {
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct Value

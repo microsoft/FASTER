@@ -8,7 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace FASTER.benchmark
+namespace FASTER.Benchmark
 {
     [StructLayout(LayoutKind.Explicit)]
     public struct Output

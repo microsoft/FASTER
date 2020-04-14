@@ -42,10 +42,10 @@ namespace FASTER.PerfTest
         public int[] HashSizeShifts { get; set; } = new[] { Globals.DefaultHashSizeShift };
 
         [JsonProperty]
-        public NumaMode[] NumaModes { get; set; } = new[] { NumaMode.None };
+        public NumaMode[] NumaModes { get; set; } = new[] { Globals.DefaultNumaMode };
 
         [JsonProperty]
-        public Distribution[] Distributions { get; set; } = new[] { Distribution.Uniform };
+        public Distribution[] Distributions { get; set; } = new[] { Globals.DefaultDistribution };
 
         [JsonProperty]
         public double[] DistributionParameters { get; set; } = new[] { Globals.DefaultDistributionParameter };

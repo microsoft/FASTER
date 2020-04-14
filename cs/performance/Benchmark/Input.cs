@@ -5,7 +5,7 @@
 
 using System.Runtime.CompilerServices;
 
-namespace FASTER.benchmark
+namespace FASTER.Benchmark
 {
     public struct Input
     {

@@ -9,13 +9,14 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>FASTER.benchmark</RootNamespace>
+    <RootNamespace>FASTER.Benchmark</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <Prefer32Bit>true</Prefer32Bit>
     <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <SignAssembly>true</SignAssembly>
+    <AssemblyName>FASTER.Benchmark</AssemblyName>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

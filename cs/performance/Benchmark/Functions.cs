@@ -9,7 +9,7 @@ using System.Diagnostics;
 using FASTER.core;
 using System.Collections.Generic;
 
-namespace FASTER.benchmark
+namespace FASTER.Benchmark
 {
     public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {

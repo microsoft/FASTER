@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using Newtonsoft.Json;
+using Performance.Common;
 using System;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -16,7 +17,9 @@ namespace FASTER.PerfTest
         public const int DefaultInitKeyCount = 10_000_000;
         public const int DefaultOpKeyCount = 100_000_000;
         public const int DefaultOpCount = 0;    // Require specifying the desired operations
-        public const double DefaultDistributionParameter = 0.99; // For Zipf only, now; same as YCSB to match benchmark
+        public const NumaMode DefaultNumaMode = NumaMode.RoundRobin;
+        public const Distribution DefaultDistribution = Distribution.Uniform;
+        public const double DefaultDistributionParameter = 0.99; // For Zipf only, now; same as YCSB to match Benchmark
         public const int DefaultDistributionSeed = 10193;
         public const long ChunkSize = 500;
 

@@ -15,10 +15,10 @@ namespace FASTER.PerfTest
         public int HashSizeShift { get; set; } = Globals.DefaultHashSizeShift;
 
         [JsonProperty]
-        public NumaMode NumaMode { get; set; } = NumaMode.None;
+        public NumaMode NumaMode { get; set; } = Globals.DefaultNumaMode;
 
         [JsonProperty]
-        public Distribution Distribution { get; set; } = Distribution.Uniform;
+        public Distribution Distribution { get; set; } = Globals.DefaultDistribution;
 
         [JsonProperty]
         public double DistributionParameter { get; set; } = Globals.DefaultDistributionParameter;
