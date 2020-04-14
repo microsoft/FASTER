@@ -71,7 +71,7 @@ namespace FASTER.PerfTest
         public bool Verify(bool isFileInput = false)
         {
             // Set this for informative output.
-            this.TotalOperationCount = this.UpsertCount + this.RMWCount + this.RMWCount;
+            this.TotalOperationCount = this.UpsertCount + this.ReadCount + this.RMWCount;
 
             static bool fail(string message)
             {
@@ -109,8 +109,6 @@ namespace FASTER.PerfTest
                 return fail($"Cannot specify both {nameof(this.UseVarLenValue)} and {nameof(this.UseObjectValue)}");
             if (!Globals.ValidDataSizes.Contains(this.DataSize))
                 return fail($"Data sizes must be in [{string.Join(", ", Globals.ValidDataSizes)}]");
-
-            TotalOperationCount = TotalOperationCount;
             return true;
         }
 
