@@ -31,6 +31,8 @@ namespace FASTER.PerfTest
         const string CompareResultsExactArg = "--compareResultsExact";
         const string CompareResultsSequenceArg = "--compareResultsSequence";
         internal const string MergeResultsArg = "--mergeResults";
+        internal const string IntersectResultsArg = "--intersectResults";
+        internal const string VerifyArg = "--verify";
         const string VerboseArg = "-v";
         const string PromptArg = "-p";
 
@@ -100,6 +102,7 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"    {MergeResultsArg} <filespec1..filespecN>: Wildcards are supported; at least two files must be returned by the combination of filespecs.");
                 Console.WriteLine("             Results for identical parameter configurations are merged; other results are appended from the filespec1 first, then filespec2.");
                 Console.WriteLine("             Note that if wildcards are used, files will be returned in filesystem order; use appropriate naming if a particular order is needed.");
+                Console.WriteLine($"    {IntersectResultsArg} <filespec1..filespecN>: Same as {MergeResultsArg}, but only matching results are preserved.");
                 Console.WriteLine();
                 Console.WriteLine("  Common parameters:");
                 Console.WriteLine($"    {ResultsFileArg} fname: The name of file to receive JSON text containing either:");
@@ -346,12 +349,20 @@ namespace FASTER.PerfTest
                     continue;
                 }
                 if (string.Compare(arg, MergeResultsArg, ignoreCase: true) == 0
-                    || string.Compare(arg, MergeResultsArg, ignoreCase: true) == 0)
+                    || string.Compare(arg, IntersectResultsArg, ignoreCase: true) == 0)
                 {
                     while (hasValue(out var filespec, required: false))
                         mergeResultsFilespecs.Add(filespec);
                     if (mergeResultsFilespecs.Count == 0)
                         return Usage($"{arg} requires at least one filespec");
+                    intersectResults = string.Compare(arg, IntersectResultsArg, ignoreCase: true) == 0;
+                    continue;
+                }
+                if (string.Compare(arg, VerifyArg, ignoreCase: true) == 0)
+                {
+                    if (!hasBoolValue(out var wanted))
+                        return false;
+                    Globals.Verify = wanted;
                     continue;
                 }
                 if (string.Compare(arg, VerboseArg, ignoreCase: true) == 0)

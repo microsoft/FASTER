@@ -36,6 +36,9 @@ namespace FASTER.PerfTest
         public int OperationKeyCount { get; set; } = Globals.DefaultOpKeyCount;
 
         [JsonProperty]
+        public int TotalOperationCount { get; set; } // Informative only; combination of u + r + m set in Verify()
+
+        [JsonProperty]
         public int UpsertCount { get; set; } = Globals.DefaultOpCount;
 
         [JsonProperty]
@@ -67,6 +70,9 @@ namespace FASTER.PerfTest
 
         public bool Verify(bool isFileInput = false)
         {
+            // Set this for informative output.
+            this.TotalOperationCount = this.UpsertCount + this.RMWCount + this.RMWCount;
+
             static bool fail(string message)
             {
                 Console.WriteLine(message);
@@ -92,7 +98,7 @@ namespace FASTER.PerfTest
                 return fail($"Invalid {nameof(RMWCount)}: {RMWCount}. Must be > 0 and a multiple of {Globals.ChunkSize}");
             if (!isFileInput && UpsertCount == 0 && ReadCount == 0 && RMWCount == 0)
                 return fail($"Invalid operations: At least one operation must be specified");
-            if (MixOperations && (UpsertCount == TotalOpCount || ReadCount == TotalOpCount || RMWCount == TotalOpCount))
+            if (MixOperations && (UpsertCount == TotalOperationCount || ReadCount == TotalOperationCount || RMWCount == TotalOperationCount))
                 return fail($"Invalid {nameof(MixOperations)}: More than one operation must be specified");
             if (DataSize < Globals.MinDataSize)
                 return fail($"Invalid {nameof(DataSize)}: {DataSize}. Must be >= {Globals.MinDataSize}");
@@ -104,6 +110,7 @@ namespace FASTER.PerfTest
             if (!Globals.ValidDataSizes.Contains(this.DataSize))
                 return fail($"Data sizes must be in [{string.Join(", ", Globals.ValidDataSizes)}]");
 
+            TotalOperationCount = TotalOperationCount;
             return true;
         }
 
@@ -133,8 +140,6 @@ namespace FASTER.PerfTest
                 this.Distribution, this.DistributionParameter, this.DistributionSeed, this.ThreadCount,
                 this.InitKeyCount, this.OperationKeyCount, this.UpsertCount, this.ReadCount, this.RMWCount, this.MixOperations,
                 this.DataSize, this.UseVarLenValue, this.UseObjectValue, this.UseReadCache, this.LogMode, this.IterationCount);
-
-        internal int TotalOpCount => this.UpsertCount + this.ReadCount + this.RMWCount;
 
         internal (Distribution, double, double) DistributionInfo
             => (this.Distribution, this.DistributionParameter, this.DistributionSeed);

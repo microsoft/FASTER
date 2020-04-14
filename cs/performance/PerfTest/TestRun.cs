@@ -86,7 +86,7 @@ namespace FASTER.PerfTest
             }
 
             calcStats(() => outputs.InitialInserts, this.initializeMs, inputs.InitKeyCount);
-            calcStats(() => outputs.TotalOperations, this.totalOpsMs, inputs.TotalOpCount);
+            calcStats(() => outputs.TotalOperations, this.totalOpsMs, inputs.TotalOperationCount);
             calcStats(() => outputs.Upserts, this.upsertMs, inputs.UpsertCount);
             calcStats(() => outputs.Reads, this.readMs, inputs.ReadCount);
             calcStats(() => outputs.RMWs, this.rmwMs, inputs.RMWCount);
@@ -98,13 +98,15 @@ namespace FASTER.PerfTest
             };
 
             // Keep this in one readable line...
-            var tCount = inputs.TotalOpCount > 1_000_000 ? $"{(inputs.TotalOpCount / 1_000_000)}m" : $"{inputs.TotalOpCount}";
+            var inKeyCount = inputs.InitKeyCount > 1_000_000 ? $"{(inputs.InitKeyCount / 1_000_000)}m" : $"{inputs.InitKeyCount}";
+            var opKeyCount = inputs.OperationKeyCount > 1_000_000 ? $"{(inputs.OperationKeyCount / 1_000_000)}m" : $"{inputs.OperationKeyCount}";
+            var tCount = inputs.TotalOperationCount > 1_000_000 ? $"{(inputs.TotalOperationCount / 1_000_000)}m" : $"{inputs.TotalOperationCount}";
             var uCount = inputs.UpsertCount > 1_000_000 ? $"{(inputs.UpsertCount / 1_000_000)}m" : $"{inputs.UpsertCount}";
             var rCount = inputs.ReadCount > 1_000_000 ? $"{(inputs.ReadCount / 1_000_000)}m" : $"{inputs.ReadCount}";
             var mCount = inputs.RMWCount > 1_000_000 ? $"{(inputs.RMWCount / 1_000_000)}m" : $"{inputs.RMWCount}";
             Console.WriteLine($"----- Summary: totOps {tCount} (u {uCount}, r {rCount}, m {mCount})," +
-                                $" inkeys {inputs.InitKeyCount}, opKeys {inputs.OperationKeyCount}," +
-                                $" {valueType}, data {Globals.DataSize}, threads {inputs.ThreadCount}," +
+                                $" inkeys {inKeyCount}, opKeys {opKeyCount}, {valueType}," +
+                                $" data {Globals.DataSize}, threads {inputs.ThreadCount}," +
                                 $" rCache {inputs.UseReadCache}, log.{inputs.LogMode}, iters {currentIter}");
 
             // LINQ does not have ulong Average() or Sum().
@@ -122,16 +124,16 @@ namespace FASTER.PerfTest
                               $" {outputs.InitialInserts.PerThreadFull.Mean:0.00} thread/sec)");
             if (inputs.MixOperations)
             {
-                Console.WriteLine($"{inputs.TotalOpCount} Mixed Operations in {totalOpSec:0.000} sec" +
+                Console.WriteLine($"{inputs.TotalOperationCount} Mixed Operations in {totalOpSec:0.000} sec" +
                                   $" ({outputs.TotalOperations.AllThreadsFull.Mean:0.00} Operations/sec;" +
                                   $" {outputs.TotalOperations.PerThreadFull.Mean:0.00} thread/sec)");
-                Console.WriteLine($"    {inputs.UpsertCount} Upserts ({((double)inputs.UpsertCount / inputs.TotalOpCount) * 100:0.00}%)");
-                Console.WriteLine($"    {inputs.ReadCount} Reads ({((double)inputs.ReadCount / inputs.TotalOpCount) * 100:0.00}%)");
-                Console.WriteLine($"    {inputs.RMWCount} RMWs ({((double)inputs.RMWCount / inputs.TotalOpCount) * 100:0.00}%)");
+                Console.WriteLine($"    {inputs.UpsertCount} Upserts ({((double)inputs.UpsertCount / inputs.TotalOperationCount) * 100:0.00}%)");
+                Console.WriteLine($"    {inputs.ReadCount} Reads ({((double)inputs.ReadCount / inputs.TotalOperationCount) * 100:0.00}%)");
+                Console.WriteLine($"    {inputs.RMWCount} RMWs ({((double)inputs.RMWCount / inputs.TotalOperationCount) * 100:0.00}%)");
             }
             else
             {
-                Console.WriteLine($"{inputs.TotalOpCount} Separate Operations in {totalOpSec:0.000} sec" +
+                Console.WriteLine($"{inputs.TotalOperationCount} Separate Operations in {totalOpSec:0.000} sec" +
                                   $" ({outputs.TotalOperations.AllThreadsFull.Mean:0.00} Operations/sec;" +
                                   $" {outputs.TotalOperations.PerThreadFull.Mean:0.00} thread/sec)");
                 Console.WriteLine($"{inputs.UpsertCount} Upserts in {upsertSec:0.000} sec" +

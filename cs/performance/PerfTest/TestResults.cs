@@ -68,7 +68,7 @@ namespace FASTER.PerfTest
         internal static TestResultComparisons CompareSequence(IEnumerable<(TestResult, TestResult)> results) 
             => new TestResultComparisons { ResultComparisons = results.Select(result => new TestResultComparison(result.Item1, result.Item2)).ToArray() };
 
-        internal static void Merge(string[] filespecs, string resultsFilename)
+        internal static void Merge(string[] filespecs, bool intersect, string resultsFilename)
         {
             static IEnumerable<string> enumFiles(string filespec) 
                 => Directory.EnumerateFiles(Path.GetDirectoryName(filespec), Path.GetFileName(filespec));
@@ -86,12 +86,12 @@ namespace FASTER.PerfTest
             for (var ii = 1; ii < filenames.Length; ++ii)
             {
                 Console.WriteLine($"Merging file: {filenames[ii]}");
-                mergedResults = mergedResults.Merge(Read(filenames[ii]));
+                mergedResults = mergedResults.Merge(Read(filenames[ii]), intersect);
             }
             mergedResults.Write(resultsFilename);
         }
 
-        internal TestResults Merge(TestResults other)
+        internal TestResults Merge(TestResults other, bool intersect)
         {
             var (matchPairs, thisOnly, otherOnly) = Match(other);
 
@@ -127,9 +127,11 @@ namespace FASTER.PerfTest
             }
 
             var matchCount = results.Count;
-            results.AddRange(thisOnly);
+            if (!intersect)
+                results.AddRange(thisOnly);
             var thisOnlyCount = results.Count - matchCount;
-            results.AddRange(otherOnly);
+            if (!intersect)
+                results.AddRange(otherOnly);
             var otherOnlyCount = results.Count - thisOnlyCount - matchCount;
 
             // Report how many on either side did not match.

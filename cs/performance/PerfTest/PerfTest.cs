@@ -21,6 +21,7 @@ namespace FASTER.PerfTest
         static string compareFirstFilename, compareSecondFilename;
         static ResultComparisonMode comparisonMode = ResultComparisonMode.None;
         static readonly List<string> mergeResultsFilespecs = new List<string>();
+        static bool intersectResults;
 
         static bool verbose = false;
         static bool prompt = false;
@@ -44,7 +45,7 @@ namespace FASTER.PerfTest
             }
             if (mergeResultsFilespecs.Count > 0)
             {
-                TestResults.Merge(mergeResultsFilespecs.ToArray(), resultsFilename);
+                TestResults.Merge(mergeResultsFilespecs.ToArray(), intersectResults, resultsFilename);
                 return;
             }
             ExecuteTestRuns();
@@ -69,7 +70,7 @@ namespace FASTER.PerfTest
 
                 // If running from a testfile, print command line for investigating testfile failures
                 if (!(testParams is null))
-                    Console.WriteLine(testRun.TestResult);  
+                    Console.WriteLine(testRun.TestResult.Inputs);  
 
                 Globals.DataSize = testRun.TestResult.Inputs.DataSize;
                 verboseInterval = 1L << (testRun.TestResult.Inputs.HashSizeShift - 1);
@@ -98,14 +99,14 @@ namespace FASTER.PerfTest
                         var fht = new FHT<VarLenValue, VarLenOutput, VarLenFunctions, NoSerializer<VarLenValue>>(
                             false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseVarLenValue, 
                             testRun.TestResult.Inputs.UseObjectValue, useReadCache: testRun.TestResult.Inputs.UseReadCache);
-                        RunIteration(fht, testRun, new GetVarLenValueRef(testRun.TestResult.Inputs.ThreadCount));
+                        RunIteration(fht, testRun, new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                     }
                     else if (testRun.TestResult.Inputs.UseObjectValue)
                     {
                         var fht = new FHT<ObjectValue, ObjectValueOutput, ObjectValueFunctions, ObjectValueSerializer>(
                             false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseVarLenValue, 
                             testRun.TestResult.Inputs.UseObjectValue, useReadCache: testRun.TestResult.Inputs.UseReadCache);
-                        RunIteration(fht, testRun, new GetObjectValueRef(testRun.TestResult.Inputs.ThreadCount));
+                        RunIteration(fht, testRun, new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
 
                     } else
                     {
@@ -201,12 +202,12 @@ namespace FASTER.PerfTest
             var fht = new FHT<TBV, BlittableOutput<TBV>, BlittableFunctions<TBV>, NoSerializer<TBV>>(
                             usePsf: false, sizeShift: testRun.TestResult.Inputs.HashSizeShift, useVarLenValues: false, 
                             useObjectValues: false, useReadCache: testRun.TestResult.Inputs.UseReadCache);
-            RunIteration(fht, testRun, new GetBlittableValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
+            RunIteration(fht, testRun, new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
         }
 
         static void RunIteration<TValue, TOutput, TFunctions, TSerializer>(
                     FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
-                    IGetValueRef<TValue, TOutput> getValueRef)
+                    IThreadValueRef<TValue, TOutput> getValueRef)
             where TValue : new()
             where TOutput : new()
             where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
@@ -227,7 +228,7 @@ namespace FASTER.PerfTest
 
         private static void Initialize<TValue, TOutput, TFunctions, TSerializer>(
                 FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
-                IGetValueRef<TValue, TOutput> getValueRef)
+                IThreadValueRef<TValue, TOutput> getValueRef)
             where TValue : new()
             where TOutput : new()
             where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
@@ -242,10 +243,11 @@ namespace FASTER.PerfTest
             // Reset the global chunk tracker.
             NextChunkStart = 0;
 
+            Globals.IsInitialInsertPhase = true;
             var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                  .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun,
-                                                                                 ref getValueRef.GetRef(threadIdx))));
+                                  .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun, getValueRef)));
             Task.WaitAll(tasks.ToArray());
+            Globals.IsInitialInsertPhase = false;
 
             sw.Stop();
 
@@ -259,7 +261,8 @@ namespace FASTER.PerfTest
         }
 
         private static void Initialize<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, int threadIndex, TestRun testRun, ref TValue value)
+                FHT<TValue, TOutput, TFunctions, TSerializer> fht, int threadIndex, TestRun testRun,
+                IThreadValueRef<TValue, TOutput> getValueRef)
             where TValue : new()
             where TOutput : new()
             where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
@@ -268,6 +271,7 @@ namespace FASTER.PerfTest
             // Each thread needs to set NUMA and create a FASTER session
             Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
             using var session = fht.Faster.NewSession(null, true);
+            ref TValue value = ref getValueRef.GetRef(threadIndex);
 
             // We just do one iteration through the KeyCount to load the initial keys. If there are
             // multiple threads, each thread does (KeyCount / #threads) Inserts (on average).
@@ -291,6 +295,7 @@ namespace FASTER.PerfTest
                             }
                         }
                     }
+                    getValueRef.SetInitialValue(ref value, initKeys[ii].key);
                     session.Upsert(ref initKeys[ii], ref value, Empty.Default, 1);
                 }
             }
@@ -327,7 +332,7 @@ namespace FASTER.PerfTest
 
         private static void RunOperations<TValue, TOutput, TFunctions, TSerializer>(
                 FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
-                IGetValueRef<TValue, TOutput> getValueRef)
+                IThreadValueRef<TValue, TOutput> getValueRef)
             where TValue : new()
             where TOutput : new()
             where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
@@ -346,7 +351,7 @@ namespace FASTER.PerfTest
                         if (testRun.TestResult.Inputs.RMWCount > 0)
                             yield return "RMW";
                     }
-                    yield return (Operations.Mixed, "mixed " + string.Join(", ", getMixedOpNames()), testRun.TestResult.Inputs.TotalOpCount);
+                    yield return (Operations.Mixed, "mixed " + string.Join(", ", getMixedOpNames()), testRun.TestResult.Inputs.TotalOperationCount);
                     yield break;
                 }
                 if (testRun.TestResult.Inputs.UpsertCount > 0)
@@ -411,7 +416,7 @@ namespace FASTER.PerfTest
 
         private static void RunOperations<TValue, TOutput, TFunctions, TSerializer>(
                 FHT<TValue, TOutput, TFunctions, TSerializer> fht, Operations op, long opCount,
-                int threadIndex, TestRun testRun, IGetValueRef<TValue, TOutput> getValueRef)
+                int threadIndex, TestRun testRun, IThreadValueRef<TValue, TOutput> getValueRef)
             where TValue : new()
             where TOutput : new()
             where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
@@ -425,7 +430,7 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"Running Operation {op} count {opCount} for threadId {threadIndex}");
 
             var rng = new RandomGenerator((uint)threadIndex);
-            var totalOpCount = testRun.TestResult.Inputs.TotalOpCount;
+            var totalOpCount = testRun.TestResult.Inputs.TotalOperationCount;
             var upsertThreshold = testRun.TestResult.Inputs.UpsertCount;
             var readThreshold = upsertThreshold + testRun.TestResult.Inputs.ReadCount;
             var rmwThreshold = readThreshold + testRun.TestResult.Inputs.RMWCount;
@@ -475,22 +480,24 @@ namespace FASTER.PerfTest
                     }
 
                     Status status = Status.OK;
+                    var key = opKeys[ii];
                     switch (thisOp)
                     {
                         case Operations.Upsert:
-                            status = session.Upsert(ref opKeys[ii], ref value, Empty.Default, 1);
+                            getValueRef.SetUpsertValue(ref value, key.key, ii & 7);
+                            status = session.Upsert(ref key, ref value, Empty.Default, 1);
                             break;
                         case Operations.Read:
-                            status = session.Read(ref opKeys[ii], ref input, ref output, Empty.Default, 0);
+                            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
                             break;
                         case Operations.RMW:
                             input.value = (int)(ii & 7);
-                            status = session.RMW(ref opKeys[ii], ref input, Empty.Default, 0);
+                            status = session.RMW(ref key, ref input, Empty.Default, 0);
                             break;
                     }
 
                     if (status != Status.OK && status != Status.PENDING)
-                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)} {thisOp}; key[{ii}] = {opKeys[ii].key}: {status}");
+                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)} {thisOp}; key[{ii}] = {key.key}: {status}");
                 }
             }
             session.CompletePending(true);

@@ -1,17 +1,17 @@
 {
   "ParameterSweeps": [
     {
-      "HashSizeShifts": [ 20, 22 ],
-      "NumaModes": [ "None", "RoundRobin" ],
+      "HashSizeShifts": [ 22 ],
+      "NumaModes": [ "RoundRobin" ],
       "Distributions": [ "Uniform", "ZipfSmooth" ],
-      "ReadThreadCounts": [1, 4],
-      "InitKeyCounts": [ 2500000 ],
-      "OperationKeyCounts": [ 5000000 ],
-      "UpsertCounts": [10000000],
-      "ReadCounts": [10000000],
-      "RMWCounts": [10000000],
+      "ThreadCounts": [1, 8],
+      "InitKeyCounts": [ 25000000 ],
+      "OperationKeyCounts": [ 75000000 ],
+      "UpsertCounts": [50000000],
+      "ReadCounts": [50000000],
+      "RMWCounts": [50000000],
       "MIxOperations": [ true, false ],
-      "DataSizes": [8, 64, 128],
+      "DataSizes": [8],
       "UseVarLenValues": [false, true],
       "IterationCounts": [3],
     }
