@@ -1,34 +1,32 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-
 #pragma warning disable 0162
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase,
+        IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private readonly Functions functions;
-        private readonly AllocatorBase<Key, Value> hlog;
+        internal readonly Functions functions;
+        internal readonly AllocatorBase<Key, Value> hlog;
         private readonly AllocatorBase<Key, Value> readcache;
         private readonly IFasterEqualityComparer<Key> comparer;
 
-        private readonly bool UseReadCache = false;
-        private readonly bool CopyReadsToTail = false;
-        private readonly bool FoldOverSnapshot = false;
-        private readonly int sectorSize;
-        private readonly bool WriteDefaultOnDelete = false;
-        private bool RelaxedCPR = false;
+        internal readonly bool UseReadCache;
+        private readonly bool CopyReadsToTail;
+        private readonly bool FoldOverSnapshot;
+        internal readonly int sectorSize;
+        private readonly bool WriteDefaultOnDelete;
+        internal bool RelaxedCPR;
 
         /// <summary>
         /// Use relaxed version of CPR, where ops pending I/O
@@ -62,20 +60,8 @@ namespace FASTER.core
         /// Read cache used by this FASTER instance
         /// </summary>
         public LogAccessor<Key, Value, Input, Output, Context, Functions> ReadCache { get; }
-
-        private enum CheckpointType
-        {
-            INDEX_ONLY,
-            HYBRID_LOG_ONLY,
-            FULL
-        }
-
-        private CheckpointType _checkpointType;
-        private Guid _indexCheckpointToken;
-        private Guid _hybridLogCheckpointToken;
-        private SystemState _systemState;
-        private HybridLogCheckpointInfo _hybridLogCheckpoint;
-        private ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
+        
+        internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>
         /// Create FASTER instance
@@ -87,7 +73,10 @@ namespace FASTER.core
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
-        public FasterKV(long size, Functions functions, LogSettings logSettings, CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null, IFasterEqualityComparer<Key> comparer = null, VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
+        public FasterKV(long size, Functions functions, LogSettings logSettings,
+            CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
+            IFasterEqualityComparer<Key> comparer = null,
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
             if (comparer != null)
                 this.comparer = comparer;
@@ -99,7 +88,8 @@ namespace FASTER.core
                 }
                 else
                 {
-                    Console.WriteLine("***WARNING*** Creating default FASTER key equality comparer based on potentially slow EqualityComparer<Key>.Default. To avoid this, provide a comparer (IFasterEqualityComparer<Key>) as an argument to FASTER's constructor, or make Key implement the interface IFasterEqualityComparer<Key>");
+                    Console.WriteLine(
+                        "***WARNING*** Creating default FASTER key equality comparer based on potentially slow EqualityComparer<Key>.Default. To avoid this, provide a comparer (IFasterEqualityComparer<Key>) as an argument to FASTER's constructor, or make Key implement the interface IFasterEqualityComparer<Key>");
                     this.comparer = FasterEqualityComparer<Key>.Default;
                 }
             }
@@ -108,9 +98,11 @@ namespace FASTER.core
                 checkpointSettings = new CheckpointSettings();
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
-                throw new FasterException("Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
+                throw new FasterException(
+                    "Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
 
-            checkpointManager = checkpointSettings.CheckpointManager ?? new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
+            checkpointManager = checkpointSettings.CheckpointManager ??
+                                new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
 
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
@@ -126,7 +118,8 @@ namespace FASTER.core
             {
                 if (variableLengthStructSettings != null)
                 {
-                    hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings, this.comparer, null, epoch);
+                    hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
+                        this.comparer, null, epoch);
                     Log = new LogAccessor<Key, Value, Input, Output, Context, Functions>(this, hlog);
                     if (UseReadCache)
                     {
@@ -184,36 +177,35 @@ namespace FASTER.core
 
             hlog.Initialize();
 
-            sectorSize = (int)logSettings.LogDevice.SectorSize;
+            sectorSize = (int) logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
             _systemState = default;
             _systemState.phase = Phase.REST;
             _systemState.version = 1;
-            _checkpointType = CheckpointType.HYBRID_LOG_ONLY;
         }
 
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <returns>
         /// Whether we successfully initiated the checkpoint (initiation may
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index).
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token)
+        public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1)
         {
-            if (InternalTakeCheckpoint(CheckpointType.FULL))
-            {
-                token = _indexCheckpointToken;
-                return true;
-            }
+            ISynchronizationTask backend;
+            if (FoldOverSnapshot)
+                backend = new FoldOverCheckpointTask();
             else
-            {
-                token = default;
-                return false;
-            }
+                backend = new SnapshotCheckpointTask();
+
+            var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
+            token = _hybridLogCheckpointToken;
+            return result;
         }
 
         /// <summary>
@@ -223,35 +215,28 @@ namespace FASTER.core
         /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeIndexCheckpoint(out Guid token)
         {
-            if (InternalTakeCheckpoint(CheckpointType.INDEX_ONLY))
-            {
-                token = _indexCheckpointToken;
-                return true;
-            }
-            else
-            {
-                token = default;
-                return false;
-            }
+            var result = StartStateMachine(new IndexSnapshotStateMachine());
+            token = _indexCheckpointToken;
+            return result;
         }
 
         /// <summary>
         /// Take hybrid log checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <returns>Whether we could initiate the checkpoint</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token)
+        public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
         {
-            if (InternalTakeCheckpoint(CheckpointType.HYBRID_LOG_ONLY))
-            {
-                token = _hybridLogCheckpointToken;
-                return true;
-            }
+            ISynchronizationTask backend;
+            if (FoldOverSnapshot)
+                backend = new FoldOverCheckpointTask();
             else
-            {
-                token = default;
-                return false;
-            }
+                backend = new SnapshotCheckpointTask();
+
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
+            token = _hybridLogCheckpointToken;
+            return result;
         }
 
         /// <summary>
@@ -295,35 +280,39 @@ namespace FASTER.core
             while (true)
             {
                 var systemState = _systemState;
-                if (systemState.phase == Phase.REST || systemState.phase == Phase.PREPARE_GROW || systemState.phase == Phase.IN_PROGRESS_GROW)
+                if (systemState.phase == Phase.REST || systemState.phase == Phase.PREPARE_GROW ||
+                    systemState.phase == Phase.IN_PROGRESS_GROW)
                     return;
 
-                await HandleCheckpointingPhasesAsync(null, null);
+                await ThreadStateMachineStep(null, null, true, token);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead(ref Key key, ref Input input, ref Output output, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextRead(ref Key key, ref Input input, ref Output output, Context context, long serialNo,
+            FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, sessionCtx, serialNo);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, sessionCtx,
+                serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = (Status) internalStatus;
             }
             else
             {
                 status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
+
             sessionCtx.serialNum = serialNo;
             return status;
         }
 
-        
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert(ref Key key, ref Value value, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextUpsert(ref Key key, ref Value value, Context context, long serialNo,
+            FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
             var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx, serialNo);
@@ -331,30 +320,33 @@ namespace FASTER.core
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = (Status) internalStatus;
             }
             else
             {
                 status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
+
             sessionCtx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW(ref Key key, ref Input input, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextRMW(ref Key key, ref Input input, Context context, long serialNo,
+            FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
             var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = (Status) internalStatus;
             }
             else
             {
                 status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
+
             sessionCtx.serialNum = serialNo;
             return status;
         }
@@ -367,8 +359,9 @@ namespace FASTER.core
             var status = default(Status);
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = (Status) internalStatus;
             }
+
             sessionCtx.serialNum = serialNo;
             return status;
         }
@@ -380,7 +373,7 @@ namespace FASTER.core
         /// <returns>Whether the request succeeded</returns>
         public bool GrowIndex()
         {
-            return InternalGrowIndex();
+            return StartStateMachine(new IndexResizeStateMachine());
         }
 
         /// <summary>

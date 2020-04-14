@@ -79,14 +79,11 @@ namespace FASTER.core
                 return;
             }
 
-            // Moving to non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
-            {
-                ctx.phase = newPhaseInfo.phase;
-                return;
-            }
-
-            HandleCheckpointingPhases(ctx, clientSession);
+            
+            // await is never invoked when calling the function with async = false
+            #pragma warning disable 4014
+            ThreadStateMachineStep(ctx, clientSession, false);
+            #pragma warning restore 4014
         }
 
 
@@ -159,8 +156,8 @@ namespace FASTER.core
                 {
                     if (ctx.phase == Phase.IN_PROGRESS || ctx.phase == Phase.WAIT_PENDING)
                     {
-                        CompleteIOPendingRequests(ctx.prevCtx, ctx);
-                        CompleteRetryRequests(ctx.prevCtx, ctx);
+                        InternalCompletePendingRequests(ctx.prevCtx, ctx);
+                        InternalCompleteRetryRequests(ctx.prevCtx, ctx);
                         InternalRefresh(ctx);
 
                         done &= (ctx.prevCtx.HasNoPendingRequests);
@@ -168,8 +165,8 @@ namespace FASTER.core
                 }
                 #endregion
 
-                CompleteIOPendingRequests(ctx, ctx);
-                CompleteRetryRequests(ctx, ctx);
+                InternalCompletePendingRequests(ctx, ctx);
+                InternalCompleteRetryRequests(ctx, ctx);
                 InternalRefresh(ctx);
 
                 done &= (ctx.HasNoPendingRequests);
@@ -191,111 +188,39 @@ namespace FASTER.core
 
         internal bool InRestPhase() => _systemState.phase == Phase.REST;
 
-        internal void CompleteRetryRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx)
+        #region Complete Retry Requests
+        internal void InternalCompleteRetryRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession = null)
         {
             int count = opCtx.retryRequests.Count;
 
             if (count == 0) return;
 
+            clientSession?.UnsafeResumeThread();
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = opCtx.retryRequests.Dequeue();
-                InternalRetryRequestAndCallback(opCtx, currentCtx, pendingContext);
+                InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext);
             }
+            clientSession?.UnsafeSuspendThread();
         }
 
-        internal void CompleteRetryRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
-        {
-            int count = opCtx.retryRequests.Count;
-
-            if (count == 0) return;
-
-            clientSession.UnsafeResumeThread();
-            for (int i = 0; i < count; i++)
-            {
-                var pendingContext = opCtx.retryRequests.Dequeue();
-                InternalRetryRequestAndCallback(opCtx, currentCtx, pendingContext);
-            }
-            clientSession.UnsafeSuspendThread();
-        }
-
-        internal void CompleteIOPendingRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx)
-        {
-            if (opCtx.readyResponses.Count == 0) return;
-
-            while (opCtx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
-            {
-                InternalContinuePendingRequestAndCallback(opCtx, currentCtx, request);
-            }
-        }
-
-        internal async ValueTask CompleteIOPendingRequestsAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
-        {
-            while (opCtx.ioPendingRequests.Count > 0)
-            {
-                AsyncIOContext<Key, Value> request;
-
-                if (opCtx.readyResponses.Count > 0)
-                {
-                    clientSession.UnsafeResumeThread();
-                    while (opCtx.readyResponses.Count > 0)
-                    {
-                        opCtx.readyResponses.TryDequeue(out request);
-                        InternalContinuePendingRequestAndCallback(opCtx, currentCtx, request);
-                    }
-                    clientSession.UnsafeSuspendThread();
-                }
-                else
-                {
-                    request = await opCtx.readyResponses.DequeueAsync(token);
-
-                    clientSession.UnsafeResumeThread();
-                    InternalContinuePendingRequestAndCallback(opCtx, currentCtx, request);
-                    clientSession.UnsafeSuspendThread();
-                }
-            }
-        }
-
-        internal void InternalRetryRequestAndCallback(
-                                    FasterExecutionContext opCtx,
-                                    FasterExecutionContext currentCtx,
-                                    PendingContext pendingContext)
+        internal void InternalCompleteRetryRequest(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, PendingContext pendingContext)
         {
             var internalStatus = default(OperationStatus);
             ref Key key = ref pendingContext.key.Get();
             ref Value value = ref pendingContext.value.Get();
 
-            bool handleLatches = false;
-
-            if (!RelaxedCPR)
-            {
-                #region Entry latch operation
-
-                if ((opCtx.version < currentCtx.version) // Thread has already shifted to (v+1)
-                    ||
-                    (currentCtx.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
-                {
-                    handleLatches = true;
-                }
-                #endregion
-            }
-
             // Issue retry command
             switch (pendingContext.type)
             {
                 case OperationType.RMW:
-                    internalStatus = InternalRetryPendingRMW(opCtx, ref pendingContext, currentCtx);
+                    internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(ref key,
-                                                    ref value,
-                                                    ref pendingContext.userContext,
-                                                    ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.DELETE:
-                    internalStatus = InternalDelete(ref key,
-                                                    ref pendingContext.userContext,
-                                                    ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.READ:
                     throw new FasterException("Cannot happen!");
@@ -316,7 +241,7 @@ namespace FASTER.core
             // If done, callback user code.
             if (status == Status.OK || status == Status.NOTFOUND)
             {
-                if (handleLatches)
+                if (pendingContext.heldLatch == LatchOperation.Shared)
                     ReleaseSharedLatch(key);
 
                 switch (pendingContext.type)
@@ -341,24 +266,48 @@ namespace FASTER.core
 
             }
         }
+        #endregion
 
-        internal void InternalContinuePendingRequestAndCallback(
-                                    FasterExecutionContext opCtx,
-                                    FasterExecutionContext currentCtx,
-                                    AsyncIOContext<Key, Value> request)
+        #region Complete Pending Requests
+        internal void InternalCompletePendingRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx)
         {
-            bool handleLatches = false;
+            if (opCtx.readyResponses.Count == 0) return;
 
-            if (!RelaxedCPR)
+            while (opCtx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
             {
-                if ((opCtx.version < currentCtx.version) // Thread has already shifted to (v+1)
-                    ||
-                    (currentCtx.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
+                InternalCompletePendingRequest(opCtx, currentCtx, request);
+            }
+        }
+
+        internal async ValueTask InternalCompletePendingRequestsAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        {
+            while (opCtx.ioPendingRequests.Count > 0)
+            {
+                AsyncIOContext<Key, Value> request;
+
+                if (opCtx.readyResponses.Count > 0)
                 {
-                    handleLatches = true;
+                    clientSession.UnsafeResumeThread();
+                    while (opCtx.readyResponses.Count > 0)
+                    {
+                        opCtx.readyResponses.TryDequeue(out request);
+                        InternalCompletePendingRequest(opCtx, currentCtx, request);
+                    }
+                    clientSession.UnsafeSuspendThread();
+                }
+                else
+                {
+                    request = await opCtx.readyResponses.DequeueAsync(token);
+
+                    clientSession.UnsafeResumeThread();
+                    InternalCompletePendingRequest(opCtx, currentCtx, request);
+                    clientSession.UnsafeSuspendThread();
                 }
             }
+        }
 
+        internal void InternalCompletePendingRequest(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, AsyncIOContext<Key, Value> request)
+        {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out PendingContext pendingContext))
             {
                 ref Key key = ref pendingContext.key.Get();
@@ -393,7 +342,7 @@ namespace FASTER.core
                 // If done, callback user code
                 if (status == Status.OK || status == Status.NOTFOUND)
                 {
-                    if (handleLatches)
+                    if (pendingContext.heldLatch == LatchOperation.Shared)
                         ReleaseSharedLatch(key);
 
                     if (pendingContext.type == OperationType.READ)
@@ -416,25 +365,9 @@ namespace FASTER.core
             }
         }
 
-
-        internal (Status, Output) InternalCompleteIOPendingReadRequestsAsync(
-                            FasterExecutionContext opCtx,
-                            FasterExecutionContext currentCtx,
-                            AsyncIOContext<Key, Value> request, PendingContext pendingContext)
+        internal (Status, Output) InternalCompletePendingReadRequestAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, AsyncIOContext<Key, Value> request, PendingContext pendingContext)
         {
-            bool handleLatches = false;
             (Status, Output) s = default;
-
-            if (!RelaxedCPR)
-            {
-                if ((opCtx.version < currentCtx.version) // Thread has already shifted to (v+1)
-                    ||
-                    (currentCtx.phase == Phase.PREPARE)) // Thread still in version v, but acquired shared-latch 
-                {
-                    handleLatches = true;
-                }
-            }
-
 
             ref Key key = ref pendingContext.key.Get();
 
@@ -453,10 +386,8 @@ namespace FASTER.core
                 throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
             }
 
-
-            if (handleLatches)
+            if (pendingContext.heldLatch == LatchOperation.Shared)
                 ReleaseSharedLatch(key);
-
 
             functions.ReadCompletionCallback(ref key,
                                              ref pendingContext.input,
@@ -466,12 +397,10 @@ namespace FASTER.core
 
             s.Item1 = status;
             s.Item2 = pendingContext.output;
-
             pendingContext.Dispose();
-
 
             return s;
         }
-
+        #endregion
     }
 }

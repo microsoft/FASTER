@@ -34,10 +34,13 @@ namespace FASTER.core
 
     internal class SerializedFasterExecutionContext
     {
-        public int version;
-        public long serialNum;
-        public string guid;
+        internal int version;
+        internal long serialNum;
+        internal string guid;
 
+        /// <summary>
+        /// </summary>
+        /// <param name="writer"></param>
         public void Write(StreamWriter writer)
         {
             writer.WriteLine(version);
@@ -45,6 +48,9 @@ namespace FASTER.core
             writer.WriteLine(serialNum);
         }
 
+        /// <summary>
+        /// </summary>
+        /// <param name="reader"></param>
         public void Load(StreamReader reader)
         {
             string value = reader.ReadLine();
@@ -56,7 +62,7 @@ namespace FASTER.core
         }
     }
 
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -65,26 +71,21 @@ namespace FASTER.core
         internal struct PendingContext
         {
             // User provided information
+            internal OperationType type;
+            internal IHeapContainer<Key> key;
+            internal IHeapContainer<Value> value;
+            internal Input input;
+            internal Output output;
+            internal Context userContext;
 
-            public OperationType type;
-
-            public IHeapContainer<Key> key;
-            public IHeapContainer<Value> value;
-            public Input input;
-            public Output output;
-            public Context userContext;
 
             // Some additional information about the previous attempt
-
-            public long id;
-
-            public int version;
-
-            public long logicalAddress;
-
-            public long serialNum;
-
-            public HashBucketEntry entry;
+            internal long id;
+            internal int version;
+            internal long logicalAddress;
+            internal long serialNum;
+            internal HashBucketEntry entry;
+            internal LatchOperation heldLatch;
 
             public void Dispose()
             {

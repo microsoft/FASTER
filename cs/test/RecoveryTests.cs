@@ -10,18 +10,18 @@ using NUnit.Framework;
 
 namespace FASTER.test.recovery.sumstore
 {
-
     [TestFixture]
-    internal class FullRecoveryTests
+    internal class RecoveryTests
     {
         const long numUniqueKeys = (1 << 14);
         const long keySpace = (1L << 14);
         const long numOps = (1L << 19);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
+
         private FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fht;
         private string test_path;
-        private Guid token;
+        private List<Guid> logTokens, indexTokens;
         private IDevice log;
 
         [SetUp]
@@ -37,10 +37,10 @@ namespace FASTER.test.recovery.sumstore
             log = Devices.CreateLogDevice(test_path + "\\FullRecoveryTests.log");
 
             fht = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>
-                (keySpace, new Functions(), 
-                new LogSettings { LogDevice = log },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot }
-                );
+            (keySpace, new Functions(),
+                new LogSettings {LogDevice = log},
+                new CheckpointSettings {CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot}
+            );
         }
 
         [TearDown]
@@ -74,18 +74,83 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [Test]
-        public void RecoveryTest1()
+        public void RecoveryTestSeparateCheckpoint()
         {
-            Populate();
-            fht.Dispose();
-            fht = null;
-            log.Close();
-            Setup();
-            RecoverAndTest(token, token);
+            Populate(SeparateCheckpointAction);
+
+            for (var i = 0; i < logTokens.Count; i++)
+            {
+                if (i >= indexTokens.Count) break;
+                fht.Dispose();
+                fht = null;
+                log.Close();
+                Setup();
+                RecoverAndTest(logTokens[i], indexTokens[i]);
+            }
         }
 
-        public void Populate()
+        [Test]
+        public void RecoveryTestFullCheckpoint()
         {
+            Populate(FullCheckpointAction);
+
+            foreach (var token in logTokens)
+            {
+                fht.Dispose();
+                fht = null;
+                log.Close();
+                Setup();
+                RecoverAndTest(token, token);
+            }
+        }
+
+        public void FullCheckpointAction(int opNum)
+        {
+            if ((opNum + 1) % checkpointInterval == 0)
+            {
+                Guid token;
+                while (!fht.TakeFullCheckpoint(out token))
+                {
+                }
+
+                logTokens.Add(token);
+                indexTokens.Add(token);
+
+                fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            }
+        }
+
+        public void SeparateCheckpointAction(int opNum) 
+        {
+            if ((opNum + 1) % checkpointInterval != 0) return;
+
+            var checkpointNum = (opNum + 1) / checkpointInterval;
+            if (checkpointNum % 2 == 1)
+            {
+                Guid token;
+                while (!fht.TakeHybridLogCheckpoint(out token))
+                {
+                }
+
+                logTokens.Add(token);
+                fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            }
+            else
+            {
+                Guid token;
+                while (!fht.TakeIndexCheckpoint(out token))
+                {
+                }
+
+                indexTokens.Add(token);
+                fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            }
+        }
+
+        public void Populate(Action<int> checkpointAction)
+        {
+            logTokens = new List<Guid>();
+            indexTokens = new List<Guid>();
             // Prepare the dataset
             var inputArray = new AdInput[numOps];
             for (int i = 0; i < numOps; i++)
@@ -103,17 +168,7 @@ namespace FASTER.test.recovery.sumstore
             {
                 session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
-                if ((i+1) % checkpointInterval == 0)
-                {
-                    if (first)
-                        while (!fht.TakeFullCheckpoint(out token)) ;
-                    else
-                        while (!fht.TakeFullCheckpoint(out Guid nextToken)) ;
-
-                    fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
-
-                    first = false;
-                }
+                checkpointAction(i);
 
                 if (i % completePendingInterval == 0)
                 {
@@ -131,7 +186,7 @@ namespace FASTER.test.recovery.sumstore
         public void RecoverAndTest(Guid cprVersion, Guid indexVersion)
         {
             // Recover
-            fht.Recover(cprVersion, indexVersion);
+            fht.Recover(indexVersion, cprVersion);
 
             // Create array for reading
             var inputArray = new AdInput[numUniqueKeys];
@@ -194,7 +249,8 @@ namespace FASTER.test.recovery.sumstore
             {
                 Assert.IsTrue(
                     expected[i] == inputArray[i].numClicks.numClicks,
-                    "Debug error for AdId {0}: Expected ({1}), Found({2})", inputArray[i].adId.adId, expected[i], inputArray[i].numClicks.numClicks);
+                    "Debug error for AdId {0}: Expected ({1}), Found({2})", inputArray[i].adId.adId, expected[i],
+                    inputArray[i].numClicks.numClicks);
             }
         }
     }

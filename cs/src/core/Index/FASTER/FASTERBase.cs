@@ -143,7 +143,6 @@ namespace FASTER.core
     {
         [FieldOffset(0)]
         public long word;
-
         public long Address
         {
             get
@@ -157,7 +156,6 @@ namespace FASTER.core
                 word |= (value & Constants.kAddressMask);
             }
         }
-
 
         public ushort Tag
         {
@@ -326,7 +324,7 @@ namespace FASTER.core
         /// <param name="version"></param>
         /// <param name="size"></param>
         /// <param name="sector_size"></param>
-        protected void Initialize(int version, long size, int sector_size)
+        internal void Initialize(int version, long size, int sector_size)
         {
             long size_bytes = size * sizeof(HashBucket);
             long aligned_size_bytes = sector_size +
