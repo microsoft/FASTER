@@ -88,7 +88,7 @@ namespace FASTER.core
                 case Phase.WAIT_PENDING:
                     if (ctx != null)
                     {
-                        if (!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
+                        if (!faster.RelaxedCPR &&!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
                         {
                             if (ctx.prevCtx.HasNoPendingRequests)
                                 ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
