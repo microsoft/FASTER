@@ -5,9 +5,9 @@ VisualStudioVersion = 16.0.29102.190
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "performance", "performance", "{48B3F2D3-5286-4E56-916B-8503E27F80FE}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.Benchmark", "Performance\Benchmark\FASTER.Benchmark.csproj", "{33A732D1-2B58-4FEE-9696-B9483496229F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.Benchmark", "performance\Benchmark\FASTER.Benchmark.csproj", "{33A732D1-2B58-4FEE-9696-B9483496229F}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.PerfTest", "Performance\PerfTest\FASTER.PerfTest.csproj", "{57B03A3F-D8C3-4F7E-949D-C687B92568E8}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.PerfTest", "performance\PerfTest\FASTER.PerfTest.csproj", "{57B03A3F-D8C3-4F7E-949D-C687B92568E8}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.test", "test\FASTER.test.csproj", "{0DC7F5A2-E963-4E7F-BD37-6F7864B726F2}"
 EndProject
