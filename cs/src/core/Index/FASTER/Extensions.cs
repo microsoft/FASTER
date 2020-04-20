@@ -3,7 +3,6 @@
 
 #pragma warning disable 0162
 
-
 using System;
 
 namespace FASTER.core
@@ -27,7 +26,7 @@ namespace FASTER.core
 
         internal class RecordObservable<Key, Value> : IObservable<Record<Key, Value>>
         {
-            IObservable<IFasterScanIterator<Key, Value>> o;
+            readonly IObservable<IFasterScanIterator<Key, Value>> o;
 
             public RecordObservable(IObservable<IFasterScanIterator<Key, Value>> o)
             {
@@ -40,9 +39,9 @@ namespace FASTER.core
             }
         }
 
-        internal class RecordObserver<Key, Value> : IObserver<IFasterScanIterator<Key, Value>>
+        internal sealed class RecordObserver<Key, Value> : IObserver<IFasterScanIterator<Key, Value>>
         {
-            private IObserver<Record<Key, Value>> observer;
+            private readonly IObserver<Record<Key, Value>> observer;
 
             public RecordObserver(IObserver<Record<Key, Value>> observer)
             {

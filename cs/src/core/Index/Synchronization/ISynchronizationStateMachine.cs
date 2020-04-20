@@ -167,7 +167,7 @@ namespace FASTER.core
     /// </summary>
     internal abstract class SynchronizationStateMachineBase : ISynchronizationStateMachine
     {
-        private ISynchronizationTask[] tasks;
+        private readonly ISynchronizationTask[] tasks;
 
         /// <summary>
         /// Construct a new SynchronizationStateMachine with the given tasks. The order of tasks given is the
