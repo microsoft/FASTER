@@ -3,7 +3,6 @@
 
 #pragma warning disable 0162
 
-
 using System;
 
 namespace FASTER.core
