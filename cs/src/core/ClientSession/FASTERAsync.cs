@@ -4,11 +4,9 @@
 #pragma warning disable 0162
 
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -73,13 +71,13 @@ namespace FASTER.core
             }
         }
 
-        internal class ReadAsyncInternal
+        internal sealed class ReadAsyncInternal
         {
             const int Completed = 1;
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
-            FasterKV<Key, Value, Input, Output, Context, Functions> _fasterKV;
-            ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+            readonly FasterKV<Key, Value, Input, Output, Context, Functions> _fasterKV;
+            readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
             PendingContext _pendingContext;
             AsyncIOContext<Key, Value> _diskRequest;
             int CompletionComputeStatus;
@@ -137,9 +135,10 @@ namespace FASTER.core
         /// </summary>
         public struct ReadAsyncResult
         {
-            Status status;
-            Output output;
-            ReadAsyncInternal readAsyncInternal;
+            readonly Status status;
+            readonly Output output;
+
+            readonly ReadAsyncInternal readAsyncInternal;
 
             internal ReadAsyncResult(Status status, Output output)
             {

@@ -41,7 +41,7 @@ namespace VarLenStructSample
         }
     }
 
-    public struct VarLenTypeComparer : IFasterEqualityComparer<VarLenType>
+    public readonly struct VarLenTypeComparer : IFasterEqualityComparer<VarLenType>
     {
         public long GetHashCode64(ref VarLenType k)
         {
@@ -61,7 +61,7 @@ namespace VarLenStructSample
         }
     }
 
-    public struct VarLenLength : IVariableLengthStruct<VarLenType>
+    public readonly struct VarLenLength : IVariableLengthStruct<VarLenType>
     {
         public int GetAverageLength()
         {

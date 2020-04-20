@@ -107,7 +107,7 @@ namespace FASTER.core
         /// <summary>
         /// Write info to byte array
         /// </summary>
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             using (var ms = new MemoryStream())
             {
