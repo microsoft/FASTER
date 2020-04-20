@@ -34,7 +34,7 @@
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
   
-  <PropertyGroup Condition="'$(TargetFramework)'!='net46'">
+  <PropertyGroup Condition="'$(TargetFramework)'!='net461'">
     <DefineConstants>$(DefineConstants);DOTNETCORE</DefineConstants>
   </PropertyGroup>
     
