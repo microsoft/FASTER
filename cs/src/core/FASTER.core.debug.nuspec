@@ -44,6 +44,6 @@
     <file src="bin\AnyCPU\Debug\netstandard2.0\FASTER.core.xml" target="lib\netstandard2.0" />
     <file src="bin\AnyCPU\Debug\netstandard2.1\FASTER.core.dll" target="lib\netstandard2.1" />
     <file src="bin\AnyCPU\Debug\netstandard2.1\FASTER.core.pdb" target="lib\netstandard2.1" />
-    <file src="bin\AnyCPU\Debugs\netstandard2.1\FASTER.core.xml" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Debug\netstandard2.1\FASTER.core.xml" target="lib\netstandard2.1" />
   </files>
 </package>
