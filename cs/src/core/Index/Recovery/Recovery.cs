@@ -5,16 +5,10 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
-using System.Linq;
-using System.Collections.Generic;
 
 namespace FASTER.core
 {
-
     internal enum ReadStatus { Pending, Done };
     internal enum FlushStatus { Pending, Done };
 
@@ -63,7 +57,7 @@ namespace FASTER.core
             InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid);
         }
 
-        private bool IsCompatible(IndexRecoveryInfo indexInfo, HybridLogRecoveryInfo recoveryInfo)
+        private bool IsCompatible(in IndexRecoveryInfo indexInfo, in HybridLogRecoveryInfo recoveryInfo)
         {
             var l1 = indexInfo.finalLogicalAddress;
             var l2 = recoveryInfo.finalLogicalAddress;
