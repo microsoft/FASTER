@@ -1,5 +1,4 @@
-﻿using System.ComponentModel;
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
@@ -7,7 +6,7 @@ namespace FASTER.core
     /// <summary>
     /// Resizes an index
     /// </summary>
-    internal class IndexResizeTask : ISynchronizationTask
+    internal sealed class IndexResizeTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
@@ -93,7 +92,7 @@ namespace FASTER.core
     /// <summary>
     /// Resizes the index
     /// </summary>
-    internal class IndexResizeStateMachine : SynchronizationStateMachineBase
+    internal sealed class IndexResizeStateMachine : SynchronizationStateMachineBase
     {
         /// <summary>
         /// Constructs a new IndexResizeStateMachine

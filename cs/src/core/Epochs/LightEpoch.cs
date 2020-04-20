@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Epoch protection
     /// </summary>
-    public unsafe class LightEpoch
+    public unsafe sealed class LightEpoch
     {
         /// <summary>
         /// Default invalid index entry.
@@ -427,7 +427,6 @@ namespace FASTER.core
         [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
         private struct Entry
         {
-
             /// <summary>
             /// Thread-local value of epoch
             /// </summary>

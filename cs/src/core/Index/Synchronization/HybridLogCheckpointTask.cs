@@ -120,7 +120,7 @@ namespace FASTER.core
     /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
     /// in garbage entries on the log, and a slower recovery of performance.
     /// </summary>
-    internal class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
+    internal sealed class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
@@ -179,7 +179,7 @@ namespace FASTER.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
+    internal sealed class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,

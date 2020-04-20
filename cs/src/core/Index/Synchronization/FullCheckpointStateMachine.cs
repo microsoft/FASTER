@@ -8,7 +8,7 @@ namespace FASTER.core
     /// <summary>
     /// This task contains logic to orchestrate the index and hybrid log checkpoint in parallel
     /// </summary>
-    internal class FullCheckpointOrchestrationTask : ISynchronizationTask
+    internal sealed class FullCheckpointOrchestrationTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
@@ -81,7 +81,7 @@ namespace FASTER.core
     /// <summary>
     /// The state machine orchestrates a full checkpoint
     /// </summary>
-    internal class FullCheckpointStateMachine : HybridLogCheckpointStateMachine
+    internal sealed class FullCheckpointStateMachine : HybridLogCheckpointStateMachine
     {
         /// <summary>
         /// Construct a new FullCheckpointStateMachine to use the given checkpoint backend (either fold-over or snapshot),

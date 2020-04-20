@@ -2,22 +2,17 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Implementation of checkpoint interface for local file storage
     /// </summary>
-    public class LocalCheckpointManager : ICheckpointManager
+    public sealed class LocalCheckpointManager : ICheckpointManager
     {
-        private DirectoryConfiguration directoryConfiguration;
+        private readonly DirectoryConfiguration directoryConfiguration;
 
         /// <summary>
         /// Create new instance of local checkpoint manager at given base directory

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Threading;
 using System.Diagnostics;
 
@@ -10,7 +9,7 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public class GenericScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
+    public sealed class GenericScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -177,15 +176,15 @@ namespace FASTER.core
         /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
-            key = default(Key);
-            value = default(Value);
-
             if (GetNext(out recordInfo))
             {
                 key = currentKey;
                 value = currentValue;
                 return true;
             }
+
+            key = default;
+            value = default;
 
             return false;
         }

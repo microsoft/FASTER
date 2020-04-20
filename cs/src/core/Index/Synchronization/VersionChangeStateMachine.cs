@@ -1,7 +1,4 @@
-﻿using System;
-using System.ComponentModel;
-using System.Security.Cryptography.X509Certificates;
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
@@ -11,7 +8,7 @@ namespace FASTER.core
     /// version. It is used as the basis of many other tasks, which decides what they do with the captured
     /// version.
     /// </summary>
-    internal class VersionChangeTask : ISynchronizationTask
+    internal sealed class VersionChangeTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
@@ -114,7 +111,7 @@ namespace FASTER.core
     /// The FoldOver task simply sets the read only offset to the current end of the log, so a captured version
     /// is immutable and will eventually be flushed to disk.
     /// </summary>
-    internal class FoldOverTask : ISynchronizationTask
+    internal sealed class FoldOverTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
