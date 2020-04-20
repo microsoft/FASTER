@@ -25,9 +25,9 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
-  - task: NuGetToolInstaller@0
+  - task: NuGetToolInstaller@1
     inputs:
-      versionSpec: '4.8.2'
+      versionSpec: '5.5.0'
 
   - task: NuGetCommand@2
     inputs:
@@ -54,8 +54,8 @@ jobs:
   - task: VSTest@2
     inputs:
       testAssemblyVer2: |
-       **\$(BuildConfiguration)\net46*\*test*.dll
-       **\$(BuildConfiguration)\**\net46*\*test*.dll
+       **\$(BuildConfiguration)\net46*\*test.dll
+       **\$(BuildConfiguration)\**\net46*\*test.dll
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
        !**\*TestAdapter.dll
@@ -66,8 +66,8 @@ jobs:
   - task: VSTest@2
     inputs:
       testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp*\*test*.dll
-       **\$(BuildConfiguration)\**\netcoreapp*\*test*.dll
+       **\$(BuildConfiguration)\netcoreapp*\*test.dll
+       **\$(BuildConfiguration)\**\netcoreapp*\*test.dll
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
        !**\*TestAdapter.dll
@@ -147,9 +147,9 @@ jobs:
   displayName: 'C# (Linux)'
 
   steps:
-  - task: NuGetToolInstaller@0
+  - task: NuGetToolInstaller@1
     inputs:
-      versionSpec: '4.8.2'
+      versionSpec: '5.5.0'
 
   - task: NuGetCommand@2
     inputs:
