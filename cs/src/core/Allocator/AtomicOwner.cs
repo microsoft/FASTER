@@ -1,9 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Threading;
 using System.Runtime.InteropServices;
-using System;
+using System.Threading;
 
 namespace FASTER.core
 {

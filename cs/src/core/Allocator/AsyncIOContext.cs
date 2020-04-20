@@ -1,11 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using FASTER.core.Utilities;
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
 
+using FASTER.core.Utilities;
 
 namespace FASTER.core
 {
@@ -71,7 +70,7 @@ namespace FASTER.core
         }
     }
 
-    internal class SimpleReadContext : IAsyncResult
+    internal sealed class SimpleReadContext : IAsyncResult
     {
         public long logicalAddress;
         public SectorAlignedMemory record;

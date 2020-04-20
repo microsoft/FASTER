@@ -10,7 +10,7 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public class VariableLengthBlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
+    public sealed class VariableLengthBlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -224,5 +224,3 @@ namespace FASTER.core
         }
     }
 }
-
-
