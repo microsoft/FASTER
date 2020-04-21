@@ -4,14 +4,9 @@
 #pragma warning disable 0162
 #define CPR
 
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -869,7 +864,6 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
             var latchOperation = default(LatchOperation);
-            var version = default(int);
             var latestRecordVersion = -1;
 
             var hash = comparer.GetHashCode64(ref key);
@@ -907,13 +901,6 @@ namespace FASTER.core
             }
             #endregion
 
-            // NO optimization for most common case
-            //if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
-            //{
-            //    hlog.GetInfo(physicalAddress).Tombstone = true;
-            //    return OperationStatus.SUCCESS;
-            //}
-
             #region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
@@ -921,12 +908,11 @@ namespace FASTER.core
                 {
                     case Phase.PREPARE:
                         {
-                            version = sessionCtx.version;
                             if (HashBucket.TryAcquireSharedLatch(bucket))
                             {
                                 // Set to release shared latch (default)
                                 latchOperation = LatchOperation.Shared;
-                                if (latestRecordVersion != -1 && latestRecordVersion > version)
+                                if (latestRecordVersion != -1 && latestRecordVersion > sessionCtx.version)
                                 {
                                     status = OperationStatus.CPR_SHIFT_DETECTED;
                                     goto CreatePendingContext; // Pivot Thread
@@ -941,8 +927,7 @@ namespace FASTER.core
                         }
                     case Phase.IN_PROGRESS:
                         {
-                            version = (sessionCtx.version - 1);
-                            if (latestRecordVersion != -1 && latestRecordVersion <= version)
+                            if (latestRecordVersion != -1 && latestRecordVersion < sessionCtx.version)
                             {
                                 if (HashBucket.TryAcquireExclusiveLatch(bucket))
                                 {
@@ -960,8 +945,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            version = (sessionCtx.version - 1);
-                            if (latestRecordVersion != -1 && latestRecordVersion <= version)
+                            if (latestRecordVersion != -1 && latestRecordVersion < sessionCtx.version)
                             {
                                 if (HashBucket.NoSharedLatches(bucket))
                                 {
@@ -977,8 +961,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_FLUSH:
                         {
-                            version = (sessionCtx.version - 1);
-                            if (latestRecordVersion != -1 && latestRecordVersion <= version)
+                            if (latestRecordVersion != -1 && latestRecordVersion < sessionCtx.version)
                             {
                                 goto CreateNewRecord; // Create a (v+1) record
                             }

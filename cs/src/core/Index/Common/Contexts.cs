@@ -67,7 +67,6 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-
         internal struct PendingContext
         {
             // User provided information
@@ -94,7 +93,7 @@ namespace FASTER.core
             }
         }
 
-        internal class FasterExecutionContext : SerializedFasterExecutionContext
+        internal sealed class FasterExecutionContext : SerializedFasterExecutionContext
         {
             public Phase phase;
             public bool[] markers;
@@ -119,7 +118,6 @@ namespace FASTER.core
         }
     }
 
- 
     /// <summary>
     /// Descriptor for a CPR commit point
     /// </summary>
@@ -344,7 +342,7 @@ namespace FASTER.core
         /// <summary>
         /// Print checkpoint info for debugging purposes
         /// </summary>
-        public void DebugPrint()
+        public readonly void DebugPrint()
         {
             Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
             Debug.WriteLine("Version: {0}", version);
@@ -414,6 +412,7 @@ namespace FASTER.core
             finalLogicalAddress = 0;
             num_buckets = 0;
         }
+
         public void Initialize(StreamReader reader)
         {
             string value = reader.ReadLine();
@@ -447,7 +446,7 @@ namespace FASTER.core
             Initialize(s);
         }
 
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             using MemoryStream ms = new MemoryStream();
             using (var writer = new StreamWriter(ms))
@@ -464,7 +463,7 @@ namespace FASTER.core
             return ms.ToArray();
         }
 
-        public void DebugPrint()
+        public readonly void DebugPrint()
         {
             Debug.WriteLine("******** Index Checkpoint Info for {0} ********", token);
             Debug.WriteLine("Table Size: {0}", table_size);
@@ -474,6 +473,7 @@ namespace FASTER.core
             Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
         }
+
         public void Reset()
         {
             token = default;
@@ -497,10 +497,12 @@ namespace FASTER.core
             checkpointManager.InitializeIndexCheckpoint(token);
             main_ht_device = checkpointManager.GetIndexDevice(token);
         }
+
         public void Recover(Guid token, ICheckpointManager checkpointManager)
         {
             info.Recover(token, checkpointManager);
         }
+
         public void Reset()
         {
             info.Reset();

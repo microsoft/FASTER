@@ -12,7 +12,7 @@ namespace FASTER.core
     /// Result of async page read
     /// </summary>
     /// <typeparam name="TContext"></typeparam>
-    public class PageAsyncReadResult<TContext> : IAsyncResult
+    public sealed class PageAsyncReadResult<TContext> : IAsyncResult
     {
         internal long page;
         internal long offset;
@@ -73,7 +73,7 @@ namespace FASTER.core
     /// Page async flush result
     /// </summary>
     /// <typeparam name="TContext"></typeparam>
-    public class PageAsyncFlushResult<TContext> : IAsyncResult
+    public sealed class PageAsyncFlushResult<TContext> : IAsyncResult
     {
         /// <summary>
         /// Page

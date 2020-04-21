@@ -460,7 +460,7 @@ namespace FASTER.core.Utilities
         }
     }
 
-    internal struct VoidResult { }
+    internal readonly struct VoidResult { }
 
     /// <summary>The representation of an asynchronous operation that has a result value and carries additional data with it.</summary>
     /// <typeparam name="TData">Specifies the type of data being written.</typeparam>

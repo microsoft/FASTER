@@ -15,22 +15,29 @@
     <language>en-US</language>
     <tags>key-value store dictionary hashtable concurrent log persistent azure storage FASTER</tags>
     <dependencies>
-      <group targetFramework="net46">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.1.0" />
+      <group targetFramework="net461">
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.1.3" />
         <dependency id="Microsoft.FASTER" version="$version$" />
       </group>
       <group targetFramework="netstandard2.0">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.1.0" />
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.1.3" />
+        <dependency id="Microsoft.FASTER" version="$version$" />
+      </group>
+      <group targetFramework="netstandard2.1">
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.1.3" />
         <dependency id="Microsoft.FASTER" version="$version$" />
       </group>
     </dependencies>
   </metadata>
   <files>
-    <file src="bin\AnyCPU\Release\net46\FASTER.devices.AzureStorageDevice.dll" target="lib\net46" />
-    <file src="bin\AnyCPU\Release\net46\FASTER.devices.AzureStorageDevice.pdb" target="lib\net46" />
-    <file src="bin\AnyCPU\Release\net46\FASTER.devices.AzureStorageDevice.xml" target="lib\net46" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.devices.AzureStorageDevice.dll" target="lib\net461" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.devices.AzureStorageDevice.pdb" target="lib\net461" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.devices.AzureStorageDevice.xml" target="lib\net461" />
     <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.devices.AzureStorageDevice.dll" target="lib\netstandard2.0" />
     <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.devices.AzureStorageDevice.pdb" target="lib\netstandard2.0" />
     <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.devices.AzureStorageDevice.xml" target="lib\netstandard2.0" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.dll" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.pdb" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.xml" target="lib\netstandard2.1" />
   </files>
 </package>

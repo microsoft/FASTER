@@ -6,12 +6,6 @@
 //#define WAIT_FOR_INDEX_CHECKPOINT
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -28,21 +22,15 @@ namespace FASTER.core
         public Task<LinkedCheckpointInfo> NextTask;
     }
     
-    internal class EpochPhaseIdx
+    internal static class EpochPhaseIdx
     {
         public const int PrepareForIndexCheckpt = 0;
-
         public const int Prepare = 1;
-
         public const int InProgress = 2;
-
         public const int WaitPending = 3;
-
         public const int WaitFlush = 4;
-
         public const int CheckpointCompletionCallback = 5;
     }
-
 
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
@@ -72,7 +60,6 @@ namespace FASTER.core
             }
         }
         
-
         internal void WriteHybridLogMetaInfo()
         {
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());

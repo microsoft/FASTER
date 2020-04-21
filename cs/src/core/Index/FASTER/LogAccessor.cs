@@ -3,9 +3,7 @@
 
 #pragma warning disable 0162
 
-
 using System;
-using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -18,7 +16,7 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public class LogAccessor<Key, Value, Input, Output, Context, Functions> : IObservable<IFasterScanIterator<Key, Value>>
+    public sealed class LogAccessor<Key, Value, Input, Output, Context, Functions> : IObservable<IFasterScanIterator<Key, Value>>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -70,7 +68,6 @@ namespace FASTER.core
         {
             allocator.ShiftBeginAddress(untilAddress);
         }
-
 
         /// <summary>
         /// Shift log head address to prune memory foorprint of hybrid log
@@ -268,7 +265,7 @@ namespace FASTER.core
                 untilAddress = scanUntil;
                 scanUntil = fht.Log.SafeReadOnlyAddress;
                 using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
-                while (iter2.GetNext(out RecordInfo recordInfo))
+                while (iter2.GetNext(out RecordInfo _))
                 {
                     ref var key = ref iter2.GetKey();
                     ref var value = ref iter2.GetValue();
@@ -278,7 +275,7 @@ namespace FASTER.core
             }
         }
 
-        private class LogVariableCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
+        private sealed class LogVariableCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
             private readonly VariableLengthBlittableAllocator<Key, Value> allocator;
 
@@ -311,7 +308,7 @@ namespace FASTER.core
             public void DeleteCompletionCallback(ref Key key, Context ctx) { }
         }
 
-        private class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
+        private sealed class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
         {
             public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }

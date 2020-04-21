@@ -8,17 +8,17 @@ namespace FASTER.core
     /// <summary>
     /// Implementation of checkpoint interface for local file storage
     /// </summary>
-    public class LocalLogCommitManager : ILogCommitManager
+    public sealed class LocalLogCommitManager : ILogCommitManager
     {
-        private string CommitFile;
+        private readonly string commitFile;
 
         /// <summary>
         /// Create new instance of local checkpoint manager at given base directory
         /// </summary>
-        /// <param name="CommitFile"></param>
-        public LocalLogCommitManager(string CommitFile)
+        /// <param name="commitFile"></param>
+        public LocalLogCommitManager(string commitFile)
         {
-            this.CommitFile = CommitFile;
+            this.commitFile = commitFile;
         }
 
         /// <summary>
@@ -37,7 +37,7 @@ namespace FASTER.core
                     writer.Write(commitMetadata.Length);
                     writer.Write(commitMetadata);
                 }
-                using (var writer = new BinaryWriter(new FileStream(CommitFile, FileMode.OpenOrCreate)))
+                using (var writer = new BinaryWriter(new FileStream(commitFile, FileMode.OpenOrCreate)))
                 {
                     writer.Write(ms.ToArray());
                     writer.Flush();
@@ -51,10 +51,10 @@ namespace FASTER.core
         /// <returns>Metadata, or null if invalid</returns>
         public byte[] GetCommitMetadata()
         {
-            if (!File.Exists(CommitFile))
+            if (!File.Exists(commitFile))
                 return null;
 
-            using (var reader = new BinaryReader(new FileStream(CommitFile, FileMode.Open)))
+            using (var reader = new BinaryReader(new FileStream(commitFile, FileMode.Open)))
             {
                 var len = reader.ReadInt32();
                 return reader.ReadBytes(len);

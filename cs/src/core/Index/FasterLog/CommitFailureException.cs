@@ -3,15 +3,12 @@
 
 #pragma warning disable 0162
 
-using System;
-using System.Threading.Tasks;
-
 namespace FASTER.core
 {
     /// <summary>
     /// Exception thrown when commit fails
     /// </summary>
-    public class CommitFailureException : FasterException
+    public sealed class CommitFailureException : FasterException
     {
         /// <summary>
         /// Commit info and next commit task in chain

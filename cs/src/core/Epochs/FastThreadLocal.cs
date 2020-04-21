@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Net;
 using System.Threading;
 
 namespace FASTER.core
@@ -11,7 +10,7 @@ namespace FASTER.core
     /// Fast implementation of instance-thread-local variables
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal class FastThreadLocal<T>
+    internal sealed class FastThreadLocal<T>
     {
         // Max instances supported
         private const int kMaxInstances = 128;

@@ -356,10 +356,14 @@ namespace FASTER.core
         {
             var pcontext = default(PendingContext);
             var internalStatus = InternalDelete(ref key, ref context, ref pcontext, sessionCtx, serialNo);
-            var status = default(Status);
+            Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status) internalStatus;
+            }
+            else
+            {
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;
