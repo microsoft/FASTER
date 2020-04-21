@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -15,7 +14,7 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public class FasterLogScanIterator : IDisposable
+    public sealed class FasterLogScanIterator : IDisposable
     {
         private readonly int frameSize;
         private readonly string name;

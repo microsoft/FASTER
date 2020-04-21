@@ -3,13 +3,8 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using System.IO;
-using System.Diagnostics;
+using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -362,7 +357,6 @@ namespace FASTER.core
         {
             return true;
         }
-
 
         public override ref Key GetContextRecordKey(ref AsyncIOContext<Key, Value> ctx)
         {

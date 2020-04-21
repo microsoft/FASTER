@@ -3,10 +3,9 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <TargetFramework>net46</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win7-x64</RuntimeIdentifier>
-    <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>

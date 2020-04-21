@@ -2,8 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
+
+using FASTER.core.Utilities;
 
 namespace FASTER.core
 {
@@ -52,6 +53,12 @@ namespace FASTER.core
         /// </summary>
         public AsyncQueue<AsyncIOContext<Key, Value>> callbackQueue;
 
+
+        /// <summary>
+        /// Async Operation ValueTask backer
+        /// </summary>
+        public FasterAsyncOperation<AsyncIOContext<Key, Value>> asyncOperation;
+
         /// <summary>
         /// Dispose
         /// </summary>
@@ -63,7 +70,7 @@ namespace FASTER.core
         }
     }
 
-    internal class SimpleReadContext : IAsyncResult
+    internal sealed class SimpleReadContext : IAsyncResult
     {
         public long logicalAddress;
         public SectorAlignedMemory record;

@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -80,7 +79,6 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]
     internal unsafe struct HashBucket
     {
-
         public const long kPinConstant = (1L << 48);
 
         public const long kExclusiveLatchBitMask = (1L << 63);
@@ -143,10 +141,9 @@ namespace FASTER.core
     {
         [FieldOffset(0)]
         public long word;
-
         public long Address
         {
-            get
+            readonly get
             {
                 return word & Constants.kAddressMask;
             }
@@ -158,10 +155,9 @@ namespace FASTER.core
             }
         }
 
-
         public ushort Tag
         {
-            get
+            readonly get
             {
                 return (ushort)((word & Constants.kTagPositionMask) >> Constants.kTagShift);
             }
@@ -175,7 +171,7 @@ namespace FASTER.core
 
         public bool Pending
         {
-            get
+            readonly get
             {
                 return (word & Constants.kPendingBitMask) != 0;
             }
@@ -195,7 +191,7 @@ namespace FASTER.core
 
         public bool Tentative
         {
-            get
+            readonly get
             {
                 return (word & Constants.kTentativeBitMask) != 0;
             }
@@ -215,7 +211,7 @@ namespace FASTER.core
 
         public bool ReadCache
         {
-            get
+            readonly get
             {
                 return (word & Constants.kReadCacheBitMask) != 0;
             }
@@ -232,7 +228,6 @@ namespace FASTER.core
                 }
             }
         }
-
     }
 
     internal unsafe struct InternalHashTable
@@ -326,7 +321,7 @@ namespace FASTER.core
         /// <param name="version"></param>
         /// <param name="size"></param>
         /// <param name="sector_size"></param>
-        protected void Initialize(int version, long size, int sector_size)
+        internal void Initialize(int version, long size, int sector_size)
         {
             long size_bytes = size * sizeof(HashBucket);
             long aligned_size_bytes = sector_size +
@@ -396,8 +391,6 @@ namespace FASTER.core
                 bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
             } while (true);
         }
-
-
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry, long BeginAddress)

@@ -12,12 +12,12 @@ namespace FASTER.core
     /// <summary>
     /// Empty type
     /// </summary>
-    public struct Empty
+    public readonly struct Empty
     {
         /// <summary>
         /// Default
         /// </summary>
-        public static readonly Empty Default = default(Empty);
+        public static readonly Empty Default = default;
     }
 
     /// <summary>

@@ -3,10 +3,6 @@
 
 #pragma warning disable 0162
 
-using System;
-using System.Diagnostics;
-using System.IO;
-
 namespace FASTER.core
 {
     /// <summary>

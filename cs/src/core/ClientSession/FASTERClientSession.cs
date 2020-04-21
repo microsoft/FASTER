@@ -4,9 +4,7 @@
 #pragma warning disable 0162
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
@@ -16,7 +14,7 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private Dictionary<string, ClientSession<Key, Value, Input, Output, Context, Functions>> _activeSessions;
+        internal Dictionary<string, ClientSession<Key, Value, Input, Output, Context, Functions>> _activeSessions;
 
         /// <summary>
         /// Start a new client session with FASTER.

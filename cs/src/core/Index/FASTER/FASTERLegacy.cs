@@ -4,15 +4,10 @@
 #pragma warning disable 0162
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
@@ -205,10 +200,10 @@ namespace FASTER.core
 
         private void InternalRelease(FasterExecutionContext ctx)
         {
-            Debug.Assert(ctx.retryRequests.Count == 0 && ctx.ioPendingRequests.Count == 0);
+            Debug.Assert(ctx.HasNoPendingRequests);
             if (ctx.prevCtx != null)
             {
-                Debug.Assert(ctx.prevCtx.retryRequests.Count == 0 && ctx.prevCtx.ioPendingRequests.Count == 0);
+                Debug.Assert(ctx.prevCtx.HasNoPendingRequests);
             }
             Debug.Assert(ctx.phase == Phase.REST);
 

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-
 using System;
 
 namespace FASTER.core
@@ -59,7 +58,7 @@ namespace FASTER.core
     /// Length specification for fixed size (normal) structs
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public struct FixedLengthStruct<T> : IVariableLengthStruct<T>
+    public readonly struct FixedLengthStruct<T> : IVariableLengthStruct<T>
     {
         private static readonly int size = Utility.GetSize(default(T));
 
@@ -67,10 +66,7 @@ namespace FASTER.core
         /// Get average length
         /// </summary>
         /// <returns></returns>
-        public int GetAverageLength()
-        {
-            return size;
-        }
+        public int GetAverageLength() => size;
 
         /// <summary>
         /// Get initial length
@@ -78,20 +74,14 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <param name="input"></param>
         /// <returns></returns>
-        public int GetInitialLength<Input>(ref Input input)
-        {
-            return size;
-        }
-
+        public int GetInitialLength<Input>(ref Input input) => size;
+       
         /// <summary>
         /// Get length
         /// </summary>
         /// <param name="t"></param>
         /// <returns></returns>
-        public int GetLength(ref T t)
-        {
-            return size;
-        }
+        public int GetLength(ref T t) => size;
     }
 
     /// <summary>
@@ -111,7 +101,6 @@ namespace FASTER.core
         /// </summary>
         public IVariableLengthStruct<Value> valueLength;
     }
-
 
     /// <summary>
     /// Configuration settings for hybrid log

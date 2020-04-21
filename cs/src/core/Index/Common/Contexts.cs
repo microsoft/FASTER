@@ -34,10 +34,13 @@ namespace FASTER.core
 
     internal class SerializedFasterExecutionContext
     {
-        public int version;
-        public long serialNum;
-        public string guid;
+        internal int version;
+        internal long serialNum;
+        internal string guid;
 
+        /// <summary>
+        /// </summary>
+        /// <param name="writer"></param>
         public void Write(StreamWriter writer)
         {
             writer.WriteLine(version);
@@ -45,6 +48,9 @@ namespace FASTER.core
             writer.WriteLine(serialNum);
         }
 
+        /// <summary>
+        /// </summary>
+        /// <param name="reader"></param>
         public void Load(StreamReader reader)
         {
             string value = reader.ReadLine();
@@ -56,35 +62,29 @@ namespace FASTER.core
         }
     }
 
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-
         internal struct PendingContext
         {
             // User provided information
+            internal OperationType type;
+            internal IHeapContainer<Key> key;
+            internal IHeapContainer<Value> value;
+            internal Input input;
+            internal Output output;
+            internal Context userContext;
 
-            public OperationType type;
-
-            public IHeapContainer<Key> key;
-            public IHeapContainer<Value> value;
-            public Input input;
-            public Output output;
-            public Context userContext;
 
             // Some additional information about the previous attempt
-
-            public long id;
-
-            public int version;
-
-            public long logicalAddress;
-
-            public long serialNum;
-
-            public HashBucketEntry entry;
+            internal long id;
+            internal int version;
+            internal long logicalAddress;
+            internal long serialNum;
+            internal HashBucketEntry entry;
+            internal LatchOperation heldLatch;
 
             public void Dispose()
             {
@@ -93,21 +93,31 @@ namespace FASTER.core
             }
         }
 
-        internal class FasterExecutionContext : SerializedFasterExecutionContext
+        internal sealed class FasterExecutionContext : SerializedFasterExecutionContext
         {
             public Phase phase;
             public bool[] markers;
             public long totalPending;
             public Queue<PendingContext> retryRequests;
             public Dictionary<long, PendingContext> ioPendingRequests;
+            public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
+
+            public bool HasNoPendingRequests
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    return ioPendingRequests.Count == 0
+                        && retryRequests.Count == 0;
+                }
+            }
 
             public FasterExecutionContext prevCtx;
         }
     }
 
- 
     /// <summary>
     /// Descriptor for a CPR commit point
     /// </summary>
@@ -332,7 +342,7 @@ namespace FASTER.core
         /// <summary>
         /// Print checkpoint info for debugging purposes
         /// </summary>
-        public void DebugPrint()
+        public readonly void DebugPrint()
         {
             Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
             Debug.WriteLine("Version: {0}", version);
@@ -402,6 +412,7 @@ namespace FASTER.core
             finalLogicalAddress = 0;
             num_buckets = 0;
         }
+
         public void Initialize(StreamReader reader)
         {
             string value = reader.ReadLine();
@@ -435,7 +446,7 @@ namespace FASTER.core
             Initialize(s);
         }
 
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             using MemoryStream ms = new MemoryStream();
             using (var writer = new StreamWriter(ms))
@@ -452,7 +463,7 @@ namespace FASTER.core
             return ms.ToArray();
         }
 
-        public void DebugPrint()
+        public readonly void DebugPrint()
         {
             Debug.WriteLine("******** Index Checkpoint Info for {0} ********", token);
             Debug.WriteLine("Table Size: {0}", table_size);
@@ -462,6 +473,7 @@ namespace FASTER.core
             Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
         }
+
         public void Reset()
         {
             token = default;
@@ -485,10 +497,12 @@ namespace FASTER.core
             checkpointManager.InitializeIndexCheckpoint(token);
             main_ht_device = checkpointManager.GetIndexDevice(token);
         }
+
         public void Recover(Guid token, ICheckpointManager checkpointManager)
         {
             info.Recover(token, checkpointManager);
         }
+
         public void Reset()
         {
             info.Reset();
