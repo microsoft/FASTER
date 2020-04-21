@@ -1,26 +1,19 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Sector aligned memory allocator
     /// </summary>
-    public unsafe class SectorAlignedMemory
+    public unsafe sealed class SectorAlignedMemory
     {
         /// <summary>
         /// Actual buffer
@@ -95,7 +88,7 @@ namespace FASTER.core
     /// queue represents a memory of size in particular range. queue[i] contains memory 
     /// segments each of size (2^i * sectorSize).
     /// </summary>
-    public class SectorAlignedBufferPool
+    public sealed class SectorAlignedBufferPool
     {
         /// <summary>
         /// Disable buffer pool

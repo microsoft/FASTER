@@ -11,7 +11,7 @@ namespace FASTER.core
     /// Async queue
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class AsyncQueue<T>
+    public sealed class AsyncQueue<T>
     {
         private readonly SemaphoreSlim semaphore;
         private readonly ConcurrentQueue<T> queue;

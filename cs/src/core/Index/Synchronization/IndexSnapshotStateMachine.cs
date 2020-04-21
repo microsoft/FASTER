@@ -109,7 +109,7 @@ namespace FASTER.core
     /// <summary>
     /// This state machine performs an index checkpoint
     /// </summary>
-    internal class IndexSnapshotStateMachine : SynchronizationStateMachineBase
+    internal sealed class IndexSnapshotStateMachine : SynchronizationStateMachineBase
     {
         /// <summary>
         /// Create a new IndexSnapshotStateMachine

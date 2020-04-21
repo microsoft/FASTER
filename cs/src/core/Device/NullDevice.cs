@@ -9,7 +9,7 @@ namespace FASTER.core
     /// <summary>
     /// 
     /// </summary>
-    public class NullDevice : StorageDeviceBase
+    public sealed class NullDevice : StorageDeviceBase
     {
         /// <summary>
         /// 

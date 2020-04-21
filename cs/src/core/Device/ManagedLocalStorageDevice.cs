@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -16,11 +15,10 @@ using Mono.Unix.Native;
 
 namespace FASTER.core
 {
-
     /// <summary>
     /// Managed device using .NET streams
     /// </summary>
-    public class ManagedLocalStorageDevice : StorageDeviceBase
+    public sealed class ManagedLocalStorageDevice : StorageDeviceBase
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;

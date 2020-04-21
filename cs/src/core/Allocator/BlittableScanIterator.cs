@@ -1,16 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Threading;
 using System.Diagnostics;
+using System.Threading;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public class BlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
+    public sealed class BlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -97,7 +96,7 @@ namespace FASTER.core
         /// <returns>True if record found, false if end of scan</returns>
         public bool GetNext(out RecordInfo recordInfo)
         {
-            recordInfo = default(RecordInfo);
+            recordInfo = default;
 
             currentAddress = nextAddress;
             while (true)
@@ -161,15 +160,15 @@ namespace FASTER.core
         /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
-            key = default(Key);
-            value = default(Value);
-
             if (GetNext(out recordInfo))
             {
                 key = GetKey();
                 value = GetValue();
                 return true;
             }
+
+            key = default;
+            value = default;
 
             return false;
         }
@@ -234,5 +233,3 @@ namespace FASTER.core
         }
     }
 }
-
-

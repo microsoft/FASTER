@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Diagnostics;
+using System.Text;
 using System.Threading;
-using System.ComponentModel;
-using System.Collections.Concurrent;
 
 namespace FASTER.core
 {
@@ -14,7 +12,7 @@ namespace FASTER.core
     /// on the device, it is considered persistent. Reads are served from the closest device with available data. Writes are issued in parallel to
     /// all devices 
     /// </summary>
-    class TieredStorageDevice : StorageDeviceBase
+    sealed class TieredStorageDevice : StorageDeviceBase
     {
         private readonly IList<IDevice> devices;
         private readonly int commitPoint;
