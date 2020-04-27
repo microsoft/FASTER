@@ -84,13 +84,13 @@ namespace FASTER.PerfTest
                     {
                         var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
                         Console.Write($"GC.Collect and pausing for {pauseMs}ms before starting iteration {testRun.currentIter}." +
-                                      $" Working set: before {workingSetMB}MB, ");
+                                      $" Working set: before {workingSetMB:N0}MB, ");
                     }
                     GC.Collect();
                     if (verbose)
                     {
                         var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                        Console.WriteLine($"after {workingSetMB}MB");
+                        Console.WriteLine($"after {workingSetMB:N0}MB");
                     }
                     Thread.Sleep(pauseMs);
 
@@ -192,9 +192,9 @@ namespace FASTER.PerfTest
 
             sw.Stop();
             var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            Console.WriteLine($"Initialization: Time to generate {testResult.Inputs.InitKeyCount} keys" + 
-                              $" and {testResult.Inputs.OperationKeyCount} operation keys in {testResult.Inputs.Distribution} distribution:" +
-                              $" {sw.ElapsedMilliseconds / 1000.0:0.000} sec; working set {workingSetMB}MB");
+            Console.WriteLine($"Initialization: Time to generate {testResult.Inputs.InitKeyCount:N0} keys" + 
+                              $" and {testResult.Inputs.OperationKeyCount:N0} operation keys in {testResult.Inputs.Distribution} distribution:" +
+                              $" {sw.ElapsedMilliseconds / 1000.0:N3} sec; working set {workingSetMB:N0}MB");
         }
 
         static void RunBlittableIteration<TBV>(TestRun testRun) where TBV : IBlittableValue, new()
@@ -254,10 +254,10 @@ namespace FASTER.PerfTest
             testRun.InitializeMs = (ulong)sw.ElapsedMilliseconds;
             var numSec = sw.ElapsedMilliseconds / 1000.0;
             var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            Console.WriteLine($"Initialization: Time to insert {testRun.TestResult.Inputs.InitKeyCount} initial key values:" +
-                              $" {numSec:0.000} sec ({testRun.TestResult.Inputs.InitKeyCount / numSec:0.00} inserts/sec;" +
-                              $" {testRun.TestResult.Inputs.InitKeyCount / (numSec * testRun.TestResult.Inputs.ThreadCount):0.00} thread/sec);" +
-                              $" working set {workingSetMB}MB");
+            Console.WriteLine($"Initialization: Time to insert {testRun.TestResult.Inputs.InitKeyCount:N0} initial key values:" +
+                              $" {numSec:N3} sec ({testRun.TestResult.Inputs.InitKeyCount / numSec:N2} inserts/sec;" +
+                              $" {testRun.TestResult.Inputs.InitKeyCount / (numSec * testRun.TestResult.Inputs.ThreadCount):N2} thread/sec);" +
+                              $" working set {workingSetMB:N0}MB");
         }
 
         private static void Initialize<TValue, TOutput, TFunctions, TSerializer>(
@@ -291,7 +291,7 @@ namespace FASTER.PerfTest
                             if (verbose && ii % verboseInterval == 0)
                             {
                                 long workingSetMB = Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                                Console.WriteLine($"Insert: {ii}, {workingSetMB}MB");
+                                Console.WriteLine($"Insert: {ii}, {workingSetMB:N0}MB");
                             }
                         }
                     }
@@ -375,12 +375,9 @@ namespace FASTER.PerfTest
 
                 sw.Restart();
 
-                // Split the counts to be per-thread (that is, if we have --reads 100m and --threads 4,
-                // each thread will get 25m reads).
-                long threadOpCount = (long)opCount / testRun.TestResult.Inputs.ThreadCount;
+                // Each thread does the full count
                 var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                      .Select(threadIdx => Task.Run(() => RunOperations(fht, op, threadOpCount,
-                                                                                        threadIdx, testRun, getValueRef)));
+                                      .Select(threadIdx => Task.Run(() => RunOperations(fht, op, opCount, threadIdx, testRun, getValueRef)));
                 Task.WaitAll(tasks.ToArray());
 
                 sw.Stop();
@@ -388,7 +385,7 @@ namespace FASTER.PerfTest
                 var numSec = sw.ElapsedMilliseconds / 1000.0;
 
                 // Total Ops/Second is always reported 
-                testRun.TotalOpsMs = (ulong)sw.ElapsedMilliseconds;
+                testRun.TotalOpsMs += (ulong)sw.ElapsedMilliseconds;
 
                 switch (op)
                 {
@@ -401,8 +398,8 @@ namespace FASTER.PerfTest
                 }
 
                 var suffix = op == Operations.Mixed ? "" : "s";
-                Console.WriteLine($"Iteration {testRun.currentIter}: Time for {opCount} {opName} operations:" +
-                                  $" {numSec:0.000} sec ({opCount / numSec:0.00} {op}{suffix}/sec)");
+                Console.WriteLine($"Iteration {testRun.currentIter}: Time for {opCount:N0} {opName} operations per thread ({opCount * testRun.TestResult.Inputs.ThreadCount:N0} total):" +
+                                  $" {numSec:N3} sec ({opCount / numSec:N2} {op}{suffix}/sec)");
                 var endTailAddress = fht.LogTailAddress;
                 if (endTailAddress != startTailAddress)
                 {
@@ -427,7 +424,7 @@ namespace FASTER.PerfTest
             using var session = fht.Faster.NewSession(null, true);
 
             if (verbose)
-                Console.WriteLine($"Running Operation {op} count {opCount} for threadId {threadIndex}");
+                Console.WriteLine($"Running Operation {op} count {opCount:N0} for threadId {threadIndex}");
 
             var rng = new RandomGenerator((uint)threadIndex);
             var totalOpCount = testRun.TestResult.Inputs.TotalOperationCount;

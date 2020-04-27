@@ -10,7 +10,6 @@ using Performance.Common;
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -201,8 +200,8 @@ namespace FASTER.Benchmark
 
             sw.Stop();
 
-            Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, " +
-                              $" {writes_done} writes, in {sw.ElapsedMilliseconds / 1000.0:0.000} sec.");
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done:N0} reads, " +
+                              $" {writes_done:N0} writes, in {sw.ElapsedMilliseconds / 1000.0:N3} sec.");
             Interlocked.Add(ref total_ops_done, reads_done + writes_done);
         }
 
@@ -253,7 +252,7 @@ namespace FASTER.Benchmark
                 var sec = ms / 1000.0;
                 var upserts_sec = kInitCount / sec;
                 var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                Console.WriteLine($"Loading time: {sec:0.000} sec ({upserts_sec:0.00} inserts/sec), working set {workingSetMB}MB");
+                Console.WriteLine($"Loading time: {sec:N3} sec ({upserts_sec:N2} inserts/sec), working set {workingSetMB:N0}MB");
             }
 
             long startTailAddress = store.Log.TailAddress;
@@ -312,9 +311,9 @@ namespace FASTER.Benchmark
             long endTailAddress = store.Log.TailAddress;
             Console.WriteLine($"End tail address = {endTailAddress}");
 
-            Console.WriteLine($"Total {total_ops_done} ops done in {seconds} secs.");
+            Console.WriteLine($"Total {total_ops_done:N0} ops done in {seconds:N3} secs.");
             Console.WriteLine($"##, dist = {distribution}, numa = {numaMode}, read% = {readPercent}, " +
-                              $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds:0.00}, " +
+                              $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds:N2}, " +
                               $"logGrowth = {endTailAddress - startTailAddress}");
         }
 
@@ -427,11 +426,11 @@ namespace FASTER.Benchmark
 
                     if (measureLatency)
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.LogTailAddress, totalProgress);
+                        Console.WriteLine("{0} \t {1:N3} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.LogTailAddress, totalProgress);
                     }
                     else
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.LogTailAddress, totalProgress);
+                        Console.WriteLine("{0} \t {1:N3} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.LogTailAddress, totalProgress);
                     }
                 }
             }
@@ -449,7 +448,7 @@ namespace FASTER.Benchmark
             using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read,
                 FileShare.Read))
             {
-                Console.WriteLine("loading keys from " + init_filename + " into memory...");
+                Console.WriteLine($"loading keys from {init_filename} into memory...");
                 init_keys_ = new Key[kInitCount];
 
                 byte[] chunk = new byte[kFileChunkSize];
@@ -482,7 +481,7 @@ namespace FASTER.Benchmark
                 }
             }
 
-            Console.WriteLine("loaded " + kInitCount + " keys.");
+            Console.WriteLine($"loaded {kInitCount:N0} keys.");
 
 
             using (FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
@@ -491,7 +490,7 @@ namespace FASTER.Benchmark
                 GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
                 byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
 
-                Console.WriteLine("loading txns from " + txn_filename + " into memory...");
+                Console.WriteLine($"loading txns from {txn_filename} into memory...");
 
                 txn_keys_ = new Key[kTxnCount];
 
@@ -522,7 +521,7 @@ namespace FASTER.Benchmark
                 }
             }
 
-            Console.WriteLine("loaded " + kTxnCount + " txns.");
+            Console.WriteLine($"loaded {kTxnCount:N0} txns.");
         }
 
         private void LoadData()
@@ -579,16 +578,18 @@ namespace FASTER.Benchmark
                     txn_keys_[idx] = new Key { value = (long)generator.Generate64(kInitCount) };
                 }
             }
-            else
+            else if (distribution == "zipf")
             {
                 Console.WriteLine("  (zipf (smooth) takes a couple minutes)");
                 txn_keys_ = new Zipf<Key>().GenerateOpKeys(init_keys_, (int)kTxnCount, theta, generator, shuffle: false);
             }
+            else 
+                throw new ArgumentException($"Unknown distribution: {distribution}");
 
             sw.Stop();
             var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            Console.WriteLine($"Loaded {kInitCount} keys and {kTxnCount} txns in {sw.ElapsedMilliseconds / 1000.0:0.000} sec;" +
-                              $" working set {workingSetMB}MB");
+            Console.WriteLine($"Loaded {kInitCount:N0} keys and {kTxnCount:N0} txns in {sw.ElapsedMilliseconds / 1000.0:N3} sec;" +
+                              $" working set {workingSetMB:N0}MB");
         }
 #endregion
     }

@@ -13,7 +13,7 @@
       "MIxOperations": [ true, false ],
       "DataSizes": [8],
       "UseVarLenValues": [false, true],
-      "IterationCounts": [3],
+      "IterationCounts": [7],
     }
   ]
 }
