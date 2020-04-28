@@ -6,36 +6,30 @@ using System;
 
 namespace FASTER.PerfTest
 {
-    class FHT<TValue, TOutput, TFunctions, TSerializer>
+    class FHT<TKey, TValue, TOutput, TFunctions>
+        where TKey : new()
         where TValue : new() 
-        where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
-        where TSerializer : BinaryObjectSerializer<TValue>, new()
+        where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
     {
-        internal IFasterKV<Key, TValue, Input, TOutput, Empty, TFunctions> Faster { get; set; }
+        internal IFasterKV<TKey, TValue, Input, TOutput, Empty, TFunctions> Faster { get; set; }
 
         private readonly long fhtSize;
 
         private LogFiles logFiles;
 
-        internal FHT(bool usePsf, int sizeShift, bool useVarLenValues, bool useObjectValues, bool useReadCache)
+        internal FHT(bool usePsf, int sizeShift, bool useObjectLog, bool useReadCache,
+                     SerializerSettings<TKey, TValue> serializerSettings, VariableLengthStructSettings<TKey, TValue> varLenSettings,
+                     IFasterEqualityComparer<TKey> keyComparer)
         {
             this.fhtSize = 1L << sizeShift;
-            this.logFiles = new LogFiles(useObjectValues, useReadCache);
-
-            var varLenSettings = useVarLenValues
-                ? new VariableLengthStructSettings<Key, TValue> { valueLength = new VarLenValueLength<TValue>() }
-                : null;
-
-            var serializerSettings = useObjectValues
-                ? new SerializerSettings<Key, TValue> { valueSerializer = () => new TSerializer() }
-                : null;
+            this.logFiles = new LogFiles(useObjectLog, useReadCache);
 
             this.Faster = usePsf
                 ? throw new NotImplementedException("FasterPSF")
-                : new FasterKV<Key, TValue, Input, TOutput, Empty, TFunctions>(
+                : new FasterKV<TKey, TValue, Input, TOutput, Empty, TFunctions>(
                                 fhtSize, new TFunctions(), this.logFiles.LogSettings,
                                 null, // TODO: add checkpoints
-                                serializerSettings, null, varLenSettings);
+                                serializerSettings, keyComparer, varLenSettings);
         }
 
         internal long LogTailAddress => this.Faster.Log.TailAddress;

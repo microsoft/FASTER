@@ -547,7 +547,14 @@ namespace FASTER.Benchmark
             else
             {
                 Console.WriteLine("  (zipf (smooth) takes a couple minutes)");
-                txn_keys_ = new Zipf<Key>().GenerateOpKeys(init_keys_, (int)kTxnCount, theta, generator, shuffle: false);
+                var zipfSettings = new ZipfSettings
+                {
+                    Theta = theta,
+                    Rng = generator,
+                    Shuffle = false,
+                    Verbose = false
+                };
+                txn_keys_ = new Zipf<Key>().GenerateOpKeys(zipfSettings, init_keys_, (int)kTxnCount);
             }
 
             Console.WriteLine("loaded " + kTxnCount + " txns.");

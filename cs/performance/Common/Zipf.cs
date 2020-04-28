@@ -8,33 +8,38 @@ using System.Linq;
 
 namespace Performance.Common
 {
+    public class ZipfSettings
+    {
+        public double Theta;
+        public RandomGenerator Rng;
+        public bool Shuffle;
+        public bool Verbose;
+    }
+
     public class Zipf<TKey>
     {
         // Based on "Quickly Generating Billion-Record Synthetic Databases", Jim Gray et al., SIGMOD 1994.
-
-        private RandomGenerator rng;
+        private ZipfSettings settings;
         private int keyCount;
+
         private double zetaN, alpha, cutoff2, eta;
         private int[] intermediateKeyIndices;
-        private bool verbose;
 
-        public TKey[] GenerateOpKeys(TKey[] initKeys, int opCount, double theta, RandomGenerator rng,
-                                      bool shuffle, bool verbose = false)
+        public TKey[] GenerateOpKeys(ZipfSettings settings, TKey[] initKeys, int opCount)
         {
-            this.rng = rng;
+            this.settings = settings;
             this.keyCount = initKeys.Length;
-            this.verbose = verbose;
 
-            this.zetaN = Zeta(keyCount, theta);
-            this.alpha = 1.0 / (1.0 - theta);
-            this.cutoff2 = Math.Pow(0.5, theta);
-            var zeta2 = Zeta(2, theta);
-            this.eta = (1.0 - Math.Pow(2.0 / keyCount, 1.0 - theta)) / (1.0 - zeta2 / zetaN);
+            this.zetaN = Zeta(keyCount, this.settings.Theta);
+            this.alpha = 1.0 / (1.0 - this.settings.Theta);
+            this.cutoff2 = Math.Pow(0.5, this.settings.Theta);
+            var zeta2 = Zeta(2, this.settings.Theta);
+            this.eta = (1.0 - Math.Pow(2.0 / keyCount, 1.0 - this.settings.Theta)) / (1.0 - zeta2 / zetaN);
 
             this.intermediateKeyIndices = new int[initKeys.Length];
             for (var ii = 0; ii < initKeys.Length; ++ii)
                 this.intermediateKeyIndices[ii] = ii;
-            if (shuffle)
+            if (this.settings.Shuffle)
                 this.Shuffle(intermediateKeyIndices);
 
             var opKeys = new TKey[opCount];
@@ -47,7 +52,7 @@ namespace Performance.Common
                 // Reverse to base at log tail (if it's not shuffled).
                 opKeys[ii] = initKeys[intermediateKeyIndices[keyCount - keyIndex - 1]];
 
-                if (verbose && ii % verboseInterval == 0 && ii > 0)
+                if (this.settings.Verbose && ii % verboseInterval == 0 && ii > 0)
                     Console.WriteLine($"Zipf: {ii}");
             }
 
@@ -79,7 +84,7 @@ namespace Performance.Common
 
         private int NextKeyIndex()
         {
-            double u = (double)this.rng.Generate64(long.MaxValue) / long.MaxValue;
+            double u = (double)this.settings.Rng.Generate64(long.MaxValue) / long.MaxValue;
             double uz = u * this.zetaN;
             if (uz < 1)
                 return 0;
@@ -96,7 +101,7 @@ namespace Performance.Common
             for (long ii = 0; ii < max - 1; ii++)
             {
                 // rng.Next's parameter is exclusive, so idx stays within the array bounds.
-                var idx = ii + (long)this.rng.Generate64((ulong)(max - ii));
+                var idx = ii + (long)this.settings.Rng.Generate64((ulong)(max - ii));
                 var temp = array[idx];
                 array[idx] = array[ii];
                 array[ii] = temp;

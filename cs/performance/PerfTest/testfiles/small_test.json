@@ -12,14 +12,18 @@
       "UpsertCounts": [ 100000, 200000 ],
       "ReadCounts": [ 110000 ],
       "RMWCounts": [ 111000 ],
-      "MIxOperations": [ true, false ],
-      "DataSizes": [ 8, 32 ],
+      "MixOperations": [ true, false ],
+      "KeySizes": [ 8, 32 ],
+      "ValueSizes": [ 8, 64 ],
+      "UseVarLenKeys": [ false ],
       "UseVarLenValues": [ false ],
+      "UseObjectKeys": [ false ],
       "UseObjectValues": [ false ],
       "UseReadCaches": [ true ],
       "LogModes": [ "None" ],
       "IterationCounts": [ 1 ]
-    }, {
+    },
+    {
       "HashSizeShifts": [ 20 ],
       "NumaModes": [ "Sharded2" ],
       "Distributions": [ "ZipfShuffled" ],
@@ -28,7 +32,12 @@
       "UpsertCounts": [ 100000 ],
       "ReadCounts": [ 110000 ],
       "RMWCounts": [ 111000 ],
-      "DataSizes": [ 8 ],
+      "KeySizes": [ 8 ],
+      "ValueSizes": [ 8 ],
+      "UseVarLenKeys": [ true ],
+      "UseVarLenValues": [ true ],
+      "UseObjectKeys": [ false ],
+      "UseObjectValues": [ false ],
       "LogModes": [ "Flush" ],
       "IterationCounts": [ 1, 2 ]
     }

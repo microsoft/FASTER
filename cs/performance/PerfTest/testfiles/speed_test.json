@@ -4,16 +4,17 @@
       "HashSizeShifts": [ 22 ],
       "NumaModes": [ "RoundRobin" ],
       "Distributions": [ "Uniform", "ZipfSmooth" ],
-      "ThreadCounts": [1, 8],
+      "ThreadCounts": [ 1, 8 ],
       "InitKeyCounts": [ 25000000 ],
       "OperationKeyCounts": [ 75000000 ],
-      "UpsertCounts": [50000000],
-      "ReadCounts": [50000000],
-      "RMWCounts": [50000000],
-      "MIxOperations": [ true, false ],
-      "DataSizes": [8],
-      "UseVarLenValues": [false, true],
-      "IterationCounts": [3],
+      "UpsertCounts": [ 50000000 ],
+      "ReadCounts": [ 50000000 ],
+      "RMWCounts": [ 50000000 ],
+      "MixOperations": [ true, false ],
+      "KeySizes": [ 8, 32 ],
+      "ValueSizes": [ 8, 64 ],
+      "UseVarLenValues": [ false, true ],
+      "IterationCounts": [ 3 ]
     }
   ]
 }

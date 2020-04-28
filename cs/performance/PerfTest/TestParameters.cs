@@ -27,12 +27,15 @@ namespace FASTER.PerfTest
         ReadCount =             0x00000200,
         RmwCount =              0x00000400,
         MixOperations =         0x00000800,
-        DataSize =              0x00001000,
-        UseVarLenValue =        0x00002000,
-        UseObjectValue =        0x00004000,
-        UseReadCache =          0x00008000,
-        LogMode =               0x00010000,
-        IterationCount =        0x00020000
+        KeySize =               0x00001000,
+        ValueSize =             0x00002000,
+        UseVarLenKey =          0x00004000,
+        UseVarLenValue =        0x00008000,
+        UseObjectKey =          0x00010000,
+        UseObjectValue =        0x00020000,
+        UseReadCache =          0x00040000,
+        LogMode =               0x00080000,
+        IterationCount =        0x00100000
     }
 
     [JsonObject(MemberSerialization.OptIn)]
@@ -75,10 +78,19 @@ namespace FASTER.PerfTest
         public bool[] MixOperations { get; set; } = new [] { false };
 
         [JsonProperty]
-        public int[] DataSizes { get; set; } = new[] { Globals.MinDataSize };
+        public int[] KeySizes { get; set; } = new[] { Globals.MinDataSize };
+
+        [JsonProperty]
+        public int[] ValueSizes { get; set; } = new[] { Globals.MinDataSize };
+
+        [JsonProperty]
+        public bool[] UseVarLenKeys { get; set; } = new[] { false };
 
         [JsonProperty]
         public bool[] UseVarLenValues { get; set; } = new[] { false };
+
+        [JsonProperty]
+        public bool[] UseObjectKeys { get; set; } = new[] { false };
 
         [JsonProperty]
         public bool[] UseObjectValues { get; set; } = new[] { false };
@@ -107,8 +119,11 @@ namespace FASTER.PerfTest
                 foreach (var readCount in this.ReadCounts)
                 foreach (var rmwCount in this.RMWCounts)
                 foreach (var mixOps in this.MixOperations)
-                foreach (var dataSize in this.DataSizes)
+                foreach (var keySize in this.KeySizes)
+                foreach (var valueSize in this.ValueSizes)
+                foreach (var useVarLenKey in this.UseVarLenKeys)
                 foreach (var useVarLenValue in this.UseVarLenValues)
+                foreach (var useObjectKey in this.UseObjectKeys)
                 foreach (var useObjectValue in this.UseObjectValues)
                 foreach (var useReadCache in this.UseReadCaches)
                 foreach (var logMode in this.LogModes)
@@ -129,8 +144,11 @@ namespace FASTER.PerfTest
                             ReadCount = readCount,
                             RMWCount = rmwCount,
                             MixOperations = mixOps,
-                            DataSize = dataSize,
+                            KeySize = keySize,
+                            ValueSize = valueSize,
+                            UseVarLenKey = useVarLenKey,
                             UseVarLenValue = useVarLenValue,
+                            UseObjectKey = useObjectKey,
                             UseObjectValue = useObjectValue,
                             UseReadCache = useReadCache,
                             LogMode = logMode,
@@ -195,10 +213,16 @@ namespace FASTER.PerfTest
                     parameter.RMWCounts = new[] { commandLineArgs.Inputs.RMWCount };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.MixOperations))
                     parameter.MixOperations = new[] { commandLineArgs.Inputs.MixOperations};
-                if (CommandLineOverrides.HasFlag(TestParameterFlags.DataSize))
-                    parameter.DataSizes = new[] { commandLineArgs.Inputs.DataSize };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.KeySize))
+                    parameter.KeySizes = new[] { commandLineArgs.Inputs.KeySize };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.ValueSize))
+                    parameter.ValueSizes = new[] { commandLineArgs.Inputs.ValueSize };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.UseVarLenKey))
+                    parameter.UseVarLenKeys = new[] { commandLineArgs.Inputs.UseVarLenKey };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseVarLenValue))
                     parameter.UseVarLenValues = new[] { commandLineArgs.Inputs.UseVarLenValue };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.UseObjectKey))
+                    parameter.UseObjectKeys = new[] { commandLineArgs.Inputs.UseObjectKey };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseObjectValue))
                     parameter.UseObjectValues = new[] { commandLineArgs.Inputs.UseObjectValue };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseReadCache))

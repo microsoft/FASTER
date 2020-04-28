@@ -92,11 +92,10 @@ namespace FASTER.PerfTest
             calcStats(() => outputs.Reads, this.readMs, inputs.ReadCount);
             calcStats(() => outputs.RMWs, this.rmwMs, inputs.RMWCount);
 
-            var valueType = (TestResult.Inputs.UseVarLenValue, TestResult.Inputs.UseObjectValue) switch { 
-                (true, _) => "varLenVals",
-                (_, true) => "objVals",
-                _ => "fixBlitVals" 
-            };
+            static string kvType(bool useVarLen, bool useObj)
+                => (useVarLen, useObj) switch {  (true, _) => "varlen", (_, true) => "obj", _ => "fixBlit" };
+            var keyType = kvType(TestResult.Inputs.UseVarLenKey, TestResult.Inputs.UseObjectKey);
+            var valueType = kvType(TestResult.Inputs.UseVarLenValue, TestResult.Inputs.UseObjectValue);
 
             // Keep this in one readable line...
             var inKeyCount = inputs.InitKeyCount > 1_000_000 ? $"{(inputs.InitKeyCount / 1_000_000)}m" : $"{inputs.InitKeyCount:N0}";
@@ -106,9 +105,8 @@ namespace FASTER.PerfTest
             var rCount = inputs.ReadCount > 1_000_000 ? $"{(inputs.ReadCount / 1_000_000)}m" : $"{inputs.ReadCount:N0}";
             var mCount = inputs.RMWCount > 1_000_000 ? $"{(inputs.RMWCount / 1_000_000)}m" : $"{inputs.RMWCount:N0}";
             Console.WriteLine($"----- Summary: totOps {tCount} (u {uCount}, r {rCount}, m {mCount})," +
-                                $" inkeys {inKeyCount}, opKeys {opKeyCount}, {valueType}," +
-                                $" data {Globals.DataSize}, threads {inputs.ThreadCount}," +
-                                $" rCache {inputs.UseReadCache}, log.{inputs.LogMode}, iters {currentIter}");
+                                $" inkeys {inKeyCount}, opKeys {opKeyCount}, ksize {Globals.KeySize} {keyType}, vsize {Globals.ValueSize} {valueType}," +
+                                $" threads {inputs.ThreadCount}, rCache {inputs.UseReadCache}, log.{inputs.LogMode}, iters {currentIter}");
 
             // LINQ does not have ulong Average() or Sum().
             static double meanSec(ulong[] ms) 

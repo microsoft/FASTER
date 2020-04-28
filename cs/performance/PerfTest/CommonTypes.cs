@@ -7,7 +7,6 @@ using Performance.Common;
 using System;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace FASTER.PerfTest
 {
@@ -31,38 +30,19 @@ namespace FASTER.PerfTest
         // changes to VarLenValue which encodes length in a ushort.
         public static int[] ValidDataSizes = new[] { 8, 16, 32, 64, 128, 256 };
         public const int MinDataSize = 8;   // Cannot be less or VarLenValue breaks
-        public static int MaxDataSize = ValidDataSizes[ValidDataSizes.Length - 1];
+        public static int MaxDataSize = ValidDataSizes[^1];
 
         // Global variables
-        public static int DataSize = MinDataSize;   // Data size for the current test iteration
+        public static int KeySize = MinDataSize;    // Key Data size for the current test iteration
+        public static int ValueSize = MinDataSize;  // Value Data size for the current test iteration
         public static bool Verify;                  // If true, write values on insert and RMW and verify them on Read
         public static bool IsInitialInsertPhase;    // If true, we are doing initial inserts; do not Verify
+        public static bool Verbose = false;
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct Key : IFasterEqualityComparer<Key>
+    public interface IKey
     {
-        [FieldOffset(0)]
-        public long key;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Key(long k) => this.key = k;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetHashCode64(ref Key key) => Utility.GetHashCode(key.key);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(ref Key k1, ref Key k2) => k1.key == k2.key;
-
-        public override string ToString() => this.key.ToString();
-    }
-
-    public class NoSerializer<T> : BinaryObjectSerializer<T>
-    {
-        // Should never be instantiated
-        public override void Deserialize(ref T obj) => throw new NotImplementedException();
-
-        public override void Serialize(ref T obj) => throw new NotImplementedException();
+        long Value { get; }
     }
 
     public struct Input
@@ -83,12 +63,12 @@ namespace FASTER.PerfTest
         void SetUpsertValue(ref TValue valueRef, long value, long mod);
     }
 
-    internal struct BlittableData
+    public struct BlittableData
     {
         // Modified by RMW
         internal uint Modified;
 
-        // This is key.key which must be an int as we allocate an array of sequential Keys
+        // This is key.Value which we know must fit in an int as we allocate an array of sequential Keys
         internal int Value;
 
         public static int SizeOf => sizeof(uint) + sizeof(int);
@@ -112,6 +92,10 @@ namespace FASTER.PerfTest
         public override bool Equals(object other) => other is BlittableData bd && this.Equals(bd);
 
         public override int GetHashCode() => HashCode.Combine(Modified, Value);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetHashCode64()
+            => Utility.GetHashCode(this.Modified) ^ Utility.GetHashCode(this.Value);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(BlittableData lhs, BlittableData rhs) 

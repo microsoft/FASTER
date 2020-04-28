@@ -2,18 +2,17 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
-using Performance.Common;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace FASTER.PerfTest
 {
     partial class PerfTest
     {
+        static internal bool verbose = false;
+        static internal bool prompt = false;
         static readonly TestResult defaultTestResult = new TestResult();
         static TestParameters testParams;
         static string testFilename;
@@ -22,16 +21,6 @@ namespace FASTER.PerfTest
         static ResultComparisonMode comparisonMode = ResultComparisonMode.None;
         static readonly List<string> mergeResultsFilespecs = new List<string>();
         static bool intersectResults;
-
-        static bool verbose = false;
-        static bool prompt = false;
-        static long verboseInterval;
-
-        static Key[] initKeys;
-        static Key[] opKeys;
-        static TestResult prevTestResult;
-
-        static long NextChunkStart = 0;
 
         static void Main(string[] argv)
         {
@@ -70,70 +59,10 @@ namespace FASTER.PerfTest
 
                 // If running from a testfile, print command line for investigating testfile failures
                 if (!(testParams is null))
-                    Console.WriteLine(testRun.TestResult.Inputs);  
+                    Console.WriteLine(testRun.TestResult.Inputs);
 
-                Globals.DataSize = testRun.TestResult.Inputs.DataSize;
-                verboseInterval = 1L << (testRun.TestResult.Inputs.HashSizeShift - 1);
+                ExecuteTestRun(testRun);
 
-                CreateKeys(testRun.TestResult);
-
-                for (testRun.currentIter = 0; testRun.currentIter < testRun.TestResult.Inputs.IterationCount; ++testRun.currentIter)
-                {
-                    const int pauseMs = 1000;
-                    if (verbose)
-                    {
-                        var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                        Console.Write($"GC.Collect and pausing for {pauseMs}ms before starting iteration {testRun.currentIter}." +
-                                      $" Working set: before {workingSetMB:N0}MB, ");
-                    }
-                    GC.Collect();
-                    if (verbose)
-                    {
-                        var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                        Console.WriteLine($"after {workingSetMB:N0}MB");
-                    }
-                    Thread.Sleep(pauseMs);
-
-                    if (testRun.TestResult.Inputs.UseVarLenValue)
-                    {
-                        var fht = new FHT<VarLenValue, VarLenOutput, VarLenFunctions, NoSerializer<VarLenValue>>(
-                            false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseVarLenValue, 
-                            testRun.TestResult.Inputs.UseObjectValue, useReadCache: testRun.TestResult.Inputs.UseReadCache);
-                        RunIteration(fht, testRun, new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
-                    }
-                    else if (testRun.TestResult.Inputs.UseObjectValue)
-                    {
-                        var fht = new FHT<ObjectValue, ObjectValueOutput, ObjectValueFunctions, ObjectValueSerializer>(
-                            false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseVarLenValue, 
-                            testRun.TestResult.Inputs.UseObjectValue, useReadCache: testRun.TestResult.Inputs.UseReadCache);
-                        RunIteration(fht, testRun, new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
-
-                    } else
-                    {
-                        switch (Globals.DataSize) {
-                            case 8:
-                                RunBlittableIteration<BlittableValue8>(testRun);
-                                break;
-                            case 16:
-                                RunBlittableIteration<BlittableValue16>(testRun);
-                                break;
-                            case 32:
-                                RunBlittableIteration<BlittableValue32>(testRun);
-                                break;
-                            case 64:
-                                RunBlittableIteration<BlittableValue64>(testRun);
-                                break;
-                            case 128:
-                                RunBlittableIteration<BlittableValue128>(testRun);
-                                break;
-                            case 256:
-                                RunBlittableIteration<BlittableValue256>(testRun);
-                                break;
-                            default:
-                                throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.DataSize}");
-                        }
-                    }
-                }
                 testRun.Finish();
                 results.Add(testRun.TestResult);
             }
@@ -150,74 +79,8 @@ namespace FASTER.PerfTest
             if (!string.IsNullOrEmpty(resultsFilename))
             {
                 results.Write(resultsFilename);
-                Console.WriteLine($"Results written to {resultsFilename}");
+               Console.WriteLine($"Results written to {resultsFilename}");
             }
-        }
-
-        static void CreateKeys(TestResult testResult)
-        {
-            // Just to make the test complete a little faster, don't rebuild if we don't have to.
-            // This is not part of the timed test.
-            if (!(prevTestResult is null)
-                    && prevTestResult.Inputs.InitKeyCount == testResult.Inputs.InitKeyCount
-                    && prevTestResult.Inputs.OperationKeyCount == testResult.Inputs.OperationKeyCount
-                    && prevTestResult.Inputs.DistributionInfo == testResult.Inputs.DistributionInfo)
-            {
-                Console.WriteLine("Reusing keys from prior run");
-                return;
-            }
-
-            var sw = new Stopwatch();
-            sw.Start();
-
-            prevTestResult = null;
-
-            initKeys = new Key[testResult.Inputs.InitKeyCount];
-            for (var ii = 0; ii < testResult.Inputs.InitKeyCount; ++ii)
-                initKeys[ii] = new Key(ii);
-
-            var rng = new RandomGenerator((uint)testResult.Inputs.DistributionSeed);
-            if (testResult.Inputs.Distribution == Distribution.Uniform)
-            {
-                opKeys = new Key[testResult.Inputs.OperationKeyCount];
-                for (var ii = 0; ii < opKeys.Length; ++ii)
-                    opKeys[ii] = new Key ((long)rng.Generate64((ulong)testResult.Inputs.InitKeyCount));
-            } else
-            {
-                opKeys = new Zipf<Key>().GenerateOpKeys(initKeys, testResult.Inputs.OperationKeyCount,
-                                                        testResult.Inputs.DistributionParameter, rng,
-                                                        testResult.Inputs.Distribution == Distribution.ZipfShuffled, verbose);
-            }
-            prevTestResult = testResult;
-
-            sw.Stop();
-            var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            Console.WriteLine($"Initialization: Time to generate {testResult.Inputs.InitKeyCount:N0} keys" + 
-                              $" and {testResult.Inputs.OperationKeyCount:N0} operation keys in {testResult.Inputs.Distribution} distribution:" +
-                              $" {sw.ElapsedMilliseconds / 1000.0:N3} sec; working set {workingSetMB:N0}MB");
-        }
-
-        static void RunBlittableIteration<TBV>(TestRun testRun) where TBV : IBlittableValue, new()
-        {
-            var fht = new FHT<TBV, BlittableOutput<TBV>, BlittableFunctions<TBV>, NoSerializer<TBV>>(
-                            usePsf: false, sizeShift: testRun.TestResult.Inputs.HashSizeShift, useVarLenValues: false, 
-                            useObjectValues: false, useReadCache: testRun.TestResult.Inputs.UseReadCache);
-            RunIteration(fht, testRun, new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
-        }
-
-        static void RunIteration<TValue, TOutput, TFunctions, TSerializer>(
-                    FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
-                    IThreadValueRef<TValue, TOutput> getValueRef)
-            where TValue : new()
-            where TOutput : new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
-            where TSerializer : BinaryObjectSerializer<TValue>, new()
-        {
-            Initialize(fht, testRun, getValueRef);
-            FlushLog(fht, testRun);
-            RunOperations(fht, testRun, getValueRef);
-
-            fht.Close();
 
             if (prompt)
             {
@@ -226,278 +89,212 @@ namespace FASTER.PerfTest
             }
         }
 
-        private static void Initialize<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
-                IThreadValueRef<TValue, TOutput> getValueRef)
-            where TValue : new()
-            where TOutput : new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
-            where TSerializer : BinaryObjectSerializer<TValue>, new()
+        private static bool ExecuteTestRun(TestRun testRun)
         {
-            if (verbose)
-                Console.WriteLine($"Writing initial key values from 0 to {testRun.TestResult.Inputs.InitKeyCount} to FASTER");
+            Globals.KeySize = testRun.TestResult.Inputs.KeySize;
+            Globals.ValueSize = testRun.TestResult.Inputs.ValueSize;
 
-            var sw = new Stopwatch();
-            sw.Start();
-
-            // Reset the global chunk tracker.
-            NextChunkStart = 0;
-
-            Globals.IsInitialInsertPhase = true;
-            var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                  .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun, getValueRef)));
-            Task.WaitAll(tasks.ToArray());
-            Globals.IsInitialInsertPhase = false;
-
-            sw.Stop();
-
-            testRun.InitializeMs = (ulong)sw.ElapsedMilliseconds;
-            var numSec = sw.ElapsedMilliseconds / 1000.0;
-            var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-            Console.WriteLine($"Initialization: Time to insert {testRun.TestResult.Inputs.InitKeyCount:N0} initial key values:" +
-                              $" {numSec:N3} sec ({testRun.TestResult.Inputs.InitKeyCount / numSec:N2} inserts/sec;" +
-                              $" {testRun.TestResult.Inputs.InitKeyCount / (numSec * testRun.TestResult.Inputs.ThreadCount):N2} thread/sec);" +
-                              $" working set {workingSetMB:N0}MB");
-        }
-
-        private static void Initialize<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, int threadIndex, TestRun testRun,
-                IThreadValueRef<TValue, TOutput> getValueRef)
-            where TValue : new()
-            where TOutput : new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
-            where TSerializer : BinaryObjectSerializer<TValue>, new()
-        {
-            // Each thread needs to set NUMA and create a FASTER session
-            Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
-            using var session = fht.Faster.NewSession(null, true);
-            ref TValue value = ref getValueRef.GetRef(threadIndex);
-
-            // We just do one iteration through the KeyCount to load the initial keys. If there are
-            // multiple threads, each thread does (KeyCount / #threads) Inserts (on average).
-            for (long chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
-                chunkStart < testRun.TestResult.Inputs.InitKeyCount;
-                chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize)
+            if (testRun.TestResult.Inputs.UseVarLenKey)
             {
-                var chunkEnd = chunkStart + Globals.ChunkSize;
-                for (var ii = chunkStart; ii < chunkEnd; ii++)
+                var testInstance = new TestInstance<VarLenValue>(testRun, new VarLenKeyManager(verbose), new VarLenValue.EqualityComparer());
+                if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
-                    if (ii % 256 == 0 && ii > 0)
-                    {
-                        session.Refresh();
-                        if (ii % 65536 == 0)
-                        {
-                            session.CompletePending(false);
-                            if (verbose && ii % verboseInterval == 0)
-                            {
-                                long workingSetMB = Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                                Console.WriteLine($"Insert: {ii}, {workingSetMB:N0}MB");
-                            }
-                        }
-                    }
-                    getValueRef.SetInitialValue(ref value, initKeys[ii].key);
-                    session.Upsert(ref initKeys[ii], ref value, Empty.Default, 1);
+                    return testInstance.Run<VarLenValue, VarLenOutput, VarLenFunctions<VarLenValue>>(null,
+                                            new VariableLengthStructSettings<VarLenValue, VarLenValue>
+                                            {
+                                                keyLength = new VarLenValueLength(),
+                                                valueLength = new VarLenValueLength()
+                                            },
+                                            new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                 }
-            }
-            session.CompletePending(true);
-        }
-
-        private static void FlushLog<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun)
-            where TValue : new()
-            where TOutput : new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
-            where TSerializer : BinaryObjectSerializer<TValue>, new()
-        {
-            if (verbose)
-                Console.WriteLine("Flushing log");
-            switch (testRun.TestResult.Inputs.LogMode)
-            {
-                case LogMode.None:
-                    break;
-                case LogMode.Flush:
-                    fht.Faster.Log.Flush(true);
-                    break;
-                case LogMode.FlushAndEvict:
-                    fht.Faster.Log.FlushAndEvict(true);
-                    break;
-                case LogMode.DisposeFromMemory:
-                    fht.Faster.Log.DisposeFromMemory();
-                    break;
-                default:
-                    Console.WriteLine($"Missing LogMode case: {testRun.TestResult.Inputs.LogMode}");
-                    return;
-            }
-        }
-
-        private static void RunOperations<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, TestRun testRun,
-                IThreadValueRef<TValue, TOutput> getValueRef)
-            where TValue : new()
-            where TOutput : new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
-            where TSerializer : BinaryObjectSerializer<TValue>, new()
-        {
-            IEnumerable<(Operations, string, int)> prepareOps()
-            {
-                if (testRun.TestResult.Inputs.MixOperations)
+                if (testRun.TestResult.Inputs.UseObjectValue)
                 {
-                    IEnumerable<string> getMixedOpNames()
-                    {
-                        if (testRun.TestResult.Inputs.UpsertCount > 0)
-                            yield return "Upsert";
-                        if (testRun.TestResult.Inputs.ReadCount > 0)
-                            yield return "Read";
-                        if (testRun.TestResult.Inputs.RMWCount > 0)
-                            yield return "RMW";
-                    }
-                    yield return (Operations.Mixed, "mixed " + string.Join(", ", getMixedOpNames()), testRun.TestResult.Inputs.TotalOperationCount);
-                    yield break;
-                }
-                if (testRun.TestResult.Inputs.UpsertCount > 0)
-                    yield return (Operations.Upsert, "Upsert", testRun.TestResult.Inputs.UpsertCount);
-                if (testRun.TestResult.Inputs.ReadCount > 0)
-                    yield return (Operations.Read, "Read", testRun.TestResult.Inputs.ReadCount);
-                if (testRun.TestResult.Inputs.RMWCount > 0)
-                    yield return (Operations.RMW, "RMW", testRun.TestResult.Inputs.RMWCount);
-            }
-
-            var ops = prepareOps();
-
-            var sw = new Stopwatch();
-
-            // Reset the global chunk tracker here (outside the loop).
-            NextChunkStart = 0;
-
-            foreach (var (op, opName, opCount) in ops)
-            {
-                long startTailAddress = fht.LogTailAddress;
-
-                sw.Restart();
-
-                // Each thread does the full count
-                var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                      .Select(threadIdx => Task.Run(() => RunOperations(fht, op, opCount, threadIdx, testRun, getValueRef)));
-                Task.WaitAll(tasks.ToArray());
-
-                sw.Stop();
-
-                var numSec = sw.ElapsedMilliseconds / 1000.0;
-
-                // Total Ops/Second is always reported 
-                testRun.TotalOpsMs += (ulong)sw.ElapsedMilliseconds;
-
-                switch (op)
-                {
-                    case Operations.Mixed: break;
-                    case Operations.Upsert: testRun.UpsertMs = (ulong)sw.ElapsedMilliseconds; break;
-                    case Operations.Read: testRun.ReadMs = (ulong)sw.ElapsedMilliseconds; break;
-                    case Operations.RMW: testRun.RMWMs = (ulong)sw.ElapsedMilliseconds; break;
-                    default:
-                        throw new InvalidOperationException($"Unexpected Operations value: {op}");
+                    return testInstance.Run<ObjectValue, ObjectValueOutput, ObjectValueFunctions<VarLenValue>>(new SerializerSettings<VarLenValue, ObjectValue>
+                                            {
+                                                valueSerializer = () => new ObjectValueSerializer(isKey: false)
+                                            },
+                                            new VariableLengthStructSettings<VarLenValue, ObjectValue>
+                                            {
+                                                keyLength = new VarLenValueLength()
+                                            },
+                                            new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                 }
 
-                var suffix = op == Operations.Mixed ? "" : "s";
-                Console.WriteLine($"Iteration {testRun.currentIter}: Time for {opCount:N0} {opName} operations per thread ({opCount * testRun.TestResult.Inputs.ThreadCount:N0} total):" +
-                                  $" {numSec:N3} sec ({opCount / numSec:N2} {op}{suffix}/sec)");
-                var endTailAddress = fht.LogTailAddress;
-                if (endTailAddress != startTailAddress)
+                // Value is Blittable
+                bool run_VarLen_Key_BV_Value<TBV>() where TBV : IBlittableValue, new()
+                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<VarLenValue, TBV>>
+                        (null, new VariableLengthStructSettings<VarLenValue, TBV> { keyLength = new VarLenValueLength() },
+                        new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
+
+                return Globals.ValueSize switch
                 {
-                    var isExpected = testRun.TestResult.Inputs.LogMode != LogMode.None
-                        ? $"expected due to"
-                        : $"*** UNEXPECTED *** with";
-                    Console.WriteLine($"Log growth: {endTailAddress - startTailAddress}; {isExpected} {nameof(LogMode)}.{testRun.TestResult.Inputs.LogMode}");
-                }
+                    8 => run_VarLen_Key_BV_Value<BlittableValue8>(),
+                    16 => run_VarLen_Key_BV_Value<BlittableValue16>(),
+                    32 => run_VarLen_Key_BV_Value<BlittableValue32>(),
+                    64 => run_VarLen_Key_BV_Value<BlittableValue64>(),
+                    128 => run_VarLen_Key_BV_Value<BlittableValue128>(),
+                    256 => run_VarLen_Key_BV_Value<BlittableValue256>(),
+                    _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                };
             }
-        }
-
-        private static void RunOperations<TValue, TOutput, TFunctions, TSerializer>(
-                FHT<TValue, TOutput, TFunctions, TSerializer> fht, Operations op, long opCount,
-                int threadIndex, TestRun testRun, IThreadValueRef<TValue, TOutput> getValueRef)
-            where TValue : new()
-            where TOutput : new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Empty>, new()
-            where TSerializer : BinaryObjectSerializer<TValue>, new()
-        {
-            // Each thread needs to set NUMA and create a FASTER session
-            Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
-            using var session = fht.Faster.NewSession(null, true);
-
-            if (verbose)
-                Console.WriteLine($"Running Operation {op} count {opCount:N0} for threadId {threadIndex}");
-
-            var rng = new RandomGenerator((uint)threadIndex);
-            var totalOpCount = testRun.TestResult.Inputs.TotalOperationCount;
-            var upsertThreshold = testRun.TestResult.Inputs.UpsertCount;
-            var readThreshold = upsertThreshold + testRun.TestResult.Inputs.ReadCount;
-            var rmwThreshold = readThreshold + testRun.TestResult.Inputs.RMWCount;
-
-            ref TValue value = ref getValueRef.GetRef(threadIndex);
-            var input = default(Input);
-            var output = getValueRef.GetOutput(threadIndex);
-
-            long currentCount = 0;
-
-            // We multiply the number of operations by the number of threads, so we will wrap around
-            // the end of the operations keys if we get there
-            for (long chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
-                currentCount < opCount;
-                chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize)
+            
+            if (testRun.TestResult.Inputs.UseObjectKey)
             {
-                chunkStart %= opKeys.Length;
-                currentCount += Globals.ChunkSize;
-                var chunkEnd = chunkStart + Globals.ChunkSize;
-                for (var ii = chunkStart; ii < chunkEnd; ii++)
+                var testInstance = new TestInstance<ObjectValue>(testRun, new ObjectKeyManager(verbose), new ObjectValue.EqualityComparer());
+                if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
-                    var thisOp = op;
-                    if (thisOp == Operations.Mixed)
-                    {
-                        var rand = rng.Generate((uint)totalOpCount);
-                        if (rand < upsertThreshold)
-                            thisOp = Operations.Upsert;
-                        else if (rand <= readThreshold)
-                            thisOp = Operations.Read;
-                        else if (rand <= rmwThreshold)
-                            thisOp = Operations.RMW;
-                        else
-                            throw new InvalidOperationException($"rand {rand} out of threshold ranges: u {upsertThreshold} r {readThreshold} m {rmwThreshold}");
-                    }
-
-                    if (ii % 256 == 0 && ii > 0)
-                    {
-                        session.Refresh();
-                        if (ii % 65536 == 0)
-                        {
-                            session.CompletePending(false);
-                            if (verbose && ii % verboseInterval == 0)
-                            {
-                                Console.WriteLine($"{thisOp}: {ii}");
-                            }
-                        }
-                    }
-
-                    Status status = Status.OK;
-                    var key = opKeys[ii];
-                    switch (thisOp)
-                    {
-                        case Operations.Upsert:
-                            getValueRef.SetUpsertValue(ref value, key.key, ii & 7);
-                            status = session.Upsert(ref key, ref value, Empty.Default, 1);
-                            break;
-                        case Operations.Read:
-                            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
-                            break;
-                        case Operations.RMW:
-                            input.value = (int)(ii & 7);
-                            status = session.RMW(ref key, ref input, Empty.Default, 0);
-                            break;
-                    }
-
-                    if (status != Status.OK && status != Status.PENDING)
-                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)} {thisOp}; key[{ii}] = {key.key}: {status}");
+                    return testInstance.Run<VarLenValue, VarLenOutput, VarLenFunctions<ObjectValue>>(new SerializerSettings<ObjectValue, VarLenValue>
+                                            {
+                                                keySerializer = () => new ObjectValueSerializer(isKey: true)
+                                            },
+                                            new VariableLengthStructSettings<ObjectValue, VarLenValue>
+                                            {
+                                                valueLength = new VarLenValueLength()
+                                            },
+                                            new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                 }
+                if (testRun.TestResult.Inputs.UseObjectValue)
+                {
+                    return testInstance.Run<ObjectValue, ObjectValueOutput, ObjectValueFunctions<ObjectValue>>(new SerializerSettings<ObjectValue, ObjectValue>
+                                            {
+                                                keySerializer = () => new ObjectValueSerializer(isKey: true),
+                                                valueSerializer = () => new ObjectValueSerializer(isKey: false)
+                                            },
+                                            null,
+                                            new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+                }
+
+                // Value is Blittable
+                bool run_Object_Key_BV_Value<TBV>() where TBV : IBlittableValue, new()
+                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<ObjectValue, TBV>>(
+                        new SerializerSettings<ObjectValue, TBV> { keySerializer = () => new ObjectValueSerializer(isKey: true) }, null,
+                        new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
+
+                return Globals.ValueSize switch
+                {
+                    8 => run_Object_Key_BV_Value<BlittableValue8>(),
+                    16 => run_Object_Key_BV_Value<BlittableValue16>(),
+                    32 => run_Object_Key_BV_Value<BlittableValue32>(),
+                    64 => run_Object_Key_BV_Value<BlittableValue64>(),
+                    128 => run_Object_Key_BV_Value<BlittableValue128>(),
+                    256 => run_Object_Key_BV_Value<BlittableValue256>(),
+                    _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                };
             }
-            session.CompletePending(true);
+
+            // Key is Blittable
+
+            if (testRun.TestResult.Inputs.UseVarLenValue)
+            {
+                bool run_BV_Key_VarLen_Value<TBV>() where TBV : struct, IBlittableValue 
+                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(verbose), new BlittableEqualityComparer<TBV>())
+                            .Run<VarLenValue, VarLenOutput, VarLenFunctions<TBV>>(
+                                null, new VariableLengthStructSettings<TBV, VarLenValue> { valueLength = new VarLenValueLength() },
+                                new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+
+                return Globals.KeySize switch
+                {
+                    8 => run_BV_Key_VarLen_Value<BlittableValue8>(),
+                    16 => run_BV_Key_VarLen_Value<BlittableValue16>(),
+                    32 => run_BV_Key_VarLen_Value<BlittableValue32>(),
+                    64 => run_BV_Key_VarLen_Value<BlittableValue64>(),
+                    128 => run_BV_Key_VarLen_Value<BlittableValue128>(),
+                    256 => run_BV_Key_VarLen_Value<BlittableValue256>(),
+                    _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.KeySize}")
+                };
+            }
+
+            if (testRun.TestResult.Inputs.UseObjectValue)
+            {
+                bool run_BV_Key_Object_Value<TBV>() where TBV : struct, IBlittableValue
+                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(verbose), new BlittableEqualityComparer<TBV>())
+                            .Run<VarLenValue, VarLenOutput, VarLenFunctions<TBV>>(
+                                null, new VariableLengthStructSettings<TBV, VarLenValue> { valueLength = new VarLenValueLength() },
+                                new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+
+                return Globals.KeySize switch
+                {
+                    8 => run_BV_Key_Object_Value<BlittableValue8>(),
+                    16 => run_BV_Key_Object_Value<BlittableValue16>(),
+                    32 => run_BV_Key_Object_Value<BlittableValue32>(),
+                    64 => run_BV_Key_Object_Value<BlittableValue64>(),
+                    128 => run_BV_Key_Object_Value<BlittableValue128>(),
+                    256 => run_BV_Key_Object_Value<BlittableValue256>(),
+                    _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.KeySize}")
+                };
+            }
+
+            // Key and value are Blittable
+
+            bool run_BV_Key_BV_Value<TBVKey, TBVValue>() where TBVKey : struct, IBlittableValue where TBVValue : IBlittableValue, new()
+                => new TestInstance<TBVKey>(testRun, new BlittableKeyManager<TBVKey>(verbose), new BlittableEqualityComparer<TBVKey>())
+                            .Run<TBVValue, BlittableOutput<TBVValue>, BlittableFunctions<TBVKey, TBVValue>>(
+                                null, null, new BlittableThreadValueRef<TBVValue>(testRun.TestResult.Inputs.ThreadCount));
+
+            return Globals.KeySize switch
+            {
+                8 => Globals.ValueSize switch
+                    { 
+                        8 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue8>(),
+                        16 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue16>(),
+                        32 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue32>(),
+                        64 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue64>(),
+                        128 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue128>(),
+                        256 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue256>(),
+                        _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                    },
+                16 => Globals.ValueSize switch
+                    {
+                        8 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue8>(),
+                        16 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue16>(),
+                        32 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue32>(),
+                        64 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue64>(),
+                        128 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue128>(),
+                        256 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue256>(),
+                        _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                    },
+                32 => Globals.ValueSize switch
+                    {
+                        8 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue8>(),
+                        16 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue16>(),
+                        32 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue32>(),
+                        64 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue64>(),
+                        128 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue128>(),
+                        256 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue256>(),
+                        _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                    },
+                64 => Globals.ValueSize switch
+                    {
+                        8 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue8>(),
+                        16 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue16>(),
+                        32 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue32>(),
+                        64 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue64>(),
+                        128 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue128>(),
+                        256 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue256>(),
+                        _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                    },
+                128 => Globals.ValueSize switch
+                    {
+                        8 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue8>(),
+                        16 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue16>(),
+                        32 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue32>(),
+                        64 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue64>(),
+                        128 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue128>(),
+                        256 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue256>(),
+                        _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                    },
+                256 => Globals.ValueSize switch
+                    {
+                        8 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue8>(),
+                        16 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue16>(),
+                        32 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue32>(),
+                        64 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue64>(),
+                        128 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue128>(),
+                        256 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue256>(),
+                        _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
+                    },
+                _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.KeySize}")
+            };
         }
     }
 }

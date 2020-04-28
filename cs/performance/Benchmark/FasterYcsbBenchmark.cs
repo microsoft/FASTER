@@ -581,7 +581,14 @@ namespace FASTER.Benchmark
             else if (distribution == "zipf")
             {
                 Console.WriteLine("  (zipf (smooth) takes a couple minutes)");
-                txn_keys_ = new Zipf<Key>().GenerateOpKeys(init_keys_, (int)kTxnCount, theta, generator, shuffle: false);
+                var zipfSettings = new ZipfSettings
+                {
+                    Theta = theta,
+                    Rng = generator,
+                    Shuffle = false,
+                    Verbose = false
+                };
+                txn_keys_ = new Zipf<Key>().GenerateOpKeys(zipfSettings, init_keys_, (int)kTxnCount);
             }
             else 
                 throw new ArgumentException($"Unknown distribution: {distribution}");

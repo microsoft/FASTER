@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using Performance.Common;
 using System;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -9,13 +10,15 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.PerfTest
 {
-    public interface IBlittableValue   // Needed for RMW
+    public interface IBlittableValue : IKey
     {
         void SetInitialValue(long value, long mod);
 
+        BlittableData Data { get; }
+
         uint Modified { get; set; }
 
-        void Verify(long value);
+        bool Verify(long value);
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 8)]
@@ -29,6 +32,10 @@ namespace FASTER.PerfTest
             this.data.Modified = (uint)(mod & uint.MaxValue);
         }
 
+        public BlittableData Data => this.data;
+
+        public long Value => this.data.Value;
+
         public uint Modified
         {
             get => data.Modified;
@@ -36,10 +43,11 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Verify(long value)
+        public bool Verify(long value)
         {
-            if (this.data.Value != value)
-                throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})");
+            return this.data.Value == value
+                ? true
+                : throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})");
         }
 
         public override string ToString() => this.data.ToString();
@@ -60,6 +68,10 @@ namespace FASTER.PerfTest
                 extra1 = data;
         }
 
+        public BlittableData Data => this.data;
+
+        public long Value => this.data.Value;
+
         public uint Modified
         {
             get => data.Modified;
@@ -72,12 +84,13 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Verify(long value)
+        public bool Verify(long value)
         {
             if (this.data.Value != value)
                 throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})");
-            if (extra1 != data)
-                throw new ApplicationException("extraN != value");
+            return extra1 != data
+                ? throw new ApplicationException("extraN != value")
+                : true;
         }
 
         public override string ToString() => this.data.ToString();
@@ -98,6 +111,10 @@ namespace FASTER.PerfTest
                 extra1 = extra2 = extra3 = data;
         }
 
+        public BlittableData Data => this.data;
+
+        public long Value => this.data.Value;
+
         public uint Modified
         {
             get => data.Modified;
@@ -110,12 +127,13 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Verify(long value)
+        public bool Verify(long value)
         {
             if (this.data.Value != value)
                 throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})");
-            if (extra1 != data || extra2 != data || extra3 != data)
-                throw new ApplicationException("extraN != data");
+            return extra1 != data || extra2 != data || extra3 != data
+                ? throw new ApplicationException("extraN != data")
+                : true;
         }
 
         public override string ToString() => this.data.ToString();
@@ -136,6 +154,10 @@ namespace FASTER.PerfTest
                 extra1 = extra2 = extra3 = extra4 = extra5 = extra6 = extra7 = data;
         }
 
+        public BlittableData Data => this.data;
+
+        public long Value => this.data.Value;
+
         public uint Modified
         {
             get => data.Modified;
@@ -148,12 +170,13 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Verify(long value)
+        public bool Verify(long value)
         {
             if (this.data.Value != value)
                 throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})");
-            if (extra1 != data || extra2 != data || extra3 != data || extra4 != data || extra5 != data || extra6 != data || extra7 != data)
-                throw new ApplicationException("extraN != data");
+            return extra1 != data || extra2 != data || extra3 != data || extra4 != data || extra5 != data || extra6 != data || extra7 != data
+                ? throw new ApplicationException("extraN != data")
+                : true;
         }
 
         public override string ToString() => this.data.ToString();
@@ -176,6 +199,10 @@ namespace FASTER.PerfTest
                 = extra10 = extra11 = extra12 = extra13 = extra14 = extra15 = extra16 = extra17 = data;
         }
 
+        public BlittableData Data => this.data;
+
+        public long Value => this.data.Value;
+
         public uint Modified
         {
             get => data.Modified;
@@ -189,13 +216,14 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Verify(long value)
+        public bool Verify(long value)
         {
             if (this.data.Value != value)
                 throw new ApplicationException("this.data.Value != value");
-            if (extra1 != data || extra2 != data || extra3 != data || extra4 != data || extra5 != data || extra6 != data || extra7 != data
-                || extra10 != data || extra11 != data || extra12 != data || extra13 != data || extra14 != data || extra15 != data || extra16 != data || extra17 != data)
-                throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})");
+            return extra1 != data || extra2 != data || extra3 != data || extra4 != data || extra5 != data || extra6 != data || extra7 != data
+                || extra10 != data || extra11 != data || extra12 != data || extra13 != data || extra14 != data || extra15 != data || extra16 != data || extra17 != data
+                ? throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})")
+                : true;
         }
 
         public override string ToString() => this.data.ToString();
@@ -222,6 +250,10 @@ namespace FASTER.PerfTest
                 = extra30 = extra31 = extra32 = extra33 = extra34 = extra35 = extra36 = extra37 = data;
         }
 
+        public BlittableData Data => this.data;
+
+        public long Value => this.data.Value;
+
         public uint Modified
         {
             get => data.Modified;
@@ -237,18 +269,28 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Verify(long value)
+        public bool Verify(long value)
         {
             if (this.data.Value != value)
                 throw new ApplicationException($"this.data.Value ({this.data.Value}) != value ({value})");
-            if (extra1 != data || extra2 != data || extra3 != data || extra4 != data || extra5 != data || extra6 != data || extra7 != data
+            return extra1 != data || extra2 != data || extra3 != data || extra4 != data || extra5 != data || extra6 != data || extra7 != data
                 || extra10 != data || extra11 != data || extra12 != data || extra13 != data || extra14 != data || extra15 != data || extra16 != data || extra17 != data
                 || extra20 != data || extra21 != data || extra22 != data || extra23 != data || extra24 != data || extra25 != data || extra26 != data || extra27 != data
-                || extra30 != data || extra31 != data || extra32 != data || extra33 != data || extra34 != data || extra35 != data || extra36 != data || extra37 != data)
-                throw new ApplicationException("extraN != data");
+                || extra30 != data || extra31 != data || extra32 != data || extra33 != data || extra34 != data || extra35 != data || extra36 != data || extra37 != data
+                ? throw new ApplicationException("extraN != data")
+                : true;
         }
 
         public override string ToString() => this.data.ToString();
+    }
+
+    public struct BlittableEqualityComparer<TBV> : IFasterEqualityComparer<TBV>
+        where TBV : IBlittableValue
+    {
+        public long GetHashCode64(ref TBV k) => k.Data.GetHashCode64();
+
+        public unsafe bool Equals(ref TBV k1, ref TBV k2)
+            => k1.Data == k2.Data && (!Globals.Verify || (k1.Verify(k1.Data.Value) && k2.Verify(k2.Data.Value)));
     }
 
     public struct BlittableOutput<TBlittableValue>
@@ -275,82 +317,125 @@ namespace FASTER.PerfTest
         public void SetUpsertValue(ref TBlittableValue valueRef, long value, long mod) => valueRef.SetInitialValue(value, mod);
     }
 
-    public class BlittableFunctions<TBlittableValue> : IFunctions<Key, TBlittableValue, Input, BlittableOutput<TBlittableValue>, Empty>
+    internal class BlittableKeyManager<TBV> : KeyManager<TBV>
+        where TBV : struct, IBlittableValue
+    {
+        TBV[] initKeys;
+        TBV[] opKeys;
+
+        internal BlittableKeyManager(bool verbose) : base(verbose) { }
+
+        internal override void Initialize(ZipfSettings zipfSettings, RandomGenerator rng, int initCount, int opCount)
+        {
+            this.initKeys = new TBV[initCount];
+            for (var ii = 0; ii < initCount; ++ii)
+            {
+                initKeys[ii] = new TBV();
+                initKeys[ii].SetInitialValue(ii, 0);
+            }
+
+            // Note on memory usage: BlittableValue# is a struct and thus copied by value into opKeys, so will take much more storage
+            // than VarLen or Object which are reference/object copies.
+            if (!(zipfSettings is null))
+            {
+                this.opKeys = new Zipf<TBV>().GenerateOpKeys(zipfSettings, initKeys, opCount);
+            }
+            else
+            {
+                // Note: Since we pay the storage cost anyway, make it faster by creating a new key rather than reading initKeys.
+                this.opKeys = new TBV[opCount];
+                for (var ii = 0; ii < opCount; ++ii)
+                {
+                    opKeys[ii] = new TBV();
+                    opKeys[ii].SetInitialValue((long)rng.Generate64((ulong)initCount), 0);
+                }
+            }
+        }
+
+        internal override ref TBV GetInitKey(int index) => ref this.initKeys[index];
+
+        internal override ref TBV GetOpKey(int index) => ref this.opKeys[index];
+
+        public override void Dispose() { }
+    }
+
+    public class BlittableFunctions<TKey, TBlittableValue> : IFunctions<TKey, TBlittableValue, Input, BlittableOutput<TBlittableValue>, Empty>
+        where TKey : IKey
         where TBlittableValue : IBlittableValue
     {
         #region Upsert
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref TBlittableValue src, ref TBlittableValue dst)
+        public bool ConcurrentWriter(ref TKey key, ref TBlittableValue src, ref TBlittableValue dst)
         {
             SingleWriter(ref key, ref src, ref dst);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, ref TBlittableValue src, ref TBlittableValue dst)
+        public void SingleWriter(ref TKey key, ref TBlittableValue src, ref TBlittableValue dst)
         {
             if (Globals.Verify)
             {
                 if (!Globals.IsInitialInsertPhase)
-                    dst.Verify(key.key);
-                src.Verify(key.key);
+                    dst.Verify(key.Value);
+                src.Verify(key.Value);
             }
             dst = src;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpsertCompletionCallback(ref Key key, ref TBlittableValue value, Empty ctx)
+        public void UpsertCompletionCallback(ref TKey key, ref TBlittableValue value, Empty ctx)
         {
             if (Globals.Verify)
-                value.Verify(key.key);
+                value.Verify(key.Value);
         }
         #endregion Upsert
 
         #region Read
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentReader(ref Key key, ref Input input, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
+        public void ConcurrentReader(ref TKey key, ref Input input, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
             => SingleReader(ref key, ref input, ref value, ref dst);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleReader(ref Key key, ref Input _, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
+        public void SingleReader(ref TKey key, ref Input _, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
         {
             if (Globals.Verify)
-                value.Verify(key.key);
+                value.Verify(key.Value);
             dst.Value = value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ReadCompletionCallback(ref Key key, ref Input _, ref BlittableOutput<TBlittableValue> output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref TKey key, ref Input _, ref BlittableOutput<TBlittableValue> output, Empty ctx, Status status)
         {
             if (Globals.Verify)
-                output.Value.Verify(key.key);
+                output.Value.Verify(key.Value);
         }
         #endregion Read
 
         #region RMW
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, ref Input input, ref TBlittableValue value) 
-            => value.SetInitialValue(key.key, (uint)input.value);
+        public void InitialUpdater(ref TKey key, ref Input input, ref TBlittableValue value) 
+            => value.SetInitialValue(key.Value, (uint)input.value);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref TBlittableValue value)
+        public bool InPlaceUpdater(ref TKey key, ref Input input, ref TBlittableValue value)
         {
             if (Globals.Verify)
-                value.Verify(key.key);
+                value.Verify(key.Value);
             value.Modified += (uint)input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref TBlittableValue oldValue, ref TBlittableValue newValue)
+        public void CopyUpdater(ref TKey key, ref Input input, ref TBlittableValue oldValue, ref TBlittableValue newValue)
         {
             if (Globals.Verify)
-                oldValue.Verify(key.key);
-            newValue.SetInitialValue(key.key, oldValue.Modified + (uint)input.value);
+                oldValue.Verify(key.Value);
+            newValue.SetInitialValue(key.Value, oldValue.Modified + (uint)input.value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref TKey key, ref Input input, Empty ctx, Status status)
         { }
         #endregion RMW
 
@@ -359,7 +444,7 @@ namespace FASTER.PerfTest
         { }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DeleteCompletionCallback(ref Key key, Empty ctx)
+        public void DeleteCompletionCallback(ref TKey key, Empty ctx)
             => throw new InvalidOperationException("Delete not implemented");
     }
 }

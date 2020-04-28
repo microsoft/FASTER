@@ -51,10 +51,19 @@ namespace FASTER.PerfTest
         public bool MixOperations { get; set; } = false;
 
         [JsonProperty]
-        public int DataSize { get; set; } = Globals.MinDataSize;
+        public int KeySize { get; set; } = Globals.MinDataSize;
+
+        [JsonProperty]
+        public int ValueSize { get; set; } = Globals.MinDataSize;
+
+        [JsonProperty]
+        public bool UseVarLenKey { get; set; } = false;
 
         [JsonProperty]
         public bool UseVarLenValue { get; set; } = false;
+
+        [JsonProperty]
+        public bool UseObjectKey { get; set; } = false;
 
         [JsonProperty]
         public bool UseObjectValue { get; set; } = false;
@@ -100,15 +109,21 @@ namespace FASTER.PerfTest
                 return fail($"Invalid operations: At least one operation must be specified");
             if (MixOperations && (UpsertCount == TotalOperationCount || ReadCount == TotalOperationCount || RMWCount == TotalOperationCount))
                 return fail($"Invalid {nameof(MixOperations)}: More than one operation must be specified");
-            if (DataSize < Globals.MinDataSize)
-                return fail($"Invalid {nameof(DataSize)}: {DataSize}. Must be >= {Globals.MinDataSize}");
+            if (KeySize < Globals.MinDataSize)
+                return fail($"Invalid {nameof(KeySize)}: {KeySize}. Must be >= {Globals.MinDataSize}");
+            if (ValueSize < Globals.MinDataSize)
+                return fail($"Invalid {nameof(ValueSize)}: {ValueSize}. Must be >= {Globals.MinDataSize}");
             if (IterationCount < 1)
                 return fail($"Invalid {nameof(IterationCount)}: {IterationCount}. Must be >= 1");
 
+            if (this.UseVarLenKey && this.UseObjectKey)
+                return fail($"Cannot specify both {nameof(this.UseVarLenKey)} and {nameof(this.UseObjectKey)}");
             if (this.UseVarLenValue && this.UseObjectValue)
                 return fail($"Cannot specify both {nameof(this.UseVarLenValue)} and {nameof(this.UseObjectValue)}");
-            if (!Globals.ValidDataSizes.Contains(this.DataSize))
-                return fail($"Data sizes must be in [{string.Join(", ", Globals.ValidDataSizes)}]");
+            if (!Globals.ValidDataSizes.Contains(this.KeySize))
+                return fail($"Key Data sizes must be in [{string.Join(", ", Globals.ValidDataSizes)}]");
+            if (!Globals.ValidDataSizes.Contains(this.ValueSize))
+                return fail($"Value Data sizes must be in [{string.Join(", ", Globals.ValidDataSizes)}]");
             return true;
         }
 
@@ -125,19 +140,23 @@ namespace FASTER.PerfTest
                 $" {PerfTest.ReadsArg} {this.ReadCount}" +
                 $" {PerfTest.RMWsArg} {this.RMWCount}" +
                 $" {PerfTest.MixOpsArg} {this.MixOperations}" +
-                $" {PerfTest.DataArg} {this.DataSize}" +
-                $" {PerfTest.UseVarLenArg} {this.UseVarLenValue}" +
-                $" {PerfTest.UseObjArg} {this.UseObjectValue}" +
+                $" {PerfTest.KeySizeArg} {this.KeySize}" +
+                $" {PerfTest.ValueSizeArg} {this.ValueSize}" +
+                $" {PerfTest.UseVarLenKeysArg} {this.UseVarLenKey}" +
+                $" {PerfTest.UseVarLenValuesArg} {this.UseVarLenValue}" +
+                $" {PerfTest.UseObjKeysArg} {this.UseObjectKey}" +
+                $" {PerfTest.UseObjValuesArg} {this.UseObjectValue}" +
                 $" {PerfTest.UseRcArg} {this.UseReadCache}" +
                 $" {PerfTest.LogArg} {this.LogMode}" +
                 $" {PerfTest.ItersArg} {this.IterationCount}"
             ;
 
-        internal (int, NumaMode, Distribution, double, int, int, int, int, int, int, int, bool, int, bool, bool, bool, LogMode, int) MemberTuple
+        internal (int, NumaMode, Distribution, double, int, int, int, int, int, int, int, bool, int, int, bool, bool, bool, bool, bool, LogMode, int) MemberTuple
             => (this.HashSizeShift, this.NumaMode,
                 this.Distribution, this.DistributionParameter, this.DistributionSeed, this.ThreadCount,
                 this.InitKeyCount, this.OperationKeyCount, this.UpsertCount, this.ReadCount, this.RMWCount, this.MixOperations,
-                this.DataSize, this.UseVarLenValue, this.UseObjectValue, this.UseReadCache, this.LogMode, this.IterationCount);
+                this.KeySize, this.ValueSize, this.UseVarLenKey, this.UseVarLenValue, this.UseObjectKey, this.UseObjectValue,
+                this.UseReadCache, this.LogMode, this.IterationCount);
 
         internal (Distribution, double, double) DistributionInfo
             => (this.Distribution, this.DistributionParameter, this.DistributionSeed);

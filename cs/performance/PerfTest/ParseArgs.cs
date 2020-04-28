@@ -20,9 +20,12 @@ namespace FASTER.PerfTest
         internal const string ReadsArg = "--reads";
         internal const string RMWsArg = "--rmws";
         internal const string MixOpsArg = "--mixOps";
-        internal const string DataArg = "--data";
-        internal const string UseVarLenArg = "--useVarLen";
-        internal const string UseObjArg = "--useObj";
+        internal const string KeySizeArg = "--keySize";
+        internal const string ValueSizeArg = "--valueSize";
+        internal const string UseVarLenKeysArg = "--varLenKeys";
+        internal const string UseVarLenValuesArg = "--varLenValues";
+        internal const string UseObjKeysArg = "--objKeys";
+        internal const string UseObjValuesArg = "--objValues";
         internal const string UseRcArg = "--useRC";
         internal const string LogArg = "--log";
         internal const string ItersArg = "--iters";
@@ -76,9 +79,12 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"        {RMWsArg} <count>: The number of RMW operations to run after the initial upserts are done; default is {defaultTestResult.Inputs.RMWCount}");
                 Console.WriteLine($"    {MixOpsArg} [value]: Mix upsert, read, and rmw operations, rather than one after the other; default is {defaultTestResult.Inputs.MixOperations}");
                 Console.WriteLine($"        If true, the sum of {UpsertsArg}, {ReadsArg}, and {RMWsArg} operations are run, intermixed, on each thread specified.");
-                Console.WriteLine($"    {DataArg} <bytes>: How many bytes per Value; must be in [{string.Join(", ", Globals.ValidDataSizes)}], Default is {Globals.MinDataSize}");
-                Console.WriteLine($"    {UseVarLenArg} [value]: Use variable instead of fixed-length blittable Values; default is {defaultTestResult.Inputs.UseVarLenValue}");
-                Console.WriteLine($"    {UseObjArg} [value]: Use objects instead of blittable Value; default is {defaultTestResult.Inputs.UseObjectValue}");
+                Console.WriteLine($"    {KeySizeArg} <bytes>: How many bytes per Key; must be in [{string.Join(", ", Globals.ValidDataSizes)}], Default is {defaultTestResult.Inputs.KeySize}");
+                Console.WriteLine($"    {ValueSizeArg} <bytes>: How many bytes per Value; must be in [{string.Join(", ", Globals.ValidDataSizes)}], Default is {defaultTestResult.Inputs.ValueSize}");
+                Console.WriteLine($"    {UseVarLenKeysArg} [value]: Use variable instead of fixed-length blittable Keys; default is {defaultTestResult.Inputs.UseVarLenKey}");
+                Console.WriteLine($"    {UseVarLenValuesArg} [value]: Use variable instead of fixed-length blittable Values; default is {defaultTestResult.Inputs.UseVarLenValue}");
+                Console.WriteLine($"    {UseObjValuesArg} [value]: Use objects instead of blittable Keys; default is {defaultTestResult.Inputs.UseObjectKey}");
+                Console.WriteLine($"    {UseObjValuesArg} [value]: Use objects instead of blittable Values; default is {defaultTestResult.Inputs.UseObjectValue}");
                 Console.WriteLine($"    {UseRcArg} [value]: Use ReadCache; default is {defaultTestResult.Inputs.UseReadCache}");
                 Console.WriteLine($"    {LogArg} <mode>: The disposition of the log after initial Inserts; default is {defaultTestResult.Inputs.LogMode}");
                 Console.WriteLine($"        {LogMode.None}: Do not flush log");
@@ -144,7 +150,7 @@ namespace FASTER.PerfTest
                         return false;
                     var mult = value.EndsWith("m", StringComparison.OrdinalIgnoreCase) ? 1_000_000 : 1;
                     if (mult != 1)
-                        value = value.Substring(0, value.Length - 1);
+                        value = value[0..^1];
                     if (int.TryParse(value, out num))
                     {
                         num *= mult;
@@ -276,15 +282,31 @@ namespace FASTER.PerfTest
                     TestParameters.CommandLineOverrides |= TestParameterFlags.MixOperations;
                     continue;
                 }
-                if (string.Compare(arg, DataArg, ignoreCase: true) == 0)
+                if (string.Compare(arg, KeySizeArg, ignoreCase: true) == 0)
                 {
                     if (!hasIntValue(out var value))
                         return false;
-                    parseResult.Inputs.DataSize = value;
-                    TestParameters.CommandLineOverrides |= TestParameterFlags.DataSize;
+                    parseResult.Inputs.KeySize = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.KeySize;
                     continue;
                 }
-                if (string.Compare(arg, UseVarLenArg, ignoreCase: true) == 0)
+                if (string.Compare(arg, ValueSizeArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.ValueSize = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.ValueSize;
+                    continue;
+                }
+                if (string.Compare(arg, UseVarLenKeysArg, ignoreCase: true) == 0)
+                {
+                    if (!hasBoolValue(out var wanted))
+                        return false;
+                    parseResult.Inputs.UseVarLenKey = wanted;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.UseVarLenKey;
+                    continue;
+                }
+                if (string.Compare(arg, UseVarLenValuesArg, ignoreCase: true) == 0)
                 {
                     if (!hasBoolValue(out var wanted))
                         return false;
@@ -292,7 +314,15 @@ namespace FASTER.PerfTest
                     TestParameters.CommandLineOverrides |= TestParameterFlags.UseVarLenValue;
                     continue;
                 }
-                if (string.Compare(arg, UseObjArg, ignoreCase: true) == 0)
+                if (string.Compare(arg, UseObjKeysArg, ignoreCase: true) == 0)
+                {
+                    if (!hasBoolValue(out var wanted))
+                        return false;
+                    parseResult.Inputs.UseObjectKey = wanted;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.UseObjectKey;
+                    continue;
+                }
+                if (string.Compare(arg, UseObjValuesArg, ignoreCase: true) == 0)
                 {
                     if (!hasBoolValue(out var wanted))
                         return false;
