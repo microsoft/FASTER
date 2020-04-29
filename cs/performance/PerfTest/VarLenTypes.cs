@@ -16,7 +16,7 @@ namespace FASTER.PerfTest
     /// reinterpret_cast{Data} field in the variable length chunk of memory
     /// </summary>
     [StructLayout(LayoutKind.Explicit)]
-    public unsafe struct VarLenValue : IKey
+    public unsafe struct VarLenType : IKey
     {
         // Note that we assume Globals.MinDataSize is 8 and Globals.DataSize is a multiple of that
         [StructLayout(LayoutKind.Explicit)]
@@ -98,7 +98,7 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CopyTo(ref VarLenValue dst, bool isUpsert)
+        internal void CopyTo(ref VarLenType dst, bool isUpsert)
         {
             // If this is an Upsert (not initial insert), we want to preserve dst length; otherwise
             // we will write past FASTER's buffer length if it's shorter and will lose knowledge of
@@ -135,11 +135,11 @@ namespace FASTER.PerfTest
 
         public override string ToString() => $"ByteLen {ByteLength}, {data}";
 
-        public struct EqualityComparer : IFasterEqualityComparer<VarLenValue>
+        public struct EqualityComparer : IFasterEqualityComparer<VarLenType>
         {
-            public long GetHashCode64(ref VarLenValue k) => k.data.GetHashCode64();
+            public long GetHashCode64(ref VarLenType k) => k.data.GetHashCode64();
 
-            public unsafe bool Equals(ref VarLenValue k1, ref VarLenValue k2)
+            public unsafe bool Equals(ref VarLenType k1, ref VarLenType k2)
             {
                 var src = (Data*)Unsafe.AsPointer(ref k1);
                 var dst = (Data*)Unsafe.AsPointer(ref k2);
@@ -161,13 +161,13 @@ namespace FASTER.PerfTest
         }
     }
 
-    public unsafe struct VarLenValueLength : IVariableLengthStruct<VarLenValue>
+    public unsafe struct VarLenTypeLength : IVariableLengthStruct<VarLenType>
     {
         public int GetAverageLength() => Globals.ValueSize;
 
-        public int GetInitialLength<Input>(ref Input input) => sizeof(VarLenValue.Data);
+        public int GetInitialLength<Input>(ref Input input) => sizeof(VarLenType.Data);
 
-        public int GetLength(ref VarLenValue t) => t.ByteLength;
+        public int GetLength(ref VarLenType t) => t.ByteLength;
     }
 
     public struct VarLenOutput
@@ -181,15 +181,15 @@ namespace FASTER.PerfTest
             this.threadIndex = threadIndex;
         }
 
-        internal ref VarLenValue ThreadValueRef => ref this.getThreadValueRef.GetRef(this.threadIndex);
+        internal ref VarLenType ThreadValueRef => ref this.getThreadValueRef.GetRef(this.threadIndex);
 
         public override string ToString() => this.ThreadValueRef.ToString();
     }
 
-    unsafe class VarLenThreadValueRef : IThreadValueRef<VarLenValue, VarLenOutput>, IDisposable
+    unsafe class VarLenThreadValueRef : IThreadValueRef<VarLenType, VarLenOutput>, IDisposable
     {
         // This class is why we need the whole IThreadValueRef idea; allocating unmanaged memory
-        // for VarLenValue. These are per-thread (that's why we keep an array, and that also
+        // for VarLenType. These are per-thread (that's why we keep an array, and that also
         // makes it easier to free on Dispose()). During operations, Upserts can copy from this
         // to the store (in VERIFY mode we can write values to be copied) and Reads can copy from
         // the store to this (in VERIFY mode, verifying the values read), without fear of conflict.
@@ -200,21 +200,21 @@ namespace FASTER.PerfTest
             this.values = new IntPtr[threadCount];
             for (var ii = 0; ii < threadCount; ++ii)
             {
-                values[ii] = Marshal.AllocHGlobal(sizeof(int) * VarLenValue.MaxIntLength);
-                for (var jj = 0; jj < VarLenValue.MaxIntLength; ++jj)
+                values[ii] = Marshal.AllocHGlobal(sizeof(int) * VarLenType.MaxIntLength);
+                for (var jj = 0; jj < VarLenType.MaxIntLength; ++jj)
                     Marshal.WriteInt32(values[ii], jj * sizeof(int), 0);
-                ref var varlen = ref *(VarLenValue*)values[ii].ToPointer();
+                ref var varlen = ref *(VarLenType*)values[ii].ToPointer();
                 varlen.SetInitialValueAndLength(0, 0);
             }
         }
 
-        public ref VarLenValue GetRef(int threadIndex) => ref *(VarLenValue*)values[threadIndex].ToPointer();
+        public ref VarLenType GetRef(int threadIndex) => ref *(VarLenType*)values[threadIndex].ToPointer();
 
         public VarLenOutput GetOutput(int threadIndex) => new VarLenOutput(this, threadIndex);
 
-        public void SetInitialValue(ref VarLenValue valueRef, long value) => valueRef.SetInitialValueAndLength(value, 0);
+        public void SetInitialValue(ref VarLenType valueRef, long value) => valueRef.SetInitialValueAndLength(value, 0);
 
-        public void SetUpsertValue(ref VarLenValue valueRef, long value, long mod) => valueRef.SetInitialValueAndLength((int)(value % int.MaxValue), mod);
+        public void SetUpsertValue(ref VarLenType valueRef, long value, long mod) => valueRef.SetInitialValueAndLength((int)(value % int.MaxValue), mod);
 
         public void Dispose()
         {
@@ -227,18 +227,18 @@ namespace FASTER.PerfTest
         }
     }
 
-    internal unsafe class VarLenKeyManager : KeyManager<VarLenValue>, IDisposable
+    internal unsafe class VarLenKeyManager : KeyManager<VarLenType>, IDisposable
     {
         readonly List<IntPtr> chunks = new List<IntPtr>();
-        VarLenValue*[] initKeys;
-        VarLenValue*[] opKeys;
+        VarLenType*[] initKeys;
+        VarLenType*[] opKeys;
 
         internal VarLenKeyManager(bool verbose) : base(verbose) { }
 
         internal override void Initialize(ZipfSettings zipfSettings, RandomGenerator rng, int initCount, int opCount)
         {
             PopulateInitKeys(initCount);
-            this.opKeys = new VarLenValue*[opCount];
+            this.opKeys = new VarLenType*[opCount];
 
             if (!(zipfSettings is null))
             {
@@ -259,32 +259,32 @@ namespace FASTER.PerfTest
 
         private void PopulateInitKeys(int initCount)
         {
-            this.initKeys = new VarLenValue*[initCount];
+            this.initKeys = new VarLenType*[initCount];
             int chunkItems = 1024 * 1024;
             int chunkOffset = chunkItems; // Init at end so we allocate on the first loop iteration
-            VarLenValue.Data* chunkPtr = null;
+            VarLenType.Data* chunkPtr = null;
             for (var ii = 0; ii < initCount; ++ii)
             {
-                if (chunkOffset > chunkItems - Globals.KeySize / sizeof(VarLenValue.Data))
+                if (chunkOffset > chunkItems - Globals.KeySize / sizeof(VarLenType.Data))
                 {
-                    var chunkSize = chunkItems * sizeof(VarLenValue.Data);
+                    var chunkSize = chunkItems * sizeof(VarLenType.Data);
                     var chunk = Marshal.AllocHGlobal(chunkSize);
                     chunks.Add(chunk);
                     for (var jj = 0; jj < chunkSize / sizeof(long); ++jj)
                         Marshal.WriteInt32(chunk, jj * sizeof(long), 0);
-                    chunkPtr = (VarLenValue.Data*)chunk.ToPointer();
+                    chunkPtr = (VarLenType.Data*)chunk.ToPointer();
                     chunkOffset = 0;
                 }
-                initKeys[ii] = (VarLenValue*)(chunkPtr + chunkOffset);
-                initKeys[ii]->data.Length = (ushort)VarLenValue.GetNewLength(ii, isKey:true);
+                initKeys[ii] = (VarLenType*)(chunkPtr + chunkOffset);
+                initKeys[ii]->data.Length = (ushort)VarLenType.GetNewLength(ii, isKey:true);
                 initKeys[ii]->data.Value = ii;
                 chunkOffset += initKeys[ii]->data.Length;
             }
         }
 
-        internal override ref VarLenValue GetInitKey(int index) => ref *this.initKeys[index];
+        internal override ref VarLenType GetInitKey(int index) => ref *this.initKeys[index];
 
-        internal override ref VarLenValue GetOpKey(int index) => ref *this.opKeys[index];
+        internal override ref VarLenType GetOpKey(int index) => ref *this.opKeys[index];
 
         public override void Dispose()
         {
@@ -294,19 +294,19 @@ namespace FASTER.PerfTest
         }
     }
 
-    public class VarLenFunctions<TKey> : IFunctions<TKey, VarLenValue, Input, VarLenOutput, Empty>
+    public class VarLenFunctions<TKey> : IFunctions<TKey, VarLenType, Input, VarLenOutput, Empty>
         where TKey : IKey
     {
         #region Upsert
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref TKey key, ref VarLenValue src, ref VarLenValue dst)
+        public bool ConcurrentWriter(ref TKey key, ref VarLenType src, ref VarLenType dst)
         {
             SingleWriter(ref key, ref src, ref dst);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref TKey key, ref VarLenValue src, ref VarLenValue dst)
+        public void SingleWriter(ref TKey key, ref VarLenType src, ref VarLenType dst)
         {
             if (Globals.Verify)
             {
@@ -318,7 +318,7 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpsertCompletionCallback(ref TKey key, ref VarLenValue value, Empty ctx)
+        public void UpsertCompletionCallback(ref TKey key, ref VarLenType value, Empty ctx)
         {
             if (Globals.Verify)
                 value.Verify(key.Value);
@@ -327,11 +327,11 @@ namespace FASTER.PerfTest
 
         #region Read
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentReader(ref TKey key, ref Input input, ref VarLenValue value, ref VarLenOutput dst)
+        public void ConcurrentReader(ref TKey key, ref Input input, ref VarLenType value, ref VarLenOutput dst)
             => SingleReader(ref key, ref input, ref value, ref dst);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleReader(ref TKey key, ref Input _, ref VarLenValue value, ref VarLenOutput dst)
+        public void SingleReader(ref TKey key, ref Input _, ref VarLenType value, ref VarLenOutput dst)
         {
             if (Globals.Verify)
                 value.Verify(key.Value);
@@ -348,11 +348,11 @@ namespace FASTER.PerfTest
 
         #region RMW
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref TKey key, ref Input input, ref VarLenValue value)
+        public void InitialUpdater(ref TKey key, ref Input input, ref VarLenType value)
             => value.SetInitialValueAndLength(key.Value, input.value);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref TKey key, ref Input input, ref VarLenValue value)
+        public bool InPlaceUpdater(ref TKey key, ref Input input, ref VarLenType value)
         {
             if (Globals.Verify)
                 value.Verify(key.Value);
@@ -361,7 +361,7 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref TKey key, ref Input input, ref VarLenValue oldValue, ref VarLenValue newValue)
+        public void CopyUpdater(ref TKey key, ref Input input, ref VarLenType oldValue, ref VarLenType newValue)
         {
             if (Globals.Verify)
                 oldValue.Verify(key.Value);

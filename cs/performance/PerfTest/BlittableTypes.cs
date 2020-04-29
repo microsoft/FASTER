@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.PerfTest
 {
-    public interface IBlittableValue : IKey
+    public interface IBlittableType : IKey
     {
         void SetInitialValue(long value, long mod);
 
@@ -22,7 +22,7 @@ namespace FASTER.PerfTest
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 8)]
-    public struct BlittableValue8 : IBlittableValue
+    public struct BlittableType8 : IBlittableType
     {
         internal BlittableData data;
 
@@ -54,7 +54,7 @@ namespace FASTER.PerfTest
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 16)]
-    public struct BlittableValue16 : IBlittableValue
+    public struct BlittableType16 : IBlittableType
     {
         internal BlittableData data;
         internal BlittableData extra1;
@@ -97,7 +97,7 @@ namespace FASTER.PerfTest
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 32)]
-    public struct BlittableValue32 : IBlittableValue
+    public struct BlittableType32 : IBlittableType
     {
         internal BlittableData data;
         internal BlittableData extra1, extra2, extra3;
@@ -140,7 +140,7 @@ namespace FASTER.PerfTest
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 64)]
-    public struct BlittableValue64 : IBlittableValue
+    public struct BlittableType64 : IBlittableType
     {
         internal BlittableData data;
         internal BlittableData extra1, extra2, extra3, extra4, extra5, extra6, extra7;
@@ -183,7 +183,7 @@ namespace FASTER.PerfTest
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 128)]
-    public struct BlittableValue128 : IBlittableValue
+    public struct BlittableType128 : IBlittableType
     {
         internal BlittableData data;
         internal BlittableData extra1, extra2, extra3, extra4, extra5, extra6, extra7;
@@ -230,7 +230,7 @@ namespace FASTER.PerfTest
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 256)]
-    public struct BlittableValue256 : IBlittableValue
+    public struct BlittableType256 : IBlittableType
     {
         internal BlittableData data;
         internal BlittableData extra1, extra2, extra3, extra4, extra5, extra6, extra7;
@@ -285,7 +285,7 @@ namespace FASTER.PerfTest
     }
 
     public struct BlittableEqualityComparer<TBV> : IFasterEqualityComparer<TBV>
-        where TBV : IBlittableValue
+        where TBV : IBlittableType
     {
         public long GetHashCode64(ref TBV k) => k.Data.GetHashCode64();
 
@@ -293,32 +293,32 @@ namespace FASTER.PerfTest
             => k1.Data == k2.Data && (!Globals.Verify || (k1.Verify(k1.Data.Value) && k2.Verify(k2.Data.Value)));
     }
 
-    public struct BlittableOutput<TBlittableValue>
+    public struct BlittableOutput<TBlittableType>
     {
-        public TBlittableValue Value { get; set; }
+        public TBlittableType Value { get; set; }
 
         public override string ToString() => this.Value.ToString();
     }
 
-    class BlittableThreadValueRef<TBlittableValue> : IThreadValueRef<TBlittableValue, BlittableOutput<TBlittableValue>>
-        where TBlittableValue : IBlittableValue, new()
+    class BlittableThreadValueRef<TBlittableType> : IThreadValueRef<TBlittableType, BlittableOutput<TBlittableType>>
+        where TBlittableType : IBlittableType, new()
     {
-        readonly TBlittableValue[] values;
+        readonly TBlittableType[] values;
 
         internal BlittableThreadValueRef(int count)
-            => values = Enumerable.Range(0, count).Select(ii => new TBlittableValue()).ToArray();
+            => values = Enumerable.Range(0, count).Select(ii => new TBlittableType()).ToArray();
 
-        public ref TBlittableValue GetRef(int threadIndex) => ref values[threadIndex];
+        public ref TBlittableType GetRef(int threadIndex) => ref values[threadIndex];
 
-        public BlittableOutput<TBlittableValue> GetOutput(int threadIndex) => new BlittableOutput<TBlittableValue>();
+        public BlittableOutput<TBlittableType> GetOutput(int threadIndex) => new BlittableOutput<TBlittableType>();
 
-        public void SetInitialValue(ref TBlittableValue valueRef, long value) => valueRef.SetInitialValue(value, 0);
+        public void SetInitialValue(ref TBlittableType valueRef, long value) => valueRef.SetInitialValue(value, 0);
 
-        public void SetUpsertValue(ref TBlittableValue valueRef, long value, long mod) => valueRef.SetInitialValue(value, mod);
+        public void SetUpsertValue(ref TBlittableType valueRef, long value, long mod) => valueRef.SetInitialValue(value, mod);
     }
 
     internal class BlittableKeyManager<TBV> : KeyManager<TBV>
-        where TBV : struct, IBlittableValue
+        where TBV : struct, IBlittableType
     {
         TBV[] initKeys;
         TBV[] opKeys;
@@ -334,7 +334,7 @@ namespace FASTER.PerfTest
                 initKeys[ii].SetInitialValue(ii, 0);
             }
 
-            // Note on memory usage: BlittableValue# is a struct and thus copied by value into opKeys, so will take much more storage
+            // Note on memory usage: BlittableType# is a struct and thus copied by value into opKeys, so will take much more storage
             // than VarLen or Object which are reference/object copies.
             if (!(zipfSettings is null))
             {
@@ -359,20 +359,20 @@ namespace FASTER.PerfTest
         public override void Dispose() { }
     }
 
-    public class BlittableFunctions<TKey, TBlittableValue> : IFunctions<TKey, TBlittableValue, Input, BlittableOutput<TBlittableValue>, Empty>
+    public class BlittableFunctions<TKey, TBlittableType> : IFunctions<TKey, TBlittableType, Input, BlittableOutput<TBlittableType>, Empty>
         where TKey : IKey
-        where TBlittableValue : IBlittableValue
+        where TBlittableType : IBlittableType
     {
         #region Upsert
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref TKey key, ref TBlittableValue src, ref TBlittableValue dst)
+        public bool ConcurrentWriter(ref TKey key, ref TBlittableType src, ref TBlittableType dst)
         {
             SingleWriter(ref key, ref src, ref dst);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref TKey key, ref TBlittableValue src, ref TBlittableValue dst)
+        public void SingleWriter(ref TKey key, ref TBlittableType src, ref TBlittableType dst)
         {
             if (Globals.Verify)
             {
@@ -384,7 +384,7 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpsertCompletionCallback(ref TKey key, ref TBlittableValue value, Empty ctx)
+        public void UpsertCompletionCallback(ref TKey key, ref TBlittableType value, Empty ctx)
         {
             if (Globals.Verify)
                 value.Verify(key.Value);
@@ -393,11 +393,11 @@ namespace FASTER.PerfTest
 
         #region Read
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentReader(ref TKey key, ref Input input, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
+        public void ConcurrentReader(ref TKey key, ref Input input, ref TBlittableType value, ref BlittableOutput<TBlittableType> dst)
             => SingleReader(ref key, ref input, ref value, ref dst);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleReader(ref TKey key, ref Input _, ref TBlittableValue value, ref BlittableOutput<TBlittableValue> dst)
+        public void SingleReader(ref TKey key, ref Input _, ref TBlittableType value, ref BlittableOutput<TBlittableType> dst)
         {
             if (Globals.Verify)
                 value.Verify(key.Value);
@@ -405,7 +405,7 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ReadCompletionCallback(ref TKey key, ref Input _, ref BlittableOutput<TBlittableValue> output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref TKey key, ref Input _, ref BlittableOutput<TBlittableType> output, Empty ctx, Status status)
         {
             if (Globals.Verify)
                 output.Value.Verify(key.Value);
@@ -414,11 +414,11 @@ namespace FASTER.PerfTest
 
         #region RMW
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref TKey key, ref Input input, ref TBlittableValue value) 
+        public void InitialUpdater(ref TKey key, ref Input input, ref TBlittableType value) 
             => value.SetInitialValue(key.Value, (uint)input.value);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref TKey key, ref Input input, ref TBlittableValue value)
+        public bool InPlaceUpdater(ref TKey key, ref Input input, ref TBlittableType value)
         {
             if (Globals.Verify)
                 value.Verify(key.Value);
@@ -427,7 +427,7 @@ namespace FASTER.PerfTest
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref TKey key, ref Input input, ref TBlittableValue oldValue, ref TBlittableValue newValue)
+        public void CopyUpdater(ref TKey key, ref Input input, ref TBlittableType oldValue, ref TBlittableType newValue)
         {
             if (Globals.Verify)
                 oldValue.Verify(key.Value);

@@ -96,88 +96,88 @@ namespace FASTER.PerfTest
 
             if (testRun.TestResult.Inputs.UseVarLenKey)
             {
-                var testInstance = new TestInstance<VarLenValue>(testRun, new VarLenKeyManager(verbose), new VarLenValue.EqualityComparer());
+                var testInstance = new TestInstance<VarLenType>(testRun, new VarLenKeyManager(verbose), new VarLenType.EqualityComparer());
                 if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
-                    return testInstance.Run<VarLenValue, VarLenOutput, VarLenFunctions<VarLenValue>>(null,
-                                            new VariableLengthStructSettings<VarLenValue, VarLenValue>
+                    return testInstance.Run<VarLenType, VarLenOutput, VarLenFunctions<VarLenType>>(null,
+                                            new VariableLengthStructSettings<VarLenType, VarLenType>
                                             {
-                                                keyLength = new VarLenValueLength(),
-                                                valueLength = new VarLenValueLength()
+                                                keyLength = new VarLenTypeLength(),
+                                                valueLength = new VarLenTypeLength()
                                             },
                                             new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                 }
                 if (testRun.TestResult.Inputs.UseObjectValue)
                 {
-                    return testInstance.Run<ObjectValue, ObjectValueOutput, ObjectValueFunctions<VarLenValue>>(new SerializerSettings<VarLenValue, ObjectValue>
+                    return testInstance.Run<ObjectType, ObjectTypeOutput, ObjectTypeFunctions<VarLenType>>(new SerializerSettings<VarLenType, ObjectType>
                                             {
-                                                valueSerializer = () => new ObjectValueSerializer(isKey: false)
+                                                valueSerializer = () => new ObjectTypeSerializer(isKey: false)
                                             },
-                                            new VariableLengthStructSettings<VarLenValue, ObjectValue>
+                                            new VariableLengthStructSettings<VarLenType, ObjectType>
                                             {
-                                                keyLength = new VarLenValueLength()
+                                                keyLength = new VarLenTypeLength()
                                             },
                                             new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                 }
 
                 // Value is Blittable
-                bool run_VarLen_Key_BV_Value<TBV>() where TBV : IBlittableValue, new()
-                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<VarLenValue, TBV>>
-                        (null, new VariableLengthStructSettings<VarLenValue, TBV> { keyLength = new VarLenValueLength() },
+                bool run_VarLen_Key_BV_Value<TBV>() where TBV : IBlittableType, new()
+                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<VarLenType, TBV>>
+                        (null, new VariableLengthStructSettings<VarLenType, TBV> { keyLength = new VarLenTypeLength() },
                         new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
 
                 return Globals.ValueSize switch
                 {
-                    8 => run_VarLen_Key_BV_Value<BlittableValue8>(),
-                    16 => run_VarLen_Key_BV_Value<BlittableValue16>(),
-                    32 => run_VarLen_Key_BV_Value<BlittableValue32>(),
-                    64 => run_VarLen_Key_BV_Value<BlittableValue64>(),
-                    128 => run_VarLen_Key_BV_Value<BlittableValue128>(),
-                    256 => run_VarLen_Key_BV_Value<BlittableValue256>(),
+                    8 => run_VarLen_Key_BV_Value<BlittableType8>(),
+                    16 => run_VarLen_Key_BV_Value<BlittableType16>(),
+                    32 => run_VarLen_Key_BV_Value<BlittableType32>(),
+                    64 => run_VarLen_Key_BV_Value<BlittableType64>(),
+                    128 => run_VarLen_Key_BV_Value<BlittableType128>(),
+                    256 => run_VarLen_Key_BV_Value<BlittableType256>(),
                     _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                 };
             }
             
             if (testRun.TestResult.Inputs.UseObjectKey)
             {
-                var testInstance = new TestInstance<ObjectValue>(testRun, new ObjectKeyManager(verbose), new ObjectValue.EqualityComparer());
+                var testInstance = new TestInstance<ObjectType>(testRun, new ObjectKeyManager(verbose), new ObjectType.EqualityComparer());
                 if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
-                    return testInstance.Run<VarLenValue, VarLenOutput, VarLenFunctions<ObjectValue>>(new SerializerSettings<ObjectValue, VarLenValue>
+                    return testInstance.Run<VarLenType, VarLenOutput, VarLenFunctions<ObjectType>>(new SerializerSettings<ObjectType, VarLenType>
                                             {
-                                                keySerializer = () => new ObjectValueSerializer(isKey: true)
+                                                keySerializer = () => new ObjectTypeSerializer(isKey: true)
                                             },
-                                            new VariableLengthStructSettings<ObjectValue, VarLenValue>
+                                            new VariableLengthStructSettings<ObjectType, VarLenType>
                                             {
-                                                valueLength = new VarLenValueLength()
+                                                valueLength = new VarLenTypeLength()
                                             },
                                             new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                 }
                 if (testRun.TestResult.Inputs.UseObjectValue)
                 {
-                    return testInstance.Run<ObjectValue, ObjectValueOutput, ObjectValueFunctions<ObjectValue>>(new SerializerSettings<ObjectValue, ObjectValue>
+                    return testInstance.Run<ObjectType, ObjectTypeOutput, ObjectTypeFunctions<ObjectType>>(new SerializerSettings<ObjectType, ObjectType>
                                             {
-                                                keySerializer = () => new ObjectValueSerializer(isKey: true),
-                                                valueSerializer = () => new ObjectValueSerializer(isKey: false)
+                                                keySerializer = () => new ObjectTypeSerializer(isKey: true),
+                                                valueSerializer = () => new ObjectTypeSerializer(isKey: false)
                                             },
                                             null,
                                             new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
                 }
 
                 // Value is Blittable
-                bool run_Object_Key_BV_Value<TBV>() where TBV : IBlittableValue, new()
-                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<ObjectValue, TBV>>(
-                        new SerializerSettings<ObjectValue, TBV> { keySerializer = () => new ObjectValueSerializer(isKey: true) }, null,
+                bool run_Object_Key_BV_Value<TBV>() where TBV : IBlittableType, new()
+                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<ObjectType, TBV>>(
+                        new SerializerSettings<ObjectType, TBV> { keySerializer = () => new ObjectTypeSerializer(isKey: true) }, null,
                         new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
 
                 return Globals.ValueSize switch
                 {
-                    8 => run_Object_Key_BV_Value<BlittableValue8>(),
-                    16 => run_Object_Key_BV_Value<BlittableValue16>(),
-                    32 => run_Object_Key_BV_Value<BlittableValue32>(),
-                    64 => run_Object_Key_BV_Value<BlittableValue64>(),
-                    128 => run_Object_Key_BV_Value<BlittableValue128>(),
-                    256 => run_Object_Key_BV_Value<BlittableValue256>(),
+                    8 => run_Object_Key_BV_Value<BlittableType8>(),
+                    16 => run_Object_Key_BV_Value<BlittableType16>(),
+                    32 => run_Object_Key_BV_Value<BlittableType32>(),
+                    64 => run_Object_Key_BV_Value<BlittableType64>(),
+                    128 => run_Object_Key_BV_Value<BlittableType128>(),
+                    256 => run_Object_Key_BV_Value<BlittableType256>(),
                     _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                 };
             }
@@ -186,47 +186,47 @@ namespace FASTER.PerfTest
 
             if (testRun.TestResult.Inputs.UseVarLenValue)
             {
-                bool run_BV_Key_VarLen_Value<TBV>() where TBV : struct, IBlittableValue 
+                bool run_BV_Key_VarLen_Value<TBV>() where TBV : struct, IBlittableType 
                     => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(verbose), new BlittableEqualityComparer<TBV>())
-                            .Run<VarLenValue, VarLenOutput, VarLenFunctions<TBV>>(
-                                null, new VariableLengthStructSettings<TBV, VarLenValue> { valueLength = new VarLenValueLength() },
+                            .Run<VarLenType, VarLenOutput, VarLenFunctions<TBV>>(
+                                null, new VariableLengthStructSettings<TBV, VarLenType> { valueLength = new VarLenTypeLength() },
                                 new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
 
                 return Globals.KeySize switch
                 {
-                    8 => run_BV_Key_VarLen_Value<BlittableValue8>(),
-                    16 => run_BV_Key_VarLen_Value<BlittableValue16>(),
-                    32 => run_BV_Key_VarLen_Value<BlittableValue32>(),
-                    64 => run_BV_Key_VarLen_Value<BlittableValue64>(),
-                    128 => run_BV_Key_VarLen_Value<BlittableValue128>(),
-                    256 => run_BV_Key_VarLen_Value<BlittableValue256>(),
+                    8 => run_BV_Key_VarLen_Value<BlittableType8>(),
+                    16 => run_BV_Key_VarLen_Value<BlittableType16>(),
+                    32 => run_BV_Key_VarLen_Value<BlittableType32>(),
+                    64 => run_BV_Key_VarLen_Value<BlittableType64>(),
+                    128 => run_BV_Key_VarLen_Value<BlittableType128>(),
+                    256 => run_BV_Key_VarLen_Value<BlittableType256>(),
                     _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.KeySize}")
                 };
             }
 
             if (testRun.TestResult.Inputs.UseObjectValue)
             {
-                bool run_BV_Key_Object_Value<TBV>() where TBV : struct, IBlittableValue
+                bool run_BV_Key_Object_Value<TBV>() where TBV : struct, IBlittableType
                     => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(verbose), new BlittableEqualityComparer<TBV>())
-                            .Run<VarLenValue, VarLenOutput, VarLenFunctions<TBV>>(
-                                null, new VariableLengthStructSettings<TBV, VarLenValue> { valueLength = new VarLenValueLength() },
+                            .Run<VarLenType, VarLenOutput, VarLenFunctions<TBV>>(
+                                null, new VariableLengthStructSettings<TBV, VarLenType> { valueLength = new VarLenTypeLength() },
                                 new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
 
                 return Globals.KeySize switch
                 {
-                    8 => run_BV_Key_Object_Value<BlittableValue8>(),
-                    16 => run_BV_Key_Object_Value<BlittableValue16>(),
-                    32 => run_BV_Key_Object_Value<BlittableValue32>(),
-                    64 => run_BV_Key_Object_Value<BlittableValue64>(),
-                    128 => run_BV_Key_Object_Value<BlittableValue128>(),
-                    256 => run_BV_Key_Object_Value<BlittableValue256>(),
+                    8 => run_BV_Key_Object_Value<BlittableType8>(),
+                    16 => run_BV_Key_Object_Value<BlittableType16>(),
+                    32 => run_BV_Key_Object_Value<BlittableType32>(),
+                    64 => run_BV_Key_Object_Value<BlittableType64>(),
+                    128 => run_BV_Key_Object_Value<BlittableType128>(),
+                    256 => run_BV_Key_Object_Value<BlittableType256>(),
                     _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.KeySize}")
                 };
             }
 
             // Key and value are Blittable
 
-            bool run_BV_Key_BV_Value<TBVKey, TBVValue>() where TBVKey : struct, IBlittableValue where TBVValue : IBlittableValue, new()
+            bool run_BV_Key_BV_Value<TBVKey, TBVValue>() where TBVKey : struct, IBlittableType where TBVValue : IBlittableType, new()
                 => new TestInstance<TBVKey>(testRun, new BlittableKeyManager<TBVKey>(verbose), new BlittableEqualityComparer<TBVKey>())
                             .Run<TBVValue, BlittableOutput<TBVValue>, BlittableFunctions<TBVKey, TBVValue>>(
                                 null, null, new BlittableThreadValueRef<TBVValue>(testRun.TestResult.Inputs.ThreadCount));
@@ -235,62 +235,62 @@ namespace FASTER.PerfTest
             {
                 8 => Globals.ValueSize switch
                     { 
-                        8 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue8>(),
-                        16 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue16>(),
-                        32 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue32>(),
-                        64 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue64>(),
-                        128 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue128>(),
-                        256 => run_BV_Key_BV_Value<BlittableValue8, BlittableValue256>(),
+                        8 => run_BV_Key_BV_Value<BlittableType8, BlittableType8>(),
+                        16 => run_BV_Key_BV_Value<BlittableType8, BlittableType16>(),
+                        32 => run_BV_Key_BV_Value<BlittableType8, BlittableType32>(),
+                        64 => run_BV_Key_BV_Value<BlittableType8, BlittableType64>(),
+                        128 => run_BV_Key_BV_Value<BlittableType8, BlittableType128>(),
+                        256 => run_BV_Key_BV_Value<BlittableType8, BlittableType256>(),
                         _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                     },
                 16 => Globals.ValueSize switch
                     {
-                        8 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue8>(),
-                        16 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue16>(),
-                        32 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue32>(),
-                        64 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue64>(),
-                        128 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue128>(),
-                        256 => run_BV_Key_BV_Value<BlittableValue16, BlittableValue256>(),
+                        8 => run_BV_Key_BV_Value<BlittableType16, BlittableType8>(),
+                        16 => run_BV_Key_BV_Value<BlittableType16, BlittableType16>(),
+                        32 => run_BV_Key_BV_Value<BlittableType16, BlittableType32>(),
+                        64 => run_BV_Key_BV_Value<BlittableType16, BlittableType64>(),
+                        128 => run_BV_Key_BV_Value<BlittableType16, BlittableType128>(),
+                        256 => run_BV_Key_BV_Value<BlittableType16, BlittableType256>(),
                         _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                     },
                 32 => Globals.ValueSize switch
                     {
-                        8 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue8>(),
-                        16 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue16>(),
-                        32 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue32>(),
-                        64 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue64>(),
-                        128 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue128>(),
-                        256 => run_BV_Key_BV_Value<BlittableValue32, BlittableValue256>(),
+                        8 => run_BV_Key_BV_Value<BlittableType32, BlittableType8>(),
+                        16 => run_BV_Key_BV_Value<BlittableType32, BlittableType16>(),
+                        32 => run_BV_Key_BV_Value<BlittableType32, BlittableType32>(),
+                        64 => run_BV_Key_BV_Value<BlittableType32, BlittableType64>(),
+                        128 => run_BV_Key_BV_Value<BlittableType32, BlittableType128>(),
+                        256 => run_BV_Key_BV_Value<BlittableType32, BlittableType256>(),
                         _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                     },
                 64 => Globals.ValueSize switch
                     {
-                        8 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue8>(),
-                        16 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue16>(),
-                        32 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue32>(),
-                        64 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue64>(),
-                        128 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue128>(),
-                        256 => run_BV_Key_BV_Value<BlittableValue64, BlittableValue256>(),
+                        8 => run_BV_Key_BV_Value<BlittableType64, BlittableType8>(),
+                        16 => run_BV_Key_BV_Value<BlittableType64, BlittableType16>(),
+                        32 => run_BV_Key_BV_Value<BlittableType64, BlittableType32>(),
+                        64 => run_BV_Key_BV_Value<BlittableType64, BlittableType64>(),
+                        128 => run_BV_Key_BV_Value<BlittableType64, BlittableType128>(),
+                        256 => run_BV_Key_BV_Value<BlittableType64, BlittableType256>(),
                         _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                     },
                 128 => Globals.ValueSize switch
                     {
-                        8 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue8>(),
-                        16 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue16>(),
-                        32 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue32>(),
-                        64 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue64>(),
-                        128 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue128>(),
-                        256 => run_BV_Key_BV_Value<BlittableValue128, BlittableValue256>(),
+                        8 => run_BV_Key_BV_Value<BlittableType128, BlittableType8>(),
+                        16 => run_BV_Key_BV_Value<BlittableType128, BlittableType16>(),
+                        32 => run_BV_Key_BV_Value<BlittableType128, BlittableType32>(),
+                        64 => run_BV_Key_BV_Value<BlittableType128, BlittableType64>(),
+                        128 => run_BV_Key_BV_Value<BlittableType128, BlittableType128>(),
+                        256 => run_BV_Key_BV_Value<BlittableType128, BlittableType256>(),
                         _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                     },
                 256 => Globals.ValueSize switch
                     {
-                        8 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue8>(),
-                        16 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue16>(),
-                        32 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue32>(),
-                        64 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue64>(),
-                        128 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue128>(),
-                        256 => run_BV_Key_BV_Value<BlittableValue256, BlittableValue256>(),
+                        8 => run_BV_Key_BV_Value<BlittableType256, BlittableType8>(),
+                        16 => run_BV_Key_BV_Value<BlittableType256, BlittableType16>(),
+                        32 => run_BV_Key_BV_Value<BlittableType256, BlittableType32>(),
+                        64 => run_BV_Key_BV_Value<BlittableType256, BlittableType64>(),
+                        128 => run_BV_Key_BV_Value<BlittableType256, BlittableType128>(),
+                        256 => run_BV_Key_BV_Value<BlittableType256, BlittableType256>(),
                         _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.ValueSize}")
                     },
                 _ => throw new InvalidOperationException($"Unexpected Blittable data size: {Globals.KeySize}")
