@@ -32,10 +32,9 @@ namespace FASTER.core
         public const int CheckpointCompletionCallback = 5;
     }
 
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs

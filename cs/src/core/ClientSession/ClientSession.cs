@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #pragma warning disable 0162
@@ -20,23 +20,27 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IDisposable
+    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         internal readonly bool SupportAsync = false;
-        private readonly FasterKV<Key, Value, Input, Output, Context, Functions> fht;
-        internal readonly FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx;
+        private readonly FasterKV<Key, Value, Input, Output, Context> fht;
+        internal readonly FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx;
         internal CommitPoint LatestCommitPoint;
 
+        internal Functions functions;
+
         internal ClientSession(
-            FasterKV<Key, Value, Input, Output, Context, Functions> fht,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
+            FasterKV<Key, Value, Input, Output, Context> fht,
+            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            Functions functions,
             bool supportAsync)
         {
             this.fht = fht;
             this.ctx = ctx;
+            this.functions = functions;
             this.SupportAsync = supportAsync;
             LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
             // Session runs on a single thread
@@ -76,7 +80,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRead(ref key, ref input, ref output, userContext, serialNo, ctx);
+                return fht.ContextRead(ref key, ref input, ref output, userContext, functions, serialNo, ctx);
             }
             finally
             {
@@ -94,7 +98,7 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns>ReadAsyncResult - call CompleteRead on the return value to complete the read operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, Input, Output, Context>.ReadAsyncResult<Functions>> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
             return fht.ReadAsync(this, ref key, ref input, context, token);
         }        
@@ -113,7 +117,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx);
+                return fht.ContextUpsert(ref key, ref desiredValue, userContext, functions, serialNo, ctx);
             }
             finally
             {
@@ -139,20 +143,15 @@ namespace FASTER.core
                 return default;
 
             return SlowUpsertAsync(this, waitForCommit, status, token);
-
-            static async ValueTask SlowUpsertAsync(
-                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
-                bool waitForCommit, Status status, CancellationToken token
-                )
-            {
-                if (status == Status.PENDING)
-                    await @this.CompletePendingAsync(waitForCommit, token);
-                else if (waitForCommit)
-                    await @this.WaitForCommitAsync(token);
-            }
         }
 
-
+        private static async ValueTask SlowUpsertAsync(ClientSession<Key, Value, Input, Output, Context, Functions> @this, bool waitForCommit, Status status, CancellationToken token)
+        {
+            if (status == Status.PENDING)
+                await @this.CompletePendingAsync(waitForCommit, token);
+            else if (waitForCommit)
+                await @this.WaitForCommitAsync(token);
+        }
 
         /// <summary>
         /// RMW operation
@@ -168,7 +167,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx);
+                return fht.ContextRMW(ref key, ref input, userContext, functions, serialNo, ctx);
             }
             finally
             {
@@ -195,21 +194,16 @@ namespace FASTER.core
                 return default;
 
             return SlowRMWAsync(this, waitForCommit, status, token);
-
-            static async ValueTask SlowRMWAsync(
-                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
-                bool waitForCommit, Status status, CancellationToken token
-                )
-            {
-
-                if (status == Status.PENDING)
-                    await @this.CompletePendingAsync(waitForCommit, token);
-                else if (waitForCommit)
-                    await @this.WaitForCommitAsync(token);
-            }
         }
 
+        private static async ValueTask SlowRMWAsync(ClientSession<Key, Value, Input, Output, Context, Functions> @this, bool waitForCommit, Status status, CancellationToken token)
+        {
 
+            if (status == Status.PENDING)
+                await @this.CompletePendingAsync(waitForCommit, token);
+            else if (waitForCommit)
+                await @this.WaitForCommitAsync(token);
+        }
 
         /// <summary>
         /// Delete operation
@@ -224,7 +218,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextDelete(ref key, userContext, serialNo, ctx);
+                return fht.ContextDelete(ref key, userContext, functions, serialNo, ctx);
             }
             finally
             {
@@ -249,21 +243,16 @@ namespace FASTER.core
                 return default;
 
             return SlowDeleteAsync(this, waitForCommit, status, token);
-
-            static async ValueTask SlowDeleteAsync(
-                ClientSession<Key, Value, Input, Output, Context, Functions> @this,
-                bool waitForCommit, Status status, CancellationToken token
-                )
-            {
-
-                if (status == Status.PENDING)
-                    await @this.CompletePendingAsync(waitForCommit, token);
-                else if (waitForCommit)
-                    await @this.WaitForCommitAsync(token);
-            }
         }
 
+        private static async ValueTask SlowDeleteAsync(ClientSession<Key, Value, Input, Output, Context, Functions> @this, bool waitForCommit, Status status, CancellationToken token)
+        {
 
+            if (status == Status.PENDING)
+                await @this.CompletePendingAsync(waitForCommit, token);
+            else if (waitForCommit)
+                await @this.WaitForCommitAsync(token);
+        }
 
         /// <summary>
         /// Experimental feature
@@ -276,7 +265,7 @@ namespace FASTER.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
         {
-            return fht.InternalContainsKeyInMemory(ref key, ctx, fromAddress);
+            return fht.InternalContainsKeyInMemory(ref key, functions, ctx, fromAddress);
         }
 
         /// <summary>
@@ -305,7 +294,7 @@ namespace FASTER.core
         public void Refresh()
         {
             if (SupportAsync) UnsafeResumeThread();
-            fht.InternalRefresh(ctx, this);
+            fht.InternalRefresh(ctx, functions, this);
             if (SupportAsync) UnsafeSuspendThread();
         }
 
@@ -320,7 +309,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                var result = fht.InternalCompletePending(ctx, spinWait);
+                var result = fht.InternalCompletePending(ctx, functions, spinWait);
                 if (spinWaitForCommit)
                 {
                     if (spinWait != true)
@@ -329,10 +318,10 @@ namespace FASTER.core
                     }
                     do
                     {
-                        fht.InternalCompletePending(ctx, spinWait);
+                        fht.InternalCompletePending(ctx, functions, spinWait);
                         if (fht.InRestPhase())
                         {
-                            fht.InternalCompletePending(ctx, spinWait);
+                            fht.InternalCompletePending(ctx, functions, spinWait);
                             return true;
                         }
                     } while (spinWait);
@@ -402,7 +391,7 @@ namespace FASTER.core
         internal void UnsafeResumeThread()
         {
             fht.epoch.Resume();
-            fht.InternalRefresh(ctx, this);
+            fht.InternalRefresh(ctx, functions, this);
         }
 
         /// <summary>
@@ -412,6 +401,51 @@ namespace FASTER.core
         internal void UnsafeSuspendThread()
         {
             fht.epoch.Suspend();
+        }
+
+        void IClientSession.AtomicSwitch(int version)
+        {
+            fht.AtomicSwitch(ctx, ctx.prevCtx, version);
+        }
+
+        /// <summary>
+        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
+        /// </summary>
+        public struct ReadAsyncResult
+        {
+            readonly Status status;
+            readonly Output output;
+
+            readonly FasterKV<Key, Value, Input, Output, Context>.ReadAsyncInternal<Functions> readAsyncInternal;
+
+            internal ReadAsyncResult(Status status, Output output)
+            {
+                this.status = status;
+                this.output = output;
+                this.readAsyncInternal = default;
+            }
+
+            internal ReadAsyncResult(
+                FasterKV<Key, Value, Input, Output, Context> fasterKV,
+                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                FasterKV<Key, Value, Input, Output, Context>.PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            {
+                status = Status.PENDING;
+                output = default;
+                readAsyncInternal = new FasterKV<Key, Value, Input, Output, Context>.ReadAsyncInternal<Functions>(fasterKV, clientSession, pendingContext, diskRequest);
+            }
+
+            /// <summary>
+            /// Complete the read operation, after any I/O is completed.
+            /// </summary>
+            /// <returns>The read result, or throws an exception if error encountered.</returns>
+            public (Status, Output) CompleteRead()
+            {
+                if (status != Status.PENDING)
+                    return (status, output);
+
+                return readAsyncInternal.CompleteRead();
+            }
         }
 
     }

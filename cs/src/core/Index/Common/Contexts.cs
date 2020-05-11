@@ -62,10 +62,9 @@ namespace FASTER.core
         }
     }
 
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         internal struct PendingContext
         {
@@ -255,10 +254,10 @@ namespace FASTER.core
                     exclusions.Add(long.Parse(reader.ReadLine()));
 
                 continueTokens.TryAdd(guid, new CommitPoint
-                    {
-                        UntilSerialNo = serialno,
-                        ExcludedSerialNos = exclusions
-                    });
+                {
+                    UntilSerialNo = serialno,
+                    ExcludedSerialNos = exclusions
+                });
             }
 
             // Read object log segment offsets
@@ -287,8 +286,8 @@ namespace FASTER.core
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
 
-            using StreamReader s = new StreamReader(new MemoryStream(metadata));
-            Initialize(s);
+            using (StreamReader s = new StreamReader(new MemoryStream(metadata)))
+                Initialize(s);
         }
 
         /// <summary>
@@ -304,45 +303,47 @@ namespace FASTER.core
         /// </summary>
         public byte[] ToByteArray()
         {
-            using MemoryStream ms = new MemoryStream();
-            using (StreamWriter writer = new StreamWriter(ms))
+            using (MemoryStream ms = new MemoryStream())
             {
-                writer.WriteLine(guid);
-                writer.WriteLine(useSnapshotFile);
-                writer.WriteLine(version);
-                writer.WriteLine(flushedLogicalAddress);
-                writer.WriteLine(startLogicalAddress);
-                writer.WriteLine(finalLogicalAddress);
-                writer.WriteLine(headAddress);
-                writer.WriteLine(beginAddress);
-
-                writer.WriteLine(checkpointTokens.Count);
-                foreach (var kvp in checkpointTokens)
+                using (StreamWriter writer = new StreamWriter(ms))
                 {
-                    writer.WriteLine(kvp.Key);
-                    writer.WriteLine(kvp.Value.UntilSerialNo);
-                    writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
-                    foreach (long item in kvp.Value.ExcludedSerialNos)
-                        writer.WriteLine(item);
-                }
+                    writer.WriteLine(guid);
+                    writer.WriteLine(useSnapshotFile);
+                    writer.WriteLine(version);
+                    writer.WriteLine(flushedLogicalAddress);
+                    writer.WriteLine(startLogicalAddress);
+                    writer.WriteLine(finalLogicalAddress);
+                    writer.WriteLine(headAddress);
+                    writer.WriteLine(beginAddress);
 
-                // Write object log segment offsets
-                writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
-                if (objectLogSegmentOffsets != null)
-                {
-                    for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
+                    writer.WriteLine(checkpointTokens.Count);
+                    foreach (var kvp in checkpointTokens)
                     {
-                        writer.WriteLine(objectLogSegmentOffsets[i]);
+                        writer.WriteLine(kvp.Key);
+                        writer.WriteLine(kvp.Value.UntilSerialNo);
+                        writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
+                        foreach (long item in kvp.Value.ExcludedSerialNos)
+                            writer.WriteLine(item);
+                    }
+
+                    // Write object log segment offsets
+                    writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
+                    if (objectLogSegmentOffsets != null)
+                    {
+                        for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
+                        {
+                            writer.WriteLine(objectLogSegmentOffsets[i]);
+                        }
                     }
                 }
+                return ms.ToArray();
             }
-            return ms.ToArray();
         }
 
         /// <summary>
         /// Print checkpoint info for debugging purposes
         /// </summary>
-        public readonly void DebugPrint()
+        public void DebugPrint()
         {
             Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
             Debug.WriteLine("Version: {0}", version);
@@ -442,28 +443,30 @@ namespace FASTER.core
             var metadata = checkpointManager.GetIndexCommitMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
-            using StreamReader s = new StreamReader(new MemoryStream(metadata));
-            Initialize(s);
+            using (StreamReader s = new StreamReader(new MemoryStream(metadata)))
+                Initialize(s);
         }
 
-        public readonly byte[] ToByteArray()
+        public byte[] ToByteArray()
         {
-            using MemoryStream ms = new MemoryStream();
-            using (var writer = new StreamWriter(ms))
+            using (MemoryStream ms = new MemoryStream())
             {
+                using (var writer = new StreamWriter(ms))
+                {
 
-                writer.WriteLine(token);
-                writer.WriteLine(table_size);
-                writer.WriteLine(num_ht_bytes);
-                writer.WriteLine(num_ofb_bytes);
-                writer.WriteLine(num_buckets);
-                writer.WriteLine(startLogicalAddress);
-                writer.WriteLine(finalLogicalAddress);
+                    writer.WriteLine(token);
+                    writer.WriteLine(table_size);
+                    writer.WriteLine(num_ht_bytes);
+                    writer.WriteLine(num_ofb_bytes);
+                    writer.WriteLine(num_buckets);
+                    writer.WriteLine(startLogicalAddress);
+                    writer.WriteLine(finalLogicalAddress);
+                }
+                return ms.ToArray();
             }
-            return ms.ToArray();
         }
 
-        public readonly void DebugPrint()
+        public void DebugPrint()
         {
             Debug.WriteLine("******** Index Checkpoint Info for {0} ********", token);
             Debug.WriteLine("Table Size: {0}", table_size);

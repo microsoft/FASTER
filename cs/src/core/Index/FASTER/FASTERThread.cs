@@ -10,10 +10,9 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value, Input, Output, Context> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         internal CommitPoint InternalContinue(string guid, out FasterExecutionContext ctx)
         {
@@ -25,7 +24,7 @@ namespace FASTER.core
                 {
                     // We have recovered the corresponding session. 
                     // Now obtain the session by first locking the rest phase
-                    var currentState = SystemState.Copy(ref _systemState);
+                    var currentState = SystemState.Copy(ref systemState);
                     if (currentState.phase == Phase.REST)
                     {
                         var intermediateState = SystemState.Make(Phase.INTERMEDIATE, currentState.version);
@@ -66,29 +65,29 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession = null)
+        internal void InternalRefresh<Functions>(FasterExecutionContext ctx, Functions functions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession = null)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             epoch.ProtectAndDrain();
 
             // We check if we are in normal mode
-            var newPhaseInfo = SystemState.Copy(ref _systemState);
+            var newPhaseInfo = SystemState.Copy(ref systemState);
             if (ctx.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && ctx.version == newPhaseInfo.version)
             {
                 return;
             }
 
-            
-            // await is never invoked when calling the function with async = false
-            #pragma warning disable 4014
-            ThreadStateMachineStep(ctx, clientSession, false);
-            #pragma warning restore 4014
-        }
 
+            // await is never invoked when calling the function with async = false
+#pragma warning disable 4014
+            ThreadStateMachineStep(ctx, functions, clientSession, false);
+#pragma warning restore 4014
+        }
 
         internal void InitContext(FasterExecutionContext ctx, string token, long lsn = -1)
         {
             ctx.phase = Phase.REST;
-            ctx.version = _systemState.version;
+            ctx.version = systemState.version;
             ctx.markers = new bool[8];
             ctx.serialNum = lsn;
             ctx.guid = token;
@@ -143,7 +142,8 @@ namespace FASTER.core
             }
         }
 
-        internal bool InternalCompletePending(FasterExecutionContext ctx, bool wait = false)
+        internal bool InternalCompletePending<Functions>(FasterExecutionContext ctx, Functions functions, bool wait = false)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             do
             {
@@ -154,18 +154,18 @@ namespace FASTER.core
                 {
                     if (ctx.phase == Phase.IN_PROGRESS || ctx.phase == Phase.WAIT_PENDING)
                     {
-                        InternalCompletePendingRequests(ctx.prevCtx, ctx);
-                        InternalCompleteRetryRequests(ctx.prevCtx, ctx);
-                        InternalRefresh(ctx);
+                        InternalCompletePendingRequests(ctx.prevCtx, ctx, functions);
+                        InternalCompleteRetryRequests(ctx.prevCtx, ctx, functions);
+                        InternalRefresh(ctx, functions);
 
                         done &= (ctx.prevCtx.HasNoPendingRequests);
                     }
                 }
                 #endregion
 
-                InternalCompletePendingRequests(ctx, ctx);
-                InternalCompleteRetryRequests(ctx, ctx);
-                InternalRefresh(ctx);
+                InternalCompletePendingRequests(ctx, ctx, functions);
+                InternalCompleteRetryRequests(ctx, ctx, functions);
+                InternalRefresh(ctx, functions);
 
                 done &= (ctx.HasNoPendingRequests);
 
@@ -184,10 +184,11 @@ namespace FASTER.core
             return false;
         }
 
-        internal bool InRestPhase() => _systemState.phase == Phase.REST;
+        internal bool InRestPhase() => systemState.phase == Phase.REST;
 
         #region Complete Retry Requests
-        internal void InternalCompleteRetryRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession = null)
+        internal void InternalCompleteRetryRequests<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession = null)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             int count = opCtx.retryRequests.Count;
 
@@ -197,12 +198,13 @@ namespace FASTER.core
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = opCtx.retryRequests.Dequeue();
-                InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext);
+                InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext, functions);
             }
             clientSession?.UnsafeSuspendThread();
         }
 
-        internal void InternalCompleteRetryRequest(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, PendingContext pendingContext)
+        internal void InternalCompleteRetryRequest<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, PendingContext pendingContext, Functions functions)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var internalStatus = default(OperationStatus);
             ref Key key = ref pendingContext.key.Get();
@@ -212,13 +214,13 @@ namespace FASTER.core
             switch (pendingContext.type)
             {
                 case OperationType.RMW:
-                    internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, functions, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, functions, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.DELETE:
-                    internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, functions, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.READ:
                     throw new FasterException("Cannot happen!");
@@ -233,7 +235,7 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
+                status = HandleOperationStatus(opCtx, currentCtx, pendingContext, functions, internalStatus);
             }
 
             // If done, callback user code.
@@ -267,17 +269,19 @@ namespace FASTER.core
         #endregion
 
         #region Complete Pending Requests
-        internal void InternalCompletePendingRequests(FasterExecutionContext opCtx, FasterExecutionContext currentCtx)
+        internal void InternalCompletePendingRequests<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (opCtx.readyResponses.Count == 0) return;
 
             while (opCtx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
             {
-                InternalCompletePendingRequest(opCtx, currentCtx, request);
+                InternalCompletePendingRequest(opCtx, currentCtx, functions, request);
             }
         }
 
-        internal async ValueTask InternalCompletePendingRequestsAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        internal async ValueTask InternalCompletePendingRequestsAsync<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+                where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             while (opCtx.ioPendingRequests.Count > 0)
             {
@@ -289,7 +293,7 @@ namespace FASTER.core
                     while (opCtx.readyResponses.Count > 0)
                     {
                         opCtx.readyResponses.TryDequeue(out request);
-                        InternalCompletePendingRequest(opCtx, currentCtx, request);
+                        InternalCompletePendingRequest(opCtx, currentCtx, functions, request);
                     }
                     clientSession.UnsafeSuspendThread();
                 }
@@ -298,13 +302,14 @@ namespace FASTER.core
                     request = await opCtx.readyResponses.DequeueAsync(token);
 
                     clientSession.UnsafeResumeThread();
-                    InternalCompletePendingRequest(opCtx, currentCtx, request);
+                    InternalCompletePendingRequest(opCtx, currentCtx, functions, request);
                     clientSession.UnsafeSuspendThread();
                 }
             }
         }
 
-        internal void InternalCompletePendingRequest(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, AsyncIOContext<Key, Value> request)
+        internal void InternalCompletePendingRequest<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, AsyncIOContext<Key, Value> request)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out PendingContext pendingContext))
             {
@@ -317,11 +322,11 @@ namespace FASTER.core
                 // Issue the continue command
                 if (pendingContext.type == OperationType.READ)
                 {
-                    internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, currentCtx);
+                    internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, functions, currentCtx);
                 }
                 else
                 {
-                    internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, currentCtx); ;
+                    internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, functions, currentCtx); ;
                 }
 
                 request.Dispose();
@@ -334,7 +339,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
+                    status = HandleOperationStatus(opCtx, currentCtx, pendingContext, functions, internalStatus);
                 }
 
                 // If done, callback user code
@@ -363,13 +368,14 @@ namespace FASTER.core
             }
         }
 
-        internal (Status, Output) InternalCompletePendingReadRequestAsync(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, AsyncIOContext<Key, Value> request, PendingContext pendingContext)
+        internal (Status, Output) InternalCompletePendingReadRequestAsync<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, AsyncIOContext<Key, Value> request, PendingContext pendingContext)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             (Status, Output) s = default;
 
             ref Key key = ref pendingContext.key.Get();
 
-            OperationStatus internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, currentCtx);
+            OperationStatus internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, functions, currentCtx);
 
             request.Dispose();
 

@@ -74,7 +74,7 @@ namespace FASTER.core
 
         public long Address
         {
-            readonly get
+            get
             {
                 return (long)word & kAddressMask;
             }

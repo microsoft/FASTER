@@ -11,12 +11,11 @@ namespace FASTER.core
     internal sealed class FullCheckpointOrchestrationTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (next.phase)
             {
@@ -46,20 +45,20 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
         /// <inheritdoc />
         public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            Functions functions,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
@@ -72,6 +71,23 @@ namespace FASTER.core
                 clientSession?.UnsafeSuspendThread();
                 await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
                 clientSession?.UnsafeResumeThread();
+            }
+
+            faster.GlobalStateMachineStep(current);
+        }
+
+        /// <inheritdoc />
+        public async ValueTask OnThreadState<Key, Value, Input, Output, Context>(SystemState current,
+            SystemState prev,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            CancellationToken token = default) where Key : new()
+            where Value : new()
+        {
+            if (current.phase != Phase.WAIT_INDEX_CHECKPOINT) return;
+
+            if (!faster.IsIndexFuzzyCheckpointCompleted())
+            {
+                await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
             }
 
             faster.GlobalStateMachineStep(current);

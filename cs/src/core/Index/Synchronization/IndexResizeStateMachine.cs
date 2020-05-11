@@ -9,12 +9,11 @@ namespace FASTER.core
     internal sealed class IndexResizeTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (next.phase)
             {
@@ -43,12 +42,11 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (next.phase)
             {
@@ -68,14 +66,35 @@ namespace FASTER.core
         public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            Functions functions,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            switch (current.phase)
+            {
+                case Phase.PREPARE_GROW:
+                case Phase.IN_PROGRESS_GROW:
+                case Phase.REST:
+                    return default;
+                default:
+                    throw new FasterException("Invalid Enum Argument");
+            }
+        }
+
+        /// <inheritdoc />
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+            SystemState current,
+            SystemState prev,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            CancellationToken token = default)
+            where Key : new()
+            where Value : new()
         {
             switch (current.phase)
             {

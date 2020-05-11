@@ -28,12 +28,10 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+        void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
-            where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>;
+            where Value : new();
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
@@ -45,12 +43,10 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+        void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
-            where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>;
+            where Value : new();
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -61,6 +57,7 @@ namespace FASTER.core
         /// <param name="prev"></param>
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
+        /// <param name="functions"></param>
         /// <param name="clientSession"></param>
         /// <param name="async"></param>
         /// <param name="token"></param>
@@ -73,14 +70,37 @@ namespace FASTER.core
         /// <returns></returns>
         ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            Functions functions,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
+
+        /// <summary>
+        /// This function is invoked for every thread when they refresh and observe a given state.
+        ///
+        /// Note that the function is not allowed to await when async is set to false.
+        /// </summary>
+        /// <param name="current"></param>
+        /// <param name="prev"></param>
+        /// <param name="faster"></param>
+        /// <param name="token"></param>
+        /// <typeparam name="Key"></typeparam>
+        /// <typeparam name="Value"></typeparam>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
+        /// <typeparam name="Context"></typeparam>
+        /// <returns></returns>
+        ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context>(SystemState current,
+            SystemState prev,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            CancellationToken token = default)
+            where Key : new()
+            where Value : new();
     }
 
 
@@ -102,13 +122,11 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
+        void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
-            where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>;
+            where Value : new();
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
@@ -120,13 +138,11 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
+        void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
-            where Key : new ()
-            where Value : new ()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>;
+            FasterKV<Key, Value, Input, Output, Context> faster)
+            where Key : new()
+            where Value : new();
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -137,6 +153,7 @@ namespace FASTER.core
         /// <param name="prev"></param>
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
+        /// <param name="functions"></param>
         /// <param name="clientSession"></param>
         /// <param name="async"></param>
         /// <param name="token"></param>
@@ -150,14 +167,38 @@ namespace FASTER.core
         ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            Functions functions,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
+
+        /// <summary>
+        /// This function is invoked for every thread when they refresh and observe a given state.
+        ///
+        /// Note that the function is not allowed to await when async is set to false.
+        /// </summary>
+        /// <param name="current"></param>
+        /// <param name="prev"></param>
+        /// <param name="faster"></param>
+        /// <param name="token"></param>
+        /// <typeparam name="Key"></typeparam>
+        /// <typeparam name="Value"></typeparam>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
+        /// <typeparam name="Context"></typeparam>
+        /// <returns></returns>
+        ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+            SystemState current,
+            SystemState prev,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            CancellationToken token = default)
+            where Key : new()
+            where Value : new();
     }
 
 
@@ -183,20 +224,18 @@ namespace FASTER.core
         public abstract SystemState NextState(SystemState start);
 
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where Key : new()
+        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context> faster) where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             foreach (var task in tasks)
                 task.GlobalBeforeEnteringState(next, faster);
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster) where Key : new()
+        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(SystemState next,
+            FasterKV<Key, Value, Input, Output, Context> faster) where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, faster);
@@ -206,15 +245,28 @@ namespace FASTER.core
         public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, Functions>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            Functions functions,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             foreach (var task in tasks)
-                await task.OnThreadState(current, prev, faster, ctx, clientSession, async, token);
+                await task.OnThreadState(current, prev, faster, ctx, functions, clientSession, async, token);
+        }
+
+        /// <inheritdoc />
+        public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context>(
+            SystemState current,
+            SystemState prev,
+            FasterKV<Key, Value, Input, Output, Context> faster,
+            CancellationToken token = default) where Key : new()
+            where Value : new()
+        {
+            foreach (var task in tasks)
+                await task.OnThreadState(current, prev, faster, token);
         }
     }
 }
