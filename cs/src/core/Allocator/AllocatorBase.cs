@@ -197,7 +197,7 @@ namespace FASTER.core
         /// <summary>
         /// Buffer pool
         /// </summary>
-        protected SectorAlignedBufferPool bufferPool;
+        internal SectorAlignedBufferPool bufferPool;
 
         /// <summary>
         /// Read cache
@@ -515,7 +515,7 @@ namespace FASTER.core
 
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;
-            SegmentSize = 1 << LogSegmentSizeBits;
+            SegmentSize = 1L << LogSegmentSizeBits;
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)

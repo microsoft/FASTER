@@ -154,7 +154,7 @@ namespace FASTER.core
                 Unsafe.AsPointer(ref src),
                 Unsafe.AsPointer(ref dst),
                 KeyLength.GetLength(ref src),
-                KeyLength.GetLength(ref src));
+                KeyLength.GetLength(ref src));  // Note: dst may not be initialized (caller ensures space is available)
         }
 
         public override void ShallowCopy(ref Value src, ref Value dst)
@@ -163,7 +163,7 @@ namespace FASTER.core
                 Unsafe.AsPointer(ref src),
                 Unsafe.AsPointer(ref dst),
                 ValueLength.GetLength(ref src),
-                ValueLength.GetLength(ref src));
+                ValueLength.GetLength(ref src));    // Note: dst may not be initialized (caller ensures space is available)
         }
 
         /// <summary>

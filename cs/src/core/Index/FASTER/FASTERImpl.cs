@@ -230,6 +230,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
+        /// <param name="psfArgs">For PSFs, returns the inserted or updated LogicalAddress</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -254,7 +255,8 @@ namespace FASTER.core
         internal OperationStatus InternalUpsert(
                             ref Key key, ref Value value,
                             ref Context userContext,
-                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
+                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx,
+                            long lsn, ref PSFUpdateArgs psfArgs)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -263,6 +265,8 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var latchOperation = default(LatchOperation);
             var latestRecordVersion = -1;
+            psfArgs.logicalAddress = Constants.kInvalidAddress;
+            psfArgs.isInserted = false;
 
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -295,6 +299,8 @@ namespace FASTER.core
                 }
             }
             #endregion
+
+            psfArgs.logicalAddress = logicalAddress;
 
             // Optimization for most common case
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
@@ -403,11 +409,13 @@ namespace FASTER.core
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version,
-                               true, false, false,
+                               final:true, tombstone:false, invalidBit:false,
                                latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref key, ref value,
                                        ref hlog.GetValue(newPhysicalAddress));
+                psfArgs.logicalAddress = newLogicalAddress;
+                psfArgs.isInserted = true;
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -467,7 +475,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, sessionCtx, lsn);
+                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, sessionCtx, lsn, ref psfArgs);
             }
             else
             {
@@ -1209,8 +1217,25 @@ namespace FASTER.core
                 if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
-                                       ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
+                if (pendingContext.type == OperationType.READ)
+                {
+                    functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
+                                           ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
+                }
+                else if (pendingContext.type == OperationType.PSF_READ_KEY)
+                {
+                    pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
+                                            ref pendingContext.key.Get(),
+                                            ref hlog.GetContextRecordValue(ref request),
+                                            isConcurrent: false);
+                }
+                else if (pendingContext.type == OperationType.PSF_READ_ADDRESS)
+                {
+                    var key = default(Key); // Reading by address does not have a key
+                    pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
+                                            ref key, ref hlog.GetContextRecordValue(ref request),
+                                            isConcurrent: false);
+                }
 
                 if (CopyReadsToTail || UseReadCache)
                 {
@@ -1511,10 +1536,26 @@ namespace FASTER.core
                                                       ref pendingContext.userContext,
                                                       ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
+                    case OperationType.PSF_READ_KEY:
+                        internalStatus = PsfInternalReadKey(ref pendingContext.key.Get(),
+                                                      ref pendingContext.psfReadArgs,
+                                                      ref pendingContext, currentCtx, pendingContext.serialNum);
+                        break;
+                    case OperationType.PSF_READ_ADDRESS:
+                        internalStatus = PsfInternalReadAddress(ref pendingContext.psfReadArgs,
+                                                      ref pendingContext, currentCtx, pendingContext.serialNum);
+                        break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref pendingContext.key.Get(),
                                                         ref pendingContext.value.Get(),
                                                         ref pendingContext.userContext,
+                                                        ref pendingContext, currentCtx, pendingContext.serialNum,
+                                                        ref pendingContext.psfUpdateArgs);
+                        break;
+                    case OperationType.PSF_INSERT:
+                        internalStatus = PsfInternalInsert(ref pendingContext.key.Get(),
+                                                        ref pendingContext.value.Get(),
+                                                        ref pendingContext.input,
                                                         ref pendingContext, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.DELETE:
@@ -1667,23 +1708,22 @@ namespace FASTER.core
                                     long fromLogicalAddress,
                                     long minOffset,
                                     out long foundLogicalAddress,
-                                    out long foundPhysicalAddress)
+                                    out long foundPhysicalAddress,
+                                    IPSFInput<Key> psfInput = null)
         {
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minOffset)
             {
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
-                if (comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress)))
-                {
+                if (psfInput is null
+                        ? comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress))
+                        : psfInput.EqualsAt(ref key, ref hlog.GetKey(foundPhysicalAddress)))
                     return true;
-                }
-                else
-                {
-                    foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
-                    //This makes testing REALLY slow
-                    //Debug.WriteLine("Tracing back");
-                    continue;
-                }
+
+                foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
+                //This makes testing REALLY slow
+                //Debug.WriteLine("Tracing back");
+                continue;
             }
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
@@ -1883,7 +1923,8 @@ namespace FASTER.core
         #endregion
 
         #region Read Cache
-        private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress, ref int latestRecordVersion)
+        private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress,
+                                   ref int latestRecordVersion, IPSFInput<Key> psfInput = null)
         {
             HashBucketEntry entry = default;
             entry.word = logicalAddress;
@@ -1894,12 +1935,16 @@ namespace FASTER.core
 
             while (true)
             {
-                if (!readcache.GetInfo(physicalAddress).Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
+                if (!readcache.GetInfo(physicalAddress).Invalid)
                 {
-                    if ((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeReadOnlyAddress)
+                    if (psfInput is null
+                            ? comparer.Equals(ref key, ref readcache.GetKey(physicalAddress))
+                            : psfInput.EqualsAt(ref key, ref readcache.GetKey(physicalAddress)))
                     {
-                        return true;
+                        if ((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeReadOnlyAddress)
+                            return true;
                     }
+
                     Debug.Assert((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeHeadAddress);
                     // TODO: copy to tail of read cache
                     // and return new cache entry
@@ -1909,7 +1954,27 @@ namespace FASTER.core
                 entry.word = logicalAddress;
                 if (!entry.ReadCache) break;
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+                // TODO: Update latestRecordVersion?
             }
+            physicalAddress = 0;
+            return false;
+        }
+
+        private bool ReadFromCache(ref long logicalAddress, ref long physicalAddress, ref int latestRecordVersion)
+        {
+            HashBucketEntry entry = default;
+            entry.word = logicalAddress;
+            if (!entry.ReadCache) return false;
+
+            physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+            latestRecordVersion = readcache.GetInfo(physicalAddress).Version;
+
+            if (!readcache.GetInfo(physicalAddress).Invalid)
+            {
+                if ((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeReadOnlyAddress)
+                    return true;
+            }
+
             physicalAddress = 0;
             return false;
         }

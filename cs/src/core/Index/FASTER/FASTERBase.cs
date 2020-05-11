@@ -74,6 +74,8 @@ namespace FASTER.core
         public const long kInvalidAddress = 0;
         public const long kTempInvalidAddress = 1;
         public const int kFirstValidAddress = 64;
+
+        public const int kInvalidPsfOrdinal = -1;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]

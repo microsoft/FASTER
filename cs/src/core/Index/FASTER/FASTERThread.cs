@@ -215,7 +215,7 @@ namespace FASTER.core
                     internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
                     break;
                 case OperationType.DELETE:
                     internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
@@ -226,17 +226,19 @@ namespace FASTER.core
 
 
             Status status;
-            // Handle operation status
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            if (internalStatus == OperationStatus.SUCCESS && this.PSFManager.HasPSFs)
             {
-                status = (Status)internalStatus;
+                status = this.PSFManager.Upsert(new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref value),
+                                                pendingContext.psfUpdateArgs.logicalAddress, pendingContext.psfUpdateArgs.isInserted);
             }
             else
             {
-                status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
+                status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
+                    ? (Status)internalStatus
+                    : status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
             }
 
-            // If done, callback user code.
+                // If done, callback user code.
             if (status == Status.OK || status == Status.NOTFOUND)
             {
                 if (pendingContext.heldLatch == LatchOperation.Shared)
@@ -315,12 +317,15 @@ namespace FASTER.core
 
                 OperationStatus internalStatus;
                 // Issue the continue command
-                if (pendingContext.type == OperationType.READ)
+                if (pendingContext.type == OperationType.READ ||
+                    pendingContext.type == OperationType.PSF_READ_KEY ||
+                    pendingContext.type == OperationType.PSF_READ_ADDRESS)
                 {
                     internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, currentCtx);
                 }
                 else
                 {
+                    Debug.Assert(pendingContext.type == OperationType.RMW);
                     internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, currentCtx); ;
                 }
 

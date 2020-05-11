@@ -130,6 +130,104 @@ namespace FASTER.core
 
         #endregion
 
+        #region PSF Registration
+        /// <summary>
+        /// Register a <see cref="PSF{TPSFKey, TRecordId}"/> with a simple definition.
+        /// </summary>
+        /// <example>
+        /// static TPSFKey? sizePsfFunc(ref TKVKey key, ref TKVValue value) => new TPSFKey(value.size);
+        /// var sizePsfDef = new FasterKVPSFDefinition{TKVKey, TKVValue, TPSFKey}("sizePSF", sizePsfFunc);
+        /// var sizePsf = fht.RegisterPSF(sizePsfDef);
+        /// </example>
+        /// <typeparam name="TPSFKey">The type of the key value returned from the <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
+        /// <param name="def">A FasterKV-specific form of a PSF definition</param>
+        /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
+        /// <returns>A FasterKV-specific PSF implementation whose TRecordId is long(</returns>
+        PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
+                FasterKVPSFDefinition<Key, Value, TPSFKey> def,
+                PSFRegistrationSettings<TPSFKey> registrationSettings = null)
+            where TPSFKey : struct;
+
+        /// <summary>
+        /// Register a <see cref="PSF{TPSFKey, TRecordId}"/> with a simple definition.
+        /// </summary>
+        /// <example>
+        /// static TPSFKey? sizePsfFunc(ref TKVKey key, ref TKVValue value) => new TPSFKey(value.size);
+        /// var sizePsfDef = new FasterKVPSFDefinition{TKVKey, TKVValue, TPSFKey}("sizePSF", sizePsfFunc);
+        /// var sizePsf = fht.RegisterPSF(new [] { sizePsfDef });
+        /// </example>
+        /// <typeparam name="TPSFKey">The type of the key value returned from the <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
+        /// <param name="defs">An array of FasterKV-specific forms of PSF definitions</param>
+        /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
+        /// <returns>A FasterKV-specific PSF implementation whose TRecordId is long(</returns>
+        PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>
+                (FasterKVPSFDefinition<Key, Value, TPSFKey>[] defs,
+                PSFRegistrationSettings<TPSFKey> registrationSettings = null)
+            where TPSFKey : struct;
+
+        /// <summary>
+        /// Register a <see cref="PSF{TPSFKey, TRecordId}"/> with a simple definition.
+        /// </summary>
+        /// <example>
+        /// var sizePsf = fht.RegisterPSF("sizePsf", (k, v) => new TPSFKey(v.size));
+        /// </example>
+        /// <typeparam name="TPSFKey">The type of the key value returned from the <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
+        /// <param name="psfName">The name of the PSF; must be unique across all PSFGroups in this FasterKV instance</param>
+        /// <param name="psfFunc">A Func implementing the PSF, it will be wrapped in a delegate</param>
+        /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
+        /// <returns>A FasterKV-specific <see cref="PSF{TPSFKey, TRecordId}"/> implementation whose TRecordId is long(</returns>
+        PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
+                string psfName, Func<Key, Value, TPSFKey> psfFunc,
+                PSFRegistrationSettings<TPSFKey> registrationSettings = null)
+            where TPSFKey : struct;
+
+        /// <summary>
+        /// Register multiple <see cref="PSF{TPSFKey, TRecordId}"/> with no registration settings.
+        /// </summary>
+        /// <example>
+        /// var sizePsf = fht.RegisterPSF(("sizePsf", (k, v) => new TPSFKey(v.size)),
+        ///                               ("colorPsf", (k, v) => new TPSFKey(v.color)));
+        /// </example>
+        /// <typeparam name="TPSFKey">The type of the key value returned from the <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
+        /// <param name="psfFuncs">One or more tuples containing a PSF name and implementing Func; the name must be 
+        /// unique across all PSFGroups in this FasterKV instance, and the Func will be wrapped in a delegate</param>
+        /// <remarks>"params" won't allow the optional fromAddress and keyComparer, so an overload is provided
+        /// to specify those</remarks>
+        PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
+                params (string, Func<Key, Value, TPSFKey>)[] psfFuncs)
+            where TPSFKey : struct;
+
+        /// <summary>
+        /// Register multiple <see cref="PSF{TPSFKey, TRecordId}"/>s with registration settings.
+        /// </summary>
+        /// <example>
+        /// // Unfortunately the array type cannot be implicitly deduced in current versions of the compiler
+        /// var sizePsf = fht.RegisterPSF(new (string, Func{TKVKey, TKVValue, TPSFKey>)[] {
+        ///                                        ("sizePsf", (k, v) => new TPSFKey(v.size)),
+        ///                                        ("colorPsf", (k, v) => new TPSFKey(v.color))},
+        ///                               keyComparer, fromAddress);
+        /// </example>
+        /// <typeparam name="TPSFKey">The type of the key value returned from the <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
+        /// <param name="psfDefs">One or more tuples containing a PSF name and implementing Func; the name must be 
+        /// unique across all PSFGroups in this FasterKV instance, and the Func will be wrapped in a delegate</param>
+        /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
+        /// <remarks>If the registrationSettings parameters are null, then it is simpler to call the "params" overload
+        /// than to create the vector explicitly</remarks>
+        PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
+                (string, Func<Key, Value, TPSFKey>)[] psfDefs,
+                PSFRegistrationSettings<TPSFKey> registrationSettings = null)
+            where TPSFKey : struct;
+
+        /// <summary>
+        /// Returns the names of registered <see cref="PSF{TPSFKey, TRecordId}"/>s for use in recovery.
+        /// TODO: Supplement or replace this with an app version string.
+        /// </summary>
+        /// <returns>An array of string arrays; each outer array corresponds to a 
+        ///     <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/></returns>
+        string[][] GetRegisteredPSFs();
+
+        #endregion PSF Registration
+
         #region Growth and Recovery
 
         /// <summary>

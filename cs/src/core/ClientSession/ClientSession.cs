@@ -20,7 +20,9 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IDisposable
+    public sealed partial class ClientSession<Key, Value, Input, Output, Context, Functions> :
+                                IPSFCreateProviderData<long, FasterKVProviderData<Key, Value>>,
+                                IDisposable
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -49,12 +51,26 @@ namespace FASTER.core
         /// </summary>
         public string ID { get { return ctx.guid; } }
 
+        /// <inheritdoc/>
+        public FasterKVProviderData<Key, Value> Create(long logicalAddress)
+        {
+            // Looks up logicalAddress in the primary FasterKV
+            var psfArgs = new PSFReadArgs<Key, Value>(new PSFInputPrimaryReadAddress<Key>(logicalAddress),
+                                                      new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog));
+
+            // Call this directly here, because we are 
+            var status = fht.ContextPsfReadAddress(ref psfArgs, 1 /*TODO lsn*/, ctx);
+            var primaryOutput = psfArgs.Output as IPSFPrimaryOutput<FasterKVProviderData<Key, Value>>;
+            return status == Status.OK ? primaryOutput.ProviderData : null;    // TODO check other states
+        }
+
         /// <summary>
         /// Dispose session
         /// </summary>
         public void Dispose()
         {
             CompletePending(true);
+            // TODO: this was removed; if intended, remove the method too: fht.DisposeClientSession(ID);
 
             // Session runs on a single thread
             if (!SupportAsync)

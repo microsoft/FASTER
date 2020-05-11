@@ -183,6 +183,14 @@ namespace FASTER.core
             _systemState = default;
             _systemState.phase = Phase.REST;
             _systemState.version = 1;
+
+            // To pass along to PSF-implementing secondary FasterKV
+            this.hashTableSize = size;
+            this.logSettings = logSettings;
+            this.checkpointSettings = checkpointSettings;
+            this.serializerSettings = serializerSettings;
+            this.variableLengthStructSettings = variableLengthStructSettings;
+            this.InitializePSFs();
         }
 
         /// <summary>
@@ -315,16 +323,20 @@ namespace FASTER.core
             FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx, serialNo);
+            var updateArgs = new PSFUpdateArgs();
+            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx,
+                                                serialNo, ref updateArgs);
             Status status;
-
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            if (internalStatus == OperationStatus.SUCCESS && this.PSFManager.HasPSFs)
             {
-                status = (Status) internalStatus;
+                status = this.PSFManager.Upsert(new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref value),
+                                                updateArgs.logicalAddress, updateArgs.isInserted);
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
+                status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
+                    ? (Status)internalStatus
+                    : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -370,6 +382,48 @@ namespace FASTER.core
             return status;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextPsfInsert(ref Key key, ref Value value, ref Input input, long serialNo,
+                                         FasterExecutionContext sessionCtx)
+        {
+            var pcontext = default(PendingContext);
+            var internalStatus = this.PsfInternalInsert(ref key, ref value, ref input,
+                                                      ref pcontext, sessionCtx, serialNo);
+            var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
+                ? (Status)internalStatus
+                : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
+
+            sessionCtx.serialNum = serialNo;
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextPsfReadKey(ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo,
+                                         FasterExecutionContext sessionCtx)
+        {
+            var pcontext = default(PendingContext);
+            var internalStatus = this.PsfInternalReadKey(ref key, ref psfArgs, ref pcontext, sessionCtx, serialNo);
+            var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
+                ? (Status)internalStatus
+                : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
+
+            sessionCtx.serialNum = serialNo;
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextPsfReadAddress(ref PSFReadArgs<Key, Value> psfArgs, long serialNo,
+                                         FasterExecutionContext sessionCtx)
+        {
+            var pcontext = default(PendingContext);
+            var internalStatus = this.PsfInternalReadAddress(ref psfArgs, ref pcontext, sessionCtx, serialNo);
+            var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
+                ? (Status)internalStatus
+                : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
+
+            sessionCtx.serialNum = serialNo;
+            return status;
+        }
 
         /// <summary>
         /// Grow the hash index
