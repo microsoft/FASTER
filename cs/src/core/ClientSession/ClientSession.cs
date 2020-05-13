@@ -55,6 +55,7 @@ namespace FASTER.core
         public void Dispose()
         {
             CompletePending(true);
+            fht.DisposeClientSession(ID);
 
             // Session runs on a single thread
             if (!SupportAsync)

@@ -27,6 +27,10 @@ namespace FASTER.PerfTest
         internal const string UseObjKeysArg = "--objKeys";
         internal const string UseObjValuesArg = "--objValues";
         internal const string UseRcArg = "--useRC";
+        internal const string UseAsyncArg = "--async";
+        internal const string AsyncReadBatchSizeArg = "--asyncRBSize";
+        internal const string CheckpointModeArg = "--chkptMode";
+        internal const string CheckpointMsArg = "--chkptMs";
         internal const string LogArg = "--log";
         internal const string ItersArg = "--iters";
         const string TestFileArg = "--testfile";
@@ -86,6 +90,13 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"    {UseObjValuesArg} [value]: Use objects instead of blittable Keys; default is {defaultTestResult.Inputs.UseObjectKey}");
                 Console.WriteLine($"    {UseObjValuesArg} [value]: Use objects instead of blittable Values; default is {defaultTestResult.Inputs.UseObjectValue}");
                 Console.WriteLine($"    {UseRcArg} [value]: Use ReadCache; default is {defaultTestResult.Inputs.UseReadCache}");
+                Console.WriteLine($"    {UseAsyncArg} [value]: Use Async calls; default is {defaultTestResult.Inputs.UseAsync}");
+                Console.WriteLine($"    {AsyncReadBatchSizeArg} [value]: Async batch size (ignored unless {UseAsyncArg} specified); default is {defaultTestResult.Inputs.AsyncReadBatchSize}");
+                Console.WriteLine($"    {CheckpointModeArg} [value]: Call TakeFullCheckpoint; default is {defaultTestResult.Inputs.CheckpointMode}");
+                Console.WriteLine($"        {Checkpoint.Mode.None}: Do not do checkpoints");
+                Console.WriteLine($"        {Checkpoint.Mode.Snapshot}: Do a snapshot checkpoint to a separate file");
+                Console.WriteLine($"        {Checkpoint.Mode.FoldOver}: Do an incremental checkpoint to the main log");
+                Console.WriteLine($"    {CheckpointMsArg} [value]: Number of milliseconds between TakeFullCheckpoint calls (ignored if {CheckpointModeArg} is {Checkpoint.Mode.None}); default is {defaultTestResult.Inputs.CheckpointMs}");
                 Console.WriteLine($"    {LogArg} <mode>: The disposition of the log after initial Inserts; default is {defaultTestResult.Inputs.LogMode}");
                 Console.WriteLine($"        {LogMode.None}: Do not flush log");
                 Console.WriteLine($"        {LogMode.Flush}: Copy entire log to disk, but retain tail of log in memory");
@@ -114,7 +125,7 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"    {ResultsFileArg} fname: The name of file to receive JSON text containing either:");
                 Console.WriteLine($"        {nameof(TestResultComparisons)}, if {CompareResultsExactArg} or {CompareResultsSequenceArg} was specified");
                 Console.WriteLine($"        {nameof(TestResults)} otherwise");
-                Console.WriteLine($"    {VerboseArg}: Verbose; print status messages; default = {verbose}");
+                Console.WriteLine($"    {VerboseArg}: Verbose; print status messages; default = {Globals.Verbose}");
                 Console.WriteLine($"    {PromptArg}: Print a message and wait before exiting; default = {prompt}");
                 Console.WriteLine();
 
@@ -338,6 +349,38 @@ namespace FASTER.PerfTest
                     TestParameters.CommandLineOverrides |= TestParameterFlags.UseReadCache;
                     continue;
                 }
+                if (string.Compare(arg, UseAsyncArg, ignoreCase: true) == 0)
+                {
+                    if (!hasBoolValue(out var wanted))
+                        return false;
+                    parseResult.Inputs.UseAsync = wanted;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.UseAsync;
+                    continue;
+                }
+                if (string.Compare(arg, AsyncReadBatchSizeArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.AsyncReadBatchSize = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.AsyncReadBatchSize;
+                    continue;
+                }
+                if (string.Compare(arg, CheckpointModeArg, ignoreCase: true) == 0)
+                {
+                    if (!hasEnumValue(out Checkpoint.Mode chkpt))
+                        return Usage($"{arg} requires a valid DistributionMode value");
+                    parseResult.Inputs.CheckpointMode = chkpt;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.CheckpointMode;
+                    continue;
+                }
+                if (string.Compare(arg, CheckpointMsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.CheckpointMs = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.CheckpointMs;
+                    continue;
+                }
                 if (string.Compare(arg, LogArg, ignoreCase: true) == 0)
                 {
                     if (!hasEnumValue(out LogMode mode))
@@ -397,7 +440,7 @@ namespace FASTER.PerfTest
                 }
                 if (string.Compare(arg, VerboseArg, ignoreCase: true) == 0)
                 {
-                    verbose = true;
+                    Globals.Verbose = true;
                     continue;
                 }
                 if (string.Compare(arg, PromptArg, ignoreCase: true) == 0)

@@ -15,10 +15,7 @@ namespace FASTER.PerfTest
 
         internal abstract ref TKey GetOpKey(int index);
 
-        internal readonly bool Verbose;
         private TestResult prevTestResult;
-
-        internal KeyManager(bool verbose) => this.Verbose = verbose;
 
         internal void CreateKeys(TestResult testResult)
         {
@@ -46,7 +43,7 @@ namespace FASTER.PerfTest
                         Theta = testResult.Inputs.DistributionParameter,
                         Rng = rng,
                         Shuffle = testResult.Inputs.Distribution == Distribution.ZipfShuffled,
-                        Verbose = this.Verbose
+                        Verbose = Globals.Verbose
                     };
             this.Initialize(zipfSettings, rng, testResult.Inputs.InitKeyCount, testResult.Inputs.OperationKeyCount);
 

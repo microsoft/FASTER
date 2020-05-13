@@ -17,6 +17,8 @@ namespace FASTER.PerfTest
         public const double DefaultDistributionParameter = 0.99; // For Zipf only, now; same as YCSB to match Benchmark
         public const int DefaultDistributionSeed = 10193;
         public const long ChunkSize = 500;
+        public const int DefaultAsyncReadBatchSize = 1000;  // If async reads are enabled
+        public const int DefaultCheckpointMs = 5000;        // Every 5 seconds, if Checkpointing is specified
 
         internal static JsonSerializerSettings outputJsonSerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented };
         internal static JsonSerializerSettings inputJsonSerializerSettings = new JsonSerializerSettings { ObjectCreationHandling = ObjectCreationHandling.Replace };
@@ -54,7 +56,7 @@ namespace FASTER.PerfTest
 
         TOutput GetOutput(int threadIndex);
 
-        void SetInitialValue(ref TValue valueRef, long value);
+        void SetInitialValue(int threadIndex, long value);
 
         void SetUpsertValue(ref TValue valueRef, long value, long mod);
     }

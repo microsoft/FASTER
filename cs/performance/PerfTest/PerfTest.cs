@@ -6,12 +6,13 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.PerfTest
 {
     partial class PerfTest
     {
-        static internal bool verbose = false;
         static internal bool prompt = false;
         static readonly TestResult defaultTestResult = new TestResult();
         static TestParameters testParams;
@@ -37,6 +38,14 @@ namespace FASTER.PerfTest
                 TestResults.Merge(mergeResultsFilespecs.ToArray(), intersectResults, resultsFilename);
                 return;
             }
+
+            ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);
+            TaskScheduler.UnobservedTaskException += (object sender, UnobservedTaskExceptionEventArgs e) =>
+            {
+                Console.WriteLine($"Unobserved task exception: {e.Exception}");
+                e.SetObserved();
+            };
+
             ExecuteTestRuns();
         }
 
@@ -96,7 +105,7 @@ namespace FASTER.PerfTest
 
             if (testRun.TestResult.Inputs.UseVarLenKey)
             {
-                var testInstance = new TestInstance<VarLenType>(testRun, new VarLenKeyManager(verbose), new VarLenType.EqualityComparer());
+                var testInstance = new TestInstance<VarLenType>(testRun, new VarLenKeyManager(), new VarLenType.EqualityComparer());
                 if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
                     return testInstance.Run<VarLenType, VarLenOutput, VarLenFunctions<VarLenType>>(null,
@@ -140,7 +149,7 @@ namespace FASTER.PerfTest
             
             if (testRun.TestResult.Inputs.UseObjectKey)
             {
-                var testInstance = new TestInstance<ObjectType>(testRun, new ObjectKeyManager(verbose), new ObjectType.EqualityComparer());
+                var testInstance = new TestInstance<ObjectType>(testRun, new ObjectKeyManager(), new ObjectType.EqualityComparer());
                 if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
                     return testInstance.Run<VarLenType, VarLenOutput, VarLenFunctions<ObjectType>>(new SerializerSettings<ObjectType, VarLenType>
@@ -187,7 +196,7 @@ namespace FASTER.PerfTest
             if (testRun.TestResult.Inputs.UseVarLenValue)
             {
                 bool run_BV_Key_VarLen_Value<TBV>() where TBV : struct, IBlittableType 
-                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(verbose), new BlittableEqualityComparer<TBV>())
+                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(), new BlittableEqualityComparer<TBV>())
                             .Run<VarLenType, VarLenOutput, VarLenFunctions<TBV>>(
                                 null, new VariableLengthStructSettings<TBV, VarLenType> { valueLength = new VarLenTypeLength() },
                                 new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
@@ -207,7 +216,7 @@ namespace FASTER.PerfTest
             if (testRun.TestResult.Inputs.UseObjectValue)
             {
                 bool run_BV_Key_Object_Value<TBV>() where TBV : struct, IBlittableType
-                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(verbose), new BlittableEqualityComparer<TBV>())
+                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(), new BlittableEqualityComparer<TBV>())
                             .Run<VarLenType, VarLenOutput, VarLenFunctions<TBV>>(
                                 null, new VariableLengthStructSettings<TBV, VarLenType> { valueLength = new VarLenTypeLength() },
                                 new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
@@ -227,7 +236,7 @@ namespace FASTER.PerfTest
             // Key and value are Blittable
 
             bool run_BV_Key_BV_Value<TBVKey, TBVValue>() where TBVKey : struct, IBlittableType where TBVValue : IBlittableType, new()
-                => new TestInstance<TBVKey>(testRun, new BlittableKeyManager<TBVKey>(verbose), new BlittableEqualityComparer<TBVKey>())
+                => new TestInstance<TBVKey>(testRun, new BlittableKeyManager<TBVKey>(), new BlittableEqualityComparer<TBVKey>())
                             .Run<TBVValue, BlittableOutput<TBVValue>, BlittableFunctions<TBVKey, TBVValue>>(
                                 null, null, new BlittableThreadValueRef<TBVValue>(testRun.TestResult.Inputs.ThreadCount));
 

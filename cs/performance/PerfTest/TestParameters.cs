@@ -1,4 +1,4 @@
-﻿    // Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using Newtonsoft.Json;
@@ -34,8 +34,12 @@ namespace FASTER.PerfTest
         UseObjectKey =          0x00010000,
         UseObjectValue =        0x00020000,
         UseReadCache =          0x00040000,
-        LogMode =               0x00080000,
-        IterationCount =        0x00100000
+        UseAsync =              0x00080000,
+        AsyncReadBatchSize =    0x00100000,
+        CheckpointMode =        0x00200000,
+        CheckpointMs =          0x00400000,
+        LogMode =               0x00800000,
+        IterationCount =        0x01000000
     }
 
     [JsonObject(MemberSerialization.OptIn)]
@@ -99,6 +103,18 @@ namespace FASTER.PerfTest
         public bool[] UseReadCaches { get; set; } = new[] { true };
 
         [JsonProperty]
+        public bool[] UseAsyncs { get; set; } = new[] { false };
+
+        [JsonProperty]
+        public int[] AsyncReadBatchSizes { get; set; } = new[] { Globals.DefaultAsyncReadBatchSize };
+
+        [JsonProperty]
+        public Checkpoint.Mode[] CheckpointModes { get; set; } = new[] { Checkpoint.Mode.None };
+
+        [JsonProperty]
+        public int[] CheckpointMs { get; set; } = new[] { Globals.DefaultCheckpointMs };
+
+        [JsonProperty]
         public LogMode[] LogModes { get; set; } = new[] { LogMode.None };
 
         [JsonProperty]
@@ -126,6 +142,10 @@ namespace FASTER.PerfTest
                 foreach (var useObjectKey in this.UseObjectKeys)
                 foreach (var useObjectValue in this.UseObjectValues)
                 foreach (var useReadCache in this.UseReadCaches)
+                foreach (var useAsync in this.UseAsyncs)
+                foreach (var asyncReadBatchSize in this.AsyncReadBatchSizes)
+                foreach (var checkpointMode in this.CheckpointModes)
+                foreach (var checkpointMs in this.CheckpointMs)
                 foreach (var logMode in this.LogModes)
                 foreach (var iters in this.IterationCounts)
                 { 
@@ -151,6 +171,10 @@ namespace FASTER.PerfTest
                             UseObjectKey = useObjectKey,
                             UseObjectValue = useObjectValue,
                             UseReadCache = useReadCache,
+                            UseAsync = useAsync,
+                            AsyncReadBatchSize = asyncReadBatchSize,
+                            CheckpointMode = checkpointMode,
+                            CheckpointMs = checkpointMs,
                             LogMode = logMode,
                             IterationCount = iters,
                             DistributionSeed = this.DistributionSeed
@@ -227,6 +251,14 @@ namespace FASTER.PerfTest
                     parameter.UseObjectValues = new[] { commandLineArgs.Inputs.UseObjectValue };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.UseReadCache))
                     parameter.UseReadCaches = new[] { commandLineArgs.Inputs.UseReadCache };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.UseAsync))
+                    parameter.UseAsyncs = new[] { commandLineArgs.Inputs.UseAsync };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.AsyncReadBatchSize))
+                    parameter.AsyncReadBatchSizes = new[] { commandLineArgs.Inputs.AsyncReadBatchSize };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.CheckpointMode))
+                    parameter.CheckpointModes = new[] { commandLineArgs.Inputs.CheckpointMode };
+                if (CommandLineOverrides.HasFlag(TestParameterFlags.CheckpointMs))
+                    parameter.CheckpointMs = new[] { commandLineArgs.Inputs.CheckpointMs };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.LogMode))
                     parameter.LogModes = new[] { commandLineArgs.Inputs.LogMode };
                 if (CommandLineOverrides.HasFlag(TestParameterFlags.IterationCount))

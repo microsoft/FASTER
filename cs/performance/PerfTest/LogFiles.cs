@@ -10,6 +10,7 @@ namespace FASTER.PerfTest
     {
         private IDevice log;
         private IDevice objLog;
+        internal string directory;
 
         internal LogSettings LogSettings { get; }
 
@@ -17,9 +18,10 @@ namespace FASTER.PerfTest
         {
             // Create files for storing data. We only use one write thread to avoid disk contention.
             // We set deleteOnClose to true, so logs will auto-delete on completion.
-            this.log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log", deleteOnClose: true);
+            this.directory = Path.GetTempPath();
+            this.log = Devices.CreateLogDevice(this.directory + "hlog.log", deleteOnClose: true);
             if (useObjectLog)
-                this.objLog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log", deleteOnClose: true);
+                this.objLog = Devices.CreateLogDevice(this.directory + "hlog.obj.log", deleteOnClose: true);
 
             // Define settings for log
             this.LogSettings = new LogSettings { LogDevice = log, ObjectLogDevice = objLog };

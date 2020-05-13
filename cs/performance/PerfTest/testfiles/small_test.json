@@ -40,6 +40,22 @@
       "UseObjectValues": [ false ],
       "LogModes": [ "Flush" ],
       "IterationCounts": [ 1, 2 ]
+    },
+    {
+      "HashSizeShifts": [ 20 ],
+      "InitKeyCounts": [ 1000000 ],
+      "OperationKeyCounts": [ 200000 ],
+      "UpsertCounts": [ 100000 ],
+      "ReadCounts": [ 110000 ],
+      "RMWCounts": [ 111000 ],
+      "KeySizes": [ 8 ],
+      "ValueSizes": [ 8 ],
+      "UseAsyncs": [ true ],
+      "AsyncReadBatchSizes": [ 100 ],
+      "CheckpointModes": [ "FoldOver" ],
+      "CheckpointMs": [ 500 ],
+      "LogModes": [ "Flush" ],
+      "IterationCounts": [ 1, 2 ]
     }
   ]
 }

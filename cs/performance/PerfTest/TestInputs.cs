@@ -72,6 +72,18 @@ namespace FASTER.PerfTest
         public bool UseReadCache { get; set; } = true;
 
         [JsonProperty]
+        public bool UseAsync { get; set; } = false;
+
+        [JsonProperty]
+        public int AsyncReadBatchSize { get; set; } = Globals.DefaultAsyncReadBatchSize;
+
+        [JsonProperty]
+        public Checkpoint.Mode CheckpointMode { get; set; } = Checkpoint.Mode.None;
+
+        [JsonProperty]
+        public int CheckpointMs { get; set; } = Globals.DefaultCheckpointMs;
+
+        [JsonProperty]
         public LogMode LogMode { get; set; } = LogMode.None;
 
         [JsonProperty]
@@ -124,6 +136,13 @@ namespace FASTER.PerfTest
                 return fail($"Key Data sizes must be in [{string.Join(", ", Globals.ValidDataSizes)}]");
             if (!Globals.ValidDataSizes.Contains(this.ValueSize))
                 return fail($"Value Data sizes must be in [{string.Join(", ", Globals.ValidDataSizes)}]");
+
+            if (this.AsyncReadBatchSize < 0)
+                return fail($"{nameof(this.AsyncReadBatchSize)} must be >= 0");
+            if (this.CheckpointMs < 0)
+                return fail($"{nameof(this.CheckpointMs)} must be >= 0");
+            if (this.CheckpointMode != Checkpoint.Mode.None && this.CheckpointMs < 1)
+                return fail($"{this.CheckpointMode} requires {nameof(this.CheckpointMs)} >= 1");
             return true;
         }
 
@@ -132,7 +151,7 @@ namespace FASTER.PerfTest
                 $" {PerfTest.NumaArg} {this.NumaMode}" +
                 $" {PerfTest.DistArg} {this.Distribution}" +
                 $" {PerfTest.DistParamArg} {this.DistributionParameter}" +
-                $" {PerfTest.HashSizeArg} {this.DistributionSeed}" +
+                $" {PerfTest.DistSeedArg} {this.DistributionSeed}" +
                 $" {PerfTest.ThreadsArg} {this.ThreadCount}" +
                 $" {PerfTest.InitKeysArg} {this.InitKeyCount}" +
                 $" {PerfTest.OpKeysArg} {this.OperationKeyCount}" +
@@ -147,6 +166,10 @@ namespace FASTER.PerfTest
                 $" {PerfTest.UseObjKeysArg} {this.UseObjectKey}" +
                 $" {PerfTest.UseObjValuesArg} {this.UseObjectValue}" +
                 $" {PerfTest.UseRcArg} {this.UseReadCache}" +
+                $" {PerfTest.UseAsyncArg} {this.UseAsync}" +
+                $" {PerfTest.AsyncReadBatchSizeArg} {this.AsyncReadBatchSize}" +
+                $" {PerfTest.CheckpointModeArg} {this.CheckpointMode}" +
+                $" {PerfTest.CheckpointMsArg} {this.CheckpointMs}" +
                 $" {PerfTest.LogArg} {this.LogMode}" +
                 $" {PerfTest.ItersArg} {this.IterationCount}"
             ;

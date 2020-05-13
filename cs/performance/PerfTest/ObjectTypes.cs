@@ -136,7 +136,7 @@ namespace FASTER.PerfTest
 
         public ObjectTypeOutput GetOutput(int threadIndex) => new ObjectTypeOutput();
 
-        public void SetInitialValue(ref ObjectType valueRef, long value) => valueRef.SetInitialValue(value, 0, isKey:false);
+        public void SetInitialValue(int threadIndex, long value) => GetRef(threadIndex).SetInitialValue(value, 0, isKey:false);
 
         public void SetUpsertValue(ref ObjectType valueRef, long value, long mod) => valueRef.SetInitialValue(value, mod, isKey:false);
     }
@@ -145,8 +145,6 @@ namespace FASTER.PerfTest
     {
         ObjectType[] initKeys;
         ObjectType[] opKeys;
-
-        internal ObjectKeyManager(bool verbose) : base(verbose) { }
 
         internal override void Initialize(ZipfSettings zipfSettings, RandomGenerator rng, int initCount, int opCount)
         {

@@ -312,7 +312,7 @@ namespace FASTER.PerfTest
 
         public BlittableOutput<TBlittableType> GetOutput(int threadIndex) => new BlittableOutput<TBlittableType>();
 
-        public void SetInitialValue(ref TBlittableType valueRef, long value) => valueRef.SetInitialValue(value, 0);
+        public void SetInitialValue(int threadIndex, long value) => GetRef(threadIndex).SetInitialValue(value, 0);
 
         public void SetUpsertValue(ref TBlittableType valueRef, long value, long mod) => valueRef.SetInitialValue(value, mod);
     }
@@ -322,8 +322,6 @@ namespace FASTER.PerfTest
     {
         TBV[] initKeys;
         TBV[] opKeys;
-
-        internal BlittableKeyManager(bool verbose) : base(verbose) { }
 
         internal override void Initialize(ZipfSettings zipfSettings, RandomGenerator rng, int initCount, int opCount)
         {

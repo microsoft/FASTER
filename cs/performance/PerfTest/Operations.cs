@@ -5,7 +5,6 @@ using System;
 
 namespace FASTER.PerfTest
 {
-    [Flags]
     public enum Operations
     {
         Mixed,

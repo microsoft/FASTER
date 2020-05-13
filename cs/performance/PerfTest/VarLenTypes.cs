@@ -212,7 +212,7 @@ namespace FASTER.PerfTest
 
         public VarLenOutput GetOutput(int threadIndex) => new VarLenOutput(this, threadIndex);
 
-        public void SetInitialValue(ref VarLenType valueRef, long value) => valueRef.SetInitialValueAndLength(value, 0);
+        public void SetInitialValue(int threadIndex, long value) => GetRef(threadIndex).SetInitialValueAndLength(value, 0);
 
         public void SetUpsertValue(ref VarLenType valueRef, long value, long mod) => valueRef.SetInitialValueAndLength((int)(value % int.MaxValue), mod);
 
@@ -232,8 +232,6 @@ namespace FASTER.PerfTest
         readonly List<IntPtr> chunks = new List<IntPtr>();
         VarLenType*[] initKeys;
         VarLenType*[] opKeys;
-
-        internal VarLenKeyManager(bool verbose) : base(verbose) { }
 
         internal override void Initialize(ZipfSettings zipfSettings, RandomGenerator rng, int initCount, int opCount)
         {
