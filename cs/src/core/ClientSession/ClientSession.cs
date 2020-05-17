@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -97,6 +98,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
+            if (!SupportAsync)
+                throw new FasterException("Session does not support async operations");
             return fht.ReadAsync(this, ref key, ref input, context, token);
         }        
 
@@ -134,6 +137,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
+            if (!SupportAsync)
+                throw new FasterException("Session does not support async operations");
+
             var status = Upsert(ref key, ref desiredValue, context, ctx.serialNum + 1);
 
             if (status == Status.OK && !waitForCommit)
@@ -190,6 +196,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask RMWAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
+            if (!SupportAsync)
+                throw new FasterException("Session does not support async operations");
+
             var status = RMW(ref key, ref input, context, ctx.serialNum + 1);
 
             if (status == Status.OK && !waitForCommit)
@@ -202,7 +211,6 @@ namespace FASTER.core
                 bool waitForCommit, Status status, CancellationToken token
                 )
             {
-
                 if (status == Status.PENDING)
                     await @this.CompletePendingAsync(waitForCommit, token);
                 else if (waitForCommit)
@@ -244,6 +252,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask DeleteAsync(ref Key key, Context context = default, bool waitForCommit = false, CancellationToken token = default)
         {
+            if (!SupportAsync)
+                throw new FasterException("Session does not support async operations");
+
             var status = Delete(ref key, context, ctx.serialNum + 1);
 
             if (status == Status.OK && !waitForCommit)
@@ -414,6 +425,5 @@ namespace FASTER.core
         {
             fht.epoch.Suspend();
         }
-
     }
 }

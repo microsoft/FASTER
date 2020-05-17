@@ -20,9 +20,9 @@ namespace FASTER.PerfTest
         readonly KeyManager<TKey> keyManager;
         private readonly IFasterEqualityComparer<TKey> keyComparer;
 
-        private readonly long verboseInterval;
-
         long NextChunkStart = 0;
+        const int numVerboseIntervals = 10;
+        const int pendingInterval = 65536;
 
         // The TKey information is specified on the constructor; the TValue and other information on the Run() call.
         internal TestInstance(TestRun testRun, KeyManager<TKey> keyManager, IFasterEqualityComparer<TKey> keyComparer)
@@ -30,7 +30,6 @@ namespace FASTER.PerfTest
             this.testRun = testRun;
             this.keyManager = keyManager;
             this.keyComparer = keyComparer;
-            verboseInterval = 1L << (testRun.TestResult.Inputs.HashSizeShift - 1);
         }
 
         internal bool Run<TValue, TOutput, TFunctions>(SerializerSettings<TKey, TValue> serializerSettings, VariableLengthStructSettings<TKey, TValue> varLenSettings,
@@ -60,8 +59,7 @@ namespace FASTER.PerfTest
 
                 var fht = new FHT<TKey, TValue, TOutput, TFunctions>(
                     false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseObjectKey || testRun.TestResult.Inputs.UseObjectValue,
-                    testRun.TestResult.Inputs.UseReadCache, serializerSettings, varLenSettings, this.keyComparer,
-                    testRun.TestResult.Inputs.CheckpointMode, testRun.TestResult.Inputs.CheckpointMs);
+                    testRun.TestResult.Inputs, serializerSettings, varLenSettings, this.keyComparer);
                 RunIteration(fht, testRun, threadValueRef);
             }
             this.keyManager.Dispose();
@@ -100,7 +98,7 @@ namespace FASTER.PerfTest
 
             Globals.IsInitialInsertPhase = true;
             var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                  .Select(threadIdx => Initialize(fht, threadIdx, testRun, threadValueRef));
+                                  .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun, threadValueRef)));
             Task.WaitAll(tasks.ToArray());
             Globals.IsInitialInsertPhase = false;
 
@@ -124,10 +122,12 @@ namespace FASTER.PerfTest
         {
             // Each thread needs to set NUMA and create a FASTER session
             Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
-            using var session = fht.Faster.NewSession($"Initialize_{threadIndex}");
+            using var session = fht.Faster.NewSession($"Initialize_{threadIndex}", testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
+            var useAsync = testRun.TestResult.Inputs.ThreadMode == ThreadMode.Async;
 
             long serialNo = 0;
-            var useAsync = testRun.TestResult.Inputs.UseAsync;
+
+            var verboseInterval = testRun.TestResult.Inputs.InitKeyCount / (testRun.TestResult.Inputs.ThreadCount * numVerboseIntervals);
 
             // We just do one iteration through the KeyCount to insert the initial keys. If there are
             // multiple threads, each thread does (KeyCount / #threads) Inserts (on average).
@@ -138,14 +138,19 @@ namespace FASTER.PerfTest
                 var chunkEnd = chunkStart + Globals.ChunkSize;
                 for (var ii = chunkStart; ii < chunkEnd; ii++)
                 {
-                    if (ii % 65536 == 0)
+                    if (serialNo % 256 == 0)
                     {
                         if (!useAsync)
-                            session.CompletePending(false);
-                        if (Globals.Verbose && ii % verboseInterval == 0)
+                            session.Refresh();
+                        if (++serialNo % 65536 == 0)
                         {
-                            long workingSetMB = Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                            Console.WriteLine($"Insert: {ii}, {workingSetMB:N0}MB");
+                            if (!useAsync)
+                                session.CompletePending(false);
+                            if (Globals.Verbose && serialNo % verboseInterval < pendingInterval)
+                            {
+                                long workingSetMB = Process.GetCurrentProcess().WorkingSet64 / 1048576;
+                                Console.WriteLine($"tid {threadIndex}, Insert: {serialNo}, {workingSetMB:N0}MB");
+                            }
                         }
                     }
 
@@ -155,7 +160,7 @@ namespace FASTER.PerfTest
                     if (useAsync)
                         await session.UpsertAsync(ref key, ref threadValueRef.GetRef(threadIndex), waitForCommit:false);
                     else
-                        status = session.Upsert(ref key, ref threadValueRef.GetRef(threadIndex), Empty.Default, ++serialNo);
+                        status = session.Upsert(ref key, ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
                     if (status != Status.OK && status != Status.PENDING)
                         throw new ApplicationException($"Error: Unexpected status in {nameof(Initialize)}; key[{ii}] = {key.Value}: {status}");
                 }
@@ -236,7 +241,7 @@ namespace FASTER.PerfTest
 
                 // Each thread does the full count
                 var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                      .Select(threadIdx => RunOperations(fht, op, opCount, threadIdx, testRun, threadValueRef));
+                                      .Select(threadIdx => Task.Run(() => RunOperations(fht, op, opCount, threadIdx, testRun, threadValueRef)));
                 Task.WaitAll(tasks.ToArray());
 
                 sw.Stop();
@@ -280,7 +285,8 @@ namespace FASTER.PerfTest
         {
             // Each thread needs to set NUMA and create a FASTER session
             Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
-            using var session = fht.Faster.NewSession($"RunOperations_{threadIndex}");
+            using var session = fht.Faster.NewSession($"RunOperations_{threadIndex}", testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
+            var useAsync = testRun.TestResult.Inputs.ThreadMode == ThreadMode.Async;
 
             if (Globals.Verbose)
                 Console.WriteLine($"Running Operation {op} count {opCount:N0} for threadId {threadIndex}");
@@ -293,15 +299,17 @@ namespace FASTER.PerfTest
 
             var input = default(Input);
             var output = threadValueRef.GetOutput(threadIndex);
+
             long serialNo = 0;
 
-            long currentCount = 0;
+            var verboseInterval = opCount / numVerboseIntervals;
 
-            bool doReadBatch = testRun.TestResult.Inputs.UseAsync && testRun.TestResult.Inputs.AsyncReadBatchSize > 1;
+            bool doReadBatch = useAsync && testRun.TestResult.Inputs.AsyncReadBatchSize > 1;
             var readTasks = doReadBatch
                                 ? new ValueTask<FasterKV<TKey, TValue, Input, TOutput, Empty, TFunctions>.ReadAsyncResult>[testRun.TestResult.Inputs.AsyncReadBatchSize]
                                 : null;
             int numReadTasks = 0;
+            long currentCount = 0;
 
             // We multiply the number of operations by the number of threads, so we will wrap around
             // the end of the operations keys if we get there
@@ -312,7 +320,6 @@ namespace FASTER.PerfTest
                 chunkStart %= testRun.TestResult.Inputs.OperationKeyCount;
                 currentCount += Globals.ChunkSize;
                 var chunkEnd = chunkStart + Globals.ChunkSize;
-                var useAsync = testRun.TestResult.Inputs.UseAsync;
                 for (var ii = chunkStart; ii < chunkEnd; ii++)
                 {
                     var thisOp = op;
@@ -329,18 +336,22 @@ namespace FASTER.PerfTest
                             throw new InvalidOperationException($"rand {rand} out of threshold ranges: u {upsertThreshold} r {readThreshold} m {rmwThreshold}");
                     }
 
-                    if (ii % 65536 == 0)
+                    if (serialNo % 256 == 0)
                     {
                         if (!useAsync)
-                            session.CompletePending(false);
-                        if (Globals.Verbose && ii % verboseInterval == 0)
+                            session.Refresh();
+                        if (++serialNo % 65536 == 0)
                         {
-                            Console.WriteLine($"{thisOp}: {ii}");
+                            if (!useAsync)
+                                session.CompletePending(false);
+                            if (Globals.Verbose && serialNo % verboseInterval < pendingInterval)
+                            {
+                                Console.WriteLine($"tid {threadIndex}, {thisOp}: {serialNo}");
+                            }
                         }
                     }
 
                     Status status = Status.OK;
-                    long lsn = ++serialNo;
                     var key = keyManager.GetOpKey((int)ii);
                     switch (thisOp)
                     {
@@ -349,7 +360,7 @@ namespace FASTER.PerfTest
                             if (useAsync)   // TODO: UpsertAsync does not return status
                                 await session.UpsertAsync(ref key, ref threadValueRef.GetRef(threadIndex), waitForCommit:false);
                             else
-                                status = session.Upsert(ref key, ref threadValueRef.GetRef(threadIndex), Empty.Default, lsn);
+                                status = session.Upsert(ref key, ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
                             break;
 
                         case Operations.Read:
@@ -376,7 +387,7 @@ namespace FASTER.PerfTest
                                     status = (await readTask).CompleteRead().Item1;
                             }
                             else
-                                status = session.Read(ref key, ref input, ref output, Empty.Default, lsn);
+                                status = session.Read(ref key, ref input, ref output, Empty.Default, serialNo);
                             break;
 
                         case Operations.RMW:
@@ -384,7 +395,7 @@ namespace FASTER.PerfTest
                             if (useAsync)   // TODO: RMWAsync does not return status
                                 await session.RMWAsync(ref key, ref input, waitForCommit:false);
                             else
-                                status = session.RMW(ref key, ref input, Empty.Default, lsn);
+                                status = session.RMW(ref key, ref input, Empty.Default, serialNo);
                             break;
                     }
 

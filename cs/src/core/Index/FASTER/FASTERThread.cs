@@ -206,7 +206,6 @@ namespace FASTER.core
         {
             var internalStatus = default(OperationStatus);
             ref Key key = ref pendingContext.key.Get();
-            ref Value value = ref pendingContext.value.Get();
 
             // Issue retry command
             switch (pendingContext.type)
@@ -215,7 +214,8 @@ namespace FASTER.core
                     internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
+                    // We only have pendingContext.value available for Upsert and cannot initialize it to a null reference otherwise.
+                    internalStatus = InternalUpsert(ref key, ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.DELETE:
                     internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
@@ -251,7 +251,7 @@ namespace FASTER.core
                         break;
                     case OperationType.UPSERT:
                         functions.UpsertCompletionCallback(ref key,
-                                                 ref value,
+                                                 ref pendingContext.value.Get(),
                                                  pendingContext.userContext);
                         break;
                     case OperationType.DELETE:

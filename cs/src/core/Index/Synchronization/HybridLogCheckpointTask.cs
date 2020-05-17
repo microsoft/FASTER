@@ -152,11 +152,12 @@ namespace FASTER.core
 
                 if (async && !notify)
                 {
-                    Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
+                    var semaphore = faster._hybridLogCheckpoint.flushedSemaphore;   // TODO temp for early Reset()
+                    Debug.Assert(semaphore != null);
                     clientSession?.UnsafeSuspendThread();
-                    await faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
+                    await semaphore.WaitAsync(token);
                     clientSession?.UnsafeResumeThread();
-                    faster._hybridLogCheckpoint.flushedSemaphore.Release();
+                    semaphore.Release();
                     notify = true;
                 }
 

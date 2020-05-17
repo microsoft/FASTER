@@ -143,6 +143,7 @@ namespace FASTER.PerfTest
                                   $" {outputs.RMWs.PerThreadFull.Mean:N2} thread/sec)");
             }
             Console.WriteLine();
+            Console.Out.Flush();
         }
     }
 }

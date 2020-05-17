@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -25,7 +26,7 @@ namespace FasterKVDiskReadBenchmark
         /// </summary>
         static void Main()
         {
-            var path = "FasterKVDiskReadBenchmark";
+            var path = Path.Combine(Environment.CurrentDirectory, "FasterKVDiskReadBenchmark");
             var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
 
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20 };
@@ -54,6 +55,7 @@ namespace FasterKVDiskReadBenchmark
                 tasks[i] = Task.Run(() => AsyncUpsertOperator(local));
             }
             Task.WaitAll(tasks);
+            Console.WriteLine("Upserts complete");
 
             tasks = new Task[NumParallelSessions];
             for (int i = 0; i < NumParallelSessions; i++)

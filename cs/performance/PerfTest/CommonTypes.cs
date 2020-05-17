@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core;
 using Newtonsoft.Json;
 using Performance.Common;
 
@@ -19,6 +20,7 @@ namespace FASTER.PerfTest
         public const long ChunkSize = 500;
         public const int DefaultAsyncReadBatchSize = 1000;  // If async reads are enabled
         public const int DefaultCheckpointMs = 5000;        // Every 5 seconds, if Checkpointing is specified
+        public const ThreadMode DefaultThreadMode = ThreadMode.Affinitized;
 
         internal static JsonSerializerSettings outputJsonSerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented };
         internal static JsonSerializerSettings inputJsonSerializerSettings = new JsonSerializerSettings { ObjectCreationHandling = ObjectCreationHandling.Replace };
@@ -36,6 +38,8 @@ namespace FASTER.PerfTest
         public static bool Verify;                  // If true, write values on insert and RMW and verify them on Read
         public static bool IsInitialInsertPhase;    // If true, we are doing initial inserts; do not Verify
         public static bool Verbose = false;
+
+        internal static LogSettings DefaultLogSettings = new LogSettings { ReadCacheSettings = new ReadCacheSettings() };
     }
 
     public interface IKey

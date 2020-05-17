@@ -27,11 +27,21 @@ namespace FASTER.PerfTest
         internal const string UseObjKeysArg = "--objKeys";
         internal const string UseObjValuesArg = "--objValues";
         internal const string UseRcArg = "--useRC";
-        internal const string UseAsyncArg = "--async";
+        internal const string ThreadModeArg = "--threadMode";
         internal const string AsyncReadBatchSizeArg = "--asyncRBSize";
         internal const string CheckpointModeArg = "--chkptMode";
         internal const string CheckpointMsArg = "--chkptMs";
+
         internal const string LogArg = "--log";
+        internal const string LogPageSizeBitsArg = "--logPageBits";
+        internal const string LogSegmentSizeBitsArg = "--logSegBits";
+        internal const string LogMemorySizeBitsArg = "--logMemBits";
+        internal const string LogMutableFractionArg = "--logMutFrac";
+        internal const string LogCopyReadsToTailArg = "--logCopyReadsTail";
+        internal const string ReadCachePageSizeBitsArg = "--rcPageBits";
+        internal const string ReadCacheMemorySizeBitsArg = "--rcMemBits";
+        internal const string ReadCacheSecondChanceFractionArg = "--rcSecChanceFrac";
+
         internal const string ItersArg = "--iters";
         const string TestFileArg = "--testfile";
         const string ResultsFileArg = "--resultsfile";
@@ -90,8 +100,11 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"    {UseObjValuesArg} [value]: Use objects instead of blittable Keys; default is {defaultTestResult.Inputs.UseObjectKey}");
                 Console.WriteLine($"    {UseObjValuesArg} [value]: Use objects instead of blittable Values; default is {defaultTestResult.Inputs.UseObjectValue}");
                 Console.WriteLine($"    {UseRcArg} [value]: Use ReadCache; default is {defaultTestResult.Inputs.UseReadCache}");
-                Console.WriteLine($"    {UseAsyncArg} [value]: Use Async calls; default is {defaultTestResult.Inputs.UseAsync}");
-                Console.WriteLine($"    {AsyncReadBatchSizeArg} [value]: Async batch size (ignored unless {UseAsyncArg} specified); default is {defaultTestResult.Inputs.AsyncReadBatchSize}");
+                Console.WriteLine($"    {ThreadModeArg} [value]: The thread mode to use; default is {Globals.DefaultThreadMode}");
+                Console.WriteLine($"        {ThreadMode.Sync}: Use sync calls (Upsert(), etc.) and do not create thread-affinitized sessions");
+                Console.WriteLine($"        {ThreadMode.Affinitized}: Use sync calls (Upsert(), etc.) and create thread-affinitized sessions");
+                Console.WriteLine($"        {ThreadMode.Async}: Use async calls (UpsertAsync(), etc.); thread-affinitized sessions are not allowed");
+                Console.WriteLine($"    {AsyncReadBatchSizeArg} [value]: Async batch size (ignored unless {ThreadMode.Async} specified); default is {defaultTestResult.Inputs.AsyncReadBatchSize}");
                 Console.WriteLine($"    {CheckpointModeArg} [value]: Call TakeFullCheckpoint; default is {defaultTestResult.Inputs.CheckpointMode}");
                 Console.WriteLine($"        {Checkpoint.Mode.None}: Do not do checkpoints");
                 Console.WriteLine($"        {Checkpoint.Mode.Snapshot}: Do a snapshot checkpoint to a separate file");
@@ -104,6 +117,14 @@ namespace FASTER.PerfTest
                 Console.WriteLine("              entirely from disk using read cache if enabled. This will *allow* future updates to the store.");
                 Console.WriteLine($"        {LogMode.DisposeFromMemory}: move entire log to disk and eliminate data from memory as well. This will serve workload");
                 Console.WriteLine("              entirely from disk using read cache if enabled. This will *prevent* future updates to the store.");
+                Console.WriteLine($"    {LogPageSizeBitsArg} <value>: Size of a log page, in bits; default is {Globals.DefaultLogSettings.PageSizeBits}");
+                Console.WriteLine($"    {LogSegmentSizeBitsArg} <value>: Size of a log segment (group of pages), in bits; default is {Globals.DefaultLogSettings.SegmentSizeBits}");
+                Console.WriteLine($"    {LogMemorySizeBitsArg} <value>: Total size of in-memory part of log, in bits; default is {Globals.DefaultLogSettings.MemorySizeBits}");
+                Console.WriteLine($"    {LogMutableFractionArg} <value>: Floating-point; fraction of log marked as mutable (in-place updates); default is {Globals.DefaultLogSettings.MutableFraction}");
+                Console.WriteLine($"    {LogCopyReadsToTailArg} <value>: Copy reads to tail of log; default is {Globals.DefaultLogSettings.CopyReadsToTail}");
+                Console.WriteLine($"    {ReadCachePageSizeBitsArg} <value>: Size of a read-cache page, in bits; default is {Globals.DefaultLogSettings.ReadCacheSettings.PageSizeBits}");
+                Console.WriteLine($"    {ReadCacheMemorySizeBitsArg} <value>: Total size of in-memory part of read cache, in bits; default is {Globals.DefaultLogSettings.ReadCacheSettings.MemorySizeBits}");
+                Console.WriteLine($"    {ReadCacheSecondChanceFractionArg} <value>: Floating point; fraction of log head (in memory) used for second chance copy to tail. This is (1 - MutableFraction) for the underlying log; default is {Globals.DefaultLogSettings.ReadCacheSettings.SecondChanceFraction}");
                 Console.WriteLine($"    {ItersArg} <iters>: Number of iterations of the test; default = {defaultTestResult.Inputs.IterationCount}");
                 Console.WriteLine();
                 Console.WriteLine($"  To compare result files (both options compare two JSON files containing {nameof(TestResults)}, where the difference is reported");
@@ -349,12 +370,12 @@ namespace FASTER.PerfTest
                     TestParameters.CommandLineOverrides |= TestParameterFlags.UseReadCache;
                     continue;
                 }
-                if (string.Compare(arg, UseAsyncArg, ignoreCase: true) == 0)
+                if (string.Compare(arg, ThreadModeArg, ignoreCase: true) == 0)
                 {
-                    if (!hasBoolValue(out var wanted))
-                        return false;
-                    parseResult.Inputs.UseAsync = wanted;
-                    TestParameters.CommandLineOverrides |= TestParameterFlags.UseAsync;
+                    if (!hasEnumValue(out ThreadMode mode))
+                        return Usage($"{arg} requires a valid ThreadMode value");
+                    parseResult.Inputs.ThreadMode = mode;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.ThreadMode;
                     continue;
                 }
                 if (string.Compare(arg, AsyncReadBatchSizeArg, ignoreCase: true) == 0)
@@ -387,6 +408,70 @@ namespace FASTER.PerfTest
                         return Usage($"{arg} requires a valid LogMode value");
                     parseResult.Inputs.LogMode = mode;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.LogMode;
+                    continue;
+                }
+                if (string.Compare(arg, LogPageSizeBitsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.LogPageSizeBits = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.LogPageSizeBits;
+                    continue;
+                }
+                if (string.Compare(arg, LogSegmentSizeBitsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.LogSegmentSizeBits = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.LogSegmentSizeBits;
+                    continue;
+                }
+                if (string.Compare(arg, LogMemorySizeBitsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.LogMemorySizeBits = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.LogMemorySizeBits;
+                    continue;
+                }
+                if (string.Compare(arg, LogMutableFractionArg, ignoreCase: true) == 0)
+                {
+                    if (!hasDoubleValue(out var value))
+                        return false;
+                    parseResult.Inputs.LogMutableFraction = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.LogMutableFraction;
+                    continue;
+                }
+                if (string.Compare(arg, LogCopyReadsToTailArg, ignoreCase: true) == 0)
+                {
+                    if (!hasBoolValue(out var wanted))
+                        return false;
+                    parseResult.Inputs.LogCopyReadsToTail = wanted;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.LogCopyReadsToTail;
+                    continue;
+                }
+                if (string.Compare(arg, ReadCachePageSizeBitsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.ReadCachePageSizeBits = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.ReadCachePageSizeBits;
+                    continue;
+                }
+                if (string.Compare(arg, ReadCacheMemorySizeBitsArg, ignoreCase: true) == 0)
+                {
+                    if (!hasIntValue(out var value))
+                        return false;
+                    parseResult.Inputs.ReadCacheMemorySizeBits = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.ReadCacheMemorySizeBits;
+                    continue;
+                }
+                if (string.Compare(arg, ReadCacheSecondChanceFractionArg, ignoreCase: true) == 0)
+                {
+                    if (!hasDoubleValue(out var value))
+                        return false;
+                    parseResult.Inputs.ReadCacheSecondChanceFraction = value;
+                    TestParameters.CommandLineOverrides |= TestParameterFlags.ReadCacheSecondChanceFraction;
                     continue;
                 }
                 if (string.Compare(arg, ItersArg, ignoreCase: true) == 0)

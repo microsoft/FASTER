@@ -21,13 +21,14 @@ namespace FASTER.PerfTest
         }
 
         private readonly int ms;
-        readonly Action callback;
+        readonly Action<CancellationToken> callback;
         readonly CancellationTokenSource cts;
 
-        internal Checkpoint(int ms, Action callback)
+        internal Checkpoint(int ms, Action<CancellationToken> callback)
         {
             this.ms = ms;
             this.callback = callback;
+
             this.cts = new CancellationTokenSource();
         }
 
@@ -54,7 +55,7 @@ namespace FASTER.PerfTest
                 {
                     await Task.Delay(ms, this.cts.Token);
                     if (!this.cts.Token.IsCancellationRequested)
-                        this.callback();
+                        this.callback(this.cts.Token);
                 }
             }
             catch (TaskCanceledException)

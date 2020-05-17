@@ -72,7 +72,7 @@ namespace FASTER.PerfTest
         public bool UseReadCache { get; set; } = true;
 
         [JsonProperty]
-        public bool UseAsync { get; set; } = false;
+        public ThreadMode ThreadMode { get; set; } = Globals.DefaultThreadMode;
 
         [JsonProperty]
         public int AsyncReadBatchSize { get; set; } = Globals.DefaultAsyncReadBatchSize;
@@ -85,6 +85,30 @@ namespace FASTER.PerfTest
 
         [JsonProperty]
         public LogMode LogMode { get; set; } = LogMode.None;
+
+        [JsonProperty]
+        public int LogPageSizeBits { get; set; } = Globals.DefaultLogSettings.PageSizeBits;
+
+        [JsonProperty]
+        public int LogSegmentSizeBits { get; set; } = Globals.DefaultLogSettings.SegmentSizeBits;
+
+        [JsonProperty]
+        public int LogMemorySizeBits { get; set; } = Globals.DefaultLogSettings.MemorySizeBits;
+
+        [JsonProperty]
+        public double LogMutableFraction { get; set; } = Globals.DefaultLogSettings.MutableFraction;
+
+        [JsonProperty]
+        public bool LogCopyReadsToTail { get; set; } = Globals.DefaultLogSettings.CopyReadsToTail;
+
+        [JsonProperty]
+        public int ReadCachePageSizeBits { get; set; } = Globals.DefaultLogSettings.ReadCacheSettings.PageSizeBits;
+
+        [JsonProperty]
+        public int ReadCacheMemorySizeBits { get; set; } = Globals.DefaultLogSettings.ReadCacheSettings.MemorySizeBits;
+
+        [JsonProperty]
+        public double ReadCacheSecondChanceFraction { get; set; } = Globals.DefaultLogSettings.ReadCacheSettings.SecondChanceFraction;
 
         [JsonProperty]
         public int IterationCount { get; set; } = 1;
@@ -143,6 +167,22 @@ namespace FASTER.PerfTest
                 return fail($"{nameof(this.CheckpointMs)} must be >= 0");
             if (this.CheckpointMode != Checkpoint.Mode.None && this.CheckpointMs < 1)
                 return fail($"{this.CheckpointMode} requires {nameof(this.CheckpointMs)} >= 1");
+
+            if (this.LogPageSizeBits < 1 || this.LogPageSizeBits > 30)
+                return fail($"{nameof(this.LogPageSizeBits)} must be between 1 and 30");
+            if (this.LogSegmentSizeBits < 1 || this.LogSegmentSizeBits > 62)
+                return fail($"{nameof(this.LogSegmentSizeBits)} must be between 1 and 62");
+            if (this.LogMemorySizeBits < 1 || this.LogMemorySizeBits > 62)
+                return fail($"{nameof(this.LogMemorySizeBits)} must be between 1 and 62");
+            if (this.LogMutableFraction <= 0.0 || this.LogMutableFraction >= 1.0)
+                return fail($"{nameof(this.LogMutableFraction)} must be > 0.0 and < 1.0");
+            if (this.ReadCachePageSizeBits < 1 || this.ReadCachePageSizeBits > 30)
+                return fail($"{nameof(this.ReadCachePageSizeBits)} must be between 1 and 30");
+            if (this.ReadCacheMemorySizeBits < 1 || this.ReadCacheMemorySizeBits > 62)
+                return fail($"{nameof(this.ReadCacheMemorySizeBits)} must be between 1 and 62");
+            if (this.ReadCacheSecondChanceFraction <= 0.0 || this.ReadCacheSecondChanceFraction >= 1.0)
+                return fail($"{(this.ReadCacheSecondChanceFraction)} must be > 0.0 and < 1.0");
+
             return true;
         }
 
@@ -166,20 +206,30 @@ namespace FASTER.PerfTest
                 $" {PerfTest.UseObjKeysArg} {this.UseObjectKey}" +
                 $" {PerfTest.UseObjValuesArg} {this.UseObjectValue}" +
                 $" {PerfTest.UseRcArg} {this.UseReadCache}" +
-                $" {PerfTest.UseAsyncArg} {this.UseAsync}" +
+                $" {PerfTest.ThreadModeArg} {this.ThreadMode}" +
                 $" {PerfTest.AsyncReadBatchSizeArg} {this.AsyncReadBatchSize}" +
                 $" {PerfTest.CheckpointModeArg} {this.CheckpointMode}" +
                 $" {PerfTest.CheckpointMsArg} {this.CheckpointMs}" +
                 $" {PerfTest.LogArg} {this.LogMode}" +
+                $" {PerfTest.LogPageSizeBitsArg} {this.LogPageSizeBits}" +
+                $" {PerfTest.LogSegmentSizeBitsArg} {this.LogSegmentSizeBits}" +
+                $" {PerfTest.LogMemorySizeBitsArg} {this.LogMemorySizeBits}" +
+                $" {PerfTest.LogMutableFractionArg} {this.LogMutableFraction}" +
+                $" {PerfTest.LogCopyReadsToTailArg} {this.LogCopyReadsToTail}" +
+                $" {PerfTest.ReadCachePageSizeBitsArg} {this.ReadCachePageSizeBits}" +
+                $" {PerfTest.ReadCacheMemorySizeBitsArg} {this.ReadCacheMemorySizeBits}" +
+                $" {PerfTest.ReadCacheSecondChanceFractionArg} {this.ReadCacheSecondChanceFraction}" +
                 $" {PerfTest.ItersArg} {this.IterationCount}"
             ;
 
-        internal (int, NumaMode, Distribution, double, int, int, int, int, int, int, int, bool, int, int, bool, bool, bool, bool, bool, LogMode, int) MemberTuple
+        internal (int, NumaMode, Distribution, double, int, int, int, int, int, int, int, bool, int, int, bool, bool, bool, bool, bool, LogMode,
+                 int, int, int, double, bool, int, int, double, int) MemberTuple
             => (this.HashSizeShift, this.NumaMode,
                 this.Distribution, this.DistributionParameter, this.DistributionSeed, this.ThreadCount,
                 this.InitKeyCount, this.OperationKeyCount, this.UpsertCount, this.ReadCount, this.RMWCount, this.MixOperations,
-                this.KeySize, this.ValueSize, this.UseVarLenKey, this.UseVarLenValue, this.UseObjectKey, this.UseObjectValue,
-                this.UseReadCache, this.LogMode, this.IterationCount);
+                this.KeySize, this.ValueSize, this.UseVarLenKey, this.UseVarLenValue, this.UseObjectKey, this.UseObjectValue, this.UseReadCache,
+                this.LogMode, this.LogPageSizeBits, this.LogSegmentSizeBits, this.LogMemorySizeBits, this.LogMutableFraction, this.LogCopyReadsToTail,
+                this.ReadCachePageSizeBits, this.ReadCacheMemorySizeBits, this.ReadCacheSecondChanceFraction, this.IterationCount);
 
         internal (Distribution, double, double) DistributionInfo
             => (this.Distribution, this.DistributionParameter, this.DistributionSeed);

@@ -3,6 +3,8 @@
 
 using FASTER.core;
 using System;
+using System.IO;
+using System.Threading;
 
 namespace FASTER.PerfTest
 {
@@ -17,24 +19,24 @@ namespace FASTER.PerfTest
         private LogFiles logFiles;
         private Checkpoint checkpoint;
 
-        internal FHT(bool usePsf, int sizeShift, bool useObjectLog, bool useReadCache,
+        internal FHT(bool usePsf, int sizeShift, bool useObjectLog, TestInputs testInputs,
                      SerializerSettings<TKey, TValue> serializerSettings, VariableLengthStructSettings<TKey, TValue> varLenSettings,
-                     IFasterEqualityComparer<TKey> keyComparer, Checkpoint.Mode checkpointMode, int checkpointMs)
+                     IFasterEqualityComparer<TKey> keyComparer)
         {
             this.fhtSize = 1L << sizeShift;
-            this.logFiles = new LogFiles(useObjectLog, useReadCache);
+            this.logFiles = new LogFiles(useObjectLog, testInputs);
 
-            var checkpointSettings = checkpointMode == Checkpoint.Mode.None
+            var checkpointSettings = testInputs.CheckpointMode == Checkpoint.Mode.None
                 ? null
                 : new CheckpointSettings
                 {
-                    CheckPointType = Checkpoint.ToCheckpointType(checkpointMode),
-                    CheckpointDir = this.logFiles.directory
+                    CheckPointType = Checkpoint.ToCheckpointType(testInputs.CheckpointMode),
+                    CheckpointDir = this.logFiles.CheckpointDir
                 };
 
-            this.checkpoint = checkpointMode == Checkpoint.Mode.None
+            this.checkpoint = testInputs.CheckpointMode == Checkpoint.Mode.None
                 ? null
-                : new Checkpoint(checkpointMs, () => this.TakeCheckpoint());
+                : new Checkpoint(testInputs.CheckpointMs, cancellationToken => this.TakeCheckpoint(cancellationToken));
 
             this.Faster = usePsf
                 ? throw new NotImplementedException("TODO: FasterPSF")
@@ -44,13 +46,16 @@ namespace FASTER.PerfTest
             this.checkpoint?.Start();
         }
 
-        internal void TakeCheckpoint()
+        internal void TakeCheckpoint(CancellationToken cancellationToken)
         {
             // This is called from a dedicated thread
             var initialized = this.Faster.TakeFullCheckpoint(out _);
             if (!initialized)
                 throw new InvalidOperationException("TakeFullCheckpoint failed");
-            this.Faster.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            this.Faster.CompleteCheckpointAsync(cancellationToken).GetAwaiter().GetResult();
+
+            // We don't need the checkpoint and we may run out of disk space.
+            Directory.Delete(this.logFiles.CheckpointDir, recursive: true);
         }
 
         internal long LogTailAddress => this.Faster.Log.TailAddress;

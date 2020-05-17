@@ -29,7 +29,7 @@
       "MixOperations": [ true, false ],
       "KeySizes": [ 8 ],
       "ValueSizes": [ 8 ],
-      "UseAsyncs": [ true ],
+      "ThreadModes": [ "Async" ],
       "AsyncReadBatchSizes": [ 1000 ],
       "CheckpointModes": [ "FoldOver" ],
       "CheckpointMs": [ 5000 ],
