@@ -26,6 +26,30 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
+
+        /// <summary>
+        /// Check if at least one request is ready for CompletePending to operate on
+        /// </summary>
+        /// <param name="clientSession"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        internal async ValueTask ReadyToCompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        {
+            #region Previous pending requests
+            if (!RelaxedCPR)
+            {
+                if (clientSession.ctx.phase == Phase.IN_PROGRESS || clientSession.ctx.phase == Phase.WAIT_PENDING)
+                {
+                    if (clientSession.ctx.prevCtx.ioPendingRequests.Count != 0)
+                        await clientSession.ctx.prevCtx.readyResponses.WaitForEntryAsync();
+                }
+            }
+            #endregion
+
+            if (clientSession.ctx.ioPendingRequests.Count != 0)
+                await clientSession.ctx.readyResponses.WaitForEntryAsync();
+        }
+
         /// <summary>
         /// Complete outstanding pending operations that were issued synchronously
         /// Async operations (e.g., ReadAsync) need to be completed individually
