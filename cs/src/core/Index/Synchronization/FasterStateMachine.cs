@@ -120,20 +120,18 @@ namespace FASTER.core
         /// necessary actions associated with the state as defined by the current state machine
         /// </summary>
         /// <param name="ctx">null if calling without a context (e.g. waiting on a checkpoint)</param>
-        /// <param name="functions">Callback functions.</param>
-        /// <param name="clientSession">null if calling without a session (e.g. waiting on a checkpoint)</param>
+        /// <param name="listener">Synchronization listener.</param>
         /// <param name="async"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async ValueTask ThreadStateMachineStep<Functions>(FasterExecutionContext ctx,
-            Functions functions,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        private async ValueTask ThreadStateMachineStep(
+            FasterExecutionContext ctx,
+            ISynchronizationListener listener,
             bool async = true,
             CancellationToken token = default)
-            where Functions: IFunctions<Key, Value, Input, Output, Context>
         {
             if (async)
-                clientSession?.UnsafeResumeThread();
+                listener?.UnsafeResumeThread();
 
             // Target state is the current (non-intermediate state) system state thread needs to catch up to
             var (currentTask, targetState) = CaptureTaskAndTargetState();
@@ -149,8 +147,7 @@ namespace FASTER.core
             var previousState = threadState;
             do
             {
-                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, functions, clientSession, async,
-                    token);
+                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, listener, async, token);
                 if (ctx != null)
                 {
                     ctx.phase = threadState.phase;
@@ -168,7 +165,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async ValueTask ThreadStateMachineStep(CancellationToken token = default)
+        private void ThreadStateMachineStep(CancellationToken token = default)
         {
             // Target state is the current (non-intermediate state) system state thread needs to catch up to
             var (currentTask, targetState) = CaptureTaskAndTargetState();
@@ -184,7 +181,7 @@ namespace FASTER.core
             var previousState = threadState;
             do
             {
-                await currentTask.OnThreadEnteringState(threadState, previousState, this, token);
+                currentTask.OnThreadEnteringState(threadState, previousState, this, token);
 
                 previousState.word = threadState.word;
                 threadState = currentTask.NextState(threadState);

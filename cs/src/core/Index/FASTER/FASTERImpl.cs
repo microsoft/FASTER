@@ -35,6 +35,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="listener"></param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -64,7 +65,9 @@ namespace FASTER.core
                                     ref Context userContext,
                                     ref PendingContext pendingContext,
                                     Functions functions,
-                                    FasterExecutionContext sessionCtx, long lsn)
+                                    FasterExecutionContext sessionCtx,
+                                    ISynchronizationListener listener,
+                                    long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var bucket = default(HashBucket*);
@@ -77,7 +80,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, functions, sessionCtx);
+                HeavyEnter(hash, sessionCtx, listener);
 
             #region Trace back for record in in-memory HybridLog
             HashBucketEntry entry = default;
@@ -233,6 +236,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="listener"></param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -260,7 +264,9 @@ namespace FASTER.core
                             ref Context userContext,
                             ref PendingContext pendingContext,
                             Functions functions,
-                            FasterExecutionContext sessionCtx, long lsn)
+                            FasterExecutionContext sessionCtx,
+                            ISynchronizationListener listener,
+                            long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var status = default(OperationStatus);
@@ -275,7 +281,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, functions, sessionCtx);
+                HeavyEnter(hash, sessionCtx, listener);
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
@@ -406,7 +412,7 @@ namespace FASTER.core
             {
                 // Immutable region or new record
                 var recordSize = hlog.GetRecordSize(ref key, ref value);
-                BlockAllocate(recordSize, out long newLogicalAddress, functions, sessionCtx);
+                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, listener);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version,
@@ -474,7 +480,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, functions, sessionCtx, lsn);
+                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, functions, sessionCtx, listener, lsn);
             }
             else
             {
@@ -497,6 +503,7 @@ namespace FASTER.core
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="listener"></param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -528,7 +535,9 @@ namespace FASTER.core
                                    ref Context userContext,
                                    ref PendingContext pendingContext,
                                    Functions functions,
-                                   FasterExecutionContext sessionCtx, long lsn)
+                                   FasterExecutionContext sessionCtx,
+                                   ISynchronizationListener listener,
+                                   long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var recordSize = default(int);
@@ -545,7 +554,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, functions, sessionCtx);
+                HeavyEnter(hash, sessionCtx, listener);
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
@@ -729,7 +738,7 @@ namespace FASTER.core
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
                                 hlog.GetInitialRecordSize(ref key, ref input) :
                                 hlog.GetRecordSize(physicalAddress);
-                BlockAllocate(recordSize, out long newLogicalAddress, functions, sessionCtx);
+                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, listener);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
                                true, false, false,
@@ -822,7 +831,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, functions, sessionCtx, lsn);
+                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, functions, sessionCtx, listener, lsn);
             }
             else
             {
@@ -843,6 +852,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="listener"></param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -870,7 +880,9 @@ namespace FASTER.core
                             ref Context userContext,
                             ref PendingContext pendingContext,
                             Functions functions,
-                            FasterExecutionContext sessionCtx, long lsn)
+                            FasterExecutionContext sessionCtx,
+                            ISynchronizationListener listener,
+                            long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var status = default(OperationStatus);
@@ -885,7 +897,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, functions, sessionCtx);
+                HeavyEnter(hash, sessionCtx, listener);
 
             #region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
@@ -1053,7 +1065,7 @@ namespace FASTER.core
                 // Immutable region or new record
                 // Allocate default record size for tombstone
                 var recordSize = hlog.GetRecordSize(ref key, ref value);
-                BlockAllocate(recordSize, out long newLogicalAddress, functions, sessionCtx);
+                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, listener);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version,
@@ -1118,7 +1130,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalDelete(ref key, ref userContext, ref pendingContext, functions, sessionCtx, lsn);
+                return InternalDelete(ref key, ref userContext, ref pendingContext, functions, sessionCtx, listener, lsn);
             }
             else
             {
@@ -1131,8 +1143,7 @@ namespace FASTER.core
         #region ContainsKeyInMemory
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status InternalContainsKeyInMemory<Functions>(ref Key key, Functions functions, FasterExecutionContext sessionCtx, long fromAddress = -1)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        internal Status InternalContainsKeyInMemory(ref Key key, FasterExecutionContext sessionCtx, ISynchronizationListener listener, long fromAddress = -1)
         {
             if (fromAddress == -1)
                 fromAddress = hlog.HeadAddress;
@@ -1148,7 +1159,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, functions, sessionCtx);
+                HeavyEnter(hash, sessionCtx, listener);
 
             HashBucketEntry entry = default;
             var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
@@ -1200,6 +1211,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         /// <param name="functions">Callback functions.</param>
         /// <param name="currentCtx"></param>
+        /// <param name="listener"></param>
         /// <returns>
         /// <list type = "table" >
         ///     <listheader>
@@ -1217,7 +1229,8 @@ namespace FASTER.core
                             AsyncIOContext<Key, Value> request,
                             ref PendingContext pendingContext,
                             Functions functions,
-                            FasterExecutionContext currentCtx)
+                            FasterExecutionContext currentCtx,
+                            ISynchronizationListener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == ctx.version);
@@ -1234,7 +1247,7 @@ namespace FASTER.core
 
                 if (CopyReadsToTail || UseReadCache)
                 {
-                    InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, functions, currentCtx);
+                    InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, functions, currentCtx, listener);
                 }
             }
             else
@@ -1251,12 +1264,14 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         /// <param name="functions">Callback functions.</param>
         /// <param name="currentCtx"></param>
+        /// <param name="listener"></param>
         internal void InternalContinuePendingReadCopyToTail<Functions>(
                                     FasterExecutionContext opCtx,
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext,
                                     Functions functions,
-                                    FasterExecutionContext currentCtx)
+                                    FasterExecutionContext currentCtx,
+                                    ISynchronizationListener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
@@ -1308,7 +1323,7 @@ namespace FASTER.core
             long newLogicalAddress, newPhysicalAddress;
             if (UseReadCache)
             {
-                BlockAllocateReadCache(recordSize, out newLogicalAddress, functions, currentCtx);
+                BlockAllocateReadCache(recordSize, out newLogicalAddress, currentCtx, listener);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
                                     true, false, false,
@@ -1320,7 +1335,7 @@ namespace FASTER.core
             }
             else
             {
-                BlockAllocate(recordSize, out newLogicalAddress, functions, currentCtx);
+                BlockAllocate(recordSize, out newLogicalAddress, currentCtx, listener);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                                true, false, false,
@@ -1360,6 +1375,7 @@ namespace FASTER.core
         /// <param name="pendingContext">internal context for the pending RMW operation</param>
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionCtx">Session context</param>
+        /// <param name="listener"></param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -1385,7 +1401,8 @@ namespace FASTER.core
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext,
                                     Functions functions,
-                                    FasterExecutionContext sessionCtx)
+                                    FasterExecutionContext sessionCtx,
+                                    ISynchronizationListener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var recordSize = default(int);
@@ -1441,7 +1458,7 @@ namespace FASTER.core
                 physicalAddress = (long)request.record.GetValidPointer();
                 recordSize = hlog.GetRecordSize(physicalAddress);
             }
-            BlockAllocate(recordSize, out long newLogicalAddress, functions, sessionCtx);
+            BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, listener);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                            true, false, false,
@@ -1486,7 +1503,7 @@ namespace FASTER.core
         #endregion
 
         Retry:
-            return InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, functions, sessionCtx, pendingContext.serialNum);
+            return InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, functions, sessionCtx, listener, pendingContext.serialNum);
         }
 
         #endregion
@@ -1500,6 +1517,7 @@ namespace FASTER.core
         /// <param name="currentCtx">Current context</param>
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="functions">Callback functions.</param>
+        /// <param name="listener"></param>
         /// <param name="status">Internal status of the trial.</param>
         /// <returns>
         /// <list type="table">
@@ -1522,13 +1540,14 @@ namespace FASTER.core
             FasterExecutionContext currentCtx,
             PendingContext pendingContext,
             Functions functions,
+            ISynchronizationListener listener,
             OperationStatus status)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (status == OperationStatus.CPR_SHIFT_DETECTED)
             {
                 #region Epoch Synchronization
-                SynchronizeEpoch(opCtx, currentCtx, ref pendingContext, functions);
+                SynchronizeEpoch(opCtx, currentCtx, ref pendingContext, listener);
                 #endregion
 
                 #region Retry as (v+1) Operation
@@ -1540,24 +1559,24 @@ namespace FASTER.core
                                                       ref pendingContext.input,
                                                       ref pendingContext.output,
                                                       ref pendingContext.userContext,
-                                                      ref pendingContext, functions, currentCtx, pendingContext.serialNum);
+                                                      ref pendingContext, functions, currentCtx, listener, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref pendingContext.key.Get(),
                                                         ref pendingContext.value.Get(),
                                                         ref pendingContext.userContext,
-                                                        ref pendingContext, functions, currentCtx, pendingContext.serialNum);
+                                                        ref pendingContext, functions, currentCtx, listener, pendingContext.serialNum);
                         break;
                     case OperationType.DELETE:
                         internalStatus = InternalDelete(ref pendingContext.key.Get(),
                                                         ref pendingContext.userContext,
-                                                        ref pendingContext, functions, currentCtx, pendingContext.serialNum);
+                                                        ref pendingContext, functions, currentCtx, listener, pendingContext.serialNum);
                         break;
                     case OperationType.RMW:
                         internalStatus = InternalRMW(ref pendingContext.key.Get(),
                                                      ref pendingContext.input,
                                                      ref pendingContext.userContext,
-                                                     ref pendingContext, functions, currentCtx, pendingContext.serialNum);
+                                                     ref pendingContext, functions, currentCtx, listener, pendingContext.serialNum);
                         break;
                 }
 
@@ -1601,13 +1620,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ref PendingContext pendingContext, Functions functions)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        internal void SynchronizeEpoch(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ref PendingContext pendingContext, ISynchronizationListener listener)
         {
             var version = opCtx.version;
             Debug.Assert(currentCtx.version == version);
             Debug.Assert(currentCtx.phase == Phase.PREPARE);
-            InternalRefresh(currentCtx, functions);
+            InternalRefresh(currentCtx, listener);
             Debug.Assert(currentCtx.version == version + 1);
             Debug.Assert(currentCtx.phase == Phase.IN_PROGRESS);
 
@@ -1657,8 +1675,7 @@ namespace FASTER.core
             HashBucket.ReleaseSharedLatch(bucket);
         }
 
-        private void HeavyEnter<Functions>(long hash, Functions functions, FasterExecutionContext ctx)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        private void HeavyEnter(long hash, FasterExecutionContext ctx, ISynchronizationListener listener)
         {
             if (ctx.phase == Phase.PREPARE_GROW)
             {
@@ -1666,7 +1683,7 @@ namespace FASTER.core
                 // Could instead do a "heavy operation" here
                 while (systemState.phase != Phase.IN_PROGRESS_GROW)
                     Thread.SpinWait(100);
-                InternalRefresh(ctx, functions);
+                InternalRefresh(ctx, listener);
             }
             if (ctx.phase == Phase.IN_PROGRESS_GROW)
             {
@@ -1675,23 +1692,21 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocate<Functions>(int recordSize, out long logicalAddress, Functions functions, FasterExecutionContext ctx)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        private void BlockAllocate(int recordSize, out long logicalAddress, FasterExecutionContext ctx, ISynchronizationListener listener)
         {
             while ((logicalAddress = hlog.TryAllocate(recordSize)) == 0)
             {
-                InternalRefresh(ctx, functions);
+                InternalRefresh(ctx, listener);
                 Thread.Yield();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocateReadCache<Functions>(int recordSize, out long logicalAddress, Functions functions, FasterExecutionContext currentCtx)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        private void BlockAllocateReadCache(int recordSize, out long logicalAddress, FasterExecutionContext currentCtx, ISynchronizationListener listener)
         {
             while ((logicalAddress = readcache.TryAllocate(recordSize)) == 0)
             {
-                InternalRefresh(currentCtx, functions);
+                InternalRefresh(currentCtx, listener);
                 Thread.Yield();
             }
         }

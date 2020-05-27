@@ -29,17 +29,15 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
             SystemState current, SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Functions functions,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            ISynchronizationListener listener,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (current.phase)
             {
@@ -106,7 +104,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        public void OnThreadState<Key, Value, Input, Output, Context>(
             SystemState current, SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             CancellationToken token = default)
@@ -131,8 +129,6 @@ namespace FASTER.core
                 case Phase.REST:
                     break;
             }
-
-            return default;
         }
     }
 
@@ -162,23 +158,22 @@ namespace FASTER.core
             where Value : new() { }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Functions functions,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            ISynchronizationListener listener,
+            bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             return default;
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        public void OnThreadState<Key, Value, Input, Output, Context>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
@@ -186,7 +181,6 @@ namespace FASTER.core
             where Key : new()
             where Value : new()
         {
-            return default;
         }
     }
 

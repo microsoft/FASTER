@@ -28,8 +28,7 @@ namespace FASTER.core
                     faster.numPendingChunksToBeSplit = numChunks;
                     faster.splitStatus = new long[numChunks];
 
-                    faster.Initialize(1 - faster.resizeInfo.version, faster.state[faster.resizeInfo.version].size * 2,
-                        faster.sectorSize);
+                    faster.Initialize(1 - faster.resizeInfo.version, faster.state[faster.resizeInfo.version].size * 2, faster.sectorSize);
 
                     faster.resizeInfo.version = 1 - faster.resizeInfo.version;
                     break;
@@ -63,18 +62,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Functions functions,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            ISynchronizationListener listener,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (current.phase)
             {
@@ -88,7 +85,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        public void OnThreadState<Key, Value, Input, Output, Context>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
@@ -101,7 +98,7 @@ namespace FASTER.core
                 case Phase.PREPARE_GROW:
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:
-                    return default;
+                    return;
                 default:
                     throw new FasterException("Invalid Enum Argument");
             }

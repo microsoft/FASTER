@@ -107,7 +107,7 @@ namespace FASTER.core
                             Debug.Assert(_fasterKV.RelaxedCPR);
 
                             _result = _fasterKV.InternalCompletePendingReadRequestAsync(
-                                _clientSession.ctx, _clientSession.ctx, _clientSession.functions, _diskRequest, _pendingContext);
+                                _clientSession.ctx, _clientSession.ctx, _clientSession.functions, _clientSession, _diskRequest, _pendingContext);
                         }
                         finally
                         {
@@ -187,7 +187,7 @@ namespace FASTER.core
             {
             TryReadAgain:
 
-                internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.functions, clientSession.ctx, nextSerialNum);
+                internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.functions, clientSession.ctx, clientSession, nextSerialNum);
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
                     return new ValueTask<ReadAsyncResult<Functions>>(new ReadAsyncResult<Functions>((Status)internalStatus, output));
@@ -195,7 +195,7 @@ namespace FASTER.core
 
                 if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
                 {
-                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.functions);
+                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession);
                     goto TryReadAgain;
                 }
             }

@@ -54,41 +54,37 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(SystemState current,
+        public async ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+            SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Functions functions,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            ISynchronizationListener listener,
+            bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (current.phase != Phase.WAIT_INDEX_CHECKPOINT) return;
 
             if (async && !faster.IsIndexFuzzyCheckpointCompleted())
             {
-                clientSession?.UnsafeSuspendThread();
+                listener?.UnsafeSuspendThread();
                 await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
-                clientSession?.UnsafeResumeThread();
+                listener?.UnsafeResumeThread();
             }
 
             faster.GlobalStateMachineStep(current);
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadState<Key, Value, Input, Output, Context>(SystemState current,
+        public void OnThreadState<Key, Value, Input, Output, Context>(
+            SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             CancellationToken token = default) where Key : new()
             where Value : new()
         {
             if (current.phase != Phase.WAIT_INDEX_CHECKPOINT) return;
-
-            if (!faster.IsIndexFuzzyCheckpointCompleted())
-            {
-                await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
-            }
 
             faster.GlobalStateMachineStep(current);
         }

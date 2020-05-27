@@ -20,7 +20,7 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
+    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable, ISynchronizationListener
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -80,7 +80,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRead(ref key, ref input, ref output, userContext, functions, serialNo, ctx);
+                return fht.ContextRead(ref key, ref input, ref output, userContext, functions, serialNo, ctx, this);
             }
             finally
             {
@@ -117,7 +117,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextUpsert(ref key, ref desiredValue, userContext, functions, serialNo, ctx);
+                return fht.ContextUpsert(ref key, ref desiredValue, userContext, functions, serialNo, ctx, this);
             }
             finally
             {
@@ -167,7 +167,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRMW(ref key, ref input, userContext, functions, serialNo, ctx);
+                return fht.ContextRMW(ref key, ref input, userContext, functions, serialNo, ctx, this);
             }
             finally
             {
@@ -218,7 +218,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextDelete(ref key, userContext, functions, serialNo, ctx);
+                return fht.ContextDelete(ref key, userContext, functions, serialNo, ctx, this);
             }
             finally
             {
@@ -265,7 +265,7 @@ namespace FASTER.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
         {
-            return fht.InternalContainsKeyInMemory(ref key, functions, ctx, fromAddress);
+            return fht.InternalContainsKeyInMemory(ref key, ctx, this, fromAddress);
         }
 
         /// <summary>
@@ -294,7 +294,7 @@ namespace FASTER.core
         public void Refresh()
         {
             if (SupportAsync) UnsafeResumeThread();
-            fht.InternalRefresh(ctx, functions, this);
+            fht.InternalRefresh(ctx, this);
             if (SupportAsync) UnsafeSuspendThread();
         }
 
@@ -309,7 +309,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                var result = fht.InternalCompletePending(ctx, functions, spinWait);
+                var result = fht.InternalCompletePending(ctx, functions, this, spinWait);
                 if (spinWaitForCommit)
                 {
                     if (spinWait != true)
@@ -318,10 +318,10 @@ namespace FASTER.core
                     }
                     do
                     {
-                        fht.InternalCompletePending(ctx, functions, spinWait);
+                        fht.InternalCompletePending(ctx, functions, this, spinWait);
                         if (fht.InRestPhase())
                         {
-                            fht.InternalCompletePending(ctx, functions, spinWait);
+                            fht.InternalCompletePending(ctx, functions, this, spinWait);
                             return true;
                         }
                     } while (spinWait);
@@ -391,7 +391,7 @@ namespace FASTER.core
         internal void UnsafeResumeThread()
         {
             fht.epoch.Resume();
-            fht.InternalRefresh(ctx, functions, this);
+            fht.InternalRefresh(ctx, this);
         }
 
         /// <summary>
@@ -406,6 +406,22 @@ namespace FASTER.core
         void IClientSession.AtomicSwitch(int version)
         {
             fht.AtomicSwitch(ctx, ctx.prevCtx, version);
+        }
+
+        void ISynchronizationListener.OnCheckpointCompletion(string guid, CommitPoint commitPoint)
+        {
+            functions.CheckpointCompletionCallback(guid, commitPoint);
+            LatestCommitPoint = commitPoint;
+        }
+
+        void ISynchronizationListener.UnsafeResumeThread()
+        {
+            UnsafeResumeThread();
+        }
+
+        void ISynchronizationListener.UnsafeSuspendThread()
+        {
+            UnsafeSuspendThread();
         }
 
         /// <summary>
