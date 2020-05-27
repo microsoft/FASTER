@@ -29,15 +29,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
             SystemState current, SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
+            where Listener : struct, ISynchronizationListener
         {
             switch (current.phase)
             {
@@ -82,7 +83,7 @@ namespace FASTER.core
                 case Phase.WAIT_PENDING:
                     if (ctx != null)
                     {
-                        if (!faster.RelaxedCPR &&!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
+                        if (!faster.RelaxedCPR && !ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
                         {
                             if (ctx.prevCtx.HasNoPendingRequests)
                                 ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
@@ -155,19 +156,21 @@ namespace FASTER.core
             SystemState next,
             FasterKV<Key, Value, Input, Output, Context> faster)
             where Key : new()
-            where Value : new() { }
+            where Value : new()
+        { }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
+            where Listener : struct, ISynchronizationListener
         {
             return default;
         }
@@ -190,7 +193,7 @@ namespace FASTER.core
     internal class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
         private readonly long targetVersion;
-        
+
         /// <summary>
         /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
         /// </summary>
@@ -219,7 +222,7 @@ namespace FASTER.core
                 case Phase.PREPARE:
                     nextState.phase = Phase.IN_PROGRESS;
                     // TODO: Move to long for system state as well. 
-                    nextState.version = (int) (targetVersion == -1 ? start.version + 1 : targetVersion + 1);
+                    nextState.version = (int)(targetVersion == -1 ? start.version + 1 : targetVersion + 1);
                     break;
                 case Phase.IN_PROGRESS:
                     // This phase has no effect if using relaxed CPR model

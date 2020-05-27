@@ -65,7 +65,8 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh(FasterExecutionContext ctx, ISynchronizationListener listener)
+        internal void InternalRefresh<Listener>(FasterExecutionContext ctx, Listener listener)
+            where Listener : struct, ISynchronizationListener
         {
             epoch.ProtectAndDrain();
 
@@ -77,10 +78,10 @@ namespace FASTER.core
             }
 
             // await is never invoked when calling the function with async = false
-//#pragma warning disable 4014
+#pragma warning disable 4014
             var task = ThreadStateMachineStep(ctx, listener, false);
             Debug.Assert(task.IsCompleted);
-//#pragma warning restore 4014
+#pragma warning restore 4014
         }
 
         internal void InitContext(FasterExecutionContext ctx, string token, long lsn = -1)
@@ -141,8 +142,9 @@ namespace FASTER.core
             }
         }
 
-        internal bool InternalCompletePending<Functions>(FasterExecutionContext ctx, Functions functions, ISynchronizationListener listener, bool wait = false)
+        internal bool InternalCompletePending<Functions, Listener>(FasterExecutionContext ctx, Functions functions, Listener listener, bool wait = false)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             do
             {
@@ -186,25 +188,27 @@ namespace FASTER.core
         internal bool InRestPhase() => systemState.phase == Phase.REST;
 
         #region Complete Retry Requests
-        internal void InternalCompleteRetryRequests<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, ISynchronizationListener listener)
+        internal void InternalCompleteRetryRequests<Functions, Listener>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             int count = opCtx.retryRequests.Count;
 
             if (count == 0) return;
 
-            listener?.UnsafeResumeThread();
+            listener.UnsafeResumeThread();
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = opCtx.retryRequests.Dequeue();
                 InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext, functions, listener);
             }
-            listener?.UnsafeSuspendThread();
+            listener.UnsafeSuspendThread();
         }
 
-        internal void InternalCompleteRetryRequest<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, PendingContext pendingContext, Functions functions,
-            ISynchronizationListener listener)
+        internal void InternalCompleteRetryRequest<Functions, Listener>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, PendingContext pendingContext, Functions functions,
+            Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var internalStatus = default(OperationStatus);
             ref Key key = ref pendingContext.key.Get();
@@ -269,8 +273,9 @@ namespace FASTER.core
         #endregion
 
         #region Complete Pending Requests
-        internal void InternalCompletePendingRequests<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, ISynchronizationListener listener)
+        internal void InternalCompletePendingRequests<Functions, Listener>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             if (opCtx.readyResponses.Count == 0) return;
 
@@ -281,7 +286,7 @@ namespace FASTER.core
         }
 
         internal async ValueTask InternalCompletePendingRequestsAsync<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
-                where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             while (opCtx.ioPendingRequests.Count > 0)
             {
@@ -293,7 +298,7 @@ namespace FASTER.core
                     while (opCtx.readyResponses.Count > 0)
                     {
                         opCtx.readyResponses.TryDequeue(out request);
-                        InternalCompletePendingRequest(opCtx, currentCtx, functions, clientSession, request);
+                        InternalCompletePendingRequest(opCtx, currentCtx, functions, clientSession.Listener, request);
                     }
                     clientSession.UnsafeSuspendThread();
                 }
@@ -302,14 +307,15 @@ namespace FASTER.core
                     request = await opCtx.readyResponses.DequeueAsync(token);
 
                     clientSession.UnsafeResumeThread();
-                    InternalCompletePendingRequest(opCtx, currentCtx, functions, clientSession, request);
+                    InternalCompletePendingRequest(opCtx, currentCtx, functions, clientSession.Listener, request);
                     clientSession.UnsafeSuspendThread();
                 }
             }
         }
 
-        internal void InternalCompletePendingRequest<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, ISynchronizationListener listener, AsyncIOContext<Key, Value> request)
+        internal void InternalCompletePendingRequest<Functions, Listener>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, Listener listener, AsyncIOContext<Key, Value> request)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out PendingContext pendingContext))
             {
@@ -368,8 +374,9 @@ namespace FASTER.core
             }
         }
 
-        internal (Status, Output) InternalCompletePendingReadRequestAsync<Functions>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, ISynchronizationListener listener, AsyncIOContext<Key, Value> request, PendingContext pendingContext)
+        internal (Status, Output) InternalCompletePendingReadRequestAsync<Functions, Listener>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, Functions functions, Listener listener, AsyncIOContext<Key, Value> request, PendingContext pendingContext)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             (Status, Output) s = default;
 

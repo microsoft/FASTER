@@ -73,16 +73,18 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
+        /// <typeparam name="Listener"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context>(SystemState current,
+        ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, Listener>(SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
-            where Value : new();
+            where Value : new()
+            where Listener: struct, ISynchronizationListener;
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -165,17 +167,19 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
+        /// <typeparam name="Listener"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
-            where Value : new();
+            where Value : new()
+            where Listener: struct, ISynchronizationListener;
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -199,6 +203,23 @@ namespace FASTER.core
             CancellationToken token = default)
             where Key : new()
             where Value : new();
+    }
+
+    struct NullListener : ISynchronizationListener
+    {
+        public static readonly NullListener Instance;
+
+        public void OnCheckpointCompletion(string guid, CommitPoint commitPoint)
+        {
+        }
+
+        public void UnsafeResumeThread()
+        {
+        }
+
+        public void UnsafeSuspendThread()
+        {
+        }
     }
 
     /// <summary>
@@ -241,15 +262,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context>(
+        public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, Listener>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
+            where Listener: struct, ISynchronizationListener
         {
             foreach (var task in tasks)
                 await task.OnThreadState(current, prev, faster, ctx, listener, async, token);

@@ -54,23 +54,24 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
+            where Listener: struct, ISynchronizationListener
         {
             if (current.phase != Phase.WAIT_INDEX_CHECKPOINT) return;
 
             if (async && !faster.IsIndexFuzzyCheckpointCompleted())
             {
-                listener?.UnsafeSuspendThread();
+                listener.UnsafeSuspendThread();
                 await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
-                listener?.UnsafeResumeThread();
+                listener.UnsafeResumeThread();
             }
 
             faster.GlobalStateMachineStep(current);

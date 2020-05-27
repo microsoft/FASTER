@@ -124,14 +124,15 @@ namespace FASTER.core
         /// <param name="async"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async ValueTask ThreadStateMachineStep(
+        private async ValueTask ThreadStateMachineStep<Listener>(
             FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default)
+            where Listener : struct, ISynchronizationListener
         {
             if (async)
-                listener?.UnsafeResumeThread();
+                listener.UnsafeResumeThread();
 
             // Target state is the current (non-intermediate state) system state thread needs to catch up to
             var (currentTask, targetState) = CaptureTaskAndTargetState();

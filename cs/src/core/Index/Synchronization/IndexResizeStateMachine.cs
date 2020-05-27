@@ -62,16 +62,17 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            ISynchronizationListener listener,
+            Listener listener,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
+            where Listener : struct, ISynchronizationListener
         {
             switch (current.phase)
             {

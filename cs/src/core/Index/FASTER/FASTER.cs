@@ -280,15 +280,16 @@ namespace FASTER.core
                     systemState.phase == Phase.IN_PROGRESS_GROW)
                     return;
 
-                await ThreadStateMachineStep(null, null, true, token);
+                await ThreadStateMachineStep(null, NullListener.Instance, true, token);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Functions>(ref Key key, ref Input input, ref Output output, Context context, Functions functions, long serialNo,
+        internal Status ContextRead<Functions, Listener>(ref Key key, ref Input input, ref Output output, Context context, Functions functions, long serialNo,
             FasterExecutionContext sessionCtx,
-            ISynchronizationListener listener)
+            Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var pcontext = default(PendingContext);
             var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, functions, sessionCtx, listener,
@@ -309,10 +310,11 @@ namespace FASTER.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Functions>(ref Key key, ref Value value, Context context, Functions functions, long serialNo,
+        internal Status ContextUpsert<Functions, Listener>(ref Key key, ref Value value, Context context, Functions functions, long serialNo,
             FasterExecutionContext sessionCtx,
-            ISynchronizationListener listener)
+            Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var pcontext = default(PendingContext);
             var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, functions, sessionCtx, listener, serialNo);
@@ -332,10 +334,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Functions>(ref Key key, ref Input input, Context context, Functions functions, long serialNo,
+        internal Status ContextRMW<Functions, Listener>(ref Key key, ref Input input, Context context, Functions functions, long serialNo,
             FasterExecutionContext sessionCtx,
-            ISynchronizationListener listener)
+            Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var pcontext = default(PendingContext);
             var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, functions, sessionCtx, listener, serialNo);
@@ -354,9 +357,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<Functions>(ref Key key, Context context, Functions functions, long serialNo, FasterExecutionContext sessionCtx,
-            ISynchronizationListener listener)
+        internal Status ContextDelete<Functions, Listener>(ref Key key, Context context, Functions functions, long serialNo, FasterExecutionContext sessionCtx,
+            Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var pcontext = default(PendingContext);
             var internalStatus = InternalDelete(ref key, ref context, ref pcontext, functions, sessionCtx, listener, serialNo);

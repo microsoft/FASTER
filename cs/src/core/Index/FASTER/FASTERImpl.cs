@@ -58,7 +58,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<Functions>(
+        internal OperationStatus InternalRead<Functions, Listener>(
                                     ref Key key,
                                     ref Input input,
                                     ref Output output,
@@ -66,9 +66,10 @@ namespace FASTER.core
                                     ref PendingContext pendingContext,
                                     Functions functions,
                                     FasterExecutionContext sessionCtx,
-                                    ISynchronizationListener listener,
+                                    Listener listener,
                                     long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var bucket = default(HashBucket*);
             var slot = default(int);
@@ -259,15 +260,16 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<Functions>(
+        internal OperationStatus InternalUpsert<Functions, Listener>(
                             ref Key key, ref Value value,
                             ref Context userContext,
                             ref PendingContext pendingContext,
                             Functions functions,
                             FasterExecutionContext sessionCtx,
-                            ISynchronizationListener listener,
+                            Listener listener,
                             long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -530,15 +532,16 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRMW<Functions>(
+        internal OperationStatus InternalRMW<Functions, Listener>(
                                    ref Key key, ref Input input,
                                    ref Context userContext,
                                    ref PendingContext pendingContext,
                                    Functions functions,
                                    FasterExecutionContext sessionCtx,
-                                   ISynchronizationListener listener,
+                                   Listener listener,
                                    long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var recordSize = default(int);
             var bucket = default(HashBucket*);
@@ -875,15 +878,16 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDelete<Functions>(
+        internal OperationStatus InternalDelete<Functions, Listener>(
                             ref Key key,
                             ref Context userContext,
                             ref PendingContext pendingContext,
                             Functions functions,
                             FasterExecutionContext sessionCtx,
-                            ISynchronizationListener listener,
+                            Listener listener,
                             long lsn)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -1143,7 +1147,8 @@ namespace FASTER.core
         #region ContainsKeyInMemory
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status InternalContainsKeyInMemory(ref Key key, FasterExecutionContext sessionCtx, ISynchronizationListener listener, long fromAddress = -1)
+        internal Status InternalContainsKeyInMemory<Listener>(ref Key key, FasterExecutionContext sessionCtx, Listener listener, long fromAddress = -1)
+            where Listener : struct, ISynchronizationListener
         {
             if (fromAddress == -1)
                 fromAddress = hlog.HeadAddress;
@@ -1224,14 +1229,15 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRead<Functions>(
+        internal OperationStatus InternalContinuePendingRead<Functions, Listener>(
                             FasterExecutionContext ctx,
                             AsyncIOContext<Key, Value> request,
                             ref PendingContext pendingContext,
                             Functions functions,
                             FasterExecutionContext currentCtx,
-                            ISynchronizationListener listener)
+                            Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == ctx.version);
 
@@ -1265,14 +1271,15 @@ namespace FASTER.core
         /// <param name="functions">Callback functions.</param>
         /// <param name="currentCtx"></param>
         /// <param name="listener"></param>
-        internal void InternalContinuePendingReadCopyToTail<Functions>(
+        internal void InternalContinuePendingReadCopyToTail<Functions, Listener>(
                                     FasterExecutionContext opCtx,
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext,
                                     Functions functions,
                                     FasterExecutionContext currentCtx,
-                                    ISynchronizationListener listener)
+                                    Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
 
@@ -1396,14 +1403,15 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRMW<Functions>(
+        internal OperationStatus InternalContinuePendingRMW<Functions, Listener>(
                                     FasterExecutionContext opCtx,
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext pendingContext,
                                     Functions functions,
                                     FasterExecutionContext sessionCtx,
-                                    ISynchronizationListener listener)
+                                    Listener listener)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             var recordSize = default(int);
             var bucket = default(HashBucket*);
@@ -1535,14 +1543,15 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal Status HandleOperationStatus<Functions>(
+        internal Status HandleOperationStatus<Functions, Listener>(
             FasterExecutionContext opCtx,
             FasterExecutionContext currentCtx,
             PendingContext pendingContext,
             Functions functions,
-            ISynchronizationListener listener,
+            Listener listener,
             OperationStatus status)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Listener : struct, ISynchronizationListener
         {
             if (status == OperationStatus.CPR_SHIFT_DETECTED)
             {
@@ -1620,7 +1629,8 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ref PendingContext pendingContext, ISynchronizationListener listener)
+        internal void SynchronizeEpoch<Listener>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ref PendingContext pendingContext, Listener listener)
+            where Listener: struct, ISynchronizationListener
         {
             var version = opCtx.version;
             Debug.Assert(currentCtx.version == version);
@@ -1675,7 +1685,8 @@ namespace FASTER.core
             HashBucket.ReleaseSharedLatch(bucket);
         }
 
-        private void HeavyEnter(long hash, FasterExecutionContext ctx, ISynchronizationListener listener)
+        private void HeavyEnter<Listener>(long hash, FasterExecutionContext ctx, Listener listener)
+            where Listener : struct, ISynchronizationListener
         {
             if (ctx.phase == Phase.PREPARE_GROW)
             {
@@ -1692,7 +1703,8 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocate(int recordSize, out long logicalAddress, FasterExecutionContext ctx, ISynchronizationListener listener)
+        private void BlockAllocate<Listener>(int recordSize, out long logicalAddress, FasterExecutionContext ctx, Listener listener)
+            where Listener : struct, ISynchronizationListener
         {
             while ((logicalAddress = hlog.TryAllocate(recordSize)) == 0)
             {
@@ -1702,7 +1714,8 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocateReadCache(int recordSize, out long logicalAddress, FasterExecutionContext currentCtx, ISynchronizationListener listener)
+        private void BlockAllocateReadCache<Listener>(int recordSize, out long logicalAddress, FasterExecutionContext currentCtx, Listener listener)
+            where Listener : struct, ISynchronizationListener
         {
             while ((logicalAddress = readcache.TryAllocate(recordSize)) == 0)
             {
