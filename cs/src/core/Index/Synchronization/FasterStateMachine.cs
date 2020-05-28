@@ -120,19 +120,19 @@ namespace FASTER.core
         /// necessary actions associated with the state as defined by the current state machine
         /// </summary>
         /// <param name="ctx">null if calling without a context (e.g. waiting on a checkpoint)</param>
-        /// <param name="listener">Synchronization listener.</param>
+        /// <param name="fasterSession">Faster session.</param>
         /// <param name="async"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async ValueTask ThreadStateMachineStep<Listener>(
+        private async ValueTask ThreadStateMachineStep<FasterSession>(
             FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
-            where Listener : struct, ISynchronizationListener
+            where FasterSession : IFasterSession
         {
             if (async)
-                listener.UnsafeResumeThread();
+                fasterSession.UnsafeResumeThread();
 
             // Target state is the current (non-intermediate state) system state thread needs to catch up to
             var (currentTask, targetState) = CaptureTaskAndTargetState();
@@ -148,7 +148,7 @@ namespace FASTER.core
             var previousState = threadState;
             do
             {
-                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, listener, async, token);
+                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
                 if (ctx != null)
                 {
                     ctx.phase = threadState.phase;

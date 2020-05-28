@@ -25,14 +25,15 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        internal readonly bool SupportAsync = false;
         private readonly FasterKV<Key, Value, Input, Output, Context> fht;
+
+        internal readonly bool SupportAsync = false;
         internal readonly FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx;
         internal CommitPoint LatestCommitPoint;
 
         internal Functions functions;
 
-        internal ClientSessionSynchronizationListener Listener => new ClientSessionSynchronizationListener(this);
+        internal AsyncFasterSession FasterSession => new AsyncFasterSession(this);
 
         internal ClientSession(
             FasterKV<Key, Value, Input, Output, Context> fht,
@@ -43,7 +44,7 @@ namespace FASTER.core
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
-            this.SupportAsync = supportAsync;
+            SupportAsync = supportAsync;
             LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
             // Session runs on a single thread
             if (!supportAsync)
@@ -82,7 +83,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRead(ref key, ref input, ref output, userContext, functions, serialNo, ctx, this.Listener);
+                return fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -119,7 +120,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextUpsert(ref key, ref desiredValue, userContext, functions, serialNo, ctx, this.Listener);
+                return fht.ContextUpsert(ref key, ref desiredValue, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -169,7 +170,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRMW(ref key, ref input, userContext, functions, serialNo, ctx, this.Listener);
+                return fht.ContextRMW(ref key, ref input, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -220,7 +221,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextDelete(ref key, userContext, functions, serialNo, ctx, this.Listener);
+                return fht.ContextDelete(ref key, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -267,7 +268,7 @@ namespace FASTER.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
         {
-            return fht.InternalContainsKeyInMemory(ref key, ctx, this.Listener, fromAddress);
+            return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
         }
 
         /// <summary>
@@ -296,7 +297,7 @@ namespace FASTER.core
         public void Refresh()
         {
             if (SupportAsync) UnsafeResumeThread();
-            fht.InternalRefresh(ctx, this.Listener);
+            fht.InternalRefresh(ctx, FasterSession);
             if (SupportAsync) UnsafeSuspendThread();
         }
 
@@ -311,7 +312,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                var result = fht.InternalCompletePending(ctx, functions, this.Listener, spinWait);
+                var result = fht.InternalCompletePending(ctx, FasterSession, spinWait);
                 if (spinWaitForCommit)
                 {
                     if (spinWait != true)
@@ -320,10 +321,10 @@ namespace FASTER.core
                     }
                     do
                     {
-                        fht.InternalCompletePending(ctx, functions, this.Listener, spinWait);
+                        fht.InternalCompletePending(ctx, FasterSession, spinWait);
                         if (fht.InRestPhase())
                         {
-                            fht.InternalCompletePending(ctx, functions, this.Listener, spinWait);
+                            fht.InternalCompletePending(ctx, FasterSession, spinWait);
                             return true;
                         }
                     } while (spinWait);
@@ -393,7 +394,7 @@ namespace FASTER.core
         internal void UnsafeResumeThread()
         {
             fht.epoch.Resume();
-            fht.InternalRefresh(ctx, this.Listener);
+            fht.InternalRefresh(ctx, FasterSession);
         }
 
         /// <summary>
@@ -424,7 +425,7 @@ namespace FASTER.core
             {
                 this.status = status;
                 this.output = output;
-                this.readAsyncInternal = default;
+                readAsyncInternal = default;
             }
 
             internal ReadAsyncResult(
@@ -450,19 +451,70 @@ namespace FASTER.core
             }
         }
 
-        internal struct ClientSessionSynchronizationListener : ISynchronizationListener
+        // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
+        internal struct AsyncFasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            private ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+            private readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
 
-            public ClientSessionSynchronizationListener(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+            public AsyncFasterSession(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
             {
                 _clientSession = clientSession;
             }
 
-            public void OnCheckpointCompletion(string guid, CommitPoint commitPoint)
+            public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
             {
                 _clientSession.functions.CheckpointCompletionCallback(guid, commitPoint);
                 _clientSession.LatestCommitPoint = commitPoint;
+            }
+
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            {
+                _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+            }
+
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+            {
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+            }
+
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+            {
+                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+            }
+
+            public void DeleteCompletionCallback(ref Key key, Context ctx)
+            {
+                _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
+            }
+
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+            {
+                _clientSession.functions.InitialUpdater(ref key, ref input, ref value);
+            }
+
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+            {
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+            }
+
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            {
+                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+            }
+
+            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)
+            {
+                _clientSession.functions.RMWCompletionCallback(ref key, ref input, ctx, status);
+            }
+
+            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            {
+                _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst);
+            }
+
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+            {
+                _clientSession.functions.SingleWriter(ref key, ref src, ref dst);
             }
 
             public void UnsafeResumeThread()
@@ -473,6 +525,11 @@ namespace FASTER.core
             public void UnsafeSuspendThread()
             {
                 _clientSession.UnsafeSuspendThread();
+            }
+
+            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx)
+            {
+                _clientSession.functions.UpsertCompletionCallback(ref key, ref value, ctx);
             }
         }
     }

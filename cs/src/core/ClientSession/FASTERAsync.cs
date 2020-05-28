@@ -44,12 +44,12 @@ namespace FASTER.core
 
                     await clientSession.ctx.prevCtx.pendingReads.WaitEmptyAsync();
 
-                    await InternalCompletePendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession.functions, clientSession, token);
+                    await InternalCompletePendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession.FasterSession, token);
                     Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
 
                     if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
                     {
-                        InternalCompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession.functions, clientSession.Listener);
+                        InternalCompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession.FasterSession);
                     }
 
                     done &= (clientSession.ctx.prevCtx.HasNoPendingRequests);
@@ -57,8 +57,8 @@ namespace FASTER.core
             }
             #endregion
 
-            await InternalCompletePendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession.functions, clientSession, token);
-            InternalCompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession.functions, clientSession.Listener);
+            await InternalCompletePendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession.FasterSession, token);
+            InternalCompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession.FasterSession);
 
             Debug.Assert(clientSession.ctx.HasNoPendingRequests);
 
@@ -107,7 +107,7 @@ namespace FASTER.core
                             Debug.Assert(_fasterKV.RelaxedCPR);
 
                             _result = _fasterKV.InternalCompletePendingReadRequestAsync(
-                                _clientSession.ctx, _clientSession.ctx, _clientSession.functions, _clientSession.Listener, _diskRequest, _pendingContext);
+                                _clientSession.ctx, _clientSession.ctx, _clientSession.FasterSession, _diskRequest, _pendingContext);
                         }
                         finally
                         {
@@ -187,7 +187,7 @@ namespace FASTER.core
             {
             TryReadAgain:
 
-                internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.functions, clientSession.ctx, clientSession.Listener, nextSerialNum);
+                internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, nextSerialNum);
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
                     return new ValueTask<ReadAsyncResult<Functions>>(new ReadAsyncResult<Functions>((Status)internalStatus, output));
@@ -195,7 +195,7 @@ namespace FASTER.core
 
                 if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
                 {
-                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.Listener);
+                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession);
                     goto TryReadAgain;
                 }
             }

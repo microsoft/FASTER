@@ -280,20 +280,19 @@ namespace FASTER.core
                     systemState.phase == Phase.IN_PROGRESS_GROW)
                     return;
 
-                await ThreadStateMachineStep(null, NullListener.Instance, true, token);
+                // TODO: Do we need access to functions here?
+                // If yes then move this to either faster legacy or client session.
+                await ThreadStateMachineStep(null, NullFasterSession.Instance, true, token);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Functions, Listener>(ref Key key, ref Input input, ref Output output, Context context, Functions functions, long serialNo,
-            FasterExecutionContext sessionCtx,
-            Listener listener)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-            where Listener : struct, ISynchronizationListener
+        internal Status ContextRead<FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, functions, sessionCtx, listener,
-                serialNo);
+            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -301,32 +300,7 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, functions, listener, internalStatus);
-            }
-
-            sessionCtx.serialNum = serialNo;
-            return status;
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Functions, Listener>(ref Key key, ref Value value, Context context, Functions functions, long serialNo,
-            FasterExecutionContext sessionCtx,
-            Listener listener)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-            where Listener : struct, ISynchronizationListener
-        {
-            var pcontext = default(PendingContext);
-            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, functions, sessionCtx, listener, serialNo);
-            Status status;
-
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = (Status)internalStatus;
-            }
-            else
-            {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, functions, listener, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -334,22 +308,21 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Functions, Listener>(ref Key key, ref Input input, Context context, Functions functions, long serialNo,
-            FasterExecutionContext sessionCtx,
-            Listener listener)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-            where Listener : struct, ISynchronizationListener
+        internal Status ContextUpsert<FasterSession>(ref Key key, ref Value value, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, functions, sessionCtx, listener, serialNo);
+            var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status;
+
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, functions, listener, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -357,13 +330,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<Functions, Listener>(ref Key key, Context context, Functions functions, long serialNo, FasterExecutionContext sessionCtx,
-            Listener listener)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-            where Listener : struct, ISynchronizationListener
+        internal Status ContextRMW<FasterSession>(ref Key key, ref Input input, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext);
-            var internalStatus = InternalDelete(ref key, ref context, ref pcontext, functions, sessionCtx, listener, serialNo);
+            var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
@@ -371,7 +343,27 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, functions, listener, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
+            }
+
+            sessionCtx.serialNum = serialNo;
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextDelete<FasterSession>(ref Key key, Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            var pcontext = default(PendingContext);
+            var internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            Status status;
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                status = (Status)internalStatus;
+            }
+            else
+            {
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;

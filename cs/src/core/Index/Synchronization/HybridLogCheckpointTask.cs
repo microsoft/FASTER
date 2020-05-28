@@ -72,16 +72,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public virtual ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
+        public virtual ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Listener: struct, ISynchronizationListener
+            where FasterSession: IFasterSession
         {
             if (current.phase != Phase.PERSISTENCE_CALLBACK) return default;
 
@@ -98,7 +98,7 @@ namespace FASTER.core
                         };
 
                         // Thread local action
-                        listener.OnCheckpointCompletion(ctx.guid, commitPoint);
+                        fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
                     }
 
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
@@ -149,16 +149,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
+        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev, 
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
         {
-            await base.OnThreadState(current, prev, faster, ctx, listener, async, token);
+            await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
             if (current.phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
@@ -169,9 +169,9 @@ namespace FASTER.core
                 if (async && !notify)
                 {
                     Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
-                    listener.UnsafeSuspendThread();
+                    fasterSession?.UnsafeSuspendThread();
                     await faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
-                    listener.UnsafeResumeThread();
+                    fasterSession?.UnsafeResumeThread();
                     faster._hybridLogCheckpoint.flushedSemaphore.Release();
                     notify = true;
                 }
@@ -254,15 +254,15 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
+        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
         {
-            await base.OnThreadState(current, prev, faster, ctx, listener, async, token);
+            await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
             if (current.phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
@@ -273,9 +273,9 @@ namespace FASTER.core
                 if (async && !notify)
                 {
                     Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
-                    listener.UnsafeSuspendThread();
+                    fasterSession?.UnsafeSuspendThread();
                     await faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
-                    listener.UnsafeResumeThread();
+                    fasterSession?.UnsafeResumeThread();
                     faster._hybridLogCheckpoint.flushedSemaphore.Release();
                     notify = true;
                 }

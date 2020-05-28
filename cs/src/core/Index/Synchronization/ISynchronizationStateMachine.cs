@@ -5,13 +5,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    internal interface ISynchronizationListener
-    {
-        void UnsafeResumeThread();
-        void UnsafeSuspendThread();
-        void OnCheckpointCompletion(string guid, CommitPoint commitPoint);
-    }
-
     /// <summary>
     /// A state machine defines a serious of actions that changes the system, which requires all sessions to
     /// synchronize and agree on certain time points. A full run of the state machine is defined as a cycle
@@ -65,7 +58,7 @@ namespace FASTER.core
         /// <param name="prev"></param>
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
-        /// <param name="listener"></param>
+        /// <param name="fasterSession"></param>
         /// <param name="async"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
@@ -73,18 +66,18 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Listener"></typeparam>
+        /// <typeparam name="FasterSession"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, Listener>(SystemState current,
+        ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Listener: struct, ISynchronizationListener;
+            where FasterSession: IFasterSession;
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -108,7 +101,6 @@ namespace FASTER.core
             where Key : new()
             where Value : new();
     }
-
 
     /// <summary>
     /// An ISynchronizationTask specifies logic to be run on a state machine, but does not specify a transition
@@ -159,7 +151,7 @@ namespace FASTER.core
         /// <param name="prev"></param>
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
-        /// <param name="listener"></param>
+        /// <param name="fasterSession"></param>
         /// <param name="async"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
@@ -167,19 +159,19 @@ namespace FASTER.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Listener"></typeparam>
+        /// <typeparam name="FasterSession"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
+        ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Listener: struct, ISynchronizationListener;
+            where FasterSession: IFasterSession;
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -203,23 +195,6 @@ namespace FASTER.core
             CancellationToken token = default)
             where Key : new()
             where Value : new();
-    }
-
-    struct NullListener : ISynchronizationListener
-    {
-        public static readonly NullListener Instance;
-
-        public void OnCheckpointCompletion(string guid, CommitPoint commitPoint)
-        {
-        }
-
-        public void UnsafeResumeThread()
-        {
-        }
-
-        public void UnsafeSuspendThread()
-        {
-        }
     }
 
     /// <summary>
@@ -262,19 +237,19 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, Listener>(
+        public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
-            where Listener: struct, ISynchronizationListener
+            where FasterSession: IFasterSession
         {
             foreach (var task in tasks)
-                await task.OnThreadState(current, prev, faster, ctx, listener, async, token);
+                await task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
         }
 
         /// <inheritdoc />

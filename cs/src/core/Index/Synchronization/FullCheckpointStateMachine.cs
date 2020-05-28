@@ -54,24 +54,24 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Listener>(
+        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value, Input, Output, Context> faster,
             FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
-            Listener listener,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
-            where Listener: struct, ISynchronizationListener
+            where FasterSession : IFasterSession
         {
             if (current.phase != Phase.WAIT_INDEX_CHECKPOINT) return;
 
             if (async && !faster.IsIndexFuzzyCheckpointCompleted())
             {
-                listener.UnsafeSuspendThread();
+                fasterSession?.UnsafeSuspendThread();
                 await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
-                listener.UnsafeResumeThread();
+                fasterSession?.UnsafeResumeThread();
             }
 
             faster.GlobalStateMachineStep(current);
@@ -90,7 +90,7 @@ namespace FASTER.core
             faster.GlobalStateMachineStep(current);
         }
     }
-    
+
     /// <summary>
     /// The state machine orchestrates a full checkpoint
     /// </summary>
@@ -104,7 +104,8 @@ namespace FASTER.core
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         public FullCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1) : base(
             targetVersion, new VersionChangeTask(), new FullCheckpointOrchestrationTask(), checkpointBackend,
-            new IndexSnapshotTask()) {}
+            new IndexSnapshotTask())
+        { }
 
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)

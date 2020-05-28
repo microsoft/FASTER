@@ -30,6 +30,8 @@ namespace FASTER.core
         private readonly FasterKV<Key, Value, Input, Output, Context> _fasterKV;
         private readonly Functions _functions;
 
+        private LegacyFasterSession FasterSession => new LegacyFasterSession(this);
+
         /// <inheritdoc />
         public long EntryCount => _fasterKV.EntryCount;
 
@@ -112,7 +114,7 @@ namespace FASTER.core
         [Obsolete("Use NewSession(), where Refresh() is not required by default.")]
         public void Refresh()
         {
-            _fasterKV.InternalRefresh(_threadCtx.Value, new LegacySynchronizationListener(this));
+            _fasterKV.InternalRefresh(_threadCtx.Value, FasterSession);
         }
 
         /// <summary>
@@ -123,7 +125,7 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke CompletePending() on the session.")]
         public bool CompletePending(bool wait = false)
         {
-            return _fasterKV.InternalCompletePending(_threadCtx.Value, _functions, new LegacySynchronizationListener(this), wait);
+            return _fasterKV.InternalCompletePending(_threadCtx.Value, FasterSession, wait);
         }
 
         /// <summary>
@@ -138,7 +140,7 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke Read() on the session.")]
         public Status Read(ref Key key, ref Input input, ref Output output, Context context, long serialNo)
         {
-            return _fasterKV.ContextRead(ref key, ref input, ref output, context, _functions, serialNo, _threadCtx.Value, new LegacySynchronizationListener(this));
+            return _fasterKV.ContextRead(ref key, ref input, ref output, context, FasterSession, serialNo, _threadCtx.Value);
         }
 
         /// <summary>
@@ -152,7 +154,7 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke Upsert() on the session.")]
         public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
         {
-            return _fasterKV.ContextUpsert(ref key, ref value, context, _functions, serialNo, _threadCtx.Value, new LegacySynchronizationListener(this));
+            return _fasterKV.ContextUpsert(ref key, ref value, context, FasterSession, serialNo, _threadCtx.Value);
         }
 
         /// <summary>
@@ -166,7 +168,7 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke RMW() on the session.")]
         public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
         {
-            return _fasterKV.ContextRMW(ref key, ref input, context, _functions, serialNo, _threadCtx.Value, new LegacySynchronizationListener(this));
+            return _fasterKV.ContextRMW(ref key, ref input, context, FasterSession, serialNo, _threadCtx.Value);
         }
 
         /// <summary>
@@ -182,7 +184,7 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke Delete() on the session.")]
         public Status Delete(ref Key key, Context context, long serialNo)
         {
-            return _fasterKV.ContextDelete(ref key, context, _functions, serialNo, _threadCtx.Value, new LegacySynchronizationListener(this));
+            return _fasterKV.ContextDelete(ref key, context, FasterSession, serialNo, _threadCtx.Value);
         }
 
         /// <summary>
@@ -232,7 +234,7 @@ namespace FASTER.core
             _threadCtx.Value.prevCtx = new FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext();
             _fasterKV.InitContext(_threadCtx.Value.prevCtx, guid.ToString());
             _threadCtx.Value.prevCtx.version--;
-            _fasterKV.InternalRefresh(_threadCtx.Value, new LegacySynchronizationListener(this));
+            _fasterKV.InternalRefresh(_threadCtx.Value, FasterSession);
             return guid;
         }
 
@@ -290,18 +292,69 @@ namespace FASTER.core
         /// <inheritdoc />
         public string DumpDistribution() => _fasterKV.DumpDistribution();
 
-        private struct LegacySynchronizationListener : ISynchronizationListener
+        // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
+        private struct LegacyFasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            private FasterKV<Key, Value, Input, Output, Context, Functions> _fasterKV;
+            private readonly FasterKV<Key, Value, Input, Output, Context, Functions> _fasterKV;
 
-            public LegacySynchronizationListener(FasterKV<Key, Value, Input, Output, Context, Functions> fasterKV)
+            public LegacyFasterSession(FasterKV<Key, Value, Input, Output, Context, Functions> fasterKV)
             {
                 _fasterKV = fasterKV;
             }
 
-            public void OnCheckpointCompletion(string guid, CommitPoint commitPoint)
+            public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
             {
                 _fasterKV._functions.CheckpointCompletionCallback(guid, commitPoint);
+            }
+
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            {
+                _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+            }
+
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+            {
+                return _fasterKV._functions.ConcurrentWriter(ref key, ref src, ref dst);
+            }
+
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+            {
+                _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+            }
+
+            public void DeleteCompletionCallback(ref Key key, Context ctx)
+            {
+                _fasterKV._functions.DeleteCompletionCallback(ref key, ctx);
+            }
+
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+            {
+                _fasterKV._functions.InitialUpdater(ref key, ref input, ref value);
+            }
+
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+            {
+                return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value);
+            }
+
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            {
+                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+            }
+
+            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)
+            {
+                _fasterKV._functions.RMWCompletionCallback(ref key, ref input, ctx, status);
+            }
+
+            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            {
+                _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst);
+            }
+
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+            {
+                _fasterKV._functions.SingleWriter(ref key, ref src, ref dst);
             }
 
             public void UnsafeResumeThread()
@@ -310,6 +363,11 @@ namespace FASTER.core
 
             public void UnsafeSuspendThread()
             {
+            }
+
+            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx)
+            {
+                _fasterKV._functions.UpsertCompletionCallback(ref key, ref value, ctx);
             }
         }
     }
