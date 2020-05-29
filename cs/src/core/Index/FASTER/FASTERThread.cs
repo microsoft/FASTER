@@ -283,7 +283,7 @@ namespace FASTER.core
         internal async ValueTask InternalCompletePendingRequestsAsync<FasterSession>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, FasterSession fasterSession, CancellationToken token = default)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            while (opCtx.ioPendingRequests.Count > 0)
+            while (opCtx.SyncIoPendingCount > 0)
             {
                 AsyncIOContext<Key, Value> request;
 
@@ -368,7 +368,7 @@ namespace FASTER.core
             }
         }
 
-        internal (Status, Output) InternalCompletePendingReadRequestAsync<FasterSession>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, FasterSession fasterSession, AsyncIOContext<Key, Value> request, PendingContext pendingContext)
+        internal (Status, Output) InternalCompletePendingReadRequest<FasterSession>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, FasterSession fasterSession, AsyncIOContext<Key, Value> request, PendingContext pendingContext)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             (Status, Output) s = default;

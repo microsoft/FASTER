@@ -59,6 +59,16 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Wait for queue to have at least one entry
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public async Task WaitForEntryAsync(CancellationToken token = default)
+        {
+            await semaphore.WaitAsync(token);
+        }
+
+        /// <summary>
         /// Try dequeue (if item exists)
         /// </summary>
         /// <param name="item"></param>
