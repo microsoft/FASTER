@@ -26,6 +26,30 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
+
+        /// <summary>
+        /// Check if at least one (sync) request is ready for CompletePending to operate on
+        /// </summary>
+        /// <param name="clientSession"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        internal async ValueTask ReadyToCompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        {
+            #region Previous pending requests
+            if (!RelaxedCPR)
+            {
+                if (clientSession.ctx.phase == Phase.IN_PROGRESS || clientSession.ctx.phase == Phase.WAIT_PENDING)
+                {
+                    if (clientSession.ctx.prevCtx.SyncIoPendingCount != 0)
+                        await clientSession.ctx.prevCtx.readyResponses.WaitForEntryAsync(token);
+                }
+            }
+            #endregion
+
+            if (clientSession.ctx.SyncIoPendingCount != 0)
+                await clientSession.ctx.readyResponses.WaitForEntryAsync(token);
+        }
+
         /// <summary>
         /// Complete outstanding pending operations that were issued synchronously
         /// Async operations (e.g., ReadAsync) need to be completed individually
@@ -46,7 +70,7 @@ namespace FASTER.core
                     await clientSession.ctx.prevCtx.pendingReads.WaitEmptyAsync();
 
                     await InternalCompletePendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
-                    Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
+                    Debug.Assert(clientSession.ctx.prevCtx.SyncIoPendingCount == 0);
 
                     if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
                     {
@@ -106,7 +130,7 @@ namespace FASTER.core
                         {
                             Debug.Assert(_fasterKV.RelaxedCPR);
 
-                            _result = _fasterKV.InternalCompletePendingReadRequestAsync(
+                            _result = _fasterKV.InternalCompletePendingReadRequest(
                                 _clientSession.ctx, _clientSession.ctx, _diskRequest, _pendingContext);
                         }
                         finally
@@ -121,6 +145,7 @@ namespace FASTER.core
                     finally
                     {
                         _clientSession.ctx.ioPendingRequests.Remove(_pendingContext.id);
+                        _clientSession.ctx.asyncPendingCount--;
                     }
                 }
 
@@ -212,6 +237,7 @@ namespace FASTER.core
             {
                 var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
                 clientSession.ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
+                clientSession.ctx.asyncPendingCount++;
                 clientSession.ctx.pendingReads.Add();
 
                 try
@@ -226,6 +252,7 @@ namespace FASTER.core
                 catch
                 {
                     clientSession.ctx.ioPendingRequests.Remove(pendingContext.id);
+                    clientSession.ctx.asyncPendingCount--;
                     throw;
                 }
                 finally 
