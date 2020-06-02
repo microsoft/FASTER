@@ -32,7 +32,7 @@ namespace FASTER.core
         public const int CheckpointCompletionCallback = 5;
     }
 
-    public partial class FasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -46,7 +46,7 @@ namespace FASTER.core
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
-        internal void AcquireSharedLatchesForAllPendingRequests(FasterExecutionContext ctx)
+        internal void AcquireSharedLatchesForAllPendingRequests<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx)
         {
             foreach (var _ctx in ctx.retryRequests)
             {

@@ -9,7 +9,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -22,7 +22,7 @@ namespace FASTER.core
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false)
+        public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (functions == null)
@@ -33,9 +33,9 @@ namespace FASTER.core
 
             if (sessionId == null)
                 sessionId = Guid.NewGuid().ToString();
-            var ctx = new FasterExecutionContext();
+            var ctx = new FasterExecutionContext<Input, Output, Context>();
             InitContext(ctx, sessionId);
-            var prevCtx = new FasterExecutionContext();
+            var prevCtx = new FasterExecutionContext<Input, Output, Context>();
             InitContext(prevCtx, sessionId);
             prevCtx.version--;
 
@@ -59,7 +59,7 @@ namespace FASTER.core
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
+        public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (functions == null)
@@ -68,7 +68,7 @@ namespace FASTER.core
             if (!threadAffinitized)
                 UseRelaxedCPR();
 
-            commitPoint = InternalContinue(sessionId, out FasterExecutionContext ctx);
+            commitPoint = InternalContinue<Input, Output, Context>(sessionId, out var ctx);
             if (commitPoint.UntilSerialNo == -1)
                 throw new Exception($"Unable to find session {sessionId} to recover");
 

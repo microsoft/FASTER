@@ -12,14 +12,11 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Input"></typeparam>
-    /// <typeparam name="Output"></typeparam>
-    /// <typeparam name="Context"></typeparam>
-    public sealed class LogAccessor<Key, Value, Input, Output, Context> : IObservable<IFasterScanIterator<Key, Value>>
+    public sealed class LogAccessor<Key, Value> : IObservable<IFasterScanIterator<Key, Value>>
         where Key : new()
         where Value : new()
     {
-        private readonly FasterKV<Key, Value, Input, Output, Context> fht;
+        private readonly FasterKV<Key, Value> fht;
         private readonly AllocatorBase<Key, Value> allocator;
 
         /// <summary>
@@ -27,7 +24,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(FasterKV<Key, Value, Input, Output, Context> fht, AllocatorBase<Key, Value> allocator)
+        public LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
         {
             this.fht = fht;
             this.allocator = allocator;
@@ -200,15 +197,15 @@ namespace FASTER.core
         }
 
         private void Compact<Functions>(Functions functions, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
         {
-            var fhtSession = fht.NewSession(functions);
+            var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
 
             var originalUntilAddress = untilAddress;
 
-            var tempKv = new FasterKV<Key, Value, Input, Output, Context>
+            var tempKv = new FasterKV<Key, Value>
                 (fht.IndexSize, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
-            var tempKvSession = tempKv.NewSession(functions);
+            var tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions);
 
             using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
             {
@@ -255,7 +252,7 @@ namespace FASTER.core
             ShiftBeginAddress(originalUntilAddress);
         }
 
-        private void LogScanForValidity<Functions>(ref long untilAddress, ref long scanUntil, ref ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, ref long scanUntil, ref ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             while (scanUntil < fht.Log.SafeReadOnlyAddress)
@@ -275,7 +272,7 @@ namespace FASTER.core
             }
         }
 
-        private sealed class LogVariableCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
+        private sealed class LogVariableCompactFunctions : IFunctions<Key, Value, Empty, Empty, Empty>
         {
             private readonly VariableLengthBlittableAllocator<Key, Value> allocator;
 
@@ -285,7 +282,7 @@ namespace FASTER.core
             }
 
             public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
             {
                 var srcLength = allocator.ValueLength.GetLength(ref src);
@@ -297,31 +294,31 @@ namespace FASTER.core
                 allocator.ShallowCopy(ref src, ref dst);
                 return true;
             }
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) => false;
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
-            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
-            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
+            public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
+            public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) => false;
+            public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
+            public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
+            public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
             public void SingleWriter(ref Key key, ref Value src, ref Value dst) { allocator.ShallowCopy(ref src, ref dst); }
-            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
-            public void DeleteCompletionCallback(ref Key key, Context ctx) { }
+            public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
+            public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
         }
 
-        private sealed class LogCompactFunctions : IFunctions<Key, Value, Input, Output, Context>
+        private sealed class LogCompactFunctions : IFunctions<Key, Value, Empty, Empty, Empty>
         {
             public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) { return true; }
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
-            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
-            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+            public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
+            public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
+            public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) { return true; }
+            public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
+            public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
+            public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
             public void SingleWriter(ref Key key, ref Value src, ref Value dst) { dst = src; }
-            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
-            public void DeleteCompletionCallback(ref Key key, Context ctx) { }
+            public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
+            public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
         }
     }
 }

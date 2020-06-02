@@ -12,8 +12,8 @@ namespace FASTER.core
     internal abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public virtual void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+        public virtual void GlobalBeforeEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
         {
@@ -64,8 +64,8 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public virtual void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+        public virtual void GlobalAfterEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
         {
@@ -74,14 +74,14 @@ namespace FASTER.core
         /// <inheritdoc />
         public virtual ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            SystemState prev, FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where FasterSession: IFasterSession
+            where FasterSession : IFasterSession
         {
             if (current.phase != Phase.PERSISTENCE_CALLBACK) return default;
 
@@ -113,9 +113,9 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public virtual void OnThreadState<Key, Value, Input, Output, Context>(
+        public virtual void OnThreadState<Key, Value>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster,
+            SystemState prev, FasterKV<Key, Value> faster,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
@@ -137,8 +137,8 @@ namespace FASTER.core
     internal sealed class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
         {
             base.GlobalBeforeEnteringState(next, faster);
             if (next.phase != Phase.WAIT_FLUSH) return;
@@ -151,9 +151,9 @@ namespace FASTER.core
         /// <inheritdoc />
         public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
-            SystemState prev, 
-            FasterKV<Key, Value, Input, Output, Context> faster,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            SystemState prev,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
@@ -189,7 +189,11 @@ namespace FASTER.core
                 faster.GlobalStateMachineStep(current);
         }
 
-        public override void OnThreadState<Key, Value, Input, Output, Context>(SystemState current, SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster, CancellationToken token = default(CancellationToken))
+        public override void OnThreadState<Key, Value>(
+            SystemState current,
+            SystemState prev,
+            FasterKV<Key, Value> faster,
+            CancellationToken token = default(CancellationToken))
         {
             base.OnThreadState(current, prev, faster, token);
             if (current.phase != Phase.WAIT_FLUSH) return;
@@ -212,8 +216,7 @@ namespace FASTER.core
     internal sealed class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
             base.GlobalBeforeEnteringState(next, faster);
             switch (next.phase)
@@ -256,8 +259,8 @@ namespace FASTER.core
         /// <inheritdoc />
         public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            SystemState prev, FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
@@ -293,7 +296,7 @@ namespace FASTER.core
                 faster.GlobalStateMachineStep(current);
         }
 
-        public override void OnThreadState<Key, Value, Input, Output, Context>(SystemState current, SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster, CancellationToken token = default(CancellationToken))
+        public override void OnThreadState<Key, Value>(SystemState current, SystemState prev, FasterKV<Key, Value> faster, CancellationToken token = default(CancellationToken))
         {
             base.OnThreadState(current, prev, faster, token);
             if (current.phase != Phase.WAIT_FLUSH) return;

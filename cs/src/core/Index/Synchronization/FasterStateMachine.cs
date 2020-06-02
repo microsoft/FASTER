@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -124,8 +124,8 @@ namespace FASTER.core
         /// <param name="async"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async ValueTask ThreadStateMachineStep<FasterSession>(
-            FasterExecutionContext ctx,
+        private async ValueTask ThreadStateMachineStep<Input, Output, Context, FasterSession>(
+            FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)

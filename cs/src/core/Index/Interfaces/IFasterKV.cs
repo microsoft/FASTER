@@ -212,12 +212,12 @@ namespace FASTER.core
         /// <summary>
         /// Get accessor for FASTER hybrid log
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+        LogAccessor<Key, Value> Log { get; }
 
         /// <summary>
         /// Get accessor for FASTER read cache
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+        LogAccessor<Key, Value> ReadCache { get; }
 
         #endregion
     }
@@ -225,7 +225,7 @@ namespace FASTER.core
     /// <summary>
     /// Interface to FASTER key-value store
     /// </summary>
-    public interface IFasterKV<Key, Value, Input, Output, Context> : IDisposable
+    public interface IFasterKV<Key, Value> : IDisposable
         where Key : new()
         where Value : new()
     {
@@ -238,7 +238,7 @@ namespace FASTER.core
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false)
+        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false)
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
 
         /// <summary>
@@ -250,7 +250,7 @@ namespace FASTER.core
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
+        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
 
         #endregion
@@ -337,12 +337,12 @@ namespace FASTER.core
         /// <summary>
         /// Get accessor for FASTER hybrid log
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+        LogAccessor<Key, Value> Log { get; }
 
         /// <summary>
         /// Get accessor for FASTER read cache
         /// </summary>
-        LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+        LogAccessor<Key, Value> ReadCache { get; }
 
         #endregion
     }

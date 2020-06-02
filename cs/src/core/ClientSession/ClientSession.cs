@@ -25,10 +25,10 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private readonly FasterKV<Key, Value, Input, Output, Context> fht;
+        private readonly FasterKV<Key, Value> fht;
 
         internal readonly bool SupportAsync = false;
-        internal readonly FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx;
+        internal readonly FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx;
         internal CommitPoint LatestCommitPoint;
 
         internal Functions functions;
@@ -36,8 +36,8 @@ namespace FASTER.core
         internal AsyncFasterSession FasterSession => new AsyncFasterSession(this);
 
         internal ClientSession(
-            FasterKV<Key, Value, Input, Output, Context> fht,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            FasterKV<Key, Value> fht,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
             bool supportAsync)
         {
@@ -101,7 +101,7 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns>ReadAsyncResult - call CompleteRead on the return value to complete the read operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, Input, Output, Context>.ReadAsyncResult<Functions>> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
             return fht.ReadAsync(this, ref key, ref input, context, token);
         }
@@ -436,7 +436,7 @@ namespace FASTER.core
             readonly Status status;
             readonly Output output;
 
-            readonly FasterKV<Key, Value, Input, Output, Context>.ReadAsyncInternal<Functions> readAsyncInternal;
+            readonly FasterKV<Key, Value>.ReadAsyncInternal<Input, Output, Context, Functions> readAsyncInternal;
 
             internal ReadAsyncResult(Status status, Output output)
             {
@@ -446,13 +446,13 @@ namespace FASTER.core
             }
 
             internal ReadAsyncResult(
-                FasterKV<Key, Value, Input, Output, Context> fasterKV,
+                FasterKV<Key, Value> fasterKV,
                 ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                FasterKV<Key, Value, Input, Output, Context>.PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
+                FasterKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
             {
                 status = Status.PENDING;
                 output = default;
-                readAsyncInternal = new FasterKV<Key, Value, Input, Output, Context>.ReadAsyncInternal<Functions>(fasterKV, clientSession, pendingContext, diskRequest);
+                readAsyncInternal = new FasterKV<Key, Value>.ReadAsyncInternal<Input, Output, Context, Functions>(fasterKV, clientSession, pendingContext, diskRequest);
             }
 
             /// <summary>

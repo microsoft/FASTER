@@ -63,11 +63,11 @@ namespace FASTER.core
         }
     }
 
-    public partial class FasterKV<Key, Value, Input, Output, Context> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
     {
-        internal struct PendingContext
+        internal struct PendingContext<Input, Output, Context>
         {
             // User provided information
             internal OperationType type;
@@ -93,13 +93,13 @@ namespace FASTER.core
             }
         }
 
-        internal sealed class FasterExecutionContext : SerializedFasterExecutionContext
+        internal sealed class FasterExecutionContext<Input, Output, Context> : SerializedFasterExecutionContext
         {
             public Phase phase;
             public bool[] markers;
             public long totalPending;
-            public Queue<PendingContext> retryRequests;
-            public Dictionary<long, PendingContext> ioPendingRequests;
+            public Queue<PendingContext<Input, Output, Context>> retryRequests;
+            public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
@@ -116,7 +116,7 @@ namespace FASTER.core
                 }
             }
 
-            public FasterExecutionContext prevCtx;
+            public FasterExecutionContext<Input, Output, Context> prevCtx;
         }
     }
 

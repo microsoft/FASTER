@@ -10,8 +10,8 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context> : FasterBase,
-        IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value> : FasterBase,
+        IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -52,12 +52,12 @@ namespace FASTER.core
         /// <summary>
         /// Hybrid log used by this FASTER instance
         /// </summary>
-        public LogAccessor<Key, Value, Input, Output, Context> Log { get; }
+        public LogAccessor<Key, Value> Log { get; }
 
         /// <summary>
         /// Read cache used by this FASTER instance
         /// </summary>
-        public LogAccessor<Key, Value, Input, Output, Context> ReadCache { get; }
+        public LogAccessor<Key, Value> ReadCache { get; }
 
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
@@ -116,7 +116,7 @@ namespace FASTER.core
                 {
                     hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
                         this.comparer, null, epoch);
-                    Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                    Log = new LogAccessor<Key, Value>(this, hlog);
                     if (UseReadCache)
                     {
                         readcache = new VariableLengthBlittableAllocator<Key, Value>(
@@ -128,13 +128,13 @@ namespace FASTER.core
                                 MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                             }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
                         readcache.Initialize();
-                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                        ReadCache = new LogAccessor<Key, Value>(this, readcache);
                     }
                 }
                 else
                 {
                     hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
-                    Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                    Log = new LogAccessor<Key, Value>(this, hlog);
                     if (UseReadCache)
                     {
                         readcache = new BlittableAllocator<Key, Value>(
@@ -146,7 +146,7 @@ namespace FASTER.core
                                 MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                             }, this.comparer, ReadCacheEvict, epoch);
                         readcache.Initialize();
-                        ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                        ReadCache = new LogAccessor<Key, Value>(this, readcache);
                     }
                 }
             }
@@ -155,7 +155,7 @@ namespace FASTER.core
                 WriteDefaultOnDelete = true;
 
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
-                Log = new LogAccessor<Key, Value, Input, Output, Context>(this, hlog);
+                Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
                     readcache = new GenericAllocator<Key, Value>(
@@ -167,7 +167,7 @@ namespace FASTER.core
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, serializerSettings, this.comparer, ReadCacheEvict, epoch);
                     readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value, Input, Output, Context>(this, readcache);
+                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
             }
 
@@ -282,16 +282,16 @@ namespace FASTER.core
 
                 // TODO: Do we need access to functions here?
                 // If yes then move this to either faster legacy or client session.
-                await ThreadStateMachineStep(null, NullFasterSession.Instance, true, token);
+                await ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, true, token);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext sessionCtx)
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext);
+            var pcontext = default(PendingContext<Input, Output, Context>);
             var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -308,11 +308,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<FasterSession>(ref Key key, ref Value value, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext sessionCtx)
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext);
+            var pcontext = default(PendingContext<Input, Output, Context>);
             var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status;
 
@@ -330,11 +330,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<FasterSession>(ref Key key, ref Input input, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext sessionCtx)
+        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext);
+            var pcontext = default(PendingContext<Input, Output, Context>);
             var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -351,10 +351,15 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<FasterSession>(ref Key key, Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextDelete<Input, Output, Context, FasterSession>(
+            ref Key key, 
+            Context context, 
+            FasterSession fasterSession, 
+            long serialNo, 
+            FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext);
+            var pcontext = default(PendingContext<Input, Output, Context>);
             var internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)

@@ -17,10 +17,7 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key">Key</typeparam>
     /// <typeparam name="Value">Value</typeparam>
-    /// <typeparam name="Input">Input</typeparam>
-    /// <typeparam name="Output">Output</typeparam>
-    /// <typeparam name="Context">Context</typeparam>
-    public partial class FasterKV<Key, Value, Input, Output, Context> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -31,7 +28,7 @@ namespace FASTER.core
         /// <param name="clientSession"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        internal async ValueTask ReadyToCompletePendingAsync<Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        internal async ValueTask ReadyToCompletePendingAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             #region Previous pending requests
@@ -54,7 +51,7 @@ namespace FASTER.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        internal async ValueTask CompletePendingAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             bool done = true;
@@ -95,19 +92,19 @@ namespace FASTER.core
             }
         }
 
-        internal sealed class ReadAsyncInternal<Functions>
+        internal sealed class ReadAsyncInternal<Input, Output, Context, Functions>
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             const int Completed = 1;
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
-            readonly FasterKV<Key, Value, Input, Output, Context> _fasterKV;
+            readonly FasterKV<Key, Value> _fasterKV;
             readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
-            PendingContext _pendingContext;
+            PendingContext<Input, Output, Context> _pendingContext;
             AsyncIOContext<Key, Value> _diskRequest;
             int CompletionComputeStatus;
 
-            internal ReadAsyncInternal(FasterKV<Key, Value, Input, Output, Context> fasterKV, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            internal ReadAsyncInternal(FasterKV<Key, Value> fasterKV, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
             {
                 _exception = default;
                 _fasterKV = fasterKV;
@@ -159,13 +156,13 @@ namespace FASTER.core
         /// <summary>
         /// State storage for the completion of an async Read, or the result if the read was completed synchronously
         /// </summary>
-        public struct ReadAsyncResult<Functions>
+        public struct ReadAsyncResult<Input, Output, Context, Functions>
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             internal readonly Status status;
             internal readonly Output output;
 
-            internal readonly ReadAsyncInternal<Functions> readAsyncInternal;
+            internal readonly ReadAsyncInternal<Input, Output, Context, Functions> readAsyncInternal;
 
             internal ReadAsyncResult(Status status, Output output)
             {
@@ -175,13 +172,13 @@ namespace FASTER.core
             }
 
             internal ReadAsyncResult(
-                FasterKV<Key, Value, Input, Output, Context> fasterKV,
+                FasterKV<Key, Value> fasterKV,
                 ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                PendingContext pendingContext, AsyncIOContext<Key, Value> diskRequest)
+                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
             {
                 status = Status.PENDING;
                 output = default;
-                readAsyncInternal = new ReadAsyncInternal<Functions>(fasterKV, clientSession, pendingContext, diskRequest);
+                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context, Functions>(fasterKV, clientSession, pendingContext, diskRequest);
             }
 
             /// <summary>
@@ -199,11 +196,11 @@ namespace FASTER.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<ReadAsyncResult<Functions>> ReadAsync<Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
             ref Key key, ref Input input, Context context = default, CancellationToken token = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext);
+            var pcontext = default(PendingContext<Input, Output, Context>);
             Output output = default;
             OperationStatus internalStatus;
             var nextSerialNum = clientSession.ctx.serialNum + 1;
@@ -216,7 +213,7 @@ namespace FASTER.core
                 internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, nextSerialNum);
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
-                    return new ValueTask<ReadAsyncResult<Functions>>(new ReadAsyncResult<Functions>((Status)internalStatus, output));
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output));
                 }
 
                 if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
@@ -234,10 +231,10 @@ namespace FASTER.core
             return SlowReadAsync(this, clientSession, pcontext, token);
         }
 
-        private static async ValueTask<ReadAsyncResult<Functions>> SlowReadAsync<Functions>(
-            FasterKV<Key, Value, Input, Output, Context> @this,
+        private static async ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> SlowReadAsync<Input, Output, Context, Functions>(
+            FasterKV<Key, Value> @this,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-            PendingContext pendingContext, CancellationToken token = default)
+            PendingContext<Input, Output, Context> pendingContext, CancellationToken token = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
@@ -265,10 +262,10 @@ namespace FASTER.core
                 clientSession.ctx.pendingReads.Remove();
             }
 
-            return new ReadAsyncResult<Functions>(@this, clientSession, pendingContext, diskRequest);
+            return new ReadAsyncResult<Input, Output, Context, Functions>(@this, clientSession, pendingContext, diskRequest);
         }
 
-        internal bool AtomicSwitch(FasterExecutionContext fromCtx, FasterExecutionContext toCtx, int version)
+        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, int version)
         {
             lock (toCtx)
             {

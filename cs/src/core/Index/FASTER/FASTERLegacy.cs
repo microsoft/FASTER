@@ -25,9 +25,9 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private FastThreadLocal<FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext> _threadCtx;
+        private FastThreadLocal<FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context>> _threadCtx;
 
-        private readonly FasterKV<Key, Value, Input, Output, Context> _fasterKV;
+        private readonly FasterKV<Key, Value> _fasterKV;
         private readonly Functions _functions;
 
         private LegacyFasterSession FasterSession => new LegacyFasterSession(this);
@@ -42,10 +42,10 @@ namespace FASTER.core
         public IFasterEqualityComparer<Key> Comparer => _fasterKV.Comparer;
 
         /// <inheritdoc />
-        public LogAccessor<Key, Value, Input, Output, Context> Log => _fasterKV.Log;
+        public LogAccessor<Key, Value> Log => _fasterKV.Log;
 
         /// <inheritdoc />
-        public LogAccessor<Key, Value, Input, Output, Context> ReadCache => _fasterKV.ReadCache;
+        public LogAccessor<Key, Value> ReadCache => _fasterKV.ReadCache;
 
         /// <inheritdoc />
         public FasterKV(long size, Functions functions, LogSettings logSettings,
@@ -54,7 +54,7 @@ namespace FASTER.core
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
         {
             _functions = functions;
-            _fasterKV = new FasterKV<Key, Value, Input, Output, Context>(size, logSettings, checkpointSettings, serializerSettings, comparer, variableLengthStructSettings);
+            _fasterKV = new FasterKV<Key, Value>(size, logSettings, checkpointSettings, serializerSettings, comparer, variableLengthStructSettings);
         }
 
         /// <summary>
@@ -78,7 +78,7 @@ namespace FASTER.core
         public Guid StartSession()
         {
             if (_threadCtx == null)
-                _threadCtx = new FastThreadLocal<FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext>();
+                _threadCtx = new FastThreadLocal<FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context>>();
 
             return InternalAcquire();
         }
@@ -93,7 +93,7 @@ namespace FASTER.core
         {
             StartSession();
 
-            var cp = _fasterKV.InternalContinue(guid.ToString(), out var ctx);
+            var cp = _fasterKV.InternalContinue<Input, Output, Context>(guid.ToString(), out var ctx);
             _threadCtx.Value = ctx;
 
             return cp;
@@ -105,7 +105,7 @@ namespace FASTER.core
         [Obsolete("Use and dispose NewSession() instead.")]
         public void StopSession()
         {
-            InternalRelease(this._threadCtx.Value);
+            InternalRelease(_threadCtx.Value);
         }
 
         /// <summary>
@@ -228,17 +228,17 @@ namespace FASTER.core
                 throw new FasterException("Can acquire only in REST phase!");
             }
             Guid guid = Guid.NewGuid();
-            _threadCtx.Value = new FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext();
+            _threadCtx.Value = new FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context>();
             _fasterKV.InitContext(_threadCtx.Value, guid.ToString());
 
-            _threadCtx.Value.prevCtx = new FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext();
+            _threadCtx.Value.prevCtx = new FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context>();
             _fasterKV.InitContext(_threadCtx.Value.prevCtx, guid.ToString());
             _threadCtx.Value.prevCtx.version--;
             _fasterKV.InternalRefresh(_threadCtx.Value, FasterSession);
             return guid;
         }
 
-        private void InternalRelease(FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx)
+        private void InternalRelease(FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx)
         {
             Debug.Assert(ctx.HasNoPendingRequests);
             if (ctx.prevCtx != null)
@@ -259,11 +259,11 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool threadAffinitized = false)
-            => _fasterKV.NewSession(_functions, sessionId, threadAffinitized);
+            => _fasterKV.NewSession<Input, Output, Context, Functions>(_functions, sessionId, threadAffinitized);
 
         /// <inheritdoc />
         public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
-            => _fasterKV.ResumeSession(_functions, sessionId, out commitPoint, threadAffinitized);
+            => _fasterKV.ResumeSession<Input, Output, Context, Functions>(_functions, sessionId, out commitPoint, threadAffinitized);
 
         /// <inheritdoc />
         public bool GrowIndex() => _fasterKV.GrowIndex();

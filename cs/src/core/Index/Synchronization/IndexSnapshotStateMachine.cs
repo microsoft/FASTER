@@ -11,9 +11,9 @@ namespace FASTER.core
     internal class IndexSnapshotTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(
+        public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
         {
@@ -52,9 +52,9 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(
+        public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
         {
@@ -63,8 +63,9 @@ namespace FASTER.core
         /// <inheritdoc />
         public async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            SystemState prev, 
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
@@ -105,9 +106,10 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void OnThreadState<Key, Value, Input, Output, Context>(
+        public void OnThreadState<Key, Value>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context> faster,
+            SystemState prev, 
+            FasterKV<Key, Value> faster,
             CancellationToken token = default)
             where Key : new()
             where Value : new()

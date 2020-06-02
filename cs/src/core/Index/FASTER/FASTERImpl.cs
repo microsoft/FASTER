@@ -10,7 +10,7 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context> : FasterBase, IFasterKV<Key, Value, Input, Output, Context>
+    public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
     {
@@ -57,14 +57,14 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<Functions>(
+        internal OperationStatus InternalRead<Input, Output, Context, Functions>(
                                     ref Key key,
                                     ref Input input,
                                     ref Output output,
                                     ref Context userContext,
-                                    ref PendingContext pendingContext,
+                                    ref PendingContext<Input, Output, Context> pendingContext,
                                     Functions fasterSession,
-                                    FasterExecutionContext sessionCtx,
+                                    FasterExecutionContext<Input, Output, Context> sessionCtx,
                                     long lsn)
             where Functions : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -256,12 +256,12 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<FasterSession>(
+        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(
                             ref Key key, ref Value value,
                             ref Context userContext,
-                            ref PendingContext pendingContext,
+                            ref PendingContext<Input, Output, Context> pendingContext,
                             FasterSession fasterSession,
-                            FasterExecutionContext sessionCtx,
+                            FasterExecutionContext<Input, Output, Context> sessionCtx,
                             long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -525,12 +525,12 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRMW<FasterSession>(
+        internal OperationStatus InternalRMW<Input, Output, Context, FasterSession>(
                                    ref Key key, ref Input input,
                                    ref Context userContext,
-                                   ref PendingContext pendingContext,
+                                   ref PendingContext<Input, Output, Context> pendingContext,
                                    FasterSession fasterSession,
-                                   FasterExecutionContext sessionCtx,
+                                   FasterExecutionContext<Input, Output, Context> sessionCtx,
                                    long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -868,12 +868,12 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDelete<FasterSession>(
+        internal OperationStatus InternalDelete<Input, Output, Context, FasterSession>(
                             ref Key key,
                             ref Context userContext,
-                            ref PendingContext pendingContext,
+                            ref PendingContext<Input, Output, Context> pendingContext,
                             FasterSession fasterSession,
-                            FasterExecutionContext sessionCtx,
+                            FasterExecutionContext<Input, Output, Context> sessionCtx,
                             long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -1135,7 +1135,11 @@ namespace FASTER.core
         #region ContainsKeyInMemory
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status InternalContainsKeyInMemory<FasterSession>(ref Key key, FasterExecutionContext sessionCtx, FasterSession fasterSession, long fromAddress = -1)
+        internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
+            ref Key key, 
+            FasterExecutionContext<Input, Output, Context> sessionCtx, 
+            FasterSession fasterSession, 
+            long fromAddress = -1)
             where FasterSession : IFasterSession
         {
             if (fromAddress == -1)
@@ -1216,12 +1220,12 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRead<FasterSession>(
-                            FasterExecutionContext ctx,
+        internal OperationStatus InternalContinuePendingRead<Input, Output, Context, FasterSession>(
+                            FasterExecutionContext<Input, Output, Context> ctx,
                             AsyncIOContext<Key, Value> request,
-                            ref PendingContext pendingContext,
+                            ref PendingContext<Input, Output, Context> pendingContext,
                             FasterSession fasterSession,
-                            FasterExecutionContext currentCtx)
+                            FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == ctx.version);
@@ -1255,12 +1259,12 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
         /// <param name="currentCtx"></param>
-        internal void InternalContinuePendingReadCopyToTail<FasterSession>(
-                                    FasterExecutionContext opCtx,
+        internal void InternalContinuePendingReadCopyToTail<Input, Output, Context, FasterSession>(
+                                    FasterExecutionContext<Input, Output, Context> opCtx,
                                     AsyncIOContext<Key, Value> request,
-                                    ref PendingContext pendingContext,
+                                    ref PendingContext<Input, Output, Context> pendingContext,
                                     FasterSession fasterSession,
-                                    FasterExecutionContext currentCtx)
+                                    FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
@@ -1384,12 +1388,12 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRMW<FasterSession>(
-                                    FasterExecutionContext opCtx,
+        internal OperationStatus InternalContinuePendingRMW<Input, Output, Context, FasterSession>(
+                                    FasterExecutionContext<Input, Output, Context> opCtx,
                                     AsyncIOContext<Key, Value> request,
-                                    ref PendingContext pendingContext,
+                                    ref PendingContext<Input, Output, Context> pendingContext,
                                     FasterSession fasterSession,
-                                    FasterExecutionContext sessionCtx)
+                                    FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var recordSize = default(int);
@@ -1521,10 +1525,10 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal Status HandleOperationStatus<FasterSession>(
-            FasterExecutionContext opCtx,
-            FasterExecutionContext currentCtx,
-            PendingContext pendingContext,
+        internal Status HandleOperationStatus<Input, Output, Context, FasterSession>(
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> currentCtx,
+            PendingContext<Input, Output, Context> pendingContext,
             FasterSession fasterSession,
             OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -1605,7 +1609,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch<FasterSession>(FasterExecutionContext opCtx, FasterExecutionContext currentCtx, ref PendingContext pendingContext, FasterSession fasterSession)
+        internal void SynchronizeEpoch<Input, Output, Context, FasterSession>(
+            FasterExecutionContext<Input, Output, Context> opCtx, 
+            FasterExecutionContext<Input, Output, Context> currentCtx, 
+            ref PendingContext<Input, Output, Context> pendingContext, 
+            FasterSession fasterSession)
             where FasterSession : IFasterSession
         {
             var version = opCtx.version;
@@ -1618,8 +1626,9 @@ namespace FASTER.core
             pendingContext.version = currentCtx.version;
         }
 
-        internal AsyncIOContext<Key, Value> ScheduleGetFromDisk(FasterExecutionContext opCtx,
-                    ref PendingContext pendingContext)
+        internal AsyncIOContext<Key, Value> ScheduleGetFromDisk<Input, Output, Context>(
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            ref PendingContext<Input, Output, Context> pendingContext)
         {
             pendingContext.id = opCtx.totalPending++;
 
@@ -1661,7 +1670,7 @@ namespace FASTER.core
             HashBucket.ReleaseSharedLatch(bucket);
         }
 
-        private void HeavyEnter<FasterSession>(long hash, FasterExecutionContext ctx, FasterSession session)
+        private void HeavyEnter<Input, Output, Context, FasterSession>(long hash, FasterExecutionContext<Input, Output, Context> ctx, FasterSession session)
             where FasterSession : IFasterSession
         {
             if (ctx.phase == Phase.PREPARE_GROW)
@@ -1679,7 +1688,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocate<FasterSession>(int recordSize, out long logicalAddress, FasterExecutionContext ctx, FasterSession fasterSession)
+        private void BlockAllocate<Input, Output, Context, FasterSession>(
+            int recordSize, 
+            out long logicalAddress, 
+            FasterExecutionContext<Input, Output, Context> ctx, 
+            FasterSession fasterSession)
             where FasterSession : IFasterSession
         {
             while ((logicalAddress = hlog.TryAllocate(recordSize)) == 0)
@@ -1690,7 +1703,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocateReadCache<FasterSession>(int recordSize, out long logicalAddress, FasterExecutionContext currentCtx, FasterSession fasterSession)
+        private void BlockAllocateReadCache<Input, Output, Context, FasterSession>(
+            int recordSize, 
+            out long logicalAddress, 
+            FasterExecutionContext<Input, Output, Context> currentCtx, 
+            FasterSession fasterSession)
             where FasterSession : IFasterSession
         {
             while ((logicalAddress = readcache.TryAllocate(recordSize)) == 0)

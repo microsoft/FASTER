@@ -26,11 +26,8 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+        void GlobalBeforeEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new();
 
@@ -41,11 +38,8 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+        void GlobalAfterEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new();
 
@@ -70,8 +64,8 @@ namespace FASTER.core
         /// <returns></returns>
         ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context> faster,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
@@ -90,13 +84,10 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
         /// <returns></returns>
-        void OnThreadEnteringState<Key, Value, Input, Output, Context>(SystemState current,
+        void OnThreadEnteringState<Key, Value>(SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value> faster,
             CancellationToken token = default)
             where Key : new()
             where Value : new();
@@ -117,12 +108,9 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(
+        void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new();
 
@@ -133,12 +121,9 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(
+        void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new();
 
@@ -164,8 +149,8 @@ namespace FASTER.core
         ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context> faster,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
@@ -184,14 +169,11 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
         /// <returns></returns>
-        void OnThreadState<Key, Value, Input, Output, Context>(
+        void OnThreadState<Key, Value>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value> faster,
             CancellationToken token = default)
             where Key : new()
             where Value : new();
@@ -219,8 +201,8 @@ namespace FASTER.core
         public abstract SystemState NextState(SystemState start);
 
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster) where Key : new()
+        public void GlobalBeforeEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster) where Key : new()
             where Value : new()
         {
             foreach (var task in tasks)
@@ -228,8 +210,8 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context> faster) where Key : new()
+        public void GlobalAfterEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster) where Key : new()
             where Value : new()
         {
             foreach (var task in tasks)
@@ -240,8 +222,8 @@ namespace FASTER.core
         public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context> faster,
-            FasterKV<Key, Value, Input, Output, Context>.FasterExecutionContext ctx,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default) where Key : new()
@@ -253,10 +235,10 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void OnThreadEnteringState<Key, Value, Input, Output, Context>(
+        public void OnThreadEnteringState<Key, Value>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context> faster,
+            FasterKV<Key, Value> faster,
             CancellationToken token = default) where Key : new()
             where Value : new()
         {
