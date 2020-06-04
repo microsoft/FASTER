@@ -212,33 +212,62 @@ namespace FASTER.core
             switch (pendingContext.type)
             {
                 case OperationType.RMW:
-                    internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext,
+                                                 ref pendingContext, currentCtx, pendingContext.serialNum,
+                                                 ref pendingContext.psfUpdateArgs);
                     break;
                 case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
+                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext,
+                                                    currentCtx, pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
+                    break;
+                case OperationType.PSF_INSERT:
+                    internalStatus = PsfInternalInsert(ref key, ref value, ref pendingContext.input,
+                                                       ref pendingContext, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.DELETE:
-                    internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx, pendingContext.serialNum);
+                    internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx,
+                                                    pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
                     break;
                 case OperationType.READ:
                     throw new FasterException("Cannot happen!");
             }
 
+            var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
+                ? (Status)internalStatus
+                : HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
 
-            Status status;
-            if (internalStatus == OperationStatus.SUCCESS && this.PSFManager.HasPSFs)
+            if (status == Status.OK && this.PSFManager.HasPSFs)
             {
-                status = this.PSFManager.Upsert(new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref value),
-                                                pendingContext.psfUpdateArgs.logicalAddress, pendingContext.psfUpdateArgs.isInserted);
-            }
-            else
-            {
-                status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
-                    ? (Status)internalStatus
-                    : status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
+                switch (pendingContext.type)
+                {
+                    case OperationType.UPSERT:
+                        // Successful Upsert must have its PSFs executed and their keys stored.
+                        status = this.PSFManager.Upsert(new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref value),
+                                                       pendingContext.psfUpdateArgs.LogicalAddress,
+                                                       pendingContext.psfUpdateArgs.ChangeTracker);
+                        break;
+                    case OperationType.PSF_INSERT:
+                        var psfInput = (IPSFInput<Key>)pendingContext.input;
+                        var updateOp = pendingContext.psfUpdateArgs.ChangeTracker.UpdateOp;
+                        if (psfInput.IsDelete && (updateOp == UpdateOperation.IPU || updateOp == UpdateOperation.RCU))
+                        {
+                            // RCU Insert of a tombstoned old record is followed by Insert of the new record.
+                            if (pendingContext.psfUpdateArgs.ChangeTracker.FindGroup(psfInput.GroupId, out var ordinal))
+                            {
+                                ref GroupKeysPair groupKeysPair = ref pendingContext.psfUpdateArgs.ChangeTracker.GetGroupRef(ordinal);
+                                this.chainPost.SetRecordId(ref value, pendingContext.psfUpdateArgs.ChangeTracker.AfterRecordId);
+                                var pcontext = default(PendingContext);
+                                PsfRcuInsert(groupKeysPair.After, ref value, ref pendingContext.input,
+                                             ref pcontext, currentCtx, pendingContext.serialNum + 1);
+                            }
+                        }
+                        break;
+                    default:
+                        break;
+                }
             }
 
-                // If done, callback user code.
+            // If done, callback user code.
             if (status == Status.OK || status == Status.NOTFOUND)
             {
                 if (pendingContext.heldLatch == LatchOperation.Shared)
@@ -263,7 +292,6 @@ namespace FASTER.core
                     default:
                         throw new FasterException("Operation type not allowed for retry");
                 }
-
             }
         }
         #endregion

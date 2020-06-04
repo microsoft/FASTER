@@ -9,9 +9,9 @@ namespace FasterPSFSample
 {
     public class ObjectOrders : IOrders
     {
-        public int Size { get => values[0]; set => values[0] = value;  }
+        public int SizeInt { get => values[0]; set => values[0] = value;  }
 
-        public int Color { get => values[1]; set => values[1] = value; }
+        public int ColorArgb { get => values[1]; set => values[1] = value; }
 
         public int NumSold { get => values[2]; set => values[2] = value; }
 
@@ -21,14 +21,14 @@ namespace FasterPSFSample
 
         public ObjectOrders(Constants.Size size, Color color, int numSold)
         {
-            this.Size = (int)size;
-            this.Color = color.ToArgb();
+            this.SizeInt = (int)size;
+            this.ColorArgb = color.ToArgb();
             this.NumSold = numSold;
         }
 
-        public (int, int, int) MemberTuple => (this.Size, this.Color, this.NumSold);
+        public (int, int, int) MemberTuple => (this.SizeInt, this.ColorArgb, this.NumSold);
 
-        public override string ToString() => $"{(Constants.Size)this.Size}, {Constants.ColorDict[this.Color].Name}, {NumSold}";
+        public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {NumSold}";
 
         public class Serializer : BinaryObjectSerializer<ObjectOrders>
         {
@@ -48,15 +48,35 @@ namespace FasterPSFSample
 
         public class Functions : IFunctions<Key, ObjectOrders, Input, Output<ObjectOrders>, Context<ObjectOrders>>
         {
+            #region Read
             public void ConcurrentReader(ref Key key, ref Input input, ref ObjectOrders value, ref Output<ObjectOrders> dst)
                 => dst.Value = value;
 
+            public void SingleReader(ref Key key, ref Input input, ref ObjectOrders value, ref Output<ObjectOrders> dst)
+                => dst.Value = value;
+
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output<ObjectOrders> output, Context<ObjectOrders> context, Status status)
+            {
+                if (output.Value.MemberTuple != FasterPSFSample.keyDict[key].MemberTuple)
+                    throw new Exception("Read mismatch error!");
+            }
+            #endregion Read
+
+            #region Upsert
             public bool ConcurrentWriter(ref Key key, ref ObjectOrders src, ref ObjectOrders dst)
             {
                 dst = src;
                 return true;
             }
 
+            public void SingleWriter(ref Key key, ref ObjectOrders src, ref ObjectOrders dst)
+                => dst = src;
+
+            public void UpsertCompletionCallback(ref Key key, ref ObjectOrders value, Context<ObjectOrders> context)
+                => throw new NotImplementedException();
+            #endregion Upsert
+
+            #region RMW
             public void CopyUpdater(ref Key key, ref Input input, ref ObjectOrders oldValue, ref ObjectOrders newValue)
                 => throw new NotImplementedException();
 
@@ -64,27 +84,16 @@ namespace FasterPSFSample
                 => throw new NotImplementedException();
 
             public bool InPlaceUpdater(ref Key key, ref Input input, ref ObjectOrders value)
-                => throw new NotImplementedException();
-
-            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-                => throw new NotImplementedException();
-
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output<ObjectOrders> output, Context<ObjectOrders> context, Status status)
             {
-                if (output.Value.MemberTuple != key.MemberTuple)
-                    throw new Exception("Read mismatch error!");
+                value.ColorArgb = FasterPSFSample.IPUColor;
+                return true;
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, Context<ObjectOrders> context, Status status)
                 => throw new NotImplementedException();
+            #endregion RMW
 
-            public void SingleReader(ref Key key, ref Input input, ref ObjectOrders value, ref Output<ObjectOrders> dst)
-                => dst.Value = value;
-
-            public void SingleWriter(ref Key key, ref ObjectOrders src, ref ObjectOrders dst)
-                => dst = src;
-
-            public void UpsertCompletionCallback(ref Key key, ref ObjectOrders value, Context<ObjectOrders> context)
+            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
                 => throw new NotImplementedException();
 
             public void DeleteCompletionCallback(ref Key key, Context<ObjectOrders> context)

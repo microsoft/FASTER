@@ -75,6 +75,7 @@ namespace FASTER.core
         public const long kTempInvalidAddress = 1;
         public const int kFirstValidAddress = 64;
 
+        public const long kInvalidPsfGroupId = -1;
         public const int kInvalidPsfOrdinal = -1;
     }
 

@@ -6,12 +6,12 @@ namespace FasterPSFSample
     public interface IOrders
     {
         // Colors, strings, and enums are not blittable so we use int
-        int Size { get; set; }
+        int SizeInt { get; set; }
 
-        int Color { get; set; }
+        int ColorArgb { get; set; }
 
         int NumSold { get; set; }
 
-        (int, int, int) MemberTuple => (this.Size, this.Color, this.NumSold);
+        (int, int, int) MemberTuple => (this.SizeInt, this.ColorArgb, this.NumSold);
     }
 }

@@ -3,22 +3,64 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace FASTER.core
 {
     internal class PSFManager<TProviderData, TRecordId> where TRecordId : struct, IComparable<TRecordId>
     {
-        readonly List<IExecutePSF<TProviderData, TRecordId>> psfGroups = new List<IExecutePSF<TProviderData, TRecordId>>();
+        readonly Dictionary<long, IExecutePSF<TProviderData, TRecordId>> psfGroups 
+            = new Dictionary<long, IExecutePSF<TProviderData, TRecordId>>();
 
         internal bool HasPSFs => this.psfGroups.Count > 0;
 
-        internal Status Upsert(TProviderData providerData, TRecordId recordId, bool isInserted)
+        internal Status Upsert(TProviderData data, TRecordId recordId,
+                               PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
             // TODO: This is called from ContextUpsert or InternalCompleteRetryRequest, where it's still
             // in the Context threading control for the primaryKV. I think it needs to move out of there.
-            foreach (var group in this.psfGroups)
+
+            // This Upsert was an Insert: For the FasterKV Insert fast path, changeTracker is null.
+            if (changeTracker is null || changeTracker.UpdateOp == UpdateOperation.Insert)
             {
-                var status = group.ExecuteAndStore(providerData, recordId, isInserted);
+                foreach (var group in this.psfGroups.Values)
+                {
+                    // Fast Insert path: No IPUCache lookup is done for Inserts, so this is called directly here.
+                    var status = group.ExecuteAndStore(data, recordId, PSFExecutePhase.Insert, changeTracker);
+                    if (status != Status.OK)
+                    {
+                        // TODO handle errors
+                    }
+                }
+                return Status.OK;
+            }
+
+            // This Upsert was an IPU or RCU
+            return this.Update(changeTracker);
+        }
+
+        internal Status Update(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
+        {
+            // TODO: same comment as Insert re: Context threading control for the primaryKV
+            changeTracker.PrepareGroups(this.psfGroups.Count);
+            foreach (var group in this.psfGroups.Values)
+            {
+                var status = group.Update(changeTracker);
+                if (status != Status.OK)
+                {
+                    // TODO handle errors
+                }
+            }
+            return Status.OK;
+        }
+
+        internal Status Delete(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
+        {
+            // TODO: same comment as Insert re: Context threading control for the primaryKV
+            changeTracker.PrepareGroups(this.psfGroups.Count);
+            foreach (var group in this.psfGroups.Values)
+            {
+                var status = group.Delete(changeTracker);
                 if (status != Status.OK)
                 {
                     // TODO handle errors
@@ -29,15 +71,26 @@ namespace FASTER.core
 
         internal string[][] GetRegisteredPSFs() => throw new NotImplementedException("TODO");
 
+        internal PSFChangeTracker<TProviderData, TRecordId> CreateChangeTracker() 
+            => new PSFChangeTracker<TProviderData, TRecordId>();
+
+        private static long NextGroupId = 0;
+
+        private void AddGroup<TPSFKey>(PSFGroup<TProviderData, TPSFKey, TRecordId> group) where TPSFKey : struct
+        {
+            var gId = Interlocked.Increment(ref NextGroupId);
+            this.psfGroups.Add(gId - 1, group);
+        }
+
         internal PSF<TPSFKey, TRecordId> RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey> def,
                                                               PSFRegistrationSettings<TPSFKey> registrationSettings)
             where TPSFKey : struct
         {
             // TODO: Runtime check that TPSFKey is blittable
             var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, new[] { def }, registrationSettings);
-            this.psfGroups.Add(group);
+            AddGroup(group);
             return group[def.Name];
-        }        
+        }
 
         internal PSF<TPSFKey, TRecordId>[] RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey>[] defs,
                                                               PSFRegistrationSettings<TPSFKey> registrationSettings)
@@ -45,7 +98,7 @@ namespace FASTER.core
         {
             // TODO: Runtime check that TPSFKey is blittable
             var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, defs, registrationSettings);
-            this.psfGroups.Add(group);
+            AddGroup(group);
             return group.PSFs;
         }
 
@@ -55,8 +108,7 @@ namespace FASTER.core
             where TPSFKey : struct
         {
             // TODO make sure 'psf' is from one of our groups
-            // TODO if we delete groups, the GroupOrdinals in the other groups' PSFs must be updated; change to IQueryPSF
-            var group = this.psfGroups[psf.GroupOrdinal];
+            var group = this.psfGroups[psf.GroupId];
             foreach (var recordId in psf.Query(psfKey))
             {
                 if (querySettings != null && querySettings.CancellationToken.IsCancellationRequested)
@@ -68,8 +120,10 @@ namespace FASTER.core
                 var providerData = providerDataCreator.Create(recordId);
                 if (providerData is null)
                     continue;
+#if false // TODO: should not need group.Verify anymore. Fix this per email discussion.
                 if (group.Verify(providerData, psf.PsfOrdinal))
-                    yield return providerData;
+#endif
+                yield return providerData;
             }
         }
 
@@ -103,8 +157,8 @@ namespace FASTER.core
             var e1done = !e1.MoveNext();
             var e2done = !e2.MoveNext();
 
-            var group1 = this.psfGroups[psf1.GroupOrdinal];
-            var group2 = this.psfGroups[psf2.GroupOrdinal];
+            var group1 = this.psfGroups[psf1.GroupId];
+            var group2 = this.psfGroups[psf2.GroupId];
 
             var cancelToken = querySettings is null ? default : querySettings.CancellationToken;
             bool cancellationRequested()

@@ -73,7 +73,7 @@ namespace FASTER.core
             internal PtrWrapper(int size, SectorAlignedBufferPool pool)
             {
                 this.size = size;
-                mem = pool.Get(size);
+                this.mem = pool.Get(size);
             }
 
             internal void Set(ref TPSFKey key) 

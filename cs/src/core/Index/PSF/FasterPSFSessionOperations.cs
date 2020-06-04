@@ -55,6 +55,39 @@ namespace FASTER.core
                 if (SupportAsync) UnsafeSuspendThread();
             }
         }
+
+        internal Status PsfUpdate<TProviderData, TRecordId>(ref GroupKeysPair groupKeysPair, ref Value value, ref Input input, long serialNo,
+                                                            PSFChangeTracker<TProviderData, TRecordId> changeTracker)
+            where TRecordId : struct
+        {
+            // Called on the secondary FasterKV
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.ContextPsfUpdate(ref groupKeysPair, ref value, ref input, serialNo, ctx, changeTracker);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
+
+        internal Status PsfDelete<TProviderData, TRecordId>(ref Key key, ref Value value, ref Input input, long serialNo,
+                                                            PSFChangeTracker<TProviderData, TRecordId> changeTracker)
+            where TRecordId : struct
+        {
+            // Called on the secondary FasterKV
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.ContextPsfDelete(ref key, ref value, ref input, serialNo, ctx, changeTracker);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
+
         #endregion PSF calls for Secondary FasterKV
 
         #region PSF Query API for primary FasterKV
@@ -124,7 +157,7 @@ namespace FASTER.core
         /// <typeparam name="TPSFKey1">The type of the key value for the first <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
         /// <typeparam name="TPSFKey2">The type of the key value for the second <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
         /// <param name="psf1">The first Predicate Subset Function object</param>
-        /// <param name="psf2">The secojnd Predicate Subset Function object</param>
+        /// <param name="psf2">The second Predicate Subset Function object</param>
         /// <param name="psfKey1">The key value to return results from the first <see cref="PSF{TPSFKey, TRecordId}"/>'s stored values</param>
         /// <param name="psfKey2">The key value to return results from the second <see cref="PSF{TPSFKey, TRecordId}"/>'s stored values</param>
         /// <param name="matchPredicate">A predicate that takes as parameters 1) whether a candidate record matches

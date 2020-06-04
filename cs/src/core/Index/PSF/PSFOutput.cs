@@ -16,7 +16,7 @@ namespace FASTER.core
     ///     secondary FasterKV instances, or the user's TKVValue for the primary FasterKV instance.</typeparam>
     public interface IPSFOutput<TKey, TValue>
     {
-        PSFOperationStatus Visit(int psfOrdinal, ref TKey key, ref TValue value, bool isConcurrent);
+        PSFOperationStatus Visit(int psfOrdinal, ref TKey key, ref TValue value, bool tombstone, bool isConcurrent);
     }
 
     public interface IPSFPrimaryOutput<TProviderData>
@@ -46,9 +46,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public PSFOperationStatus Visit(int psfOrdinal, ref TKVKey key, ref TKVValue value, bool isConcurrent)
+        public PSFOperationStatus Visit(int psfOrdinal, ref TKVKey key, ref TKVValue value, bool tombstone, bool isConcurrent)
         {
-            this.ProviderData = new FasterKVProviderData<TKVKey, TKVValue>(allocator, ref key, ref value);
+            // tombstone is not used here; it is only needed for the chains in the secondary FKV.
+            this.ProviderData = new FasterKVProviderData<TKVKey, TKVValue>(this.allocator, ref key, ref value);
             return new PSFOperationStatus(OperationStatus.SUCCESS);
         }
     }
@@ -56,6 +57,9 @@ namespace FASTER.core
     public interface IPSFSecondaryOutput<TRecordId>
     {
         TRecordId RecordId { get; }
+
+        bool Tombstone { get; }
+
         long PreviousLogicalAddress { get; }
     }
 
@@ -72,6 +76,9 @@ namespace FASTER.core
         IChainPost<PSFValue<TRecordId>> chainPost;
 
         public TRecordId RecordId { get; private set; }
+
+        public bool Tombstone { get; private set; }
+
         public long PreviousLogicalAddress { get; private set; }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -84,9 +91,10 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public PSFOperationStatus Visit(int psfOrdinal, ref PSFCompositeKey<TPSFKey> key,
-                               ref PSFValue<TRecordId> value, bool isConcurrent)
+                               ref PSFValue<TRecordId> value, bool tombstone, bool isConcurrent)
         {
             this.RecordId = value.RecordId;
+            this.Tombstone = tombstone;
             this.PreviousLogicalAddress = *(this.chainPost.GetChainLinkPtrs(ref value) + psfOrdinal);
             return new PSFOperationStatus(OperationStatus.SUCCESS);
         }

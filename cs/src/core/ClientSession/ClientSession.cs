@@ -58,7 +58,7 @@ namespace FASTER.core
             var psfArgs = new PSFReadArgs<Key, Value>(new PSFInputPrimaryReadAddress<Key>(logicalAddress),
                                                       new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog));
 
-            // Call this directly here, because we are 
+            // Call this directly here, because we are TODO
             var status = fht.ContextPsfReadAddress(ref psfArgs, 1 /*TODO lsn*/, ctx);
             var primaryOutput = psfArgs.Output as IPSFPrimaryOutput<FasterKVProviderData<Key, Value>>;
             return status == Status.OK ? primaryOutput.ProviderData : null;    // TODO check other states
@@ -70,7 +70,7 @@ namespace FASTER.core
         public void Dispose()
         {
             CompletePending(true);
-            // TODO: this was removed; if intended, remove the method too: fht.DisposeClientSession(ID);
+            fht.DisposeClientSession(ID);
 
             // Session runs on a single thread
             if (!SupportAsync)

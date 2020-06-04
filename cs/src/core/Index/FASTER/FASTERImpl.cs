@@ -220,6 +220,23 @@ namespace FASTER.core
 
         #region Upsert Operation
 
+        private FasterKVProviderData<Key, Value> CreateProviderData(ref Key key, long physicalAddress)
+            => new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref hlog.GetValue(physicalAddress));
+
+        private void SetBeforeData(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker,
+                                   ref Key key, long logicalAddress, long physicalAddress)
+        {
+            changeTracker.BeforeRecordId = logicalAddress;
+            changeTracker.BeforeData = CreateProviderData(ref key, physicalAddress);
+        }
+
+        private void SetAfterData(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker,
+                                   ref Key key, long logicalAddress, long physicalAddress)
+        {
+            changeTracker.AfterRecordId = logicalAddress;
+            changeTracker.AfterData = CreateProviderData(ref key, physicalAddress);
+        }
+
         /// <summary>
         /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists 
         /// else inserts a new record with 'key' and 'value'.
@@ -230,7 +247,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
-        /// <param name="psfArgs">For PSFs, returns the inserted or updated LogicalAddress</param>
+        /// <param name="psfArgs">For PSFs, returns the inserted or updated LogicalAddress and provider data</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -256,7 +273,7 @@ namespace FASTER.core
                             ref Key key, ref Value value,
                             ref Context userContext,
                             ref PendingContext pendingContext, FasterExecutionContext sessionCtx,
-                            long lsn, ref PSFUpdateArgs psfArgs)
+                            long lsn, ref PSFUpdateArgs<Key, Value> psfArgs)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -265,8 +282,7 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var latchOperation = default(LatchOperation);
             var latestRecordVersion = -1;
-            psfArgs.logicalAddress = Constants.kInvalidAddress;
-            psfArgs.isInserted = false;
+            psfArgs.LogicalAddress = Constants.kInvalidAddress;
 
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -297,16 +313,29 @@ namespace FASTER.core
                                         out logicalAddress,
                                         out physicalAddress);
                 }
+
+                if (logicalAddress >= hlog.ReadOnlyAddress && this.PSFManager.HasPSFs)
+                {
+                    // Save the PreUpdate values.
+                    psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                    psfArgs.ChangeTracker.UpdateOp = UpdateOperation.IPU;
+                }
             }
             #endregion
 
-            psfArgs.logicalAddress = logicalAddress;
+            psfArgs.LogicalAddress = logicalAddress;
 
             // Optimization for most common case
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 if (functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
                 {
+                    if (this.PSFManager.HasPSFs)
+                    {
+                        SetAfterData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                        psfArgs.ChangeTracker.UpdateOp = UpdateOperation.IPU;
+                    }
                     return OperationStatus.SUCCESS;
                 }
             }
@@ -392,6 +421,11 @@ namespace FASTER.core
             {
                 if (functions.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
                 {
+                    if (this.PSFManager.HasPSFs)
+                    {
+                        SetAfterData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                        psfArgs.ChangeTracker.UpdateOp = UpdateOperation.IPU;
+                    }
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease; // Release shared latch (if acquired)
                 }
@@ -414,8 +448,34 @@ namespace FASTER.core
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref key, ref value,
                                        ref hlog.GetValue(newPhysicalAddress));
-                psfArgs.logicalAddress = newLogicalAddress;
-                psfArgs.isInserted = true;
+
+                if (this.PSFManager.HasPSFs)
+                {
+                    psfArgs.LogicalAddress = newLogicalAddress;
+                    var isInsert = logicalAddress < hlog.BeginAddress ||
+                            (logicalAddress >= hlog.HeadAddress && hlog.GetInfo(physicalAddress).Tombstone);
+                    if (isInsert)
+                    {
+                        // Old logicalAddress is invalid (deos not exist) or was deleted, so this is an insert.
+                        // This goes through the fast Insert path which does not create a changeTracker.
+                    }
+                    else if (logicalAddress >= hlog.HeadAddress)
+                    {
+                        // The old record was valid but not in mutable range (that's handled above), so this is an RCU
+                        psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                        SetAfterData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
+                        psfArgs.ChangeTracker.UpdateOp = UpdateOperation.RCU;
+                    }
+                    else
+                    {
+                        // ah, old record slipped onto disk
+                        hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                        psfArgs.ChangeTracker = null;
+                        status = OperationStatus.RETRY_NOW;
+                        goto LatchRelease;
+                    }
+                }
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -453,6 +513,9 @@ namespace FASTER.core
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
+
+                psfArgs.ChangeTracker = null;
+                pendingContext.psfUpdateArgs = psfArgs;
             }
             #endregion
 
@@ -498,6 +561,7 @@ namespace FASTER.core
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
+        /// <param name="psfArgs">For PSFs, returns the updated LogicalAddress and provider data</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -526,7 +590,8 @@ namespace FASTER.core
         internal OperationStatus InternalRMW(
                                    ref Key key, ref Input input,
                                    ref Context userContext,
-                                   ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
+                                   ref PendingContext pendingContext, FasterExecutionContext sessionCtx,
+                                   long lsn, ref PSFUpdateArgs<Key, Value> psfArgs)
         {
             var recordSize = default(int);
             var bucket = default(HashBucket*);
@@ -567,6 +632,14 @@ namespace FASTER.core
                                             out logicalAddress,
                                             out physicalAddress);
                 }
+
+                if (logicalAddress >= hlog.ReadOnlyAddress && this.PSFManager.HasPSFs)
+                {
+                    // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
+                    psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                    psfArgs.ChangeTracker.UpdateOp = UpdateOperation.IPU;
+                }
             }
             #endregion
 
@@ -575,6 +648,8 @@ namespace FASTER.core
             {
                 if (functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
                 {
+                    if (!(psfArgs.ChangeTracker is null))
+                        SetAfterData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
                     return OperationStatus.SUCCESS;
                 }
             }
@@ -667,6 +742,8 @@ namespace FASTER.core
 
                 if (functions.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
                 {
+                    if (!(psfArgs.ChangeTracker is null))
+                        SetAfterData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease; // Release shared latch (if acquired)
                 }
@@ -756,8 +833,30 @@ namespace FASTER.core
                 {
                     // ah, old record slipped onto disk
                     hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    psfArgs.ChangeTracker = null;
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;
+                }
+
+                if (this.PSFManager.HasPSFs)
+                {
+                    psfArgs.LogicalAddress = newLogicalAddress;
+                    var isInsert = logicalAddress < hlog.BeginAddress || hlog.GetInfo(physicalAddress).Tombstone;
+                    if (isInsert)
+                    {
+                        // Old logicalAddress is invalid or deleted, so this is an Insert only.
+                        psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
+                        psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Insert;
+                    }
+                    else 
+                    {
+                        // The old record was valid but not in mutable range (that's handled above), so this is an RCU
+                        psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                        SetAfterData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
+                        psfArgs.ChangeTracker.UpdateOp = UpdateOperation.RCU;
+                    }
                 }
 
                 var updatedEntry = default(HashBucketEntry);
@@ -797,11 +896,14 @@ namespace FASTER.core
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
-            }
-            #endregion
 
-            #region Latch release
-            LatchRelease:
+                psfArgs.ChangeTracker = null;
+                pendingContext.psfUpdateArgs = psfArgs;
+            }
+        #endregion
+
+        #region Latch release
+        LatchRelease:
             {
                 switch (latchOperation)
                 {
@@ -819,7 +921,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, sessionCtx, lsn);
+                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, sessionCtx, lsn, ref psfArgs);
             }
             else
             {
@@ -840,6 +942,7 @@ namespace FASTER.core
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
+        /// <param name="psfArgs">For PSFs, returns the updated LogicalAddress and provider data</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -864,7 +967,8 @@ namespace FASTER.core
         internal OperationStatus InternalDelete(
                             ref Key key,
                             ref Context userContext,
-                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
+                            ref PendingContext pendingContext, FasterExecutionContext sessionCtx,
+                            long lsn, ref PSFUpdateArgs<Key, Value> psfArgs)
         {
             var status = default(OperationStatus);
             var bucket = default(HashBucket*);
@@ -1013,6 +1117,14 @@ namespace FASTER.core
                             functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
                         }
 
+                        if (this.PSFManager.HasPSFs)
+                        {
+                            // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
+                            psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                            SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                            psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
+                        }
+
                         status = OperationStatus.SUCCESS;
                         goto LatchRelease; // Release shared latch (if acquired)
                     }
@@ -1030,6 +1142,14 @@ namespace FASTER.core
                     // Ignore return value, the record is already marked
                     Value v = default;
                     functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                }
+
+                if (this.PSFManager.HasPSFs)
+                {
+                    // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
+                    psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                    psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
                 }
 
                 status = OperationStatus.SUCCESS;
@@ -1067,6 +1187,14 @@ namespace FASTER.core
 
                 if (foundEntry.word == entry.word)
                 {
+                    if (this.PSFManager.HasPSFs)
+                    {
+                        // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
+                        psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
+                        psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
+                    }
+
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease;
                 }
@@ -1089,6 +1217,9 @@ namespace FASTER.core
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
+
+                psfArgs.ChangeTracker = null;
+                pendingContext.psfUpdateArgs = psfArgs;
             }
             #endregion
 
@@ -1111,7 +1242,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.RETRY_NOW)
             {
-                return InternalDelete(ref key, ref userContext, ref pendingContext, sessionCtx, lsn);
+                return InternalDelete(ref key, ref userContext, ref pendingContext, sessionCtx, lsn, ref psfArgs);
             }
             else
             {
@@ -1227,6 +1358,7 @@ namespace FASTER.core
                     pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
                                             ref pendingContext.key.Get(),
                                             ref hlog.GetContextRecordValue(ref request),
+                                            tombstone: false, // checked above
                                             isConcurrent: false);
                 }
                 else if (pendingContext.type == OperationType.PSF_READ_ADDRESS)
@@ -1234,6 +1366,7 @@ namespace FASTER.core
                     var key = default(Key); // Reading by address does not have a key
                     pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
                                             ref key, ref hlog.GetContextRecordValue(ref request),
+                                            tombstone: false, // checked above
                                             isConcurrent: false);
                 }
 
@@ -1483,7 +1616,8 @@ namespace FASTER.core
         #endregion
 
         Retry:
-            return InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, sessionCtx, pendingContext.serialNum);
+            return InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input, ref pendingContext.userContext, 
+                               ref pendingContext, sessionCtx, pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
         }
 
         #endregion
@@ -1561,13 +1695,15 @@ namespace FASTER.core
                     case OperationType.DELETE:
                         internalStatus = InternalDelete(ref pendingContext.key.Get(),
                                                         ref pendingContext.userContext,
-                                                        ref pendingContext, currentCtx, pendingContext.serialNum);
+                                                        ref pendingContext, currentCtx, pendingContext.serialNum,
+                                                        ref pendingContext.psfUpdateArgs);
                         break;
                     case OperationType.RMW:
                         internalStatus = InternalRMW(ref pendingContext.key.Get(),
                                                      ref pendingContext.input,
                                                      ref pendingContext.userContext,
-                                                     ref pendingContext, currentCtx, pendingContext.serialNum);
+                                                     ref pendingContext, currentCtx, pendingContext.serialNum,
+                                                     ref pendingContext.psfUpdateArgs);
                         break;
                 }
 

@@ -8,6 +8,7 @@ namespace FasterPSFSample
     public partial class FasterPSFSample
     {
         private static bool useObjectValue;
+        private static bool verbose;
 
         const string ObjValuesArg = "--objValues";
 
@@ -39,8 +40,11 @@ namespace FasterPSFSample
                     continue;
                 }
                 if (string.Compare(arg, "--help", ignoreCase: true) == 0 || arg == "/?" || arg == "-?")
-                {
                     return Usage();
+                if (string.Compare(arg, "-v", ignoreCase: true) == 0)
+                {
+                    verbose = true;
+                    continue;
                 }
                 return Usage($"Unknown argument: {arg}");
             }

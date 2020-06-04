@@ -30,8 +30,8 @@ namespace FasterPSFSample
                                 useObjectValues
                                 ? new SerializerSettings<Key, TValue> { valueSerializer = () => new TSerializer() } : null);
 
-            this.SizePsf = fht.RegisterPSF("sizePsf", (k, v) => new SizeKey((Constants.Size)v.Size));
-            this.ColorPsf = fht.RegisterPSF("colorPsf", (k, v) => new ColorKey(Constants.ColorDict[v.Color]));
+            this.SizePsf = fht.RegisterPSF("sizePsf", (k, v) => new SizeKey((Constants.Size)v.SizeInt));
+            this.ColorPsf = fht.RegisterPSF("colorPsf", (k, v) => new ColorKey(Constants.ColorDict[v.ColorArgb]));
         }
 
         internal void Close()

@@ -13,8 +13,16 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="TKey">The type of the Key, either a <see cref="PSFCompositeKey{TPSFKey}"/> for the 
     ///     secondary FasterKV instances, or the user's TKVKey for the primary FasterKV instance.</typeparam>
+    /// <remarks>The interface separation is needed for the PendingContext</remarks>
     public interface IPSFInput<TKey>
     {
+        unsafe void SetFlags(PSFResultFlags* resultFlags);
+
+        /// <summary>
+        /// The ID of the <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/> for this operation.
+        /// </summary>
+        long GroupId { get; }
+
         /// <summary>
         /// The ordinal of the <see cref="PSF{TPSFKey, TRecordId}"/> being queried; writable only for Insert.
         /// </summary>
@@ -25,6 +33,11 @@ namespace FASTER.core
         /// was null; if so the value did not match and should not be stored in the key's chain.
         /// </summary>
         bool IsNullAt { get; }
+
+        /// <summary>
+        /// For Delete() or Insert() done as part of RCU, this indicates if it the tombstone should be set for this record.
+        /// </summary>
+        bool IsDelete { get; set; }
 
         /// <summary>
         /// For tracing back the chain, this is the next logicalAddress to get.
@@ -60,22 +73,37 @@ namespace FASTER.core
             this.ReadLogicalAddress = readLA;
         }
 
+        // TODO: Trim this class and IPSFInput down to just ReadLogicalAddress.. casting to SecondaryInput
+        // in PsfInternalInsert should be sufficient
+
+        /// <inheritdoc/>
+        public long GroupId => throw new InvalidOperationException("Not valid for Primary FKV");
+
         /// <inheritdoc/>
         public int PsfOrdinal
         { 
             get => Constants.kInvalidPsfOrdinal;
-            set => throw new InvalidOperationException("Not valid for reading from Primary Address");
+            set => throw new InvalidOperationException("Not valid for Primary FKV");
         }
 
-        public bool IsNullAt => throw new InvalidOperationException("Not valid for reading from Primary Address");
+        public void SetFlags(PSFResultFlags* resultFlags)
+            => throw new InvalidOperationException("Not valid for Primary FKV");
+
+        public bool IsNullAt => throw new InvalidOperationException("Not valid for Primary FKV");
+
+        public bool IsDelete
+        {
+            get => throw new InvalidOperationException("Not valid for Primary FKV");
+            set => throw new InvalidOperationException("Not valid for Primary FKV");
+        }
 
         public long ReadLogicalAddress { get; set; }
 
         public long GetHashCode64At(ref TKey key)
-            => throw new InvalidOperationException("Not valid for reading from Primary Address");
+            => throw new InvalidOperationException("Not valid for Primary FKV");
 
         public bool EqualsAt(ref TKey queryKey, ref TKey storedKey)
-            => throw new InvalidOperationException("Not valid for reading from Primary Address");
+            => throw new InvalidOperationException("Not valid for Primary FKV");
     }
 
     /// <summary>
@@ -86,20 +114,27 @@ namespace FASTER.core
         where TPSFKey : struct
     {
         internal readonly ICompositeKeyComparer<PSFCompositeKey<TPSFKey>> comparer;
-        internal readonly bool* nullIndicators;
+        internal PSFResultFlags* resultFlags;
 
         internal PSFInputSecondary(int psfOrd, ICompositeKeyComparer<PSFCompositeKey<TPSFKey>> keyCmp,
-                          bool* nullIndicators = null)
+                                   long groupId, PSFResultFlags* flags = null)
         {
             this.PsfOrdinal = psfOrd;
             this.comparer = keyCmp;
-            this.nullIndicators = nullIndicators;
+            this.GroupId = groupId;
+            this.resultFlags = flags;
             this.ReadLogicalAddress = Constants.kInvalidAddress;
         }
 
+        public long GroupId { get; }
+
         public int PsfOrdinal { get; set; }
 
-        public bool IsNullAt => this.nullIndicators[this.PsfOrdinal];
+        public void SetFlags(PSFResultFlags* resultFlags) => this.resultFlags = resultFlags;
+
+        public bool IsNullAt => this.resultFlags[this.PsfOrdinal].HasFlag(PSFResultFlags.IsNull);
+
+        public bool IsDelete { get; set; }
 
         public long ReadLogicalAddress { get; set; }
 
@@ -109,6 +144,6 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool EqualsAt(ref PSFCompositeKey<TPSFKey> queryKey, ref PSFCompositeKey<TPSFKey> storedKey)
-            => this.comparer.Equals(this.nullIndicators is null, this.PsfOrdinal, ref queryKey, ref storedKey);
+            => this.comparer.Equals(this.resultFlags is null, this.PsfOrdinal, ref queryKey, ref storedKey);
     }
 }

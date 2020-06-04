@@ -7,14 +7,14 @@ namespace FasterPSFSample
 {
     public struct SizeKey : IFasterEqualityComparer<SizeKey>
     {
-        public int Size;
+        public int SizeInt;
 
-        public SizeKey(Constants.Size size) => this.Size = (int)size;
+        public SizeKey(Constants.Size size) => this.SizeInt = (int)size;
 
-        public override string ToString() => ((Constants.Size)this.Size).ToString();
+        public override string ToString() => ((Constants.Size)this.SizeInt).ToString();
 
-        public long GetHashCode64(ref SizeKey key) => Utility.GetHashCode(key.Size);
+        public long GetHashCode64(ref SizeKey key) => Utility.GetHashCode(key.SizeInt);
 
-        public bool Equals(ref SizeKey k1, ref SizeKey k2) => k1.Size == k2.Size;
+        public bool Equals(ref SizeKey k1, ref SizeKey k2) => k1.SizeInt == k2.SizeInt;
     }
 }

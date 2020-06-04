@@ -2,33 +2,19 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
-using System.Drawing;
 
 namespace FasterPSFSample
 {
-    public struct Key : IFasterEqualityComparer<Key>, IOrders
+    public struct Key : IFasterEqualityComparer<Key>
     {
-        public int Size { get; set; }
+        // Note: int instead of long because we won't use enough values to overflow and having it a 
+        // different length than TRecordId (which is long) makes sure the PSFValue offsetting is in sync.
+        public int Id { get; set; }
 
-        public int Color { get; set; }
+        public Key(int id) => this.Id = id;
 
-        public int NumSold { get; set; }
+        public long GetHashCode64(ref Key key) => Utility.GetHashCode(key.Id);
 
-        public Key(Constants.Size size, Color color, int numSold)
-        {
-            this.Size = (int)size;
-            this.Color = color.ToArgb();
-            this.NumSold = numSold;
-        }
-
-        public (int, int, int) MemberTuple => (this.Size, this.Color, this.NumSold);
-
-        public override string ToString() => $"{(Constants.Size)this.Size}, {Constants.ColorDict[this.Color].Name}, {NumSold}";
-
-        private long AsLong => (this.Size + this.Color) << 30 | this.NumSold;
-
-        public long GetHashCode64(ref Key key) => Utility.GetHashCode(key.AsLong);
-
-        public bool Equals(ref Key k1, ref Key k2) => k1.MemberTuple == k2.MemberTuple;
+        public bool Equals(ref Key k1, ref Key k2) => k1.Id == k2.Id;
     }
 }

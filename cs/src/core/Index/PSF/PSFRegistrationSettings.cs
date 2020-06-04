@@ -45,5 +45,16 @@ namespace FASTER.core
         /// Indicates whether PSFGroup Sessions are thread-affinitized.
         /// </summary>
         public bool ThreadAffinitized;
+
+        /// <summary>
+        /// The size of the first IPU Cache; inserts are done into this cache only. If zero, no caching is done.
+        /// </summary>
+        public long IPU1CacheSize = 0;
+
+        /// <summary>
+        /// The size of the second IPU Cache; inserts are not done into this cache, so more distant records
+        /// are likelier to remain. If this is nonzero, <see cref="IPU1CacheSize"/> must also be nonzero.
+        /// </summary>
+        public long IPU2CacheSize = 0;
     }
 }

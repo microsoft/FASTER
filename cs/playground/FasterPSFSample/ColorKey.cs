@@ -8,14 +8,14 @@ namespace FasterPSFSample
 {
     public struct ColorKey : IFasterEqualityComparer<ColorKey>
     {
-        public int Color;
+        public int ColorArgb;
 
-        public ColorKey(Color color) => this.Color = color.ToArgb();
+        public ColorKey(Color color) => this.ColorArgb = color.ToArgb();
 
-        public override string ToString() => Constants.ColorDict[this.Color].Name;
+        public override string ToString() => Constants.ColorDict[this.ColorArgb].Name;
 
-        public long GetHashCode64(ref ColorKey key) => Utility.GetHashCode(key.Color);
+        public long GetHashCode64(ref ColorKey key) => Utility.GetHashCode(key.ColorArgb);
 
-        public bool Equals(ref ColorKey k1, ref ColorKey k2) => k1.Color == k2.Color;
+        public bool Equals(ref ColorKey k1, ref ColorKey k2) => k1.ColorArgb == k2.ColorArgb;
     }
 }

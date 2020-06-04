@@ -16,16 +16,16 @@ namespace FASTER.core
     {
         private readonly IQueryPSF<TPSFKey, TRecordId> psfGroup;
 
-        internal int GroupOrdinal { get; }      // in the psfGroup list
+        internal long GroupId { get; }           // unique in the PSFManager.psfGroup list
 
         internal int PsfOrdinal { get; }        // in the psfGroup
 
         /// <inheritdoc/>
         public string Name { get; }
 
-        internal PSF(int groupOrdinal, int psfOrdinal, string name, IQueryPSF<TPSFKey, TRecordId> iqp)
+        internal PSF(long groupId, int psfOrdinal, string name, IQueryPSF<TPSFKey, TRecordId> iqp)
         {
-            this.GroupOrdinal = groupOrdinal;
+            this.GroupId = groupId;
             this.PsfOrdinal = psfOrdinal;
             this.Name = name;
             this.psfGroup = iqp;

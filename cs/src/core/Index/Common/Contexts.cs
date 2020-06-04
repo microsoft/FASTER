@@ -89,7 +89,7 @@ namespace FASTER.core
             internal HashBucketEntry entry;
             internal LatchOperation heldLatch;
             internal PSFReadArgs<Key, Value> psfReadArgs;
-            internal PSFUpdateArgs psfUpdateArgs;
+            internal PSFUpdateArgs<Key, Value> psfUpdateArgs;
 
             public void Dispose()
             {

@@ -29,6 +29,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal byte* GetRecordIdPtr()
+            => (byte*)Unsafe.AsPointer(ref this);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long* GetChainLinkPtrs(int recordIdSize)
             => (long*)((byte*)Unsafe.AsPointer(ref this) + recordIdSize);
 
@@ -62,6 +66,12 @@ namespace FASTER.core
 
             public long* GetChainLinkPtrs(ref PSFValue<TRecordId> value)
                 => value.GetChainLinkPtrs(this.RecordIdSize);
+
+            public unsafe void SetRecordId<TRecId>(ref PSFValue<TRecordId> value, TRecId recordId)
+            {
+                var recIdPtr = value.GetRecordIdPtr();
+                Buffer.MemoryCopy(Unsafe.AsPointer(ref recordId), recIdPtr, this.RecordIdSize, this.RecordIdSize);
+            }
         }
     }
 }

@@ -15,6 +15,7 @@ namespace FasterPSFSample
             Medium,
             Large,
             XLarge,
+            XXLarge,
             NumSizes
         }
 
@@ -23,9 +24,10 @@ namespace FasterPSFSample
             [Color.Black.ToArgb()] = Color.Black,
             [Color.Red.ToArgb()] = Color.Red,
             [Color.Green.ToArgb()] = Color.Green,
-            [Color.Blue.ToArgb()] = Color.Blue
+            [Color.Blue.ToArgb()] = Color.Blue,
+            [Color.Purple.ToArgb()] = Color.Purple
         };
 
-        static internal Color[] Colors = { Color.Black, Color.Red, Color.Green, Color.Blue };
+        static internal Color[] Colors = { Color.Black, Color.Red, Color.Green, Color.Blue, Color.Purple };
     }
 }
