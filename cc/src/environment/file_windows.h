@@ -287,7 +287,7 @@ class QueueIoHandler {
   QueueIoHandler(size_t max_threads)
     : io_completion_port_{ 0 } {
     io_completion_port_ = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0,
-                          (DWORD)Thread::kMaxNumThreads);
+                          (DWORD)core::Thread::kMaxNumThreads);
   }
 
   /// Move constructor
