@@ -58,7 +58,6 @@ namespace FASTER.core
                                   bool recoverDevice = false,
                                   IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null)
             : base(filename, GetSectorSize(filename), capacity)
-
         {
             Native32.EnableProcessPrivileges();
             this.preallocateFile = preallocateFile;
