@@ -14,9 +14,7 @@
 namespace FASTER {
 namespace environment {
 
-using FASTER::core::Status;
-using FASTER::core::AsyncIOCallback;
-using FASTER::core::IAsyncContext;
+using namespace FASTER::core;
 
 #ifdef _DEBUG
 #define DCHECK_ALIGNMENT(o, l, b) \
