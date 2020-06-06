@@ -41,7 +41,7 @@ namespace FASTER.core
             => Predicate(ref record.GetKey(), ref record.GetValue());
 
         /// <summary>
-        /// The Name of the PSF, assigned by the caller. Must be unique among all PSFs (TODO: enforce).
+        /// The Name of the PSF, assigned by the caller. Must be unique among all PSFs.
         /// </summary>
         public string Name { get; }
 

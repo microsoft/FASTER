@@ -9,7 +9,7 @@ namespace FASTER.core
     public interface IPSF
     {
         /// <summary>
-        /// The name of the <see cref="PSF{TPSFKey, TRecordId}"/>; must be unique among all // TODO ensure this
+        /// The name of the <see cref="PSF{TPSFKey, TRecordId}"/>; must be unique among all
         ///     <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/>s.
         /// </summary>
         string Name { get; }

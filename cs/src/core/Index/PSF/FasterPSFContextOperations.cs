@@ -91,7 +91,7 @@ namespace FASTER.core
             unsafe { psfInput.SetFlags(groupKeys.ResultFlags); }
             psfInput.IsDelete = false;
             var internalStatus = this.PsfInternalInsert(ref groupKeys.GetCompositeKeyRef<Key>(), ref value, ref input,
-                                                        ref pcontext, sessionCtx, serialNo /* todo */);
+                                                        ref pcontext, sessionCtx, serialNo);
             return internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
                 : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);

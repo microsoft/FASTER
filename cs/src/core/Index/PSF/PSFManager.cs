@@ -2,15 +2,19 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 
 namespace FASTER.core
 {
     internal class PSFManager<TProviderData, TRecordId> where TRecordId : struct, IComparable<TRecordId>
     {
-        readonly Dictionary<long, IExecutePSF<TProviderData, TRecordId>> psfGroups 
-            = new Dictionary<long, IExecutePSF<TProviderData, TRecordId>>();
+        private readonly ConcurrentDictionary<long, IExecutePSF<TProviderData, TRecordId>> psfGroups 
+            = new ConcurrentDictionary<long, IExecutePSF<TProviderData, TRecordId>>();
+
+        private readonly ConcurrentDictionary<string, Guid> psfNames = new ConcurrentDictionary<string, Guid>();
 
         internal bool HasPSFs => this.psfGroups.Count > 0;
 
@@ -79,27 +83,79 @@ namespace FASTER.core
         private void AddGroup<TPSFKey>(PSFGroup<TProviderData, TPSFKey, TRecordId> group) where TPSFKey : struct
         {
             var gId = Interlocked.Increment(ref NextGroupId);
-            this.psfGroups.Add(gId - 1, group);
+            this.psfGroups.TryAdd(gId - 1, group);
+        }
+
+        private void VerifyIsBlittable<TPSFKey>()
+        {
+            if (!Utility.IsBlittable<TPSFKey>())
+                throw new PSFArgumentException("The PSF Key type must be blittable.");
+        }
+
+        private void VerifyIsOurPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf)
+        {
+            if (!this.psfNames.TryGetValue(psf.Name, out Guid id) || id != psf.Id)
+                throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
         }
 
         internal PSF<TPSFKey, TRecordId> RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey> def,
                                                               PSFRegistrationSettings<TPSFKey> registrationSettings)
             where TPSFKey : struct
         {
-            // TODO: Runtime check that TPSFKey is blittable
-            var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, new[] { def }, registrationSettings);
-            AddGroup(group);
-            return group[def.Name];
+            this.VerifyIsBlittable<TPSFKey>();
+            if (def is null)
+                throw new PSFArgumentException("PSF definition cannot be null");
+
+            // This is a very rare operation and unlikely to have any contention, and locking the dictionary
+            // makes it much easier to recover from duplicates if needed.
+            lock (this.psfNames)
+            {
+                if (psfNames.ContainsKey(def.Name))
+                    throw new PSFArgumentException($"A PSF named {def.Name} is already registered in another group");
+                var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, new[] { def }, registrationSettings);
+                AddGroup(group);
+                var psf = group[def.Name];
+                this.psfNames.TryAdd(psf.Name, psf.Id);
+                return psf;
+            }
         }
 
         internal PSF<TPSFKey, TRecordId>[] RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey>[] defs,
                                                               PSFRegistrationSettings<TPSFKey> registrationSettings)
             where TPSFKey : struct
         {
-            // TODO: Runtime check that TPSFKey is blittable
-            var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, defs, registrationSettings);
-            AddGroup(group);
-            return group.PSFs;
+            this.VerifyIsBlittable<TPSFKey>();
+            if (defs is null || defs.Length == 0 || defs.Any(def => def is null) || defs.Length == 0)
+                throw new PSFArgumentException("PSF definitions cannot be null");
+
+            // For PSFs defined on a FasterKV instance we create intelligent defaults in regSettings.
+            if (registrationSettings is null)
+                throw new PSFArgumentException("PSFRegistrationSettings is required");
+            if (registrationSettings.LogSettings is null)
+                throw new PSFArgumentException("PSFRegistrationSettings.LogSettings is required");
+
+            // This is a very rare operation and unlikely to have any contention, and locking the dictionary
+            // makes it much easier to recover from duplicates if needed.
+            lock (this.psfNames)
+            {
+                for (var ii = 0; ii < defs.Length; ++ii)
+                {
+                    var def = defs[ii];
+                    if (psfNames.ContainsKey(def.Name))
+                        throw new PSFArgumentException($"A PSF named {def.Name} is already registered in another group");
+                    for (var jj = ii + 1; jj < defs.Length; ++jj)
+                    {
+                        if (defs[jj].Name == def.Name)
+                            throw new PSFArgumentException($"The PSF name {def.Name} cannot be specfied twice");
+                    }
+                }
+
+                var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, defs, registrationSettings);
+                AddGroup(group);
+                foreach (var psf in group.PSFs)
+                    this.psfNames.TryAdd(psf.Name, psf.Id);
+                return group.PSFs;
+            }
         }
 
         internal IEnumerable<TProviderData> QueryPSF<TPSFKey>(IPSFCreateProviderData<TRecordId, TProviderData> providerDataCreator,
@@ -107,7 +163,7 @@ namespace FASTER.core
                                                               TPSFKey psfKey, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
-            // TODO make sure 'psf' is from one of our groups
+            this.VerifyIsOurPSF(psf);
             var group = this.psfGroups[psf.GroupId];
             foreach (var recordId in psf.Query(psfKey))
             {
@@ -132,7 +188,8 @@ namespace FASTER.core
                                                               TPSFKey[] psfKeys, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
-            // TODO make sure 'psf' is from one of our groups
+            // TODO: Get rid of providerDataCreator
+            this.VerifyIsOurPSF(psf);
 
             // TODO implement range queries. This will start retrieval of a stream of returned values for the
             // chains for all specified keys for the PSF, returning them via an IEnumerable<TPSFKey> over a PQ

@@ -3,12 +3,14 @@
 
 using FASTER.core;
 using System;
-using System.Drawing;
 
 namespace FasterPSFSample
 {
     public class ObjectOrders : IOrders
     {
+        public int Id { get; set; }
+
+        // Colors, strings, and enums are not blittable so we use int
         public int SizeInt { get => values[0]; set => values[0] = value;  }
 
         public int ColorArgb { get => values[1]; set => values[1] = value; }
@@ -18,15 +20,6 @@ namespace FasterPSFSample
         public int[] values;
 
         public ObjectOrders() => throw new InvalidOperationException("Must use ctor overload");
-
-        public ObjectOrders(Constants.Size size, Color color, int numSold)
-        {
-            this.SizeInt = (int)size;
-            this.ColorArgb = color.ToArgb();
-            this.NumSold = numSold;
-        }
-
-        public (int, int, int) MemberTuple => (this.SizeInt, this.ColorArgb, this.NumSold);
 
         public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {NumSold}";
 
@@ -57,7 +50,7 @@ namespace FasterPSFSample
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output<ObjectOrders> output, Context<ObjectOrders> context, Status status)
             {
-                if (output.Value.MemberTuple != FasterPSFSample.keyDict[key].MemberTuple)
+                if (((IOrders)output.Value).MemberTuple != key.MemberTuple)
                     throw new Exception("Read mismatch error!");
             }
             #endregion Read

@@ -13,7 +13,8 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="TKey">The type of the Key, either a <see cref="PSFCompositeKey{TPSFKey}"/> for the 
     ///     secondary FasterKV instances, or the user's TKVKey for the primary FasterKV instance.</typeparam>
-    /// <remarks>The interface separation is needed for the PendingContext</remarks>
+    /// <remarks>The interface separation is needed for the PendingContext, and for the "TPSFKey : struct"
+    ///     constraint in PSFInputSecondary</remarks>
     public interface IPSFInput<TKey>
     {
         unsafe void SetFlags(PSFResultFlags* resultFlags);
@@ -73,37 +74,34 @@ namespace FASTER.core
             this.ReadLogicalAddress = readLA;
         }
 
-        // TODO: Trim this class and IPSFInput down to just ReadLogicalAddress.. casting to SecondaryInput
-        // in PsfInternalInsert should be sufficient
-
         /// <inheritdoc/>
-        public long GroupId => throw new InvalidOperationException("Not valid for Primary FKV");
+        public long GroupId => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
 
         /// <inheritdoc/>
         public int PsfOrdinal
         { 
             get => Constants.kInvalidPsfOrdinal;
-            set => throw new InvalidOperationException("Not valid for Primary FKV");
+            set => throw new PSFInvalidOperationException("Not valid for Primary FasterFKV");
         }
 
         public void SetFlags(PSFResultFlags* resultFlags)
-            => throw new InvalidOperationException("Not valid for Primary FKV");
+            => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
 
-        public bool IsNullAt => throw new InvalidOperationException("Not valid for Primary FKV");
+        public bool IsNullAt => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
 
         public bool IsDelete
         {
-            get => throw new InvalidOperationException("Not valid for Primary FKV");
-            set => throw new InvalidOperationException("Not valid for Primary FKV");
+            get => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
+            set => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
         }
 
         public long ReadLogicalAddress { get; set; }
 
         public long GetHashCode64At(ref TKey key)
-            => throw new InvalidOperationException("Not valid for Primary FKV");
+            => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
 
         public bool EqualsAt(ref TKey queryKey, ref TKey storedKey)
-            => throw new InvalidOperationException("Not valid for Primary FKV");
+            => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
     }
 
     /// <summary>

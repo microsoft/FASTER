@@ -169,8 +169,6 @@ namespace FASTER.core
             var psfInput = psfArgs.Input;
             var psfOutput = psfArgs.Output;
 
-            // TODO: For the primary FasterKV, we do not have any queryKey here to get hash and tag and do latching;
-            // verify this wrt RelaxedCRT
             // TODO: Verify we should always find the LogicalAddress
             OperationStatus status;
 
@@ -224,7 +222,7 @@ namespace FASTER.core
             else if (logicalAddress >= hlog.BeginAddress)
             {
                 status = OperationStatus.RECORD_ON_DISK;
-#if false // TODO: See discussion for this in Teams (and email)
+#if false // TODO: See above and discussion in Teams/email; need to get the key here so we can lock the hash etc.
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
                     Debug.Assert(heldOperation != LatchOperation.Exclusive);
@@ -251,7 +249,7 @@ namespace FASTER.core
 
 #endregion
 
-#region Create pending context
+            #region Create pending context
             CreatePendingContext:
             {
                 pendingContext.type = OperationType.PSF_READ_ADDRESS;
@@ -289,7 +287,7 @@ namespace FASTER.core
 
             // Update the PSFValue links for chains with IsNullAt false (indicating a match with the
             // corresponding PSF) to point to the previous records for all keys in the composite key.
-            // TODO: We're not checking for a previous occurrence of the PSFValue's recordId because
+            // Note: We're not checking for a previous occurrence of the PSFValue's recordId because
             // we are doing insert only here; the update part of upsert is done in PsfInternalUpdate.
             var chainHeight = this.chainPost.ChainHeight;
             long* hashes = stackalloc long[chainHeight];
@@ -319,7 +317,7 @@ namespace FASTER.core
                 {
                     logicalAddress = entry.Address;
 
-                    // TODO: If this happens for any of the TPSFKeys in the composite key, we'll create the pending
+                    // TODO: Test this: If this fails for any TPSFKey in the composite key, we'll create the pending
                     // context and come back here on the retry and overwrite any previously-obtained logicalAddress
                     // at the chainLinkPtr.
                     if (UseReadCache && ReadFromCache(ref compositeKey, ref logicalAddress, ref physicalAddress,
@@ -350,11 +348,16 @@ namespace FASTER.core
                         }
                     }
 
-                    // The chain might extend past the tombstoned record so we must include it in the chain.
-                    // TODO: check to see if the tombstoned record's chain link for this psf is kInvalidAddress
-                    //       and disinclude it if so.
-                    //if (!hlog.GetInfo(physicalAddress).Tombstone)
-                        *chainLinkPtr = logicalAddress;
+                    if (hlog.GetInfo(physicalAddress).Tombstone)
+                    {
+                        // The chain might extend past a tombstoned record so we must include it in the chain
+                        // unless its link at chainLinkIdx is kInvalidAddress.
+                        long* prevLinks = this.chainPost.GetChainLinkPtrs(ref hlog.GetValue(physicalAddress));
+                        long* prevLink = prevLinks + chainLinkIdx;
+                        if (*prevLink == Constants.kInvalidAddress)
+                            continue;
+                    }
+                    *chainLinkPtr = logicalAddress;
                 }
 #endregion
             }

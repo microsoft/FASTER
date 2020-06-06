@@ -19,7 +19,7 @@ namespace FASTER.core
     {
         IChainPost<PSFValue<TRecordId>> chainPost;
 
-        // TODO: remove stuff that has been moved to PSFOutput, etc.
+        // TODO: remove stuff that has been moved to PSFOutput.Visit, etc.
 
         internal PSFFunctions(IChainPost<PSFValue<TRecordId>> chainPost)
             => this.chainPost = chainPost;
@@ -40,15 +40,10 @@ namespace FASTER.core
 
         #region Reads
         public void ConcurrentReader(ref PSFCompositeKey<TPSFKey> key, ref PSFInputSecondary<TPSFKey> input, ref PSFValue<TRecordId> value, ref PSFOutputSecondary<TPSFKey, TRecordId> dst)
-            => this.SingleReader(ref key, ref input, ref value, ref dst);
+            => throw new PSFInternalErrorException("PSFOutput.Visit instead of ConcurrentReader should be called on PSF-implementing FasterKVs");
 
         public unsafe void SingleReader(ref PSFCompositeKey<TPSFKey> _, ref PSFInputSecondary<TPSFKey> input, ref PSFValue<TRecordId> value, ref PSFOutputSecondary<TPSFKey, TRecordId> dst)
-        {
-            /* TODO is SingleReader still used?
-            dst.RecordId = value.RecordId;
-            dst.previousChainLinkLogicalAddress = *(this.chainPost.GetChainLinkPtrs(ref value) + input.PsfOrdinal);
-            */
-        }
+            => throw new PSFInternalErrorException("PSFOutput.Visit instead of SingleReader should be called on PSF-implementing FasterKVs");
 
         public void ReadCompletionCallback(ref PSFCompositeKey<TPSFKey> _, ref PSFInputSecondary<TPSFKey> input, ref PSFOutputSecondary<TPSFKey, TRecordId> output, PSFContext ctx, Status status)
         { /* TODO */ }
@@ -56,16 +51,16 @@ namespace FASTER.core
 
         #region RMWs
         public void CopyUpdater(ref PSFCompositeKey<TPSFKey> _, ref PSFInputSecondary<TPSFKey> input, ref PSFValue<TRecordId> oldValue, ref PSFValue<TRecordId> newValue)
-            => newValue = oldValue; // TODO ensure no deepcopy needed
+            => throw new PSFInternalErrorException("RMW should not be done on PSF-implementing FasterKVs");
 
         public void InitialUpdater(ref PSFCompositeKey<TPSFKey> _, ref PSFInputSecondary<TPSFKey> input, ref PSFValue<TRecordId> value)
-        { /* TODO */ }
+            => throw new PSFInternalErrorException("RMW should not be done on PSF-implementing FasterKVs");
 
         public bool InPlaceUpdater(ref PSFCompositeKey<TPSFKey> _, ref PSFInputSecondary<TPSFKey> input, ref PSFValue<TRecordId> value)
-        { return true; /* TODO */ }
+            => throw new PSFInternalErrorException("RMW should not be done on PSF-implementing FasterKVs");
 
         public void RMWCompletionCallback(ref PSFCompositeKey<TPSFKey> _, ref PSFInputSecondary<TPSFKey> input, PSFContext ctx, Status status)
-        { /* TODO */ }
+            => throw new PSFInternalErrorException("RMW should not be done on PSF-implementing FasterKVs");
         #endregion RMWs
 
         public void DeleteCompletionCallback(ref PSFCompositeKey<TPSFKey> _, PSFContext ctx)

@@ -9,21 +9,14 @@ namespace FasterPSFSample
 {
     public struct BlittableOrders : IOrders
     {
+        public int Id { get; set; }
+
         // Colors, strings, and enums are not blittable so we use int
         public int SizeInt { get; set; }
 
         public int ColorArgb { get; set; }
 
         public int NumSold { get; set; }
-
-        public BlittableOrders(Constants.Size size, Color color, int numSold)
-        {
-            this.SizeInt = (int)size;
-            this.ColorArgb = color.ToArgb();
-            this.NumSold = numSold;
-        }
-
-        public (int, int, int) MemberTuple => (this.SizeInt, this.ColorArgb, this.NumSold);
 
         public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {NumSold}";
 
@@ -38,7 +31,7 @@ namespace FasterPSFSample
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output<BlittableOrders> output, Context<BlittableOrders> context, Status status)
             {
-                if (output.Value.MemberTuple != FasterPSFSample.keyDict[key].MemberTuple)
+                if (((IOrders)output.Value).MemberTuple != key.MemberTuple)
                     throw new Exception("Read mismatch error!");
             }
             #endregion Read

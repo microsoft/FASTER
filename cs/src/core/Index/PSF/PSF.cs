@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 
 namespace FASTER.core
@@ -16,9 +17,13 @@ namespace FASTER.core
     {
         private readonly IQueryPSF<TPSFKey, TRecordId> psfGroup;
 
-        internal long GroupId { get; }           // unique in the PSFManager.psfGroup list
+        internal long GroupId { get; }          // unique in the PSFManager.psfGroup list
 
         internal int PsfOrdinal { get; }        // in the psfGroup
+
+        // PSFs are passed by the caller to the session QueryPSF functions, so make sure they don't send
+        // a PSF from a different FKV.
+        internal Guid Id { get; }
 
         /// <inheritdoc/>
         public string Name { get; }
@@ -29,6 +34,7 @@ namespace FASTER.core
             this.PsfOrdinal = psfOrdinal;
             this.Name = name;
             this.psfGroup = iqp;
+            this.Id = Guid.NewGuid();
         }
 
         /// <summary>

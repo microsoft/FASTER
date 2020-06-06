@@ -16,5 +16,7 @@ namespace FasterPSFSample
         public long GetHashCode64(ref Key key) => Utility.GetHashCode(key.Id);
 
         public bool Equals(ref Key k1, ref Key k2) => k1.Id == k2.Id;
+
+        public (int, int, int, int) MemberTuple => FasterPSFSample.keyDict[this].MemberTuple;
     }
 }

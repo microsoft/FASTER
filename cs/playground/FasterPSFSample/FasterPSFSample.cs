@@ -83,6 +83,7 @@ namespace FasterPSFSample
                 var key = new Key(Interlocked.Increment(ref nextId) - 1);
                 var value = new TValue
                 {
+                    Id = key.Id,
                     SizeInt = rng.Next((int)Constants.Size.NumSizes - 1),
                     ColorArgb = Constants.Colors[rng.Next(Constants.Colors.Length - 1)].ToArgb(),
                     NumSold = rng.Next(OrdersBinKey.MaxOrders - 1)
@@ -125,7 +126,7 @@ namespace FasterPSFSample
                 var key = keys[rng.Next(keys.Length)];
                 var status = session.Read(ref key, ref input, ref output, context, 0);
 
-                if (status == Status.OK && output.Value.MemberTuple != keyDict[key].MemberTuple)
+                if (status == Status.OK && output.Value.MemberTuple != key.MemberTuple)
                     throw new Exception($"Error: Value does not match key in {nameof(RunReads)}");
             }
 

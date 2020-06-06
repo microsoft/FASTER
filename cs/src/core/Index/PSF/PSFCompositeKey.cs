@@ -60,10 +60,10 @@ namespace FASTER.core
         internal class UnusedKeyComparer : IFasterEqualityComparer<PSFCompositeKey<TPSFKey>>
         {
             public long GetHashCode64(ref PSFCompositeKey<TPSFKey> cKey)
-                => throw new InvalidOperationException("Must use the overload with PSF ordinal");
+                => throw new PSFInvalidOperationException("Must use the overload with PSF ordinal");
 
             public bool Equals(ref PSFCompositeKey<TPSFKey> cKey1, ref PSFCompositeKey<TPSFKey> cKey2)
-                => throw new InvalidOperationException("Must use the overload with PSF ordinal");
+                => throw new PSFInvalidOperationException("Must use the overload with PSF ordinal");
         }
         internal unsafe struct PtrWrapper : IDisposable
         {

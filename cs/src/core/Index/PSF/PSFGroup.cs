@@ -85,8 +85,6 @@ namespace FASTER.core
         /// <param name="regSettings">Optional registration settings</param>
         public PSFGroup(long id, IPSFDefinition<TProviderData, TPSFKey>[] defs, PSFRegistrationSettings<TPSFKey> regSettings)
         {
-            // TODO check for null defs regSettings etc; for PSFs defined on a FasterKV instance we create intelligent
-            // defaults in regSettings but other clients will have to specify at least hashTableSize, logSettings, etc.
             this.psfDefinitions = defs;
             this.Id = id;
             this.regSettings = regSettings;
@@ -156,7 +154,7 @@ namespace FASTER.core
         /// <returns></returns>
         public PSF<TPSFKey, TRecordId> this[string name]
             => Array.Find(this.PSFs, psf => psf.Name.Equals(name, StringComparison.CurrentCultureIgnoreCase))
-                ?? throw new InvalidOperationException("TODO PSF Exception classes: PSF not found");
+                ?? throw new PSFArgumentException("PSF not found");
 
         private unsafe void StoreKeys(ref GroupKeys keys, byte* kPtr, int kLen, PSFResultFlags* flagsPtr, int flagsLen)
         {
@@ -205,6 +203,7 @@ namespace FASTER.core
             for (int ii = 0; ii < this.psfDefinitions.Length; ++ii)
             {
                 var key = this.psfDefinitions[ii].Execute(providerData);
+                
                 *(flags + ii) = key.HasValue ? PSFResultFlags.None : PSFResultFlags.IsNull;
                 if (key.HasValue)
                 {
@@ -263,14 +262,14 @@ namespace FASTER.core
             var session = this.GetSession();
             try
             {
+                var lsn = session.ctx.serialNum + 1;
                 return phase switch
                 {
-                    PSFExecutePhase.Insert => session.PsfInsert(ref compositeKey, ref psfValue, ref input, 1 /*TODO: lsn*/),
-                    PSFExecutePhase.PostUpdate => session.PsfUpdate(ref changeTracker.GetGroupRef(groupOrdinal), ref psfValue, ref input, 1 /*TODO: lsn*/,
-                                                                    changeTracker),
-                    PSFExecutePhase.Delete => session.PsfDelete(ref compositeKey, ref psfValue, ref input, 1 /*TODO: lsn*/,
-                                                                changeTracker),
-                    _ => throw new FasterException("TODO: Make this a FasterInvalidOperationException")
+                    PSFExecutePhase.Insert => session.PsfInsert(ref compositeKey, ref psfValue, ref input, lsn),
+                    PSFExecutePhase.PostUpdate => session.PsfUpdate(ref changeTracker.GetGroupRef(groupOrdinal),
+                                                                    ref psfValue, ref input, lsn, changeTracker),
+                    PSFExecutePhase.Delete => session.PsfDelete(ref compositeKey, ref psfValue, ref input, lsn, changeTracker),
+                    _ => throw new PSFInternalErrorException("Unknown PSF execution Phase {phase}")
                 };
             } 
             finally
@@ -361,7 +360,7 @@ namespace FASTER.core
             HashSet<TRecordId> deadRecs = null;
             try
             {
-                status = session.PsfReadKey(ref queryKeyPtr.GetRef(), ref readArgs, 1 /*TODO lsn*/);
+                status = session.PsfReadKey(ref queryKeyPtr.GetRef(), ref readArgs, session.ctx.serialNum + 1);
                 if (status != Status.OK)    // TODO check other status
                     yield break;
 
@@ -380,7 +379,7 @@ namespace FASTER.core
                 do
                 {
                     readArgs.Input.ReadLogicalAddress = secondaryOutput.PreviousLogicalAddress;
-                    status = session.PsfReadAddress(ref readArgs, 1 /*TODO lsn*/);
+                    status = session.PsfReadAddress(ref readArgs, session.ctx.serialNum + 1);
                     if (status != Status.OK)    // TODO check other status
                         yield break;
                     
