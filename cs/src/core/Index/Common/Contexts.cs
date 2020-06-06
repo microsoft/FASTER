@@ -346,7 +346,7 @@ namespace FASTER.core
         /// <summary>
         /// Print checkpoint info for debugging purposes
         /// </summary>
-        public void DebugPrint()
+        public readonly void DebugPrint()
         {
             Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
             Debug.WriteLine("Version: {0}", version);
@@ -453,7 +453,7 @@ namespace FASTER.core
                 Initialize(s);
         }
 
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             using (MemoryStream ms = new MemoryStream())
             {
@@ -472,7 +472,7 @@ namespace FASTER.core
             }
         }
 
-        public void DebugPrint()
+        public readonly void DebugPrint()
         {
             Debug.WriteLine("******** Index Checkpoint Info for {0} ********", token);
             Debug.WriteLine("Table Size: {0}", table_size);

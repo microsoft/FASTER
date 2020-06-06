@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -174,85 +175,125 @@ namespace FASTER.core
 
         /// <summary>
         /// Compact the log until specified address, moving active
-        /// records to the tail of the log
+        /// records to the tail of the log. 
+        /// Uses default compaction functions that only deletes explicitly deleted records, copying is implemeted by shallow copying values from source to destination.
         /// </summary>
         /// <param name="untilAddress"></param>
         public void Compact(long untilAddress)
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
-                var functions = new LogVariableCompactFunctions(varLen);
+                var functions = new LogVariableCompactFunctions<DefaultVariableCompactionFunctions>(varLen, default(DefaultVariableCompactionFunctions));
                 var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
                     keyLength = varLen.KeyLength,
                     valueLength = varLen.ValueLength,
                 };
 
-                Compact(functions, untilAddress, variableLengthStructSettings);
+                Compact(functions, default(DefaultVariableCompactionFunctions), untilAddress, variableLengthStructSettings);
             }
             else
             {
-                Compact(new LogCompactFunctions(), untilAddress, null);
+                Compact(new LogCompactFunctions<DefaultCompactionFunctions>(default(DefaultCompactionFunctions)), default(DefaultCompactionFunctions), untilAddress, null);
             }
         }
 
-        private void Compact<Functions>(Functions functions, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
-            where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
+        /// <summary>
+        /// Compact the log until specified address, moving active
+        /// records to the tail of the log.
+        /// </summary>
+        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="untilAddress"></param>
+        public void Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress)
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
-            var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
+            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
+            {
+                var functions = new LogVariableCompactFunctions<CompactionFunctions>(varLen, compactionFunctions);
+                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
 
+                Compact(functions, compactionFunctions, untilAddress, variableLengthStructSettings);
+            }
+            else
+            {
+                Compact(new LogCompactFunctions<CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null);
+            }
+        }
+
+        private unsafe void Compact<Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+            where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+        {
             var originalUntilAddress = untilAddress;
 
-            var tempKv = new FasterKV<Key, Value>
-                (fht.IndexSize, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
-            var tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions);
-
-            using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
+            using (var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions))
+            using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
+            using (var tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions))
             {
-                while (iter1.GetNext(out RecordInfo recordInfo))
+                using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
                 {
-                    ref var key = ref iter1.GetKey();
-                    ref var value = ref iter1.GetValue();
-
-                    if (recordInfo.Tombstone)
-                        tempKvSession.Delete(ref key, default, 0);
-                    else
-                        tempKvSession.Upsert(ref key, ref value, default, 0);
-                }
-            }
-
-            // TODO: Scan until SafeReadOnlyAddress
-            long scanUntil = untilAddress;
-            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
-
-            // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
-
-            using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
-            {
-                while (iter3.GetNext(out RecordInfo recordInfo))
-                {
-                    ref var key = ref iter3.GetKey();
-                    ref var value = ref iter3.GetValue();
-
-                    if (!recordInfo.Tombstone)
+                    while (iter1.GetNext(out var recordInfo))
                     {
-                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
-                            fhtSession.Upsert(ref key, ref value, default, 0);
-                    }
-                    if (scanUntil < fht.Log.SafeReadOnlyAddress)
-                    {
-                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
+                        ref var key = ref iter1.GetKey();
+                        ref var value = ref iter1.GetValue();
+
+                        if (recordInfo.Tombstone || cf.IsDeleted(key, value))
+                            tempKvSession.Delete(ref key, default, 0);
+                        else
+                            tempKvSession.Upsert(ref key, ref value, default, 0);
                     }
                 }
+
+                // TODO: Scan until SafeReadOnlyAddress
+                var scanUntil = untilAddress;
+                LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
+
+                // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
+                using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
+                {
+                    while (iter3.GetNext(out var recordInfo))
+                    {
+                        ref var key = ref iter3.GetKey();
+                        ref var value = ref iter3.GetValue();
+
+                        if (!recordInfo.Tombstone)
+                        {
+                            if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
+                            {
+                                // Check if recordInfo point to the newest record.
+                                // With #164 it is possible that tempKv might have multiple records with the same
+                                // key (ConcurrentWriter returns false). For this reason check the index
+                                // whether the actual record has the same address (or maybe even deleted).
+                                // If this is too much of a performance hit - we could try and add additional info
+                                // to the recordInfo to indicate that it was replaced (but it would only for tempKv 
+                                // not general case).
+                                var bucket = default(HashBucket*);
+                                var slot = default(int);
+
+                                var hash = tempKv.Comparer.GetHashCode64(ref key);
+                                var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+                                var entry = default(HashBucketEntry);
+                                if (tempKv.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter3.CurrentAddress)
+                                    fhtSession.Upsert(ref key, ref value, default, 0);
+                            }
+                        }
+                        if (scanUntil < fht.Log.SafeReadOnlyAddress)
+                        {
+                            LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
+                        }
+                    }
+                }
             }
-            fhtSession.Dispose();
-            tempKvSession.Dispose();
-            tempKv.Dispose();
 
             ShiftBeginAddress(originalUntilAddress);
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, ref long scanUntil, ref ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, ref long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             while (scanUntil < fht.Log.SafeReadOnlyAddress)
@@ -261,7 +302,7 @@ namespace FASTER.core
                 scanUntil = fht.Log.SafeReadOnlyAddress;
                 using (var iter2 = fht.Log.Scan(untilAddress, scanUntil))
                 {
-                    while (iter2.GetNext(out RecordInfo _))
+                    while (iter2.GetNext(out var _))
                     {
                         ref var key = ref iter2.GetKey();
                         ref var value = ref iter2.GetValue();
@@ -272,53 +313,107 @@ namespace FASTER.core
             }
         }
 
-        private sealed class LogVariableCompactFunctions : IFunctions<Key, Value, Empty, Empty, Empty>
+        private sealed class LogVariableCompactFunctions<CompactionFunctions> : IFunctions<Key, Value, Empty, Empty, Empty>
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
-            private readonly VariableLengthBlittableAllocator<Key, Value> allocator;
+            private readonly VariableLengthBlittableAllocator<Key, Value> _allocator;
+            private readonly CompactionFunctions _functions;
 
-            public LogVariableCompactFunctions(VariableLengthBlittableAllocator<Key, Value> allocator)
+            public LogVariableCompactFunctions(VariableLengthBlittableAllocator<Key, Value> allocator, CompactionFunctions functions)
             {
-                this.allocator = allocator;
+                _allocator = allocator;
+                _functions = functions;
             }
 
             public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
-            {
-                var srcLength = allocator.ValueLength.GetLength(ref src);
-                var dstLength = allocator.ValueLength.GetLength(ref dst);
-
-                if (srcLength != dstLength)
-                    return false;
-
-                allocator.ShallowCopy(ref src, ref dst);
-                return true;
-            }
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, _allocator.ValueLength); }
             public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
             public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
             public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) => false;
             public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
             public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
             public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { allocator.ShallowCopy(ref src, ref dst); }
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, _allocator.ValueLength); }
             public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
             public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
         }
 
-        private sealed class LogCompactFunctions : IFunctions<Key, Value, Empty, Empty, Empty>
+        private sealed class LogCompactFunctions<CompactionFunctions> : IFunctions<Key, Value, Empty, Empty, Empty>
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
+            private readonly CompactionFunctions _functions;
+
+            public LogCompactFunctions(CompactionFunctions functions)
+            {
+                _functions = functions;
+            }
+
             public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
             public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, null); }
             public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
             public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
             public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) { return true; }
             public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
             public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
             public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { dst = src; }
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, null); }
             public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
             public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
+        }
+
+        private unsafe struct DefaultVariableCompactionFunctions : ICompactionFunctions<Key, Value>
+        {
+            public void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
+            {
+                var srcLength = valueLength.GetLength(ref src);
+                Buffer.MemoryCopy(
+                    Unsafe.AsPointer(ref src),
+                    Unsafe.AsPointer(ref dst),
+                    srcLength,
+                    srcLength);
+            }
+
+            public bool CopyInPlace(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
+            {
+                var srcLength = valueLength.GetLength(ref src);
+                var dstLength = valueLength.GetLength(ref dst);
+                if (srcLength != dstLength)
+                    return false;
+
+                Buffer.MemoryCopy(
+                    Unsafe.AsPointer(ref src),
+                    Unsafe.AsPointer(ref dst),
+                    dstLength,
+                    srcLength);
+
+                return true;
+            }
+
+            public bool IsDeleted(in Key key, in Value value)
+            {
+                return false;
+            }
+        }
+
+        private struct DefaultCompactionFunctions : ICompactionFunctions<Key, Value>
+        {
+            public void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
+            {
+                dst = src;
+            }
+
+            public bool CopyInPlace(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
+            {
+                dst = src;
+                return true;
+            }
+
+            public bool IsDeleted(in Key key, in Value value)
+            {
+                return false;
+            }
         }
     }
 }
