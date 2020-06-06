@@ -28,17 +28,6 @@ namespace FASTER.core
                                PSFChangeTracker<TProviderData, TRecordId> changeTracker);
 
         /// <summary>
-        /// For the given <see cref="PSF{TPSFKey, TRecordId}"/>, verify that the <paramref name="providerData"/> 
-        /// matches (returns non-null).
-        /// </summary>
-        /// <param name="providerData">The provider data wrapped around the TRecordId</param>
-        /// <param name="psfOrdinal">The ordinal of the <see cref="PSF{TPSFKey, TRecordId}"/> in the 
-        ///     <see cref="PSFGroup{TRecordId, TPSFKey, TRecordId}"/>.</param>
-        /// <returns>True if the providerData matches (returns non-null from) the <see cref="PSF{TPSFKey, TRecordId}"/>,
-        ///     else false.</returns>
-        bool Verify(TProviderData providerData, int psfOrdinal);
-
-        /// <summary>
         /// The identifier of this <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/>.
         /// </summary>
         long Id { get; }

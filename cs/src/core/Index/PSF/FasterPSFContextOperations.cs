@@ -105,12 +105,6 @@ namespace FASTER.core
         {
             var pcontext = default(PendingContext);
 
-            // TODO check cache first:
-            // var internalStatus = this.PsfInternalDeleteByCache(ref key, ref input, 
-            //                                                    ref pcontext, sessionCtx, serialNo));
-            // if (internalStatus == OperationStatus.NOTFOUND)
-            //      ... do below ...
-
             var psfInput = (IPSFInput<Key>)input;
             psfInput.IsDelete = true;
             var internalStatus = this.PsfInternalInsert(ref key, ref value, ref input,

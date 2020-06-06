@@ -3,11 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace FASTER.core
 {
     public sealed partial class ClientSession<Key, Value, Input, Output, Context, Functions> :
-                                IPSFCreateProviderData<long, FasterKVProviderData<Key, Value>>,
                                 IDisposable
         where Key : new()
         where Value : new()
@@ -91,6 +91,29 @@ namespace FASTER.core
         #endregion PSF calls for Secondary FasterKV
 
         #region PSF Query API for primary FasterKV
+
+        internal FasterKVProviderData<Key, Value> CreateProviderData(long logicalAddress)
+        {
+            // Looks up logicalAddress in the primary FasterKV
+            var psfArgs = new PSFReadArgs<Key, Value>(new PSFInputPrimaryReadAddress<Key>(logicalAddress),
+                                                      new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog));
+
+            // Call this directly here because we are within UnsafeResumeThread. TODO: is that OK with an Iterator?
+            var status = fht.ContextPsfReadAddress(ref psfArgs, this.ctx.serialNum + 1, ctx);
+            var primaryOutput = psfArgs.Output as IPSFPrimaryOutput<FasterKVProviderData<Key, Value>>;
+            return status == Status.OK ? primaryOutput.ProviderData : null;    // TODO check other status
+        }
+
+        internal IEnumerable<FasterKVProviderData<Key, Value>> ReturnProviderDatas(IEnumerable<long> logicalAddresses)
+        {
+            foreach (var logicalAddress in logicalAddresses)
+            {
+                var providerData = this.CreateProviderData(logicalAddress);
+                if (!(providerData is null))
+                    yield return providerData;
+            }
+        }
+
         /// <summary>
         /// Issue a query on a single <see cref="PSF{TPSFKey, TRecordId}"/> on a single key value.
         /// </summary>
@@ -111,7 +134,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return this.fht.PSFManager.QueryPSF(this, psf, psfKey, querySettings);
+                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf, psfKey, querySettings));
             }
             finally
             {
@@ -140,7 +163,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return this.fht.PSFManager.QueryPSF<TPSFKey>(this, psf, psfKeys, querySettings);
+                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf, psfKeys, querySettings));
             }
             finally
             {
@@ -179,7 +202,8 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return this.fht.PSFManager.QueryPSF<TPSFKey1, TPSFKey2>(this, psf1, psfKey1, psf2, psfKey2, matchPredicate, querySettings);
+                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf1, psfKey1, psf2, psfKey2,
+                                                                             matchPredicate, querySettings));
             }
             finally
             {
@@ -221,7 +245,8 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return this.fht.PSFManager.QueryPSF<TPSFKey1, TPSFKey2>(this, psf1, psfKeys1, psf2, psfKeys2, matchPredicate, querySettings);
+                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf1, psfKeys1, psf2, psfKeys2,
+                                                                             matchPredicate, querySettings));
             }
             finally
             {
@@ -259,7 +284,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return this.fht.PSFManager.QueryPSF(this, psfsAndKeys, matchPredicate, querySettings);
+                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psfsAndKeys, matchPredicate, querySettings));
             }
             finally
             {
@@ -306,7 +331,8 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return this.fht.PSFManager.QueryPSF(this, psfsAndKeys1, psfsAndKeys2, matchPredicate, querySettings);
+                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psfsAndKeys1, psfsAndKeys2,
+                                                                             matchPredicate, querySettings));
             }
             finally
             {

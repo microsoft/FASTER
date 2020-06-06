@@ -21,6 +21,9 @@ namespace FASTER.core
         internal Status Upsert(TProviderData data, TRecordId recordId,
                                PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
+            // TODO: RecordId locking, to ensure consistency of multiple PSFs if the same record is updated
+            // multiple times; possibly a single Array<CacheLine>[N] which is locked on TRecordId.GetHashCode % N.
+
             // TODO: This is called from ContextUpsert or InternalCompleteRetryRequest, where it's still
             // in the Context threading control for the primaryKV. I think it needs to move out of there.
 
@@ -158,13 +161,11 @@ namespace FASTER.core
             }
         }
 
-        internal IEnumerable<TProviderData> QueryPSF<TPSFKey>(IPSFCreateProviderData<TRecordId, TProviderData> providerDataCreator,
-                                                              PSF<TPSFKey, TRecordId> psf,
-                                                              TPSFKey psfKey, PSFQuerySettings querySettings)
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf,
+                                                          TPSFKey psfKey, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
             this.VerifyIsOurPSF(psf);
-            var group = this.psfGroups[psf.GroupId];
             foreach (var recordId in psf.Query(psfKey))
             {
                 if (querySettings != null && querySettings.CancellationToken.IsCancellationRequested)
@@ -173,22 +174,14 @@ namespace FASTER.core
                         querySettings.CancellationToken.ThrowIfCancellationRequested();
                     yield break;
                 }
-                var providerData = providerDataCreator.Create(recordId);
-                if (providerData is null)
-                    continue;
-#if false // TODO: should not need group.Verify anymore. Fix this per email discussion.
-                if (group.Verify(providerData, psf.PsfOrdinal))
-#endif
-                yield return providerData;
+                yield return recordId;
             }
         }
 
-        internal IEnumerable<TProviderData> QueryPSF<TPSFKey>(IPSFCreateProviderData<TRecordId, TProviderData> providerDataCreator,
-                                                              PSF<TPSFKey, TRecordId> psf,
-                                                              TPSFKey[] psfKeys, PSFQuerySettings querySettings)
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf,
+                                                          TPSFKey[] psfKeys, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
-            // TODO: Get rid of providerDataCreator
             this.VerifyIsOurPSF(psf);
 
             // TODO implement range queries. This will start retrieval of a stream of returned values for the
@@ -197,11 +190,10 @@ namespace FASTER.core
             // are handled; the semantics are that a Union (via stream merge) of all records for all keys in the
             // array is done. Obviously there will be a tradeoff between the granularity of the bins and the
             // overhead of the PQ for the streams returned.
-            return QueryPSF(providerDataCreator, psf, psfKeys[0], querySettings);   // TODO just to make the compiler happy
+            return QueryPSF(psf, psfKeys[0], querySettings);   // TODO just to make the compiler happy
         }
 
-        internal IEnumerable<TProviderData> QueryPSF<TPSFKey1, TPSFKey2>(
-                    IPSFCreateProviderData<TRecordId, TProviderData> providerDataCreator,
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
                     PSF<TPSFKey1, TRecordId> psf1, TPSFKey1 psfKey1,
                     PSF<TPSFKey2, TRecordId> psf2, TPSFKey2 psfKey2,
                     Func<bool, bool, bool> matchPredicate,
@@ -238,12 +230,9 @@ namespace FASTER.core
                     ? matchPredicate(true, true)
                     : cmp > 0 ? matchPredicate(true, false) : matchPredicate(false, true);
                 if (predResult)
-                {
-                    // Let the trailing one catch up
-                    var providerData = providerDataCreator.Create(cmp < 0 ? e1.Current : e2.Current);
-                    var verify = cmp <= 0 ? group1.Verify(providerData, psf1.PsfOrdinal) : true
-                                 && cmp >= 0 ? group2.Verify(providerData, psf2.PsfOrdinal) : true;
-                }
+                    yield return cmp < 0 ? e1.Current : e2.Current;
+
+                // Let the trailing one catch up
                 if (cmp <= 0)
                     e1done = !e1.MoveNext();
                 if (cmp >= 0)
@@ -265,48 +254,36 @@ namespace FASTER.core
             { 
                 var predResult = matchPredicate(!e1done, !e2done);
                 if (predResult)
-                {
-                    //yield return providerDataCreator(!e1done ? e1.Current : e2.Current);
-                    var providerData = providerDataCreator.Create(!e1done ? e1.Current : e2.Current);
-                    if (!(providerData is null))
-                    {
-                        var psfOrdinal = !e1done ? psf1.PsfOrdinal : psf2.PsfOrdinal;
-                        if ((!e1done ? group1 : group2).Verify(providerData, psfOrdinal))
-                            yield return providerData;
-                    }
-                }
+                    yield return !e1done ? e1.Current : e2.Current;
                 if (!(!e1done ? e1 : e2).MoveNext())
                     yield break;
             }
         }
 
-        internal IEnumerable<TProviderData> QueryPSF<TPSFKey1, TPSFKey2>(
-                    IPSFCreateProviderData<TRecordId, TProviderData> providerDataCreator,
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
                     PSF<TPSFKey1, TRecordId> psf1, TPSFKey1[] psfKeys1,
                     PSF<TPSFKey2, TRecordId> psf2, TPSFKey2[] psfKeys2,
                     Func<bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings)
         {
             // TODO: Similar range-query/PQ implementation (and first-element only execution) as discussed above.
-            return QueryPSF(providerDataCreator, psf1, psfKeys1[0], psf2, psfKeys2[0], matchPredicate, querySettings);
+            return QueryPSF(psf1, psfKeys1[0], psf2, psfKeys2[0], matchPredicate, querySettings);
         }
 
         // Power user versions. We could add up to 3. Anything more complicated than
         // that, they can just post-process with LINQ.
 
-        internal IEnumerable<TProviderData> QueryPSF<TPSFKey>(
-                    IPSFCreateProviderData<TRecordId, TProviderData> providerDataCreator,
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(
                     (PSF<TPSFKey, TRecordId> psf1, TPSFKey[])[] psfsAndKeys,
                     Func<bool[], bool> matchPredicate,
                     PSFQuerySettings querySettings)
         {
             // TODO: Not implemented. The input argument to the predicate is the matches to each
             // element of psfsAndKeys.
-            return Array.Empty<TProviderData>();
+            return Array.Empty<TRecordId>();
         }
 
-        internal IEnumerable<TProviderData> QueryPSF<TPSFKey1, TPSFKey2>(
-                    IPSFCreateProviderData<TRecordId, TProviderData> providerDataCreator,
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
                     (PSF<TPSFKey1, TRecordId> psf1, TPSFKey1[])[] psfsAndKeys1,
                     (PSF<TPSFKey2, TRecordId> psf2, TPSFKey2[])[] psfsAndKeys2,
                     Func<bool[], bool[], bool> matchPredicate,
@@ -315,7 +292,7 @@ namespace FASTER.core
             // TODO: Not implemented. The first input argument to the predicate is the matches to each
             // element of psfsAndKeys1; the second input argument to the predicate is the matches to each
             // element of psfsAndKeys2.
-            return Array.Empty<TProviderData>();
+            return Array.Empty<TRecordId>();
         }
     }
 }

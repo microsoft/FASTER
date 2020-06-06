@@ -222,7 +222,7 @@ namespace FASTER.core
             else if (logicalAddress >= hlog.BeginAddress)
             {
                 status = OperationStatus.RECORD_ON_DISK;
-#if false // TODO: See above and discussion in Teams/email; need to get the key here so we can lock the hash etc.
+#if false // TODO: See discussion in Teams/email; need to get the key here so we can get the hash, latch, etc.
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
                     Debug.Assert(heldOperation != LatchOperation.Exclusive);

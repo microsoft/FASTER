@@ -281,7 +281,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public Status GetBeforeKeys(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
-            // Obtain the "before" values. TODO try to find TRecordId in the IPUCache first.
+            // Obtain the "before" values. TODOcache: try to find TRecordId in the IPUCache first.
             return ExecuteAndStore(changeTracker.BeforeData, default, PSFExecutePhase.PreUpdate, changeTracker);
         }
 
@@ -290,16 +290,16 @@ namespace FASTER.core
         /// </summary>
         public Status Update(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
-            changeTracker.CachedBeforeLA = Constants.kInvalidAddress; // TODO Find BeforeRecordId in IPUCache
+            changeTracker.CachedBeforeLA = Constants.kInvalidAddress; // TODOcache: Find BeforeRecordId in IPUCache
             if (changeTracker.CachedBeforeLA != Constants.kInvalidAddress)
             {
                 if (changeTracker.UpdateOp == UpdateOperation.RCU)
                 {
-                    // TODO: Tombstone it, and possibly unlink; or just copy its keys into changeTracker.Before.
+                    // TODOcache: Tombstone it, and possibly unlink; or just copy its keys into changeTracker.Before.
                 }
                 else
                 {
-                    // TODO: Try to splice in-place; or just copy its keys into changeTracker.Before.
+                    // TODOcache: Try to splice in-place; or just copy its keys into changeTracker.Before.
                 }
             }
             else
@@ -317,19 +317,14 @@ namespace FASTER.core
         /// </summary>
         public Status Delete(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
-            changeTracker.CachedBeforeLA = Constants.kInvalidAddress; // TODO Find BeforeRecordId in IPUCache
+            changeTracker.CachedBeforeLA = Constants.kInvalidAddress; // TODOcache: Find BeforeRecordId in IPUCache
             if (changeTracker.CachedBeforeLA != Constants.kInvalidAddress)
             {
-                // TODO: Tombstone it, and possibly unlink; or just copy its keys into changeTracker.Before.
+                // TODOcache: Tombstone it, and possibly unlink; or just copy its keys into changeTracker.Before.
                 // If the latter, we can bypass ExecuteAndStore's PSF-execute loop
             }
             return this.ExecuteAndStore(changeTracker.BeforeData, default, PSFExecutePhase.Delete, changeTracker);
         }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Verify(TProviderData providerData, int psfOrdinal)  // TODO revise to new spec
-            => !(this.psfDefinitions[psfOrdinal].Execute(providerData) is null);
 
         /// <inheritdoc/>
         public unsafe IEnumerable<TRecordId> Query(int psfOrdinal, TPSFKey key)

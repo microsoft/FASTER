@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -41,6 +42,7 @@ namespace FASTER.core
         /// Issues a query on this PSF to return <typeparamref name="TRecordId"/>s.
         /// </summary>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public IEnumerable<TRecordId> Query(TPSFKey key)
             => this.psfGroup.Query(this.PsfOrdinal, key);
     }

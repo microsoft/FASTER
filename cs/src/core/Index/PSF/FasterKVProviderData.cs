@@ -21,7 +21,7 @@ namespace FASTER.core
     {
         // C# doesn't allow ref fields and even if it did, if the client held the FasterKVProviderData
         // past the ref lifetime, bad things would happen when accessing the ref key/value.
-        internal IHeapContainer<TKVKey> keyContainer;       // TODO: Perf efficiency
+        internal IHeapContainer<TKVKey> keyContainer;
         internal IHeapContainer<TKVValue> valueContainer;
 
         internal FasterKVProviderData(AllocatorBase<TKVKey, TKVValue> allocator, ref TKVKey key, ref TKVValue value)
