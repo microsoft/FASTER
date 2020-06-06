@@ -78,7 +78,7 @@ namespace FASTER.core
 
             if (status == Status.OK)
             {
-                this.chainPost.SetRecordId(ref value, changeTracker.AfterRecordId);
+                this.psfValueAccessor.SetRecordId(ref value, changeTracker.AfterRecordId);
                 return PsfRcuInsert(groupKeysPair.After, ref value, ref input, ref pcontext, sessionCtx, serialNo + 1);
             }
             return status;

@@ -255,7 +255,7 @@ namespace FASTER.core
                             if (pendingContext.psfUpdateArgs.ChangeTracker.FindGroup(psfInput.GroupId, out var ordinal))
                             {
                                 ref GroupKeysPair groupKeysPair = ref pendingContext.psfUpdateArgs.ChangeTracker.GetGroupRef(ordinal);
-                                this.chainPost.SetRecordId(ref value, pendingContext.psfUpdateArgs.ChangeTracker.AfterRecordId);
+                                this.psfValueAccessor.SetRecordId(ref value, pendingContext.psfUpdateArgs.ChangeTracker.AfterRecordId);
                                 var pcontext = default(PendingContext);
                                 PsfRcuInsert(groupKeysPair.After, ref value, ref pendingContext.input,
                                              ref pcontext, currentCtx, pendingContext.serialNum + 1);

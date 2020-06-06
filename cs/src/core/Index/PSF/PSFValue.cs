@@ -19,12 +19,12 @@ namespace FASTER.core
         /// </summary>
         public TRecordId RecordId;
 
-        internal void CopyTo(ref PSFValue<TRecordId> other, int recordIdSize, int chainHeight)
+        internal void CopyTo(ref PSFValue<TRecordId> other, int recordIdSize, int psfCount)
         {
             other.RecordId = this.RecordId;
             var thisChainPointer = ((byte*)Unsafe.AsPointer(ref this) + recordIdSize);
             var otherChainPointer = ((byte*)Unsafe.AsPointer(ref other) + recordIdSize);
-            var len = sizeof(long) * chainHeight;   // The chains links are "long logicalAddress".
+            var len = sizeof(long) * psfCount;   // The chains links are "long logicalAddress".
             Buffer.MemoryCopy(thisChainPointer, otherChainPointer, len, len);
         }
 
@@ -43,7 +43,7 @@ namespace FASTER.core
         {
             private readonly int size;
 
-            internal VarLenLength(int recordIdSize, int chainHeight) => this.size = recordIdSize + sizeof(long) * chainHeight;
+            internal VarLenLength(int recordIdSize, int psfCount) => this.size = recordIdSize + sizeof(long) * psfCount;
 
             public int GetAverageLength() => this.size;
 
@@ -52,15 +52,15 @@ namespace FASTER.core
             public int GetLength(ref PSFValue<TRecordId> _) => this.size;
         }
 
-        internal class ChainPost : IChainPost<PSFValue<TRecordId>>
+        internal class Accessor : IPSFValueAccessor<PSFValue<TRecordId>>
         {
-            internal ChainPost(int chainHeight, int recordIdSize)
+            internal Accessor(int psfCount, int recordIdSize)
             {
-                this.ChainHeight = chainHeight;
+                this.PSFCount = psfCount;
                 this.RecordIdSize = recordIdSize;
             }
 
-            public int ChainHeight { get; }
+            public int PSFCount { get; }
 
             public int RecordIdSize { get; }
 

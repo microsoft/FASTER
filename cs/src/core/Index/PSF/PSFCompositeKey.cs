@@ -14,11 +14,11 @@ namespace FASTER.core
         where TPSFKey : struct
     {
         // This class is entirely a "reinterpret_cast<TPSFKey*>" implementation; there are no data members.
-        internal void CopyTo(ref PSFCompositeKey<TPSFKey> other, int keySize, int chainHeight)
+        internal void CopyTo(ref PSFCompositeKey<TPSFKey> other, int keySize, int psfCount)
         {
             var thisKeysPointer = (byte*)Unsafe.AsPointer(ref this);
             var otherKeysPointer = (byte*)Unsafe.AsPointer(ref other);
-            var len = keySize * chainHeight;
+            var len = keySize * psfCount;
             Buffer.MemoryCopy(thisKeysPointer, otherKeysPointer, len, len);
         }
 
@@ -48,7 +48,7 @@ namespace FASTER.core
         {
             private readonly int size;
 
-            internal VarLenLength(int keySize, int chainHeight) => this.size = keySize * chainHeight;
+            internal VarLenLength(int keySize, int psfCount) => this.size = keySize * psfCount;
 
             public int GetAverageLength() => this.size;
 
@@ -88,7 +88,7 @@ namespace FASTER.core
 
     internal interface ICompositeKeyComparer<TCompositeKey>
     {
-        int ChainHeight { get; }
+        int PSFCount { get; }
 
         long GetHashCode64(int psfOrdinal, ref TCompositeKey cKey);
 
@@ -100,13 +100,13 @@ namespace FASTER.core
     {
         private readonly IFasterEqualityComparer<TPSFKey> userComparer;
         private readonly int keySize;
-        public int ChainHeight { get; }
+        public int PSFCount { get; }
 
-        internal PSFCompositeKeyComparer(IFasterEqualityComparer<TPSFKey> ucmp, int ksize, int chainHeight)
+        internal PSFCompositeKeyComparer(IFasterEqualityComparer<TPSFKey> ucmp, int ksize, int psfCount)
         {
             this.userComparer = ucmp;
             this.keySize = ksize;
-            this.ChainHeight = chainHeight;
+            this.PSFCount = psfCount;
         }
 
         public long GetHashCode64(int psfOrdinal, ref PSFCompositeKey<TPSFKey> cKey)

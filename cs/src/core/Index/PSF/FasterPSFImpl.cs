@@ -17,7 +17,7 @@ namespace FASTER.core
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        internal IChainPost<Value> chainPost;
+        internal IPSFValueAccessor<Value> psfValueAccessor;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PsfInternalReadKey(
@@ -289,10 +289,10 @@ namespace FASTER.core
             // corresponding PSF) to point to the previous records for all keys in the composite key.
             // Note: We're not checking for a previous occurrence of the PSFValue's recordId because
             // we are doing insert only here; the update part of upsert is done in PsfInternalUpdate.
-            var chainHeight = this.chainPost.ChainHeight;
-            long* hashes = stackalloc long[chainHeight];
-            long* chainLinkPtrs = this.chainPost.GetChainLinkPtrs(ref value);
-            for (var chainLinkIdx = 0; chainLinkIdx < chainHeight; ++chainLinkIdx)
+            var psfCount = this.psfValueAccessor.PSFCount;
+            long* hashes = stackalloc long[psfCount];
+            long* chainLinkPtrs = this.psfValueAccessor.GetChainLinkPtrs(ref value);
+            for (var chainLinkIdx = 0; chainLinkIdx < psfCount; ++chainLinkIdx)
             {
                 // For RCU, or in case we had to retry due to CPR_SHIFT and somehow managed to delete
                 // the previously found record, clear out the chain link pointer.
@@ -352,7 +352,7 @@ namespace FASTER.core
                     {
                         // The chain might extend past a tombstoned record so we must include it in the chain
                         // unless its link at chainLinkIdx is kInvalidAddress.
-                        long* prevLinks = this.chainPost.GetChainLinkPtrs(ref hlog.GetValue(physicalAddress));
+                        long* prevLinks = this.psfValueAccessor.GetChainLinkPtrs(ref hlog.GetValue(physicalAddress));
                         long* prevLink = prevLinks + chainLinkIdx;
                         if (*prevLink == Constants.kInvalidAddress)
                             continue;
@@ -449,7 +449,7 @@ namespace FASTER.core
                 hlog.ShallowCopy(ref compositeKey, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref compositeKey, ref value, ref hlog.GetValue(newPhysicalAddress));
 
-                for (var chainLinkIdx = 0; chainLinkIdx < chainHeight; ++chainLinkIdx)
+                for (var chainLinkIdx = 0; chainLinkIdx < psfCount; ++chainLinkIdx)
                 {
                     psfInput.PsfOrdinal = chainLinkIdx;
                     if (psfInput.IsNullAt)

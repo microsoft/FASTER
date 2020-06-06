@@ -17,22 +17,22 @@ namespace FASTER.core
         where TPSFKey: struct
         where TRecordId: struct
     {
-        IChainPost<PSFValue<TRecordId>> chainPost;
+        IPSFValueAccessor<PSFValue<TRecordId>> psfValueAccessor;
 
         // TODO: remove stuff that has been moved to PSFOutput.Visit, etc.
 
-        internal PSFFunctions(IChainPost<PSFValue<TRecordId>> chainPost)
-            => this.chainPost = chainPost;
+        internal PSFFunctions(IPSFValueAccessor<PSFValue<TRecordId>> accessor)
+            => this.psfValueAccessor = accessor;
 
         #region Upserts
         public bool ConcurrentWriter(ref PSFCompositeKey<TPSFKey> _, ref PSFValue<TRecordId> src, ref PSFValue<TRecordId> dst)
         {
-            src.CopyTo(ref dst, this.chainPost.RecordIdSize, this.chainPost.ChainHeight);
+            src.CopyTo(ref dst, this.psfValueAccessor.RecordIdSize, this.psfValueAccessor.PSFCount);
             return true;
         }
 
         public void SingleWriter(ref PSFCompositeKey<TPSFKey> _, ref PSFValue<TRecordId> src, ref PSFValue<TRecordId> dst)
-            => src.CopyTo(ref dst, this.chainPost.RecordIdSize, this.chainPost.ChainHeight);
+            => src.CopyTo(ref dst, this.psfValueAccessor.RecordIdSize, this.psfValueAccessor.PSFCount);
 
         public void UpsertCompletionCallback(ref PSFCompositeKey<TPSFKey> _, ref PSFValue<TRecordId> value, PSFContext ctx)
         { /* TODO */ }

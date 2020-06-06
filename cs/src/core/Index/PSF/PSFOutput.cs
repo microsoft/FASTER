@@ -73,7 +73,7 @@ namespace FASTER.core
         where TPSFKey : struct
         where TRecordId : struct
     {
-        IChainPost<PSFValue<TRecordId>> chainPost;
+        IPSFValueAccessor<PSFValue<TRecordId>> psfValueAccessor;
 
         public TRecordId RecordId { get; private set; }
 
@@ -82,9 +82,9 @@ namespace FASTER.core
         public long PreviousLogicalAddress { get; private set; }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal PSFOutputSecondary(IChainPost<PSFValue<TRecordId>> chainPost)
+        internal PSFOutputSecondary(IPSFValueAccessor<PSFValue<TRecordId>> accessor)
         {
-            this.chainPost = chainPost;
+            this.psfValueAccessor = accessor;
             this.RecordId = default;
             this.PreviousLogicalAddress = Constants.kInvalidAddress;
         }
@@ -95,7 +95,7 @@ namespace FASTER.core
         {
             this.RecordId = value.RecordId;
             this.Tombstone = tombstone;
-            this.PreviousLogicalAddress = *(this.chainPost.GetChainLinkPtrs(ref value) + psfOrdinal);
+            this.PreviousLogicalAddress = *(this.psfValueAccessor.GetChainLinkPtrs(ref value) + psfOrdinal);
             return new PSFOperationStatus(OperationStatus.SUCCESS);
         }
     }
