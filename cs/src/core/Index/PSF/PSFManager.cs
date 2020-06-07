@@ -24,9 +24,6 @@ namespace FASTER.core
             // TODO: RecordId locking, to ensure consistency of multiple PSFs if the same record is updated
             // multiple times; possibly a single Array<CacheLine>[N] which is locked on TRecordId.GetHashCode % N.
 
-            // TODO: This is called from ContextUpsert or InternalCompleteRetryRequest, where it's still
-            // in the Context threading control for the primaryKV. I think it needs to move out of there.
-
             // This Upsert was an Insert: For the FasterKV Insert fast path, changeTracker is null.
             if (changeTracker is null || changeTracker.UpdateOp == UpdateOperation.Insert)
             {

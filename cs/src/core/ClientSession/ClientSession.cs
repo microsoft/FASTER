@@ -112,15 +112,29 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext, long serialNo)
         {
+            var updateArgs = new PSFUpdateArgs<Key, Value>();
+            FasterKVProviderData<Key, Value> providerData = null;
+            Status status;
+
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx);
+                status = fht.ContextUpsert(ref key, ref desiredValue, userContext, serialNo, ctx, ref updateArgs);
+                if (status == Status.OK && this.fht.PSFManager.HasPSFs)
+                {
+                    providerData = updateArgs.ChangeTracker is null
+                                        ? new FasterKVProviderData<Key, Value>(this.fht.hlog, ref key, ref desiredValue)
+                                        : updateArgs.ChangeTracker.AfterData;
+                }
             }
             finally
             {
                 if (SupportAsync) UnsafeSuspendThread();
             }
+
+            return providerData is null
+                ? status
+                : this.fht.PSFManager.Upsert(providerData, updateArgs.LogicalAddress, updateArgs.ChangeTracker);
         }
 
         /// <summary>
@@ -167,15 +181,22 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, Context userContext, long serialNo)
         {
+            var updateArgs = new PSFUpdateArgs<Key, Value>();
+            Status status;
+
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx);
+                status = fht.ContextRMW(ref key, ref input, userContext, serialNo, ctx, ref updateArgs);
             }
             finally
             {
                 if (SupportAsync) UnsafeSuspendThread();
             }
+
+            return status == Status.OK && this.fht.PSFManager.HasPSFs
+                ? this.fht.PSFManager.Update(updateArgs.ChangeTracker)
+                : status;
         }
 
         /// <summary>
@@ -223,15 +244,22 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, Context userContext, long serialNo)
         {
+            var updateArgs = new PSFUpdateArgs<Key, Value>();
+            Status status;
+
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextDelete(ref key, userContext, serialNo, ctx);
+                status = fht.ContextDelete(ref key, userContext, serialNo, ctx, ref updateArgs);
             }
             finally
             {
                 if (SupportAsync) UnsafeSuspendThread();
             }
+
+            return status == Status.OK && this.fht.PSFManager.HasPSFs
+                ? this.fht.PSFManager.Delete(updateArgs.ChangeTracker)
+                : status;
         }
 
         /// <summary>

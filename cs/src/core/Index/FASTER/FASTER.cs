@@ -317,28 +317,21 @@ namespace FASTER.core
             return status;
         }
 
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert(ref Key key, ref Value value, Context context, long serialNo,
-            FasterExecutionContext sessionCtx)
+            FasterExecutionContext sessionCtx, ref PSFUpdateArgs<Key, Value> psfUpdateArgs)
         {
             var pcontext = default(PendingContext);
-            var updateArgs = new PSFUpdateArgs<Key, Value>();
             var internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, sessionCtx,
-                                                serialNo, ref updateArgs);
+                                                serialNo, ref psfUpdateArgs);
             Status status;
-            if (internalStatus == OperationStatus.SUCCESS && this.PSFManager.HasPSFs)
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = this.PSFManager.Upsert(updateArgs.ChangeTracker is null
-                                                    ? new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref value)
-                                                    : updateArgs.ChangeTracker.AfterData,
-                                                updateArgs.LogicalAddress, updateArgs.ChangeTracker);
+                status = (Status)internalStatus;
             }
             else
             {
-                status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
-                    ? (Status)internalStatus
-                    : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -347,22 +340,19 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW(ref Key key, ref Input input, Context context, long serialNo,
-            FasterExecutionContext sessionCtx)
+            FasterExecutionContext sessionCtx, ref PSFUpdateArgs<Key, Value> psfUpdateArgs)
         {
             var pcontext = default(PendingContext);
-            var updateArgs = new PSFUpdateArgs<Key, Value>();
             var internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, sessionCtx,
-                                                serialNo, ref updateArgs);
+                                                serialNo, ref psfUpdateArgs);
             Status status;
-            if (internalStatus == OperationStatus.SUCCESS && this.PSFManager.HasPSFs)
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = this.PSFManager.Update(updateArgs.ChangeTracker);
+                status = (Status)internalStatus;
             }
             else
             {
-                status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
-                ? (Status)internalStatus
-                : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -370,23 +360,21 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete(ref Key key, Context context, long serialNo, FasterExecutionContext sessionCtx)
+        internal Status ContextDelete(ref Key key, Context context, long serialNo, FasterExecutionContext sessionCtx,
+                                      ref PSFUpdateArgs<Key, Value> psfUpdateArgs)
         {
             var pcontext = default(PendingContext);
-            var updateArgs = new PSFUpdateArgs<Key, Value>();
 
             var internalStatus = InternalDelete(ref key, ref context, ref pcontext, sessionCtx,
-                                                serialNo, ref updateArgs);
+                                                serialNo, ref psfUpdateArgs);
             Status status;
-            if (internalStatus == OperationStatus.SUCCESS && this.PSFManager.HasPSFs)
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = this.PSFManager.Delete(updateArgs.ChangeTracker);
+                status = (Status)internalStatus;
             }
             else
             {
-                status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
-                ? (Status)internalStatus
-                : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, internalStatus);
             }
 
             sessionCtx.serialNum = serialNo;

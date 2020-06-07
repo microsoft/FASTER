@@ -114,7 +114,8 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke Upsert() on the session.")]
         public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
         {
-            return ContextUpsert(ref key, ref value, context, serialNo, threadCtx.Value);
+            PSFUpdateArgs<Key, Value> psfUpdateArgs = default;
+            return ContextUpsert(ref key, ref value, context, serialNo, threadCtx.Value, ref psfUpdateArgs);
         }
 
         /// <summary>
@@ -128,7 +129,8 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke RMW() on the session.")]
         public Status RMW(ref Key key, ref Input input, Context context, long serialNo)
         {
-            return ContextRMW(ref key, ref input, context, serialNo, threadCtx.Value);
+            PSFUpdateArgs<Key, Value> psfUpdateArgs = default;
+            return ContextRMW(ref key, ref input, context, serialNo, threadCtx.Value, ref psfUpdateArgs);
         }
 
         /// <summary>
@@ -144,7 +146,8 @@ namespace FASTER.core
         [Obsolete("Use NewSession() and invoke Delete() on the session.")]
         public Status Delete(ref Key key, Context context, long serialNo)
         {
-            return ContextDelete(ref key, context, serialNo, threadCtx.Value);
+            PSFUpdateArgs<Key, Value> psfUpdateArgs = default;
+            return ContextDelete(ref key, context, serialNo, threadCtx.Value, ref psfUpdateArgs);
         }
 
         /// <summary>
