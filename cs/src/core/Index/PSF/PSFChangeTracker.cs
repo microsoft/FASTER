@@ -42,7 +42,7 @@ namespace FASTER.core
 
         internal bool FindGroup(long groupId, out int ordinal)
         {
-            for (var ii = 0; ii < this.groups.Length; ++ii) // TODO will there be enough groups for sequential search to matter?
+            for (var ii = 0; ii < this.groups.Length; ++ii) // TODOperf: will there be enough groups for sequential search to matter?
             {
                 if (groups[ii].GroupId == groupId)
                 {
@@ -63,7 +63,7 @@ namespace FASTER.core
         {
             if (!this.FindGroup(Constants.kInvalidPsfGroupId, out var ordinal))
             {
-                // A new group was added while we were populating this; should be quite rare. // TODO test this case
+                // A new group was added while we were populating this; should be quite rare. // TODOtest: this case
                 var groups = new GroupKeysPair[this.groups.Length + 1];
                 Array.Copy(this.groups, groups, this.groups.Length);
                 this.groups = groups;

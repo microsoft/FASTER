@@ -169,7 +169,6 @@ namespace FASTER.core
             var psfInput = psfArgs.Input;
             var psfOutput = psfArgs.Output;
 
-            // TODO: Verify we should always find the LogicalAddress
             OperationStatus status;
 
             #region Look up record in in-memory HybridLog
@@ -221,29 +220,16 @@ namespace FASTER.core
             // On-Disk Region
             else if (logicalAddress >= hlog.BeginAddress)
             {
-                status = OperationStatus.RECORD_ON_DISK;
-#if false // TODO: See discussion in Teams/email; need to get the key here so we can get the hash, latch, etc.
-                if (sessionCtx.phase == Phase.PREPARE)
-                {
-                    Debug.Assert(heldOperation != LatchOperation.Exclusive);
-                    if (heldOperation == LatchOperation.Shared || HashBucket.TryAcquireSharedLatch(bucket))
-                        heldOperation = LatchOperation.Shared;
-                    else
-                        status = OperationStatus.CPR_SHIFT_DETECTED;
-
-                    if (RelaxedCPR) // don't hold on to shared latched during IO
-                    {
-                        if (heldOperation == LatchOperation.Shared)
-                            HashBucket.ReleaseSharedLatch(bucket);
-                        heldOperation = LatchOperation.None;
-                    }
-                }
-#endif
+                // We do not have a key here, so we cannot get the hash, latch, etc. for CPR and must retry later;
+                // this is the only Read operation that goes through Retry rather than pending. TODOtest: Retry
+                status = sessionCtx.phase == Phase.PREPARE
+                    ? OperationStatus.RETRY_LATER
+                    : OperationStatus.RECORD_ON_DISK;
                 goto CreatePendingContext;
             }
             else
             {
-                // No record found
+                // No record found. TODOerr: we should always find the LogicalAddress
                 return OperationStatus.NOTFOUND;
             }
 
@@ -317,7 +303,7 @@ namespace FASTER.core
                 {
                     logicalAddress = entry.Address;
 
-                    // TODO: Test this: If this fails for any TPSFKey in the composite key, we'll create the pending
+                    // TODOtest: If this fails for any TPSFKey in the composite key, we'll create the pending
                     // context and come back here on the retry and overwrite any previously-obtained logicalAddress
                     // at the chainLinkPtr.
                     if (UseReadCache && ReadFromCache(ref compositeKey, ref logicalAddress, ref physicalAddress,

@@ -187,6 +187,7 @@ namespace FASTER.core
         {
             // Note: stackalloc is safe because PendingContext or PSFChangeTracker will copy it to the bufferPool
             // if needed. On the Insert fast path, we don't want any allocations otherwise; changeTracker is null.
+            // TODO: Max psfCount per group to ensure stackalloc doesn't overflow
             var keyMemLen = ((keySize * this.PSFCount + sizeof(int) - 1) & ~(sizeof(int) - 1));
             var keyMemInt = stackalloc int[keyMemLen / sizeof(int)];
             for (var ii = 0; ii < keyMemLen; ++ii)
@@ -243,7 +244,7 @@ namespace FASTER.core
                         ref GroupKeysPair groupKeysPair = ref changeTracker.GetGroupRef(groupOrdinal);
                         StoreKeys(ref groupKeysPair.After, keyMem, keyMemLen, flags, flagsMemLen);
                         this.MarkChanges(groupKeysPair);
-                        // TODO in debug, for initial dev, follow chains to assert the values match what is in the record's compositeKey
+                        // TODOtest: In debug, for initial dev, follow chains to assert the values match what is in the record's compositeKey
                         if (!groupKeysPair.HasChanges)
                             return Status.OK;
                     }
@@ -303,7 +304,7 @@ namespace FASTER.core
             {
                 if (this.GetBeforeKeys(changeTracker) != Status.OK)
                 {
-                    // TODO handle errors from GetBeforeKeys
+                    // TODOerr: handle errors from GetBeforeKeys
                 }
             }
             return this.ExecuteAndStore(changeTracker.AfterData, default, PSFExecutePhase.PostUpdate, changeTracker);
@@ -344,19 +345,23 @@ namespace FASTER.core
         private IEnumerable<TRecordId> Query(PSFCompositeKey<TPSFKey>.PtrWrapper queryKeyPtr,
                                              PSFInputSecondary<TPSFKey> input)
         {
+            // TODOperf: if there are multiple PSFs within this group we can step through in parallel and return them
+            // as a single merged stream; will require multiple TPSFKeys and their indexes in queryKeyPtr
+            var secondaryOutput = new PSFOutputSecondary<TPSFKey, TRecordId>(this.psfValueAccessor);
             var readArgs = new PSFReadArgs<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>>(
-                            input, new PSFOutputSecondary<TPSFKey, TRecordId>(this.psfValueAccessor));
+                            input, secondaryOutput);
 
             var session = this.GetSession();
-            Status status;
             HashSet<TRecordId> deadRecs = null;
             try
             {
-                status = session.PsfReadKey(ref queryKeyPtr.GetRef(), ref readArgs, session.ctx.serialNum + 1);
-                if (status != Status.OK)    // TODO check other status
+                // Because we traverse the chain, we must wait for any pending read operations to complete.
+                // TODOperf: See if there is a better solution than spinWaiting in CompletePending.
+                Status status = session.PsfReadKey(ref queryKeyPtr.GetRef(), ref readArgs, session.ctx.serialNum + 1);
+                if (status == Status.PENDING)
+                    session.CompletePending(spinWait: true);
+                if (status != Status.OK)    // TODOerr: check other status
                     yield break;
-
-                var secondaryOutput = readArgs.Output as IPSFSecondaryOutput<TRecordId>;
 
                 if (secondaryOutput.Tombstone)
                 {
@@ -372,7 +377,9 @@ namespace FASTER.core
                 {
                     readArgs.Input.ReadLogicalAddress = secondaryOutput.PreviousLogicalAddress;
                     status = session.PsfReadAddress(ref readArgs, session.ctx.serialNum + 1);
-                    if (status != Status.OK)    // TODO check other status
+                    if (status == Status.PENDING)
+                        session.CompletePending(spinWait: true);
+                    if (status != Status.OK)    // TODOerr: check other status
                         yield break;
                     
                     if (secondaryOutput.Tombstone)

@@ -33,7 +33,7 @@ namespace FASTER.core
                     var status = group.ExecuteAndStore(data, recordId, PSFExecutePhase.Insert, changeTracker);
                     if (status != Status.OK)
                     {
-                        // TODO handle errors
+                        // TODOerr: handle errors
                     }
                 }
                 return Status.OK;
@@ -45,14 +45,13 @@ namespace FASTER.core
 
         internal Status Update(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
-            // TODO: same comment as Insert re: Context threading control for the primaryKV
             changeTracker.PrepareGroups(this.psfGroups.Count);
             foreach (var group in this.psfGroups.Values)
             {
                 var status = group.Update(changeTracker);
                 if (status != Status.OK)
                 {
-                    // TODO handle errors
+                    // TODOerr: handle errors
                 }
             }
             return Status.OK;
@@ -60,14 +59,13 @@ namespace FASTER.core
 
         internal Status Delete(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
-            // TODO: same comment as Insert re: Context threading control for the primaryKV
             changeTracker.PrepareGroups(this.psfGroups.Count);
             foreach (var group in this.psfGroups.Values)
             {
                 var status = group.Delete(changeTracker);
                 if (status != Status.OK)
                 {
-                    // TODO handle errors
+                    // TODOerr: handle errors
                 }
             }
             return Status.OK;
@@ -187,7 +185,7 @@ namespace FASTER.core
             // are handled; the semantics are that a Union (via stream merge) of all records for all keys in the
             // array is done. Obviously there will be a tradeoff between the granularity of the bins and the
             // overhead of the PQ for the streams returned.
-            return QueryPSF(psf, psfKeys[0], querySettings);   // TODO just to make the compiler happy
+            return QueryPSF(psf, psfKeys[0], querySettings);
         }
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(

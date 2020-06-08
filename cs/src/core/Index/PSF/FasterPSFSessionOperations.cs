@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace FASTER.core
 {
@@ -92,26 +92,37 @@ namespace FASTER.core
 
         #region PSF Query API for primary FasterKV
 
-        internal FasterKVProviderData<Key, Value> CreateProviderData(long logicalAddress)
+        internal Status CreateProviderData(long logicalAddress,
+                                           ConcurrentQueue<FasterKVProviderData<Key, Value>> providerDatas)
         {
             // Looks up logicalAddress in the primary FasterKV
-            var psfArgs = new PSFReadArgs<Key, Value>(new PSFInputPrimaryReadAddress<Key>(logicalAddress),
-                                                      new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog));
-
-            // Call this directly here because we are within UnsafeResumeThread. TODO: is that OK with an Iterator?
-            var status = fht.ContextPsfReadAddress(ref psfArgs, this.ctx.serialNum + 1, ctx);
-            var primaryOutput = psfArgs.Output as IPSFPrimaryOutput<FasterKVProviderData<Key, Value>>;
-            return status == Status.OK ? primaryOutput.ProviderData : null;    // TODO check other status
+            var primaryOutput = new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog, providerDatas);
+            var psfArgs = new PSFReadArgs<Key, Value>(new PSFInputPrimaryReadAddress<Key>(logicalAddress), primaryOutput);
+            return this.PsfReadAddress(ref psfArgs, this.ctx.serialNum + 1);
         }
 
         internal IEnumerable<FasterKVProviderData<Key, Value>> ReturnProviderDatas(IEnumerable<long> logicalAddresses)
         {
+            // If the record is on disk the Read will go pending and we will not receive it "synchronously"
+            // here; instead, it will work its way through the pending read system and call psfOutput.Visit.
+            // providerDatas gives that a place to put the record. We should encounter this only after all
+            // non-pending records have been read, but this approach allows any combination of pending and
+            // non-pending reads.
+            var providerDatas = new ConcurrentQueue<FasterKVProviderData<Key, Value>>();
             foreach (var logicalAddress in logicalAddresses)
             {
-                var providerData = this.CreateProviderData(logicalAddress);
-                if (!(providerData is null))
+                var status = this.CreateProviderData(logicalAddress, providerDatas);
+                if (status == Status.ERROR)
+                {
+                    // TODOerr: Handle error status from PsfReadAddress 
+                }
+                while (providerDatas.TryDequeue(out var providerData))
                     yield return providerData;
             }
+
+            this.CompletePending(spinWait: true);
+            while (providerDatas.TryDequeue(out var providerData))
+                yield return providerData;
         }
 
         /// <summary>
@@ -130,16 +141,8 @@ namespace FASTER.core
                 PSF<TPSFKey, long> psf, TPSFKey psfKey, PSFQuerySettings querySettings = null)
             where TPSFKey : struct
         {
-            // Called on the secondary FasterKV
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf, psfKey, querySettings));
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
+            return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf, psfKey, querySettings));
         }
 
         /// <summary>
@@ -159,16 +162,8 @@ namespace FASTER.core
                 (PSF<TPSFKey, long> psf, TPSFKey[] psfKeys, PSFQuerySettings querySettings = null)
             where TPSFKey : struct
         {
-            // Called on the secondary FasterKV
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf, psfKeys, querySettings));
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
+            return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf, psfKeys, querySettings));
         }
 
         /// <summary>
@@ -198,17 +193,9 @@ namespace FASTER.core
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            // Called on the secondary FasterKV
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf1, psfKey1, psf2, psfKey2,
-                                                                             matchPredicate, querySettings));
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
+            return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf1, psfKey1, psf2, psfKey2,
+                                                                         matchPredicate, querySettings));
         }
 
         /// <summary>
@@ -241,17 +228,9 @@ namespace FASTER.core
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            // Called on the secondary FasterKV
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf1, psfKeys1, psf2, psfKeys2,
-                                                                             matchPredicate, querySettings));
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
+            return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psf1, psfKeys1, psf2, psfKeys2,
+                                                                         matchPredicate, querySettings));
         }
 
         /// <summary>
@@ -280,16 +259,8 @@ namespace FASTER.core
                     PSFQuerySettings querySettings = null)
             where TPSFKey : struct
         {
-            // Called on the secondary FasterKV
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psfsAndKeys, matchPredicate, querySettings));
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
+            return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psfsAndKeys, matchPredicate, querySettings));
         }
 
         /// <summary>
@@ -327,17 +298,9 @@ namespace FASTER.core
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            // Called on the secondary FasterKV
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psfsAndKeys1, psfsAndKeys2,
-                                                                             matchPredicate, querySettings));
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
+            return this.ReturnProviderDatas(this.fht.PSFManager.QueryPSF(psfsAndKeys1, psfsAndKeys2,
+                                                                         matchPredicate, querySettings));
         }
         #endregion PSF Query API for primary FasterKV
     }

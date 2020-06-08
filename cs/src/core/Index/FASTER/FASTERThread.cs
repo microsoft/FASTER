@@ -228,8 +228,15 @@ namespace FASTER.core
                     internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx,
                                                     pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
                     break;
+                case OperationType.PSF_READ_ADDRESS:
+                    // This is a special case for RECORD_ON_DISK in ContextPsfReadAddress during CPR;
+                    // it is the only Read operation that goes through Retry.
+                    internalStatus = this.PsfInternalReadAddress(ref pendingContext.psfReadArgs, ref pendingContext,
+                                                                 currentCtx, pendingContext.serialNum);
+                    break;
+                case OperationType.PSF_READ_KEY:
                 case OperationType.READ:
-                    throw new FasterException("Cannot happen!");
+                    throw new FasterException("Reads go through the Pending route, not Retry, so this cannot happen!");
             }
 
             var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
