@@ -731,7 +731,7 @@ namespace FASTER.core
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
                                 hlog.GetInitialRecordSize(ref key, ref input) :
-                                hlog.GetRecordSize(physicalAddress);
+                                hlog.GetRecordSize(physicalAddress, ref input);
                 BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
@@ -1447,7 +1447,7 @@ namespace FASTER.core
             else
             {
                 physicalAddress = (long)request.record.GetValidPointer();
-                recordSize = hlog.GetRecordSize(physicalAddress);
+                recordSize = hlog.GetRecordSize(physicalAddress, ref pendingContext.input);
             }
             BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
