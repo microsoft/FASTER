@@ -31,8 +31,8 @@ namespace FASTER.Benchmark
         const bool kUseSmallData = false;
         const bool kUseSyntheticData = false;
 #endif
-        const long kInitCount = kUseSmallData ? 2_500_480 :   250_000_000;
-        const long kTxnCount = kUseSmallData ? 10_000_000 : 1_000_000_000;
+        internal const long kInitCount = kUseSmallData ? 2_500_480 :   250_000_000;
+        internal const long kTxnCount = kUseSmallData ? 10_000_000 : 1_000_000_000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
         const double theta = 0.99;  // Matches YCSB
 
@@ -54,7 +54,7 @@ namespace FASTER.Benchmark
 
         readonly int threadCount;
         readonly NumaMode numaMode;
-        readonly string distribution;
+        readonly Distribution distribution;
         readonly int readPercent;
 
         const int kRunSeconds = 30;
@@ -62,10 +62,10 @@ namespace FASTER.Benchmark
 
         volatile bool done = false;
 
-        public FASTER_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_)
+        public FASTER_YcsbBenchmark(int threadCount_, NumaMode numaMode_, Distribution distribution_, int readPercent_)
         {
             threadCount = threadCount_;
-            numaMode = numaStyle_ == 0 ? NumaMode.RoundRobin : NumaMode.Sharded2;
+            numaMode = numaMode_;
             distribution = distribution_;
             readPercent = readPercent_;
 
@@ -200,12 +200,12 @@ namespace FASTER.Benchmark
 
             sw.Stop();
 
-            Console.WriteLine($"Thread {thread_idx} done; {reads_done:N0} reads, " +
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done:N0} reads," +
                               $" {writes_done:N0} writes, in {sw.ElapsedMilliseconds / 1000.0:N3} sec.");
             Interlocked.Add(ref total_ops_done, reads_done + writes_done);
         }
 
-        public unsafe void Run()
+        public unsafe (ulong, ulong, long) Run()
         {
             Numa.AffinitizeThread(NumaMode.Sharded2, 0);
 
@@ -247,17 +247,16 @@ namespace FASTER.Benchmark
             }
             sw.Stop();
 
+            double initMs = sw.ElapsedMilliseconds;
             {
-                var ms = sw.ElapsedMilliseconds;
-                var sec = ms / 1000.0;
-                var upserts_sec = kInitCount / sec;
+                var initSec = initMs / 1000.0;
+                var upserts_sec = kInitCount / initSec;
                 var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                Console.WriteLine($"Loading time: {sec:N3} sec ({upserts_sec:N2} inserts/sec), working set {workingSetMB:N0}MB");
+                Console.WriteLine($"Loading time: {initSec:N3} sec ({upserts_sec:N3} inserts/sec), working set {workingSetMB:N0}MB");
             }
 
             long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
-
 
             idx_ = 0;
             Console.WriteLine(store.DumpDistribution());
@@ -307,14 +306,16 @@ namespace FASTER.Benchmark
             dash.Abort();
 #endif
 
-            double seconds = swatch.ElapsedMilliseconds / 1000.0;
+            var tranMs = swatch.ElapsedMilliseconds;
+            double tranSec = tranMs / 1000.0;
             long endTailAddress = store.Log.TailAddress;
             Console.WriteLine($"End tail address = {endTailAddress}");
 
-            Console.WriteLine($"Total {total_ops_done:N0} ops done in {seconds:N3} secs.");
+            Console.WriteLine($"Total {total_ops_done:N0} ops done in {tranSec:N3} secs.");
             Console.WriteLine($"##, dist = {distribution}, numa = {numaMode}, read% = {readPercent}, " +
-                              $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds:N2}, " +
+                              $"#threads = {threadCount}, ops/sec = {total_ops_done / tranSec:N3}, " +
                               $"logGrowth = {endTailAddress - startTailAddress}");
+            return ((ulong)initMs, (ulong)tranMs, total_ops_done);
         }
 
         private void SetupYcsb(int thread_idx)
@@ -570,7 +571,7 @@ namespace FASTER.Benchmark
 
             RandomGenerator generator = new RandomGenerator();
 
-            if (distribution == "uniform")
+            if (distribution == Distribution.Uniform)
             {
                 txn_keys_ = new Key[kTxnCount];
                 for (int idx = 0; idx < kTxnCount; idx++)
@@ -578,7 +579,7 @@ namespace FASTER.Benchmark
                     txn_keys_[idx] = new Key { value = (long)generator.Generate64(kInitCount) };
                 }
             }
-            else if (distribution == "zipf")
+            else if (distribution == Distribution.ZipfSmooth)
             {
                 Console.WriteLine("  (zipf (smooth) takes a couple minutes)");
                 var zipfSettings = new ZipfSettings

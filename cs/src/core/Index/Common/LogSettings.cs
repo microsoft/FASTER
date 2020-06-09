@@ -107,6 +107,15 @@ namespace FASTER.core
     /// </summary>
     public class LogSettings
     {
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+        public const int kMinPageSizeBits = 6;
+        public const int kMaxPageSizeBits = 30;
+        public const int kMinSegmentSizeBits = kMinPageSizeBits;
+        public const int kMaxSegmentSizeBits = 62;
+        public const int kMinMemorySizeBits = kMinSegmentSizeBits;
+        public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+
         /// <summary>
         /// Device used for main hybrid log
         /// </summary>

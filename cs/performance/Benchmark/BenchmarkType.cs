@@ -4,13 +4,11 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 
-namespace FASTER.PerfTest
+namespace FASTER.Benchmark
 {
-    [JsonConverter(typeof(StringEnumConverter))]
-    public enum ThreadMode
+    enum BenchmarkType : int
     {
-        Sync,
-        Affinitized,
-        Async
-    }
+        Ycsb,
+        ConcurrentDictionaryYcsb
+    };
 }

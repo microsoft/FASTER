@@ -3,7 +3,7 @@
 
 using Newtonsoft.Json;
 
-namespace FASTER.PerfTest
+namespace Performance.Common
 {
     [JsonObject(MemberSerialization.OptIn)]
     internal class OperationComparisonStats
@@ -23,6 +23,18 @@ namespace FASTER.PerfTest
         [JsonProperty]
         [JsonConverter(typeof(DoubleRoundingConverter))]
         internal double StdDevDiffPercent { get; set; }
+
+        static internal OperationComparisonStats Create(ResultStats leftResultStats, ResultStats rightResultStats)
+        {
+            var stats = new OperationComparisonStats
+            {
+                MeanDiff = rightResultStats.Mean - leftResultStats.Mean,
+                StdDevDiff = rightResultStats.StdDev - leftResultStats.StdDev
+            };
+            stats.MeanDiffPercent = leftResultStats.Mean == 0.0 ? 0.0 : (stats.MeanDiff / leftResultStats.Mean) * 100;
+            stats.StdDevDiffPercent = leftResultStats.StdDev == 0.0 ? 0.0 : (stats.StdDevDiff / leftResultStats.StdDev) * 100;
+            return stats;
+        }
     }
 
     [JsonObject(MemberSerialization.OptIn)]
@@ -41,6 +53,6 @@ namespace FASTER.PerfTest
         internal OperationComparisonStats PerThreadTrimmed { get; set; } = new OperationComparisonStats();
 
         [JsonProperty]
-        internal int Rank { get; set; }
+        internal int Rank { get; set; } = -1;
     }
 }

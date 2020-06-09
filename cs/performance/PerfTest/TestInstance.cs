@@ -42,6 +42,8 @@ namespace FASTER.PerfTest
 
             for (testRun.currentIter = 0; testRun.currentIter < testRun.TestResult.Inputs.IterationCount; ++testRun.currentIter)
             {
+                Console.WriteLine($"Iteration {testRun.currentIter + 1} of {testRun.TestResult.Inputs.IterationCount}");
+
                 const int pauseMs = 1000;
                 if (Globals.Verbose)
                 {
@@ -215,7 +217,7 @@ namespace FASTER.PerfTest
                         if (testRun.TestResult.Inputs.RMWCount > 0)
                             yield return "RMW";
                     }
-                    yield return (Operations.Mixed, "mixed " + string.Join(", ", getMixedOpNames()), testRun.TestResult.Inputs.TotalOperationCount);
+                    yield return (Operations.Mixed, $"mixed {string.Join(", ", getMixedOpNames())} ops", testRun.TestResult.Inputs.TotalOperationCount);
                     yield break;
                 }
                 if (testRun.TestResult.Inputs.UpsertCount > 0)
@@ -262,7 +264,7 @@ namespace FASTER.PerfTest
                 }
 
                 var suffix = op == Operations.Mixed ? "" : "s";
-                Console.WriteLine($"Iteration {testRun.currentIter}: Time for {opCount:N0} {opName} operations per thread ({opCount * testRun.TestResult.Inputs.ThreadCount:N0} total):" +
+                Console.WriteLine($"Operations: Time for {opCount:N0} {opName}{suffix} per thread ({opCount * testRun.TestResult.Inputs.ThreadCount:N0} total):" +
                                   $" {numSec:N3} sec ({opCount / numSec:N2} {op}{suffix}/sec)");
                 var endTailAddress = fht.LogTailAddress;
                 if (endTailAddress != startTailAddress)

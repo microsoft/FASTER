@@ -13,17 +13,18 @@ namespace FASTER.PerfTest
 
         internal LogSettings LogSettings { get; }
 
+        internal string LogDir;
         internal string CheckpointDir;
 
         internal LogFiles(bool useObjectLog, TestInputs testInputs)
         {
             // Create files for storing data. We only use one write thread to avoid disk contention.
             // We set deleteOnClose to true, so logs will auto-delete on completion.
-            var directory = Path.GetTempPath();
-            this.log = Devices.CreateLogDevice(directory + "hlog.log", deleteOnClose: true);
+            this.LogDir = Path.Combine(Path.GetTempPath(), "PerfTest");
+            this.log = Devices.CreateLogDevice(Path.Combine(this.LogDir, "hlog.log"), deleteOnClose: true);
             if (useObjectLog)
-                this.objLog = Devices.CreateLogDevice(directory + "hlog.obj.log", deleteOnClose: true);
-            this.CheckpointDir = Path.Combine(directory, "PerfTest_chkpt");
+                this.objLog = Devices.CreateLogDevice(Path.Combine(this.LogDir, "hlog.obj.log"), deleteOnClose: true);
+            this.CheckpointDir = Path.Combine(this.LogDir, "PerfTest_chkpt");
 
             // Define settings for log
             this.LogSettings = new LogSettings

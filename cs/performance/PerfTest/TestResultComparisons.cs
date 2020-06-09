@@ -2,15 +2,13 @@
 // Licensed under the MIT license.
 
 using Newtonsoft.Json;
+using Performance.Common;
 using System;
 using System.IO;
 using System.Linq;
 
 namespace FASTER.PerfTest
 {
-    using OperationResults = TestOutputs.OperationResults;
-    using ResultStats = TestOutputs.ResultStats;
-
     [JsonObject(MemberSerialization.OptIn)]
     internal partial class TestResultComparison
     {
@@ -37,23 +35,11 @@ namespace FASTER.PerfTest
                 OperationResults leftResults = opResultsSelector(first.Outputs);
                 OperationResults rightResults = opResultsSelector(second.Outputs);
 
-                static OperationComparisonStats createComparisonStats(ResultStats leftResultStats, ResultStats rightResultStats)
-                {
-                    var stats = new OperationComparisonStats
-                    {
-                        MeanDiff = rightResultStats.Mean - leftResultStats.Mean,
-                        StdDevDiff = rightResultStats.StdDev - leftResultStats.StdDev
-                    };
-                    stats.MeanDiffPercent = leftResultStats.Mean == 0.0 ? 0.0 : (stats.MeanDiff / leftResultStats.Mean) * 100;
-                    stats.StdDevDiffPercent = leftResultStats.StdDev == 0.0 ? 0.0 : (stats.StdDevDiff / leftResultStats.StdDev) * 100;
-                    return stats;
-                }
-
                 OperationComparison opComp = opComparisonSelector(this.OperationComparisons);
-                opComp.AllThreadsFull = createComparisonStats(leftResults.AllThreadsFull, rightResults.AllThreadsFull);
-                opComp.AllThreadsTrimmed = createComparisonStats(leftResults.AllThreadsTrimmed, rightResults.AllThreadsTrimmed);
-                opComp.PerThreadFull = createComparisonStats(leftResults.PerThreadFull, rightResults.PerThreadFull);
-                opComp.PerThreadTrimmed = createComparisonStats(leftResults.PerThreadTrimmed, rightResults.PerThreadTrimmed);
+                opComp.AllThreadsFull = OperationComparisonStats.Create(leftResults.AllThreadsFull, rightResults.AllThreadsFull);
+                opComp.AllThreadsTrimmed = OperationComparisonStats.Create(leftResults.AllThreadsTrimmed, rightResults.AllThreadsTrimmed);
+                opComp.PerThreadFull = OperationComparisonStats.Create(leftResults.PerThreadFull, rightResults.PerThreadFull);
+                opComp.PerThreadTrimmed = OperationComparisonStats.Create(leftResults.PerThreadTrimmed, rightResults.PerThreadTrimmed);
             }
 
             compare(outputs => outputs.InitialInserts, opc => opc.InitialInserts);
@@ -142,9 +128,9 @@ namespace FASTER.PerfTest
         }
 
         internal void Write(string filename) 
-            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.outputJsonSerializerSettings));
+            => JsonUtils.WriteAllText(filename, JsonConvert.SerializeObject(this, JsonUtils.OutputSerializerSettings));
 
         internal static TestResultComparisons Read(string filename) 
-            => JsonConvert.DeserializeObject<TestResultComparisons>(File.ReadAllText(filename), Globals.inputJsonSerializerSettings);
+            => JsonConvert.DeserializeObject<TestResultComparisons>(File.ReadAllText(filename), JsonUtils.InputSerializerSettings);
     }
 }

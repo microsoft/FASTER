@@ -2,13 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using Performance.Common;
 using System.Linq;
 
 namespace FASTER.PerfTest
 {
-    using OperationResults = TestOutputs.OperationResults;
-    using ResultStats = TestOutputs.ResultStats;
-
     internal class TestRun
     {
         internal TestResult TestResult = new TestResult();
@@ -42,55 +40,16 @@ namespace FASTER.PerfTest
 
         internal void Finish()
         {
-            // Initial inserts split the keyCount among the threads; all other operations execute the full count on each thread.
-            ResultStats calcPerSecondStatsFull(ulong[] runMs, int opCount, bool isInit) 
-                => ResultStats.Create(runMs.Select(ms => ms == 0 ? 0.0 : (opCount * (isInit ? 1 : this.TestResult.Inputs.ThreadCount)) / (ms / 1000.0)).ToArray());
-
-            ResultStats calcPerSecondStatsTrimmed(ulong[] runMs, int opCount, bool isInit)
-            {
-                if (runMs.Length < 3)
-                    return calcPerSecondStatsFull(runMs, opCount, isInit);
-
-                // Trim the highest and lowest values. There may be ties so can't just delete at min/max value.
-                ulong max = 0, min = ulong.MaxValue;
-                int maxIndex = 0, minIndex = 0;
-                for (int ii = 0; ii < runMs.Length; ++ii)
-                {
-                    if (runMs[ii] > max)
-                    {
-                        max = runMs[ii];
-                        maxIndex = ii;
-                    }
-                    else if (runMs[ii] < min)
-                    {
-                        min = runMs[ii];
-                        minIndex = ii;
-                    }
-                }
-                var trimmedMs = runMs.Where((ms, ii) => ii != maxIndex && ii != minIndex).ToArray();
-                 return calcPerSecondStatsFull(trimmedMs, opCount, isInit);
-            }
-
-            ResultStats calcPerThreadStats(ResultStats allThreads)
-                => ResultStats.Create(allThreads.OperationsPerSecond.Select(n => n / this.TestResult.Inputs.ThreadCount).ToArray());
-
             var inputs = this.TestResult.Inputs;
             var outputs = this.TestResult.Outputs;
+            var threadCount = this.TestResult.Inputs.ThreadCount;
 
-            void calcStats(Func<OperationResults> opResultsSelector, ulong[] runMs, int opCount, bool isInit = false)
-            {
-                OperationResults opResults = opResultsSelector();
-                opResults.AllThreadsFull = calcPerSecondStatsFull(runMs, opCount, isInit);
-                opResults.PerThreadFull = calcPerThreadStats(opResults.AllThreadsFull);
-                opResults.AllThreadsTrimmed = calcPerSecondStatsTrimmed(runMs, opCount, isInit);
-                opResults.PerThreadTrimmed = calcPerThreadStats(opResults.AllThreadsTrimmed);
-            }
-
-            calcStats(() => outputs.InitialInserts, this.initializeMs, inputs.InitKeyCount, isInit:true);
-            calcStats(() => outputs.TotalOperations, this.totalOpsMs, inputs.TotalOperationCount);
-            calcStats(() => outputs.Upserts, this.upsertMs, inputs.UpsertCount);
-            calcStats(() => outputs.Reads, this.readMs, inputs.ReadCount);
-            calcStats(() => outputs.RMWs, this.rmwMs, inputs.RMWCount);
+            // Initial inserts split the keyCount among the threads; all other operations execute the full count on each thread.
+            ResultStats.Calc(outputs.InitialInserts, threadCount, inputs.InitKeyCount, this.initializeMs, inputs.InitKeyCount, isInit:true);
+            ResultStats.Calc(outputs.TotalOperations, threadCount, inputs.TotalOperationCount, this.totalOpsMs, inputs.TotalOperationCount);
+            ResultStats.Calc(outputs.Upserts, threadCount, inputs.UpsertCount, this.upsertMs, inputs.UpsertCount);
+            ResultStats.Calc(outputs.Reads, threadCount, inputs.ReadCount, this.readMs, inputs.ReadCount);
+            ResultStats.Calc(outputs.RMWs, threadCount, inputs.RMWCount, this.rmwMs, inputs.RMWCount);
 
             static string kvType(bool useVarLen, bool useObj)
                 => (useVarLen, useObj) switch {  (true, _) => "varlen", (_, true) => "obj", _ => "fixBlit" };

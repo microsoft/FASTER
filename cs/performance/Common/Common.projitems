@@ -9,8 +9,13 @@
     <Import_RootNamespace>Performance.Common</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Distribution.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)JsonUtils.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Numa.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)OperationComparison.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)OperationResults.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)RandomGenerator.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ResultStats.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Zipf.cs" />
   </ItemGroup>
 </Project>

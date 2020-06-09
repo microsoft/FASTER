@@ -4,7 +4,7 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 
-namespace FASTER.PerfTest
+namespace Performance.Common
 {
     [JsonConverter(typeof(StringEnumConverter))]
     public enum Distribution

@@ -22,9 +22,6 @@ namespace FASTER.PerfTest
         public const int DefaultCheckpointMs = 5000;        // Every 5 seconds, if Checkpointing is specified
         public const ThreadMode DefaultThreadMode = ThreadMode.Affinitized;
 
-        internal static JsonSerializerSettings outputJsonSerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented };
-        internal static JsonSerializerSettings inputJsonSerializerSettings = new JsonSerializerSettings { ObjectCreationHandling = ObjectCreationHandling.Replace };
-
         // MinDataSize must be 8 and ValidDataSizes must be multiples of that.
         // Adding a larger MinDataSize beyond 8 * ushort.MaxValue would require 
         // changes to VarLenType which encodes length in a ushort.

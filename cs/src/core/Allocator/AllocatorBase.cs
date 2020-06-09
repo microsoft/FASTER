@@ -473,6 +473,26 @@ namespace FASTER.core
         /// <param name="flushCallback"></param>
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
         {
+            // Validation
+            if (settings.PageSizeBits < LogSettings.kMinPageSizeBits || settings.PageSizeBits > LogSettings.kMaxPageSizeBits)
+                throw new FasterException($"{nameof(settings.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
+            if (settings.SegmentSizeBits < LogSettings.kMinSegmentSizeBits || settings.SegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
+                throw new FasterException($"{nameof(settings.SegmentSizeBits)} must be between {LogSettings.kMinSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
+            if (settings.MemorySizeBits < LogSettings.kMinMemorySizeBits || settings.MemorySizeBits > LogSettings.kMaxMemorySizeBits)
+                throw new FasterException($"{nameof(settings.MemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}");
+            if (settings.MutableFraction <= 0.0 || settings.MutableFraction >= 1.0)
+                throw new FasterException($"{nameof(settings.MutableFraction)} must be > 0.0 and < 1.0");
+            if (!(settings.ReadCacheSettings is null))
+            {
+                var rcs = settings.ReadCacheSettings;
+                if (rcs.PageSizeBits < LogSettings.kMinPageSizeBits || rcs.PageSizeBits > LogSettings.kMaxPageSizeBits)
+                    throw new FasterException($"{nameof(rcs.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
+                if (rcs.MemorySizeBits < LogSettings.kMinMemorySizeBits || rcs.MemorySizeBits > LogSettings.kMaxMemorySizeBits)
+                    throw new FasterException($"{nameof(rcs.MemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}");
+                if (rcs.SecondChanceFraction <= 0.0 || rcs.SecondChanceFraction >= 1.0)
+                    throw new FasterException($"{(rcs.SecondChanceFraction)} must be > 0.0 and < 1.0");
+            }
+
             if (evictCallback != null)
             {
                 ReadCache = true;

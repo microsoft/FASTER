@@ -138,7 +138,7 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"  To merge multiple result files (one or more JSON files containing {nameof(TestResults)}, e.g. files obtained at different");
                 Console.WriteLine("             times to mitigate the possibility of background tasks affecting results):");
                 Console.WriteLine($"    {MergeResultsArg} <filespec1..filespecN>: Wildcards are supported; at least two files must be returned by the combination of filespecs.");
-                Console.WriteLine("             Results for identical parameter configurations are merged; other results are appended from the filespec1 first, then filespec2.");
+                Console.WriteLine("             Results for identical parameter configurations are merged; other results are appended from filespec1 first, then filespec2, etc.");
                 Console.WriteLine("             Note that if wildcards are used, files will be returned in filesystem order; use appropriate naming if a particular order is needed.");
                 Console.WriteLine($"    {IntersectResultsArg} <filespec1..filespecN>: Same as {MergeResultsArg}, but only matching results are preserved.");
                 Console.WriteLine();
@@ -503,15 +503,16 @@ namespace FASTER.PerfTest
                 {
                     if (!hasValue(out compareFirstFilename) || !hasValue(out compareSecondFilename))
                         return Usage($"{arg} requires a first and second filename");
-                    comparisonMode = string.Compare(arg, CompareResultsExactArg, ignoreCase: true) == 0 ? ResultComparisonMode.Exact : ResultComparisonMode.Sequence;
+                    comparisonMode = string.Compare(arg, CompareResultsExactArg, ignoreCase: true) == 0 
+                                        ? ResultComparisonMode.Exact : ResultComparisonMode.Sequence;
                     continue;
                 }
                 if (string.Compare(arg, MergeResultsArg, ignoreCase: true) == 0
                     || string.Compare(arg, IntersectResultsArg, ignoreCase: true) == 0)
                 {
-                    while (hasValue(out var filespec, required: false))
-                        mergeResultsFilespecs.Add(filespec);
-                    if (mergeResultsFilespecs.Count == 0)
+                    while (hasValue(out var fileSpec, required: false))
+                        mergeResultsFileSpecs.Add(fileSpec);
+                    if (mergeResultsFileSpecs.Count == 0)
                         return Usage($"{arg} requires at least one filespec");
                     intersectResults = string.Compare(arg, IntersectResultsArg, ignoreCase: true) == 0;
                     continue;
@@ -540,7 +541,7 @@ namespace FASTER.PerfTest
                 return Usage($"Unknown argument: {arg}");
             }
 
-            bool needResultsFile = comparisonMode != ResultComparisonMode.None || mergeResultsFilespecs.Count > 0;
+            bool needResultsFile = comparisonMode != ResultComparisonMode.None || mergeResultsFileSpecs.Count > 0;
             if (needResultsFile && resultsFilename is null)
                 return Usage($"Comparing or merging files requires {ResultsFileArg}");
 

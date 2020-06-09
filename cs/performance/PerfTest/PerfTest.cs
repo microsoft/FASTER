@@ -20,7 +20,7 @@ namespace FASTER.PerfTest
         static string resultsFilename;
         static string compareFirstFilename, compareSecondFilename;
         static ResultComparisonMode comparisonMode = ResultComparisonMode.None;
-        static readonly List<string> mergeResultsFilespecs = new List<string>();
+        static readonly List<string> mergeResultsFileSpecs = new List<string>();
         static bool intersectResults;
 
         static void Main(string[] argv)
@@ -33,9 +33,9 @@ namespace FASTER.PerfTest
                 TestResultComparisons.Compare(compareFirstFilename, compareSecondFilename, comparisonMode, resultsFilename);
                 return;
             }
-            if (mergeResultsFilespecs.Count > 0)
+            if (mergeResultsFileSpecs.Count > 0)
             {
-                TestResults.Merge(mergeResultsFilespecs.ToArray(), intersectResults, resultsFilename);
+                TestResults.Merge(mergeResultsFileSpecs.ToArray(), intersectResults, resultsFilename);
                 return;
             }
 
@@ -51,7 +51,7 @@ namespace FASTER.PerfTest
 
         static void ExecuteTestRuns()
         {
-            var results = new TestResults();
+            var results = new TestResults { Results = new[] { new TestResult()} };
             if (!(testParams is null))
                 testParams.Override(parseResult);
             var testRuns = (testParams is null ? new[] { new TestRun(parseResult) } : testParams.GetParamSweeps().Select(sweep => new TestRun(sweep))).ToArray();
@@ -88,7 +88,7 @@ namespace FASTER.PerfTest
             if (!string.IsNullOrEmpty(resultsFilename))
             {
                 results.Write(resultsFilename);
-               Console.WriteLine($"Results written to {resultsFilename}");
+                Console.WriteLine($"Results written to {resultsFilename}");
             }
 
             if (prompt)

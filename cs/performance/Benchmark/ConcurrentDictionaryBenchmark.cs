@@ -68,7 +68,7 @@ namespace FASTER.Benchmark
 
         readonly int threadCount;
         readonly NumaMode numaMode;
-        readonly string distribution;
+        readonly Distribution distribution;
         readonly int readPercent;
 
         const int kRunSeconds = 30;
@@ -76,10 +76,10 @@ namespace FASTER.Benchmark
 
         volatile bool done = false;
 
-        public ConcurrentDictionary_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_)
+        public ConcurrentDictionary_YcsbBenchmark(int threadCount_, NumaMode numaMode_, Distribution distribution_, int readPercent_)
         {
             threadCount = threadCount_;
-            numaMode = numaStyle_ == 0 ? NumaMode.RoundRobin : NumaMode.Sharded2;
+            numaMode = numaMode_;
             distribution = distribution_;
             readPercent = readPercent_;
 
@@ -188,8 +188,8 @@ namespace FASTER.Benchmark
 
             sw.Stop();
 
-            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
-                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done:N0} reads," +
+                              $" {writes_done:N0} writes, in {sw.ElapsedMilliseconds / 1000.0:N3} sec.");
             Interlocked.Add(ref total_ops_done, reads_done + writes_done);
         }
 
@@ -292,9 +292,9 @@ namespace FASTER.Benchmark
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
 
-            Console.WriteLine($"Total {total_ops_done} ops done in {seconds} secs.");
+            Console.WriteLine($"Total {total_ops_done:N0} ops done in {seconds:N3} secs.");
             Console.WriteLine($"##, dist = {distribution}, numa = {numaMode}, read% = {readPercent}, " +
-                              $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds}");
+                              $"#threads = {threadCount}, ops/sec = {total_ops_done / seconds:N3}");
         }
 
         private void SetupYcsb(int thread_idx)
@@ -536,7 +536,7 @@ namespace FASTER.Benchmark
 
             RandomGenerator generator = new RandomGenerator();
 
-            if (distribution == "uniform")
+            if (distribution == Distribution.Uniform)
             {
                 txn_keys_ = new Key[kTxnCount];
                 for (int idx = 0; idx < kTxnCount; idx++)
@@ -544,7 +544,7 @@ namespace FASTER.Benchmark
                     txn_keys_[idx] = new Key { value = (long)generator.Generate64(kInitCount) };
                 }
             }
-            else
+            else if (distribution == Distribution.ZipfSmooth)
             {
                 Console.WriteLine("  (zipf (smooth) takes a couple minutes)");
                 var zipfSettings = new ZipfSettings
@@ -556,6 +556,8 @@ namespace FASTER.Benchmark
                 };
                 txn_keys_ = new Zipf<Key>().GenerateOpKeys(zipfSettings, init_keys_, (int)kTxnCount);
             }
+            else
+                throw new ArgumentException($"Unknown distribution: {distribution}");
 
             Console.WriteLine("loaded " + kTxnCount + " txns.");
         }

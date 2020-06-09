@@ -250,10 +250,10 @@ namespace FASTER.PerfTest
             => this.ParameterSweeps.SelectMany(sweep => sweep.GetParamSweeps());
 
         internal void Write(string filename) 
-            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.outputJsonSerializerSettings));
+            => JsonUtils.WriteAllText(filename, JsonConvert.SerializeObject(this, JsonUtils.OutputSerializerSettings));
 
         internal static TestParameters Read(string filename) 
-            => JsonConvert.DeserializeObject<TestParameters>(File.ReadAllText(filename));
+            => JsonConvert.DeserializeObject<TestParameters>(File.ReadAllText(filename), JsonUtils.InputSerializerSettings);
 
         internal static TestParameterFlags CommandLineOverrides = TestParameterFlags.None;
 

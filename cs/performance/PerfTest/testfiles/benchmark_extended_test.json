@@ -9,8 +9,10 @@
       "OperationKeyCounts": [ 1000000000 ],
       "UpsertCounts": [ 40000000 ],
       "ReadCounts": [ 40000000 ],
-      "MixOperations": [ true ],
-      "UseVarLenValues": [ false ],
+      "RMWCounts": [ 40000000 ],
+      "MixOperations": [ true, false ],
+      "ValueSizes": [ 8 ],
+      "UseVarLenValues": [ false, true ],
       "IterationCounts": [ 7 ]
     }
   ]

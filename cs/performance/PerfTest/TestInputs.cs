@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core;
 using Newtonsoft.Json;
 using Performance.Common;
 using System;
@@ -36,7 +37,7 @@ namespace FASTER.PerfTest
         public int OperationKeyCount { get; set; } = Globals.DefaultOpKeyCount;
 
         [JsonProperty]
-        public int TotalOperationCount { get; set; } // Informative only; combination of u + r + m set in Verify()
+        public int TotalOperationCount => this.UpsertCount + this.ReadCount + this.RMWCount;
 
         [JsonProperty]
         public int UpsertCount { get; set; } = Globals.DefaultOpCount;
@@ -115,9 +116,6 @@ namespace FASTER.PerfTest
 
         public bool Verify(bool isFileInput = false)
         {
-            // Set this for informative output.
-            this.TotalOperationCount = this.UpsertCount + this.ReadCount + this.RMWCount;
-
             static bool fail(string message)
             {
                 Console.WriteLine(message);
@@ -168,18 +166,18 @@ namespace FASTER.PerfTest
             if (this.CheckpointMode != Checkpoint.Mode.None && this.CheckpointMs < 1)
                 return fail($"{this.CheckpointMode} requires {nameof(this.CheckpointMs)} >= 1");
 
-            if (this.LogPageSizeBits < 1 || this.LogPageSizeBits > 30)
-                return fail($"{nameof(this.LogPageSizeBits)} must be between 1 and 30");
-            if (this.LogSegmentSizeBits < 1 || this.LogSegmentSizeBits > 62)
-                return fail($"{nameof(this.LogSegmentSizeBits)} must be between 1 and 62");
-            if (this.LogMemorySizeBits < 1 || this.LogMemorySizeBits > 62)
-                return fail($"{nameof(this.LogMemorySizeBits)} must be between 1 and 62");
+            if (this.LogPageSizeBits < LogSettings.kMinPageSizeBits || this.LogPageSizeBits > LogSettings.kMaxPageSizeBits)
+                return fail($"{nameof(this.LogPageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMinPageSizeBits}");
+            if (this.LogSegmentSizeBits < LogSettings.kMinSegmentSizeBits || this.LogSegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
+                return fail($"{nameof(this.LogSegmentSizeBits)} must be between {LogSettings.kMinSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
+            if (this.LogMemorySizeBits < LogSettings.kMinMemorySizeBits || this.LogMemorySizeBits > LogSettings.kMaxMemorySizeBits)
+                return fail($"{nameof(this.LogMemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}");
             if (this.LogMutableFraction <= 0.0 || this.LogMutableFraction >= 1.0)
                 return fail($"{nameof(this.LogMutableFraction)} must be > 0.0 and < 1.0");
-            if (this.ReadCachePageSizeBits < 1 || this.ReadCachePageSizeBits > 30)
-                return fail($"{nameof(this.ReadCachePageSizeBits)} must be between 1 and 30");
-            if (this.ReadCacheMemorySizeBits < 1 || this.ReadCacheMemorySizeBits > 62)
-                return fail($"{nameof(this.ReadCacheMemorySizeBits)} must be between 1 and 62");
+            if (this.ReadCachePageSizeBits < LogSettings.kMinPageSizeBits || this.ReadCachePageSizeBits > LogSettings.kMaxPageSizeBits)
+                return fail($"{nameof(this.ReadCachePageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
+            if (this.ReadCacheMemorySizeBits < LogSettings.kMinMemorySizeBits || this.ReadCacheMemorySizeBits > LogSettings.kMaxMemorySizeBits)
+                return fail($"{nameof(this.ReadCacheMemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}");
             if (this.ReadCacheSecondChanceFraction <= 0.0 || this.ReadCacheSecondChanceFraction >= 1.0)
                 return fail($"{(this.ReadCacheSecondChanceFraction)} must be > 0.0 and < 1.0");
 

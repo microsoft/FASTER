@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Newtonsoft.Json;
+using Performance.Common;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,9 +10,6 @@ using System.Linq;
 
 namespace FASTER.PerfTest
 {
-    using ResultStats = TestOutputs.ResultStats;
-    using OperationResults = TestOutputs.OperationResults;
-
     [JsonObject(MemberSerialization.OptIn)]
     internal partial class TestResult
     {
@@ -21,6 +19,7 @@ namespace FASTER.PerfTest
         [JsonProperty]
         internal TestOutputs Outputs { get; set; } = new TestOutputs();
 
+        // Override equivalence testing
         public override int GetHashCode() => this.Inputs.MemberTuple.GetHashCode();
 
         public override bool Equals(object obj) => this.Equals(obj as TestResult);
@@ -38,10 +37,10 @@ namespace FASTER.PerfTest
             => this.Results = this.Results is null ? new[] { result } : this.Results.Concat(new[] { result }).ToArray();
 
         internal void Write(string filename) 
-            => File.WriteAllText(filename, JsonConvert.SerializeObject(this, Globals.outputJsonSerializerSettings));
+            => JsonUtils.WriteAllText(filename, JsonConvert.SerializeObject(this, JsonUtils.OutputSerializerSettings));
 
         internal static TestResults Read(string filename) 
-            => JsonConvert.DeserializeObject<TestResults>(File.ReadAllText(filename), Globals.inputJsonSerializerSettings);
+            => JsonConvert.DeserializeObject<TestResults>(File.ReadAllText(filename), JsonUtils.InputSerializerSettings);
 
         internal (IEnumerable<(TestResult, TestResult)>, IEnumerable<TestResult>, IEnumerable<TestResult>) Match(TestResults other)
         {
@@ -68,12 +67,12 @@ namespace FASTER.PerfTest
         internal static TestResultComparisons CompareSequence(IEnumerable<(TestResult, TestResult)> results) 
             => new TestResultComparisons { ResultComparisons = results.Select(result => new TestResultComparison(result.Item1, result.Item2)).ToArray() };
 
-        internal static void Merge(string[] filespecs, bool intersect, string resultsFilename)
+        internal static void Merge(string[] fileSpecs, bool intersect, string resultsFilename)
         {
-            static IEnumerable<string> enumFiles(string filespec) 
-                => Directory.EnumerateFiles(Path.GetDirectoryName(filespec), Path.GetFileName(filespec));
+            static IEnumerable<string> enumFiles(string fileSpec) 
+                => Directory.EnumerateFiles(Path.GetDirectoryName(fileSpec), Path.GetFileName(fileSpec));
 
-            var filenames = filespecs.SelectMany(spec => enumFiles(spec)).ToArray();
+            var filenames = fileSpecs.SelectMany(spec => enumFiles(spec)).ToArray();
             if (filenames.Length < 2)
             {
                 Console.WriteLine($"{PerfTest.MergeResultsArg} file specification did not evaluate to multiple files");
@@ -97,8 +96,9 @@ namespace FASTER.PerfTest
 
             var results = new List<TestResult>();
 
-            static ResultStats mergeStats(ResultStats first, ResultStats second) 
-                => ResultStats.Create((first.OperationsPerSecond.Length, second.OperationsPerSecond.Length) switch
+            static ResultStats mergeStats(int opsPerIter, ResultStats first, ResultStats second) 
+                => ResultStats.Create(opsPerIter, 
+                                      (first.OperationsPerSecond.Length, second.OperationsPerSecond.Length) switch
                                        {
                                            (0, _) => second.OperationsPerSecond,
                                            (_, 0) => first.OperationsPerSecond,
@@ -109,20 +109,23 @@ namespace FASTER.PerfTest
             {
                 var merged = new TestResult() { Inputs = first.Inputs };
 
-                void merge(Func<TestOutputs, OperationResults> opResultsSelector)
+                void merge(Func<TestOutputs, OperationResults> opResultsSelector, Func<int> opsPerIterSelector)
                 {
+                    var opsPerIter = opsPerIterSelector();
                     var firstOpResults = opResultsSelector(first.Outputs);
                     var secondOpResults = opResultsSelector(second.Outputs);
                     var mergedOpResults = opResultsSelector(merged.Outputs);
-                    mergedOpResults.AllThreadsFull = mergeStats(firstOpResults.AllThreadsFull, secondOpResults.AllThreadsFull);
-                    mergedOpResults.PerThreadFull = mergeStats(firstOpResults.PerThreadFull, secondOpResults.PerThreadFull);
+                    mergedOpResults.AllThreadsFull = mergeStats(opsPerIter, firstOpResults.AllThreadsFull, secondOpResults.AllThreadsFull);
+                    mergedOpResults.AllThreadsTrimmed = mergeStats(opsPerIter, firstOpResults.AllThreadsTrimmed, secondOpResults.AllThreadsTrimmed);
+                    mergedOpResults.PerThreadFull = mergeStats(opsPerIter, firstOpResults.PerThreadFull, secondOpResults.PerThreadFull);
+                    mergedOpResults.PerThreadTrimmed = mergeStats(opsPerIter, firstOpResults.PerThreadTrimmed, secondOpResults.PerThreadTrimmed);
                 }
 
-                merge(outputs => outputs.InitialInserts);
-                merge(outputs => outputs.TotalOperations);
-                merge(outputs => outputs.Upserts);
-                merge(outputs => outputs.Reads);
-                merge(outputs => outputs.RMWs);
+                merge(outputs => outputs.InitialInserts, () => first.Inputs.InitKeyCount);
+                merge(outputs => outputs.TotalOperations, () => first.Inputs.TotalOperationCount);
+                merge(outputs => outputs.Upserts, () => first.Inputs.UpsertCount);
+                merge(outputs => outputs.Reads, () => first.Inputs.ReadCount);
+                merge(outputs => outputs.RMWs, () => first.Inputs.RMWCount);
                 results.Add(merged);
             }
 
@@ -139,35 +142,6 @@ namespace FASTER.PerfTest
                               $" second file unmatched {otherOnlyCount}");
 
             return new TestResults { Results = results.ToArray() };
-        }
-    }
-
-    public class DoubleRoundingConverter : JsonConverter
-    {
-        private const int Precision = 2;
-
-        public DoubleRoundingConverter() { }
-
-        public override bool CanRead => false;
-
-        public override bool CanWrite => true;
-
-        public override bool CanConvert(Type propertyType) => propertyType == typeof(double);
-
-        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
-            => throw new NotImplementedException();
-
-        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
-        {
-            if (value is double[] vector)
-            {
-                writer.WriteStartArray();
-                foreach (var d in vector)
-                    writer.WriteValue(Math.Round(d, Precision));
-                writer.WriteEndArray();
-                return;
-            }
-            writer.WriteValue(Math.Round((double)value, Precision));
         }
     }
 }
