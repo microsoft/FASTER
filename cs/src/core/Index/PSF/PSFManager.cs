@@ -92,6 +92,8 @@ namespace FASTER.core
 
         private void VerifyIsOurPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf)
         {
+            if (psf is null)
+                throw new PSFArgumentException($"The PSF cannot be null.");
             if (!this.psfNames.TryGetValue(psf.Name, out Guid id) || id != psf.Id)
                 throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
         }

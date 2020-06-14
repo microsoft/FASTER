@@ -12,8 +12,8 @@ namespace FasterPSFSample
 
         int ColorArgb { get; set; }
 
-        int NumSold { get; set; }
+        int Count { get; set; }
 
-        (int, int, int, int) MemberTuple => (this.Id, this.SizeInt, this.ColorArgb, this.NumSold);
+        (int, int, int, int) MemberTuple => (this.Id, this.SizeInt, this.ColorArgb, this.Count);
     }
 }

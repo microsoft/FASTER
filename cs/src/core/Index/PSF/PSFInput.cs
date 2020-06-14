@@ -62,6 +62,8 @@ namespace FASTER.core
         bool EqualsAt(ref TKey queryKey, ref TKey storedKey);
     }
 
+    // TODO: Trim IPSFInput to only what PSFInputPrimaryReadAddress needs
+
     /// <summary>
     /// Input to PsfInternalReadAddress on the primary (stores user values) FasterKV to retrieve the Key and Value
     /// for a logicalAddress returned from the secondary FasterKV instances.  This class is FasterKV-provider-specific.
@@ -136,12 +138,14 @@ namespace FASTER.core
 
         public long ReadLogicalAddress { get; set; }
 
+        private bool IsQuery => this.resultFlags is null;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetHashCode64At(ref PSFCompositeKey<TPSFKey> cKey)
-            => this.comparer.GetHashCode64(this.PsfOrdinal, ref cKey);
+            => this.comparer.GetHashCode64(this.IsQuery ? 0 : this.PsfOrdinal, ref cKey);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool EqualsAt(ref PSFCompositeKey<TPSFKey> queryKey, ref PSFCompositeKey<TPSFKey> storedKey)
-            => this.comparer.Equals(this.resultFlags is null, this.PsfOrdinal, ref queryKey, ref storedKey);
+            => this.comparer.Equals(this.IsQuery, this.PsfOrdinal, ref queryKey, ref storedKey);
     }
 }

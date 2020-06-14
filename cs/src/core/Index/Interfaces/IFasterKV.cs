@@ -177,7 +177,7 @@ namespace FASTER.core
         /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
         /// <returns>A FasterKV-specific <see cref="PSF{TPSFKey, TRecordId}"/> implementation whose TRecordId is long(</returns>
         PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
-                string psfName, Func<Key, Value, TPSFKey> psfFunc,
+                string psfName, Func<Key, Value, TPSFKey?> psfFunc,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct;
 
@@ -194,7 +194,7 @@ namespace FASTER.core
         /// <remarks>"params" won't allow the optional fromAddress and keyComparer, so an overload is provided
         /// to specify those</remarks>
         PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
-                params (string, Func<Key, Value, TPSFKey>)[] psfFuncs)
+                params (string, Func<Key, Value, TPSFKey?>)[] psfFuncs)
             where TPSFKey : struct;
 
         /// <summary>
@@ -202,10 +202,10 @@ namespace FASTER.core
         /// </summary>
         /// <example>
         /// // Unfortunately the array type cannot be implicitly deduced in current versions of the compiler
-        /// var sizePsf = fht.RegisterPSF(new (string, Func{TKVKey, TKVValue, TPSFKey>)[] {
+        /// var sizePsf = fht.RegisterPSF(new (string, Func{TKVKey, TKVValue, TPSFKey})[] {
         ///                                        ("sizePsf", (k, v) => new TPSFKey(v.size)),
         ///                                        ("colorPsf", (k, v) => new TPSFKey(v.color))},
-        ///                               keyComparer, fromAddress);
+        ///                               registrationSettings);
         /// </example>
         /// <typeparam name="TPSFKey">The type of the key value returned from the <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
         /// <param name="psfDefs">One or more tuples containing a PSF name and implementing Func; the name must be 
@@ -214,7 +214,7 @@ namespace FASTER.core
         /// <remarks>If the registrationSettings parameters are null, then it is simpler to call the "params" overload
         /// than to create the vector explicitly</remarks>
         PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
-                (string, Func<Key, Value, TPSFKey>)[] psfDefs,
+                (string, Func<Key, Value, TPSFKey?>)[] psfDefs,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct;
 

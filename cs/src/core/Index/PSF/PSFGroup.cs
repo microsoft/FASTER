@@ -163,20 +163,23 @@ namespace FASTER.core
             keys.Set(poolKeyMem, flagsMem);
         }
 
-        internal unsafe void MarkChanges(GroupKeysPair keysPair)
+        internal unsafe void MarkChanges(ref GroupKeysPair keysPair)
         {
-            var before = keysPair.Before;
-            var after = keysPair.After;
-            var beforeCompKey = before.GetCompositeKeyRef<PSFCompositeKey<TPSFKey>>();
-            var afterCompKey = after.GetCompositeKeyRef<PSFCompositeKey<TPSFKey>>();
+            ref GroupKeys before = ref keysPair.Before;
+            ref GroupKeys after = ref keysPair.After;
+            ref PSFCompositeKey<TPSFKey> beforeCompKey = ref before.GetCompositeKeyRef<PSFCompositeKey<TPSFKey>>();
+            ref PSFCompositeKey<TPSFKey> afterCompKey = ref after.GetCompositeKeyRef<PSFCompositeKey<TPSFKey>>();
             for (var ii = 0; ii < this.PSFCount; ++ii)
             {
-                bool keysEqual() => beforeCompKey.GetKeyRef(ii, this.keySize).Equals(afterCompKey.GetKeyRef(ii, this.keySize));
+                var beforeIsNull = before.IsNullAt(ii);
+                var afterIsNull = after.IsNullAt(ii);
+                var keysEqual = !beforeIsNull && !afterIsNull
+                    && beforeCompKey.GetKeyRef(ii, this.keySize).Equals(afterCompKey.GetKeyRef(ii, this.keySize));
 
                 // IsNull is already set in PSFGroup.ExecuteAndStore.
-                if (!before.IsNullAt(ii) && (after.IsNullAt(ii) || !keysEqual()))
+                if (!before.IsNullAt(ii) && (after.IsNullAt(ii) || !keysEqual))
                     *after.ResultFlags |= PSFResultFlags.UnlinkOld;
-                if (!after.IsNullAt(ii) && (before.IsNullAt(ii) || !keysEqual()))
+                if (!after.IsNullAt(ii) && (before.IsNullAt(ii) || !keysEqual))
                     *after.ResultFlags |= PSFResultFlags.LinkNew;
             }
         }
@@ -187,10 +190,10 @@ namespace FASTER.core
         {
             // Note: stackalloc is safe because PendingContext or PSFChangeTracker will copy it to the bufferPool
             // if needed. On the Insert fast path, we don't want any allocations otherwise; changeTracker is null.
-            // TODO: Max psfCount per group to ensure stackalloc doesn't overflow
+            // TODO: Cutoff (psfCount * keySize) per group to use bufferPool to ensure stackalloc doesn't overflow
             var keyMemLen = ((keySize * this.PSFCount + sizeof(int) - 1) & ~(sizeof(int) - 1));
             var keyMemInt = stackalloc int[keyMemLen / sizeof(int)];
-            for (var ii = 0; ii < keyMemLen; ++ii)
+            for (var ii = 0; ii < keyMemLen / sizeof(int); ++ii)
                 keyMemInt[ii] = 0;
             var keyMem = (byte*)keyMemInt;
             ref PSFCompositeKey<TPSFKey> compositeKey = ref Unsafe.AsRef<PSFCompositeKey<TPSFKey>>(keyMem);
@@ -201,7 +204,6 @@ namespace FASTER.core
             for (int ii = 0; ii < this.psfDefinitions.Length; ++ii)
             {
                 var key = this.psfDefinitions[ii].Execute(providerData);
-                
                 *(flags + ii) = key.HasValue ? PSFResultFlags.None : PSFResultFlags.IsNull;
                 if (key.HasValue)
                 {
@@ -234,7 +236,7 @@ namespace FASTER.core
 
                 if (phase == PSFExecutePhase.PostUpdate)
                 {
-                    // If not found, this is a new group added after the PreUpdate was done, so handle this as an insert.
+                    // TODOtest: If not found, this is a new group added after the PreUpdate was done, so handle this as an insert.
                     if (!changeTracker.FindGroup(this.Id, out groupOrdinal))
                     {
                         phase = PSFExecutePhase.Insert;
@@ -243,7 +245,7 @@ namespace FASTER.core
                     {
                         ref GroupKeysPair groupKeysPair = ref changeTracker.GetGroupRef(groupOrdinal);
                         StoreKeys(ref groupKeysPair.After, keyMem, keyMemLen, flags, flagsMemLen);
-                        this.MarkChanges(groupKeysPair);
+                        this.MarkChanges(ref groupKeysPair);
                         // TODOtest: In debug, for initial dev, follow chains to assert the values match what is in the record's compositeKey
                         if (!groupKeysPair.HasChanges)
                             return Status.OK;
@@ -266,7 +268,8 @@ namespace FASTER.core
                     PSFExecutePhase.Insert => session.PsfInsert(ref compositeKey, ref psfValue, ref input, lsn),
                     PSFExecutePhase.PostUpdate => session.PsfUpdate(ref changeTracker.GetGroupRef(groupOrdinal),
                                                                     ref psfValue, ref input, lsn, changeTracker),
-                    PSFExecutePhase.Delete => session.PsfDelete(ref compositeKey, ref psfValue, ref input, lsn, changeTracker),
+                    PSFExecutePhase.Delete => session.PsfDelete(ref compositeKey, ref psfValue, ref input, lsn,
+                                                                    changeTracker),
                     _ => throw new PSFInternalErrorException("Unknown PSF execution Phase {phase}")
                 };
             } 
@@ -333,7 +336,7 @@ namespace FASTER.core
             var keyPtr = new PSFCompositeKey<TPSFKey>.PtrWrapper(this.keySize, this.bufferPool);
             keyPtr.Set(ref key);
 
-            // These indirections are necessary to avoid issues with passing ref or unsafe to a enumerator function.
+            // These indirections are necessary to avoid issues with passing ref or unsafe to an enumerator function.
             // TODOperf: PSFInput* and PSFOutput* are classes because we communicate through interfaces to avoid
             // having to add additional generic args. Interfaces on structs incur boxing overhead (plus the complexity
             // of mutable structs). But check the performance here; if necessary perhaps I can figure out a way to
@@ -346,10 +349,10 @@ namespace FASTER.core
                                              PSFInputSecondary<TPSFKey> input)
         {
             // TODOperf: if there are multiple PSFs within this group we can step through in parallel and return them
-            // as a single merged stream; will require multiple TPSFKeys and their indexes in queryKeyPtr
+            // as a single merged stream; will require multiple TPSFKeys and their indexes in queryKeyPtr. Also consider
+            // having TPSFKeys[] for a single PSF walk through in parallel, so the FHT log memory access is sequential.
             var secondaryOutput = new PSFOutputSecondary<TPSFKey, TRecordId>(this.psfValueAccessor);
-            var readArgs = new PSFReadArgs<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>>(
-                            input, secondaryOutput);
+            var readArgs = new PSFReadArgs<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>>(input, secondaryOutput);
 
             var session = this.GetSession();
             HashSet<TRecordId> deadRecs = null;

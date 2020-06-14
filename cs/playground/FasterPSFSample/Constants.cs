@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 
@@ -29,5 +30,12 @@ namespace FasterPSFSample
         };
 
         static internal Color[] Colors = { Color.Black, Color.Red, Color.Green, Color.Blue, Color.Purple };
+
+        public enum ValueType
+        {
+            Size,
+            Color,
+            Count
+        }
     }
 }

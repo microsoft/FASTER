@@ -8,26 +8,31 @@ namespace FasterPSFSample
 {
     public class ObjectOrders : IOrders
     {
+        const int numValues = 3;
+        const int sizeOrd = 0;
+        const int colorOrd = 1;
+        const int countOrd = 2;
+
         public int Id { get; set; }
 
         // Colors, strings, and enums are not blittable so we use int
-        public int SizeInt { get => values[0]; set => values[0] = value;  }
+        public int SizeInt { get => values[sizeOrd]; set => values[sizeOrd] = value;  }
 
-        public int ColorArgb { get => values[1]; set => values[1] = value; }
+        public int ColorArgb { get => values[colorOrd]; set => values[colorOrd] = value; }
 
-        public int NumSold { get => values[2]; set => values[2] = value; }
+        public int Count { get => values[countOrd]; set => values[countOrd] = value; }
 
-        public int[] values;
+        public int[] values = new int[numValues];
 
         public ObjectOrders() => throw new InvalidOperationException("Must use ctor overload");
 
-        public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {NumSold}";
+        public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {Count}";
 
         public class Serializer : BinaryObjectSerializer<ObjectOrders>
         {
             public override void Deserialize(ref ObjectOrders obj)
             {
-                obj.values = new int[3];
+                obj.values = new int[numValues];
                 for (var ii = 0; ii < obj.values.Length; ++ii)
                     obj.values[ii] = reader.ReadInt32();
             }

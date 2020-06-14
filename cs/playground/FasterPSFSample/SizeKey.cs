@@ -7,6 +7,7 @@ namespace FasterPSFSample
 {
     public struct SizeKey : IFasterEqualityComparer<SizeKey>
     {
+        // Colors, strings, and enums are not blittable so we use int
         public int SizeInt;
 
         public SizeKey(Constants.Size size) => this.SizeInt = (int)size;

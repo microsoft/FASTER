@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+//#define PSF_TRACE
+
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -68,8 +71,9 @@ namespace FASTER.core
 
                     if (!psfInput.EqualsAt(ref queryKey, ref hlog.GetKey(physicalAddress)))
                     {
-                        logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
-                        TraceBackForKeyMatch(ref queryKey,
+                        logicalAddress = *(this.psfValueAccessor.GetChainLinkPtrs(ref hlog.GetValue(physicalAddress)) + psfInput.PsfOrdinal);
+                        if (logicalAddress > hlog.BeginAddress)
+                            TraceBackForKeyMatch(ref queryKey,
                                                 logicalAddress,
                                                 hlog.HeadAddress,
                                                 out logicalAddress,
@@ -255,6 +259,10 @@ namespace FASTER.core
             return status;
         }
 
+        [Conditional("PSF_TRACE")] static void PsfTrace(string message) => Console.Write(message);
+
+        [Conditional("PSF_TRACE")] static void PsfTraceLine(string message) => Console.WriteLine(message);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PsfInternalInsert(
                         ref Key compositeKey, ref Value value, ref Input input,
@@ -278,19 +286,22 @@ namespace FASTER.core
             var psfCount = this.psfValueAccessor.PSFCount;
             long* hashes = stackalloc long[psfCount];
             long* chainLinkPtrs = this.psfValueAccessor.GetChainLinkPtrs(ref value);
-            for (var chainLinkIdx = 0; chainLinkIdx < psfCount; ++chainLinkIdx)
+            PsfTrace($" {value} |");
+            for (psfInput.PsfOrdinal = 0; psfInput.PsfOrdinal < psfCount; ++psfInput.PsfOrdinal)
             {
                 // For RCU, or in case we had to retry due to CPR_SHIFT and somehow managed to delete
                 // the previously found record, clear out the chain link pointer.
-                long* chainLinkPtr = chainLinkPtrs + chainLinkIdx;
+                long* chainLinkPtr = chainLinkPtrs + psfInput.PsfOrdinal;
                 *chainLinkPtr = Constants.kInvalidAddress;
 
-                psfInput.PsfOrdinal = chainLinkIdx;
                 if (psfInput.IsNullAt)
+                {
+                    PsfTrace($" -0-");
                     continue;
+                }
 
                 var hash = psfInput.GetHashCode64At(ref compositeKey);
-                *(hashes + chainLinkIdx) = hash;
+                *(hashes + psfInput.PsfOrdinal) = hash;
                 var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                 if (sessionCtx.phase != Phase.REST)
@@ -298,10 +309,10 @@ namespace FASTER.core
 
 #region Trace back for record in in-memory HybridLog
                 entry = default;
-                var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
-                if (tagExists)
+                if (FindTag(hash, tag, ref bucket, ref slot, ref entry))
                 {
                     logicalAddress = entry.Address;
+                    PsfTrace($" {logicalAddress}/");
 
                     // TODOtest: If this fails for any TPSFKey in the composite key, we'll create the pending
                     // context and come back here on the retry and overwrite any previously-obtained logicalAddress
@@ -324,31 +335,40 @@ namespace FASTER.core
 
                         if (!psfInput.EqualsAt(ref compositeKey, ref hlog.GetKey(physicalAddress)))
                         {
-                            logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
-                            TraceBackForKeyMatch(ref compositeKey,
-                                                 logicalAddress,
-                                                 hlog.HeadAddress,
-                                                 out logicalAddress,
-                                                 out physicalAddress,
-                                                 psfInput);
+                            logicalAddress = *(this.psfValueAccessor.GetChainLinkPtrs(ref hlog.GetValue(physicalAddress)) + psfInput.PsfOrdinal);
+                            if (logicalAddress > hlog.BeginAddress)
+                                TraceBackForKeyMatch(ref compositeKey,
+                                                     logicalAddress,
+                                                     hlog.HeadAddress,
+                                                     out logicalAddress,
+                                                     out physicalAddress,
+                                                     psfInput);
                         }
                     }
+
+                    PsfTrace($"{logicalAddress}");
+                    if (logicalAddress < hlog.BeginAddress)
+                        continue;
 
                     if (hlog.GetInfo(physicalAddress).Tombstone)
                     {
                         // The chain might extend past a tombstoned record so we must include it in the chain
-                        // unless its link at chainLinkIdx is kInvalidAddress.
+                        // unless its prevLink at psfOrdinal is invalid.
                         long* prevLinks = this.psfValueAccessor.GetChainLinkPtrs(ref hlog.GetValue(physicalAddress));
-                        long* prevLink = prevLinks + chainLinkIdx;
-                        if (*prevLink == Constants.kInvalidAddress)
+                        long* prevLink = prevLinks + psfInput.PsfOrdinal;
+                        if (*prevLink < hlog.BeginAddress)
                             continue;
                     }
                     *chainLinkPtr = logicalAddress;
                 }
+                else
+                {
+                    PsfTrace($" {logicalAddress}/{logicalAddress}");
+                }
 #endregion
             }
 
-#region Entry latch operation
+            #region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
                 switch (sessionCtx.phase)
@@ -435,13 +455,14 @@ namespace FASTER.core
                 hlog.ShallowCopy(ref compositeKey, ref hlog.GetKey(newPhysicalAddress));
                 functions.SingleWriter(ref compositeKey, ref value, ref hlog.GetValue(newPhysicalAddress));
 
-                for (var chainLinkIdx = 0; chainLinkIdx < psfCount; ++chainLinkIdx)
+                PsfTraceLine($" | {newLogicalAddress}");
+                for (var psfOrdinal = 0; psfOrdinal < psfCount; ++psfOrdinal)
                 {
-                    psfInput.PsfOrdinal = chainLinkIdx;
+                    psfInput.PsfOrdinal = psfOrdinal;
                     if (psfInput.IsNullAt)
                         continue;
 
-                    var hash = *(hashes + chainLinkIdx);
+                    var hash = *(hashes + psfOrdinal);
                     var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
                     entry = default;
                     FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);

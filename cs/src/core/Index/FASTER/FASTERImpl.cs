@@ -1844,19 +1844,47 @@ namespace FASTER.core
                                     long fromLogicalAddress,
                                     long minOffset,
                                     out long foundLogicalAddress,
-                                    out long foundPhysicalAddress,
-                                    IPSFInput<Key> psfInput = null)
+                                    out long foundPhysicalAddress)
         {
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minOffset)
             {
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
-                if (psfInput is null
-                        ? comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress))
-                        : psfInput.EqualsAt(ref key, ref hlog.GetKey(foundPhysicalAddress)))
+                if (comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress)))
+                {
+                    return true;
+                }
+                else
+                {
+                    foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
+                    //This makes testing REALLY slow
+                    //Debug.WriteLine("Tracing back");
+                    continue;
+                }
+            }
+            foundPhysicalAddress = Constants.kInvalidAddress;
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TraceBackForKeyMatch(
+                                    ref Key key,
+                                    long fromLogicalAddress,
+                                    long minOffset,
+                                    out long foundLogicalAddress,
+                                    out long foundPhysicalAddress,
+                                    IPSFInput<Key> psfInput)
+        {
+            foundLogicalAddress = fromLogicalAddress;
+            while (foundLogicalAddress >= minOffset)
+            {
+                foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
+                if (psfInput.EqualsAt(ref key, ref hlog.GetKey(foundPhysicalAddress)))
                     return true;
 
-                foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
+                foundLogicalAddress = *(this.psfValueAccessor.GetChainLinkPtrs(ref hlog.GetValue(foundPhysicalAddress)) 
+                                            + psfInput.PsfOrdinal);
+
                 //This makes testing REALLY slow
                 //Debug.WriteLine("Tracing back");
                 continue;

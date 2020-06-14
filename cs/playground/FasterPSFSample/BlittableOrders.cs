@@ -3,7 +3,6 @@
 
 using FASTER.core;
 using System;
-using System.Drawing;
 
 namespace FasterPSFSample
 {
@@ -16,9 +15,9 @@ namespace FasterPSFSample
 
         public int ColorArgb { get; set; }
 
-        public int NumSold { get; set; }
+        public int Count { get; set; }
 
-        public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {NumSold}";
+        public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {Count}";
 
         public class Functions : IFunctions<Key, BlittableOrders, Input, Output<BlittableOrders>, Context<BlittableOrders>>
         {

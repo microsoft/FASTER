@@ -52,7 +52,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
-                string psfName, Func<Key, Value, TPSFKey> psfFunc,
+                string psfName, Func<Key, Value, TPSFKey?> psfFunc,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct
             => this.PSFManager.RegisterPSF(new FasterKVPSFDefinition<Key, Value, TPSFKey>(psfName, psfFunc),
@@ -60,14 +60,14 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
-                params (string, Func<Key, Value, TPSFKey>)[] psfFuncs)
+                params (string, Func<Key, Value, TPSFKey?>)[] psfFuncs)
             where TPSFKey : struct
             => this.PSFManager.RegisterPSF(psfFuncs.Select(e => new FasterKVPSFDefinition<Key, Value, TPSFKey>(e.Item1, e.Item2)).ToArray(),
                                            CreateDefaultRegistrationSettings<TPSFKey>());
 
         /// <inheritdoc/>
         public PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
-                (string, Func<Key, Value, TPSFKey>)[] psfDefs,
+                (string, Func<Key, Value, TPSFKey?>)[] psfDefs,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct
             => this.PSFManager.RegisterPSF(psfDefs.Select(e => new FasterKVPSFDefinition<Key, Value, TPSFKey>(e.Item1, e.Item2)).ToArray(),

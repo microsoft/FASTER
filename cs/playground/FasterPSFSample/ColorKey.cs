@@ -8,6 +8,7 @@ namespace FasterPSFSample
 {
     public struct ColorKey : IFasterEqualityComparer<ColorKey>
     {
+        // Colors, strings, and enums are not blittable so we use int
         public int ColorArgb;
 
         public ColorKey(Color color) => this.ColorArgb = color.ToArgb();

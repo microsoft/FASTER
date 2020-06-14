@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using System;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -19,21 +20,45 @@ namespace FasterPSFSample
 
         internal PSF<SizeKey, long> SizePsf;
         internal PSF<ColorKey, long> ColorPsf;
+        internal PSF<CountBinKey, long> CountBinPsf;
 
-        internal FPSF(bool useObjectValues, bool useReadCache)
+        internal PSF<CombinedKey, long> CombinedSizePsf;
+        internal PSF<CombinedKey, long> CombinedColorPsf;
+        internal PSF<CombinedKey, long> CombinedCountBinPsf;
+
+        internal FPSF(bool useObjectValues, bool useMultiGroup, bool useReadCache)
         {
-            this.logFiles = new LogFiles(useObjectValues, useReadCache, 2);
+            this.logFiles = new LogFiles(useObjectValues, useReadCache, useMultiGroup ? 3 : 1);
 
             this.fht = new FasterKV<Key, TValue, Input, TOutput, Context<TValue>, TFunctions>(
                                 1L << 20, new TFunctions(), this.logFiles.LogSettings,
                                 null, // TODO: add checkpoints
                                 useObjectValues ? new SerializerSettings<Key, TValue> { valueSerializer = () => new TSerializer() } : null);
 
-            var psfOrdinal = 0;
-            this.SizePsf = fht.RegisterPSF("sizePsf", (k, v) => new SizeKey((Constants.Size)v.SizeInt),
-                CreatePSFRegistrationSettings<SizeKey>(psfOrdinal++));
-            this.ColorPsf = fht.RegisterPSF("colorPsf", (k, v) => new ColorKey(Constants.ColorDict[v.ColorArgb]),
-                CreatePSFRegistrationSettings<ColorKey>(psfOrdinal++));
+            if (useMultiGroup)
+            {
+                var psfOrdinal = 0;
+                this.SizePsf = fht.RegisterPSF("sizePsf", (k, v) => new SizeKey((Constants.Size)v.SizeInt),
+                    CreatePSFRegistrationSettings<SizeKey>(psfOrdinal++));
+                this.ColorPsf = fht.RegisterPSF("colorPsf", (k, v) => new ColorKey(Constants.ColorDict[v.ColorArgb]),
+                    CreatePSFRegistrationSettings<ColorKey>(psfOrdinal++));
+                this.CountBinPsf = fht.RegisterPSF("countBinPsf", (k, v) => CountBinKey.GetBin(v.Count, out int bin)
+                                                                    ? new CountBinKey(bin) : (CountBinKey?)null,
+                    CreatePSFRegistrationSettings<CountBinKey>(psfOrdinal++));
+            }
+            else
+            {
+                var psfs = fht.RegisterPSF(new(string, Func<Key, TValue, CombinedKey?>)[] {
+                    ("sizePsf", (k, v) => new CombinedKey((Constants.Size)v.SizeInt)),
+                    ("colorPsf", (k, v) => new CombinedKey(Constants.ColorDict[v.ColorArgb])),
+                    ("countBinPsf", (k, v) => CountBinKey.GetBin(v.Count, out int bin)
+                                                                    ? new CombinedKey(bin) : (CombinedKey?)null)
+                    }, CreatePSFRegistrationSettings<CombinedKey>(0)
+                );
+                this.CombinedSizePsf = psfs[0];
+                this.CombinedColorPsf = psfs[1];
+                this.CombinedCountBinPsf = psfs[2];
+            }
         }
 
         PSFRegistrationSettings<TKey> CreatePSFRegistrationSettings<TKey>(int psfOrdinal)

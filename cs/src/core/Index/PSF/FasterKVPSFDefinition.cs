@@ -62,7 +62,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="name"></param>
         /// <param name="predicate"></param>
-        public FasterKVPSFDefinition(string name, Func<TKVKey, TKVValue, TPSFKey> predicate)
+        public FasterKVPSFDefinition(string name, Func<TKVKey, TKVValue, TPSFKey?> predicate)
         {
             TPSFKey? wrappedPredicate(ref TKVKey key, ref TKVValue value) => predicate(key, value);
 
