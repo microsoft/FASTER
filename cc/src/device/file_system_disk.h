@@ -52,29 +52,29 @@ class FileSystemFile {
     return *this;
   }
 
-  Status Open(handler_t* handler) {
+  core::Status Open(handler_t* handler) {
     return file_.Open(FASTER::environment::FileCreateDisposition::OpenOrCreate, file_options_,
                       handler, nullptr);
   }
-  Status Close() {
+  core::Status Close() {
     return file_.Close();
   }
-  Status Delete() {
+  core::Status Delete() {
     return file_.Delete();
   }
-  void Truncate(uint64_t new_begin_offset, GcState::truncate_callback_t callback) {
+  void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
     // Truncation is a no-op.
     if(callback) {
       callback(new_begin_offset);
     }
   }
 
-  Status ReadAsync(uint64_t source, void* dest, uint32_t length,
-                   AsyncIOCallback callback, IAsyncContext& context) const {
+  core::Status ReadAsync(uint64_t source, void* dest, uint32_t length,
+                   core::AsyncIOCallback callback, core::IAsyncContext& context) const {
     return file_.Read(source, length, reinterpret_cast<uint8_t*>(dest), context, callback);
   }
-  Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
-                    AsyncIOCallback callback, IAsyncContext& context) {
+  core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
+                    core::AsyncIOCallback callback, core::IAsyncContext& context) {
     return file_.Write(dest, length, reinterpret_cast<const uint8_t*>(source), context, callback);
   }
 
@@ -106,8 +106,8 @@ class FileSystemSegmentBundle {
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
           file_options_ };
-      Status result = file(idx).Open(handler);
-      assert(result == Status::Ok);
+      core::Status result = file(idx).Open(handler);
+      assert(result == core::Status::Ok);
     }
   }
 
@@ -128,8 +128,8 @@ class FileSystemSegmentBundle {
     for(uint64_t idx = begin_segment; idx < begin_copy; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
           file_options_ };
-      Status result = file(idx).Open(handler);
-      assert(result == Status::Ok);
+      core::Status result = file(idx).Open(handler);
+      assert(result == core::Status::Ok);
     }
     for(uint64_t idx = begin_copy; idx < end_copy; ++idx) {
       // Move file handles for segments already opened.
@@ -138,8 +138,8 @@ class FileSystemSegmentBundle {
     for(uint64_t idx = end_copy; idx < end_new; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
           file_options_ };
-      Status result = file(idx).Open(handler);
-      assert(result == Status::Ok);
+      core::Status result = file(idx).Open(handler);
+      assert(result == core::Status::Ok);
     }
 
     other.owner_ = false;
@@ -153,12 +153,12 @@ class FileSystemSegmentBundle {
     }
   }
 
-  Status Close() {
+  core::Status Close() {
     assert(owner_);
-    Status result = Status::Ok;
+    core::Status result = core::Status::Ok;
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
-      Status r = file(idx).Close();
-      if(r != Status::Ok) {
+      core::Status r = file(idx).Close();
+      if(r != core::Status::Ok) {
         // We'll report the last error.
         result = r;
       }
@@ -166,12 +166,12 @@ class FileSystemSegmentBundle {
     return result;
   }
 
-  Status Delete() {
+  core::Status Delete() {
     assert(owner_);
-    Status result = Status::Ok;
+    core::Status result = core::Status::Ok;
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
-      Status r = file(idx).Delete();
-      if(r != Status::Ok) {
+      core::Status r = file(idx).Delete();
+      if(r != core::Status::Ok) {
         // We'll report the last error.
         result = r;
       }
@@ -211,10 +211,10 @@ class FileSystemSegmentedFile {
   typedef FileSystemSegmentBundle<handler_t> bundle_t;
 
   static constexpr uint64_t kSegmentSize = S;
-  static_assert(Utility::IsPowerOfTwo(S), "template parameter S is not a power of two!");
+  static_assert(core::Utility::IsPowerOfTwo(S), "template parameter S is not a power of two!");
 
   FileSystemSegmentedFile(const std::string& filename,
-                          const environment::FileOptions& file_options, LightEpoch* epoch)
+                          const environment::FileOptions& file_options, core::LightEpoch* epoch)
     : begin_segment_{ 0 }
     , files_{ nullptr }
     , handler_{ nullptr }
@@ -231,32 +231,32 @@ class FileSystemSegmentedFile {
     }
   }
 
-  Status Open(handler_t* handler) {
+  core::Status Open(handler_t* handler) {
     handler_ = handler;
-    return Status::Ok;
+    return core::Status::Ok;
   }
-  Status Close() {
-    return (files_) ? files_->Close() : Status::Ok;
+  core::Status Close() {
+    return (files_) ? files_->Close() : core::Status::Ok;
   }
-  Status Delete() {
-    return (files_) ? files_->Delete() : Status::Ok;
+  core::Status Delete() {
+    return (files_) ? files_->Delete() : core::Status::Ok;
   }
-  void Truncate(uint64_t new_begin_offset, GcState::truncate_callback_t callback) {
+  void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
     uint64_t new_begin_segment = new_begin_offset / kSegmentSize;
     begin_segment_ = new_begin_segment;
     TruncateSegments(new_begin_segment, callback);
   }
 
-  Status ReadAsync(uint64_t source, void* dest, uint32_t length, AsyncIOCallback callback,
-                   IAsyncContext& context) const {
+  core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, core::AsyncIOCallback callback,
+                   core::IAsyncContext& context) const {
     uint64_t segment = source / kSegmentSize;
     assert(source % kSegmentSize + length <= kSegmentSize);
 
     bundle_t* files = files_.load();
 
     if(!files || !files->exists(segment)) {
-      Status result = const_cast<FileSystemSegmentedFile<H, S>*>(this)->OpenSegment(segment);
-      if(result != Status::Ok) {
+      core::Status result = const_cast<FileSystemSegmentedFile<H, S>*>(this)->OpenSegment(segment);
+      if(result != core::Status::Ok) {
         return result;
       }
       files = files_.load();
@@ -264,16 +264,16 @@ class FileSystemSegmentedFile {
     return files->file(segment).ReadAsync(source % kSegmentSize, dest, length, callback, context);
   }
 
-  Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
-                    AsyncIOCallback callback, IAsyncContext& context) {
+  core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
+                    core::AsyncIOCallback callback, core::IAsyncContext& context) {
     uint64_t segment = dest / kSegmentSize;
     assert(dest % kSegmentSize + length <= kSegmentSize);
 
     bundle_t* files = files_.load();
 
     if(!files || !files->exists(segment)) {
-      Status result = OpenSegment(segment);
-      if(result != Status::Ok) {
+      core::Status result = OpenSegment(segment);
+      if(result != core::Status::Ok) {
         return result;
       }
       files = files_.load();
@@ -286,8 +286,8 @@ class FileSystemSegmentedFile {
   }
 
  private:
-  Status OpenSegment(uint64_t segment) {
-    class Context : public IAsyncContext {
+  core::Status OpenSegment(uint64_t segment) {
+    class Context : public core::IAsyncContext {
      public:
       Context(void* files_)
         : files{ files_ } {
@@ -297,15 +297,15 @@ class FileSystemSegmentedFile {
         : files{ other.files} {
       }
      protected:
-      Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+      core::Status DeepCopy_Internal(core::IAsyncContext*& context_copy) final {
+        return core::IAsyncContext::DeepCopy_Internal(*this, context_copy);
       }
      public:
       void* files;
     };
 
-    auto callback = [](IAsyncContext* ctxt) {
-      CallbackContext<Context> context{ ctxt };
+    auto callback = [](core::IAsyncContext* ctxt) {
+      core::CallbackContext<Context> context{ ctxt };
       std::free(context->files);
     };
 
@@ -315,11 +315,11 @@ class FileSystemSegmentedFile {
 
     if(segment < begin_segment_) {
       // The requested segment has been truncated.
-      return Status::IOError;
+      return core::Status::IOError;
     }
     if(files && files->exists(segment)) {
       // Some other thread already opened this segment for us.
-      return Status::Ok;
+      return core::Status::Ok;
     }
 
     if(!files) {
@@ -328,7 +328,7 @@ class FileSystemSegmentedFile {
       bundle_t* new_files = new(buffer) bundle_t{ filename_, file_options_, handler_,
           segment, segment + 1 };
       files_.store(new_files);
-      return Status::Ok;
+      return core::Status::Ok;
     }
 
     // Expand the list of files_.
@@ -340,18 +340,18 @@ class FileSystemSegmentedFile {
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
     Context context{ files };
-    IAsyncContext* context_copy;
-    Status result = context.DeepCopy(context_copy);
-    assert(result == Status::Ok);
+    core::IAsyncContext* context_copy;
+    core::Status result = context.DeepCopy(context_copy);
+    assert(result == core::Status::Ok);
     epoch_->BumpCurrentEpoch(callback, context_copy);
-    return Status::Ok;
+    return core::Status::Ok;
   }
 
-  void TruncateSegments(uint64_t new_begin_segment, GcState::truncate_callback_t caller_callback) {
-    class Context : public IAsyncContext {
+  void TruncateSegments(uint64_t new_begin_segment, core::GcState::truncate_callback_t caller_callback) {
+    class Context : public core::IAsyncContext {
      public:
       Context(bundle_t* files_, uint64_t new_begin_segment_,
-              GcState::truncate_callback_t caller_callback_)
+              core::GcState::truncate_callback_t caller_callback_)
         : files{ files_ }
         , new_begin_segment{ new_begin_segment_ }
         , caller_callback{ caller_callback_ } {
@@ -363,17 +363,17 @@ class FileSystemSegmentedFile {
         , caller_callback{ other.caller_callback } {
       }
      protected:
-      Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+      core::Status DeepCopy_Internal(core::IAsyncContext*& context_copy) final {
+        return core::IAsyncContext::DeepCopy_Internal(*this, context_copy);
       }
      public:
       bundle_t* files;
       uint64_t new_begin_segment;
-      GcState::truncate_callback_t caller_callback;
+      core::GcState::truncate_callback_t caller_callback;
     };
 
-    auto callback = [](IAsyncContext* ctxt) {
-      CallbackContext<Context> context{ ctxt };
+    auto callback = [](core::IAsyncContext* ctxt) {
+      core::CallbackContext<Context> context{ ctxt };
       for(uint64_t idx = context->files->begin_segment; idx < context->new_begin_segment; ++idx) {
         file_t& file = context->files->file(idx);
         file.Close();
@@ -404,9 +404,9 @@ class FileSystemSegmentedFile {
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
     Context context{ files, new_begin_segment, caller_callback };
-    IAsyncContext* context_copy;
-    Status result = context.DeepCopy(context_copy);
-    assert(result == Status::Ok);
+    core::IAsyncContext* context_copy;
+    core::Status result = context.DeepCopy(context_copy);
+    assert(result == core::Status::Ok);
     epoch_->BumpCurrentEpoch(callback, context_copy);
   }
 
@@ -415,7 +415,7 @@ class FileSystemSegmentedFile {
   handler_t* handler_;
   std::string filename_;
   environment::FileOptions file_options_;
-  LightEpoch* epoch_;
+  core::LightEpoch* epoch_;
   std::mutex mutex_;
 };
 
@@ -435,14 +435,14 @@ class FileSystemDisk {
   }
 
  public:
-  FileSystemDisk(const std::string& root_path, LightEpoch& epoch, bool enablePrivileges = false,
+  FileSystemDisk(const std::string& root_path, core::LightEpoch& epoch, bool enablePrivileges = false,
                  bool unbuffered = true, bool delete_on_close = false)
     : root_path_{ NormalizePath(root_path) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }
     , log_{ root_path_ + "log.log", default_file_options_, &epoch} {
-    Status result = log_.Open(&handler_);
-    assert(result == Status::Ok);
+    core::Status result = log_.Open(&handler_);
+    assert(result == core::Status::Ok);
   }
 
   /// Methods required by the (implicit) disk interface.
@@ -457,29 +457,29 @@ class FileSystemDisk {
     return log_;
   }
 
-  std::string relative_index_checkpoint_path(const Guid& token) const {
+  std::string relative_index_checkpoint_path(const core::Guid& token) const {
     std::string retval = "index-checkpoints";
     retval += FASTER::environment::kPathSeparator;
     retval += token.ToString();
     retval += FASTER::environment::kPathSeparator;
     return retval;
   }
-  std::string index_checkpoint_path(const Guid& token) const {
+  std::string index_checkpoint_path(const core::Guid& token) const {
     return root_path_ + relative_index_checkpoint_path(token);
   }
 
-  std::string relative_cpr_checkpoint_path(const Guid& token) const {
+  std::string relative_cpr_checkpoint_path(const core::Guid& token) const {
     std::string retval = "cpr-checkpoints";
     retval += FASTER::environment::kPathSeparator;
     retval += token.ToString();
     retval += FASTER::environment::kPathSeparator;
     return retval;
   }
-  std::string cpr_checkpoint_path(const Guid& token) const {
+  std::string cpr_checkpoint_path(const core::Guid& token) const {
     return root_path_ + relative_cpr_checkpoint_path(token);
   }
 
-  void CreateIndexCheckpointDirectory(const Guid& token) {
+  void CreateIndexCheckpointDirectory(const core::Guid& token) {
     std::string index_dir = index_checkpoint_path(token);
     std::experimental::filesystem::path path{ index_dir };
     try {
@@ -490,7 +490,7 @@ class FileSystemDisk {
     std::experimental::filesystem::create_directories(path);
   }
 
-  void CreateCprCheckpointDirectory(const Guid& token) {
+  void CreateCprCheckpointDirectory(const core::Guid& token) {
     std::string cpr_dir = cpr_checkpoint_path(token);
     std::experimental::filesystem::path path{ cpr_dir };
     try {
