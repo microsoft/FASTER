@@ -22,9 +22,9 @@ class FixedSizeKey {
     return static_cast<uint32_t>(sizeof(FixedSizeKey));
   }
 
-  inline KeyHash GetHash() const {
+  inline core::KeyHash GetHash() const {
     HashFn hash_fn;
-    return KeyHash{ hash_fn(key) };
+    return core::KeyHash{ hash_fn(key) };
   }
 
   inline bool operator==(const FixedSizeKey& other) const {

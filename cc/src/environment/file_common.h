@@ -8,8 +8,6 @@
 #include "../core/async.h"
 #include "../core/lss_allocator.h"
 
-using namespace FASTER::core;
-
 namespace FASTER {
 namespace environment {
 

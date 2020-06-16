@@ -14,6 +14,8 @@
 namespace FASTER {
 namespace environment {
 
+using namespace FASTER::core;
+
 #ifdef _DEBUG
 #define DCHECK_ALIGNMENT(o, l, b) \
 do { \
@@ -105,7 +107,7 @@ int File::GetCreateDisposition(FileCreateDisposition create_disposition) {
 
 void QueueIoHandler::IoCompletionCallback(io_context_t ctx, struct iocb* iocb, long res,
     long res2) {
-  auto callback_context = make_context_unique_ptr<IoCallbackContext>(
+  auto callback_context = core::make_context_unique_ptr<IoCallbackContext>(
                             reinterpret_cast<IoCallbackContext*>(iocb));
   size_t bytes_transferred;
   Status return_status;
@@ -172,7 +174,7 @@ Status QueueFile::Write(size_t offset, uint32_t length, const uint8_t* buffer,
 Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* buffer,
                                     size_t offset, uint32_t length, IAsyncContext& context,
                                     AsyncIOCallback callback) {
-  auto io_context = alloc_context<QueueIoHandler::IoCallbackContext>(sizeof(
+  auto io_context = core::alloc_context<QueueIoHandler::IoCallbackContext>(sizeof(
                       QueueIoHandler::IoCallbackContext));
   if(!io_context.get()) return Status::OutOfMemory;
 
