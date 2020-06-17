@@ -11,7 +11,7 @@ namespace FASTER.core
     /// <summary>
     /// The additional input interface passed to the PSF functions for internal Insert, Read, etc. operations.
     /// </summary>
-    /// <typeparam name="TKey">The type of the Key, either a <see cref="PSFCompositeKey{TPSFKey}"/> for the 
+    /// <typeparam name="TKey">The type of the Key, either a <see cref="CompositeKey{TPSFKey}"/> for the 
     ///     secondary FasterKV instances, or the user's TKVKey for the primary FasterKV instance.</typeparam>
     /// <remarks>The interface separation is needed for the PendingContext, and for the "TPSFKey : struct"
     ///     constraint in PSFInputSecondary</remarks>
@@ -45,21 +45,7 @@ namespace FASTER.core
         /// </summary>
         long ReadLogicalAddress { get; set; }
 
-        /// <summary>
-        /// Get the hashcode of the key of the <see cref="PSF{TPSFKey, TRecordId}"/> at <see cref="PsfOrdinal"/>
-        /// </summary>
-        long GetHashCode64At(ref TKey cKey);
-
-        /// <summary>
-        /// Determine if the keys match for the <see cref="PSF{TPSFKey, TRecordId}"/>s
-        /// at <see cref="PsfOrdinal"/>. For query, the queryKey is a composite consisting of only one key, and
-        /// its ordinal is always zero.
-        /// </summary>
-        /// <param name="queryKey">The composite key whose value is being matched with the store. If the
-        ///     operation is Query, this is a composite consisting of only one key, the query key</param>
-        /// <param name="storedKey">The composite key in storage being compared to</param>
-        /// <returns></returns>
-        bool EqualsAt(ref TKey queryKey, ref TKey storedKey);
+        ref TKey QueryKeyRef { get; }
     }
 
     // TODO: Trim IPSFInput to only what PSFInputPrimaryReadAddress needs
@@ -99,31 +85,37 @@ namespace FASTER.core
 
         public long ReadLogicalAddress { get; set; }
 
-        public long GetHashCode64At(ref TKey key)
-            => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
-
-        public bool EqualsAt(ref TKey queryKey, ref TKey storedKey)
-            => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
+        public ref TKey QueryKeyRef => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
     }
 
     /// <summary>
     /// Input to operations on the secondary FasterKV instance (stores PSF chains) for everything
     /// except reading based on a LogicalAddress.
     /// </summary>
-    public unsafe class PSFInputSecondary<TPSFKey> : IPSFInput<PSFCompositeKey<TPSFKey>>
+    public unsafe class PSFInputSecondary<TPSFKey> : IPSFInput<CompositeKey<TPSFKey>>, IDisposable
         where TPSFKey : struct
     {
-        internal readonly ICompositeKeyComparer<PSFCompositeKey<TPSFKey>> comparer;
+        internal readonly KeyAccessor<TPSFKey> keyAccessor;
         internal PSFResultFlags* resultFlags;
+        private SectorAlignedMemory keyPointerMem;
 
-        internal PSFInputSecondary(int psfOrd, ICompositeKeyComparer<PSFCompositeKey<TPSFKey>> keyCmp,
-                                   long groupId, PSFResultFlags* flags = null)
+        internal PSFInputSecondary(int psfOrdinal, KeyAccessor<TPSFKey> keyAcc, long groupId, PSFResultFlags* flags = null)
         {
-            this.PsfOrdinal = psfOrd;
-            this.comparer = keyCmp;
+            this.PsfOrdinal = psfOrdinal;
+            this.keyAccessor = keyAcc;
             this.GroupId = groupId;
             this.resultFlags = flags;
             this.ReadLogicalAddress = Constants.kInvalidAddress;
+        }
+
+        internal void SetQueryKey(SectorAlignedBufferPool pool, ref TPSFKey key)
+        {
+            // Create a varlen CompositeKey with just one item. This is ONLY used as the query key to QueryPSF.
+            this.keyPointerMem = pool.Get(this.keyAccessor.KeyPointerSize);
+            ref KeyPointer<TPSFKey> keyPointer = ref Unsafe.AsRef<KeyPointer<TPSFKey>>(keyPointerMem.GetValidPointer());
+            keyPointer.PrevAddress = Constants.kInvalidAddress;
+            keyPointer.PsfOrdinal = (ushort)this.PsfOrdinal;
+            keyPointer.Key = key;
         }
 
         public long GroupId { get; }
@@ -138,14 +130,13 @@ namespace FASTER.core
 
         public long ReadLogicalAddress { get; set; }
 
-        private bool IsQuery => this.resultFlags is null;
+        public ref CompositeKey<TPSFKey> QueryKeyRef
+            => ref Unsafe.AsRef<CompositeKey<TPSFKey>>(this.keyPointerMem.GetValidPointer());
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetHashCode64At(ref PSFCompositeKey<TPSFKey> cKey)
-            => this.comparer.GetHashCode64(this.IsQuery ? 0 : this.PsfOrdinal, ref cKey);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool EqualsAt(ref PSFCompositeKey<TPSFKey> queryKey, ref PSFCompositeKey<TPSFKey> storedKey)
-            => this.comparer.Equals(this.IsQuery, this.PsfOrdinal, ref queryKey, ref storedKey);
+        public void Dispose()
+        {
+            if (!(this.keyPointerMem is null))
+                this.keyPointerMem.Return();
+        }
     }
 }

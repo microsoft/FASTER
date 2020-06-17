@@ -40,7 +40,6 @@ namespace FASTER.core
     internal struct GroupKeysPair : IDisposable
     {
         internal long GroupId;
-        internal int KeySize;
 
         // If the PSFGroup found the RecordId in its IPUCache, we carry it here.
         internal long LogicalAddress;

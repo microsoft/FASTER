@@ -1,8 +1,7 @@
 {
   "profiles": {
     "FasterPSFSample": {
-      "commandName": "Project",
-      "commandLineArgs": "--multiGroup"
+      "commandName": "Project"
     }
   }
 }

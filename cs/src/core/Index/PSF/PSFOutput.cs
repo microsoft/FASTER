@@ -4,6 +4,7 @@
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -11,13 +12,15 @@ namespace FASTER.core
     /// <summary>
     /// The additional output interface passed to the PSF functions for internal Insert, Read, etc. operations.
     /// </summary>
-    /// <typeparam name="TKey">The type of the Key, either a <see cref="PSFCompositeKey{TPSFKey}"/> for the 
+    /// <typeparam name="TKey">The type of the Key, either a <see cref="CompositeKey{TPSFKey}"/> for the 
     ///     secondary FasterKV instances, or the user's TKVKey for the primary FasterKV instance.</typeparam>
-    /// <typeparam name="TValue">The type of the Key, either a <see cref="PSFValue{TRecordId}"/> for the 
+    /// <typeparam name="TValue">The type of the Key, either a TRecordId for the 
     ///     secondary FasterKV instances, or the user's TKVValue for the primary FasterKV instance.</typeparam>
     public interface IPSFOutput<TKey, TValue>
     {
         PSFOperationStatus Visit(int psfOrdinal, ref TKey key, ref TValue value, bool tombstone, bool isConcurrent);
+
+        PSFOperationStatus Visit(int psfOrdinal, long physicalAddress, ref TValue value, bool tombstone, bool isConcurrent);
     }
 
     /// <summary>
@@ -48,6 +51,9 @@ namespace FASTER.core
             this.ProviderDatas.Enqueue(new FasterKVProviderData<TKVKey, TKVValue>(this.allocator, ref key, ref value));
             return new PSFOperationStatus(OperationStatus.SUCCESS);
         }
+
+        public PSFOperationStatus Visit(int psfOrdinal, long physicalAddress, ref TKVValue value, bool tombstone, bool isConcurrent)
+            => throw new PSFInternalErrorException("Cannot call this form of Visit() on the primary FKV");  // TODO review error messages
     }
 
     /// <summary>
@@ -55,11 +61,11 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="TPSFKey">The type of the key returned from a <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
     /// <typeparam name="TRecordId">The type of the provider's record identifier</typeparam>
-    public unsafe class PSFOutputSecondary<TPSFKey, TRecordId> : IPSFOutput<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>>
+    public unsafe class PSFOutputSecondary<TPSFKey, TRecordId> : IPSFOutput<CompositeKey<TPSFKey>, TRecordId>
         where TPSFKey : struct
         where TRecordId : struct
     {
-        readonly IPSFValueAccessor<PSFValue<TRecordId>> psfValueAccessor;
+        private KeyAccessor<TPSFKey> keyAccessor;
 
         internal TRecordId RecordId { get; private set; }
 
@@ -68,21 +74,35 @@ namespace FASTER.core
         internal long PreviousLogicalAddress { get; private set; }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal PSFOutputSecondary(IPSFValueAccessor<PSFValue<TRecordId>> accessor)
+        internal PSFOutputSecondary(KeyAccessor<TPSFKey> keyAcc)
         {
-            this.psfValueAccessor = accessor;
+            this.keyAccessor = keyAcc;
             this.RecordId = default;
             this.PreviousLogicalAddress = Constants.kInvalidAddress;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public PSFOperationStatus Visit(int psfOrdinal, ref PSFCompositeKey<TPSFKey> key,
-                               ref PSFValue<TRecordId> value, bool tombstone, bool isConcurrent)
+        public PSFOperationStatus Visit(int psfOrdinal, ref CompositeKey<TPSFKey> key,
+                                        ref TRecordId value, bool tombstone, bool isConcurrent)
         {
-            // This is the secondary FKV so we wait to create provider data until QueryPSF returns.
-            this.RecordId = value.RecordId;
+            // This is the secondary FKV; we hold onto the RecordId and create the provider data when QueryPSF returns.
+            this.RecordId = value;
             this.Tombstone = tombstone;
-            this.PreviousLogicalAddress = *(this.psfValueAccessor.GetChainLinkPtrs(ref value) + psfOrdinal);
+            ref KeyPointer<TPSFKey> keyPointer = ref this.keyAccessor.GetKeyPointerRef(ref key, psfOrdinal);
+            Debug.Assert(keyPointer.PsfOrdinal == (ushort)psfOrdinal, "Visit found mismatched PSF ordinal");
+            this.PreviousLogicalAddress = keyPointer.PrevAddress;
+            return new PSFOperationStatus(OperationStatus.SUCCESS);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public PSFOperationStatus Visit(int psfOrdinal, long physicalAddress,
+                                        ref TRecordId value, bool tombstone, bool isConcurrent)
+        {
+            // This is the secondary FKV; we hold onto the RecordId and create the provider data when QueryPSF returns.
+            this.RecordId = value;
+            this.Tombstone = tombstone;
+            ref KeyPointer<TPSFKey> keyPointer = ref this.keyAccessor.GetKeyPointerRef(physicalAddress);
+            Debug.Assert(keyPointer.PsfOrdinal == (ushort)psfOrdinal, "Visit found mismatched PSF ordinal");
+            this.PreviousLogicalAddress = keyPointer.PrevAddress;
             return new PSFOperationStatus(OperationStatus.SUCCESS);
         }
     }

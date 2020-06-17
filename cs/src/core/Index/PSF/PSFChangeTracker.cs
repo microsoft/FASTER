@@ -17,7 +17,7 @@ namespace FASTER.core
     }
 
     public unsafe class PSFChangeTracker<TProviderData, TRecordId> : IDisposable
-        where TRecordId : struct
+        where TRecordId : new()
     {
         #region External API
         public TProviderData BeforeData { get; set; }
@@ -59,7 +59,7 @@ namespace FASTER.core
         internal ref GroupKeysPair GetGroupRef(int ordinal) 
             => ref groups[ordinal];
 
-        internal ref GroupKeysPair FindFreeGroupRef(long groupId, int keySize, long logAddr = Constants.kInvalidAddress)
+        internal ref GroupKeysPair FindFreeGroupRef(long groupId, long logAddr = Constants.kInvalidAddress)
         {
             if (!this.FindGroup(Constants.kInvalidPsfGroupId, out var ordinal))
             {
@@ -71,13 +71,9 @@ namespace FASTER.core
             }
             ref GroupKeysPair ret = ref this.groups[ordinal];
             ret.GroupId = groupId;
-            ret.KeySize = keySize;
             ret.LogicalAddress = logAddr;
             return ref ret;
         }
-
-        public void AssignRcuRecordId(ref PSFValue<TRecordId> value)
-            => value.RecordId = this.AfterRecordId;
 
         public void Dispose()
         {

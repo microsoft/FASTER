@@ -56,10 +56,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfUpdate<TProviderData, TRecordId>(ref GroupKeysPair groupKeysPair, ref Value value, ref Input input, long serialNo,
+        internal Status ContextPsfUpdate<TProviderData>(ref GroupKeysPair groupKeysPair, ref Value value, ref Input input, long serialNo,
                                                                    FasterExecutionContext sessionCtx,
-                                                                   PSFChangeTracker<TProviderData, TRecordId> changeTracker)
-            where TRecordId : struct
+                                                                   PSFChangeTracker<TProviderData, Value> changeTracker)
         {
             var pcontext = default(PendingContext);
             var psfInput = (IPSFInput<Key>)input;
@@ -78,7 +77,7 @@ namespace FASTER.core
 
             if (status == Status.OK)
             {
-                this.psfValueAccessor.SetRecordId(ref value, changeTracker.AfterRecordId);
+                value = changeTracker.AfterRecordId;
                 return PsfRcuInsert(groupKeysPair.After, ref value, ref input, ref pcontext, sessionCtx, serialNo + 1);
             }
             return status;
@@ -98,10 +97,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfDelete<TProviderData, TRecordId>(ref Key key, ref Value value, ref Input input, long serialNo,
+        internal Status ContextPsfDelete<TProviderData>(ref Key key, ref Value value, ref Input input, long serialNo,
                                                                    FasterExecutionContext sessionCtx,
-                                                                   PSFChangeTracker<TProviderData, TRecordId> changeTracker)
-            where TRecordId : struct
+                                                                   PSFChangeTracker<TProviderData, Value> changeTracker)
         {
             var pcontext = default(PendingContext);
 

@@ -32,7 +32,7 @@ namespace FasterPSFSample
         public override string ToString()
         {
             var valueType = (Constants.ValueType)this.ValueType;
-            var valueTypeString = $"{nameof(Constants.ValueType)}.{valueType}";
+            var valueTypeString = $"{valueType}";
             return valueType switch
             {
                 Constants.ValueType.Size => $"{valueTypeString}: {(Constants.Size)this.ValueInt}",

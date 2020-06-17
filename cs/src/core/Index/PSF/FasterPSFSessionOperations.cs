@@ -56,9 +56,8 @@ namespace FASTER.core
             }
         }
 
-        internal Status PsfUpdate<TProviderData, TRecordId>(ref GroupKeysPair groupKeysPair, ref Value value, ref Input input, long serialNo,
-                                                            PSFChangeTracker<TProviderData, TRecordId> changeTracker)
-            where TRecordId : struct
+        internal Status PsfUpdate<TProviderData>(ref GroupKeysPair groupKeysPair, ref Value value, ref Input input, long serialNo,
+                                                 PSFChangeTracker<TProviderData, Value> changeTracker)
         {
             // Called on the secondary FasterKV
             if (SupportAsync) UnsafeResumeThread();
@@ -72,9 +71,8 @@ namespace FASTER.core
             }
         }
 
-        internal Status PsfDelete<TProviderData, TRecordId>(ref Key key, ref Value value, ref Input input, long serialNo,
-                                                            PSFChangeTracker<TProviderData, TRecordId> changeTracker)
-            where TRecordId : struct
+        internal Status PsfDelete<TProviderData>(ref Key key, ref Value value, ref Input input, long serialNo,
+                                                 PSFChangeTracker<TProviderData, Value> changeTracker)
         {
             // Called on the secondary FasterKV
             if (SupportAsync) UnsafeResumeThread();

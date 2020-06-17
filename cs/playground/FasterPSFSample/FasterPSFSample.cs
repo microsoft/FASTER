@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FasterPSFSample
@@ -21,7 +22,8 @@ namespace FasterPSFSample
         
         internal static Dictionary<Key, IOrders> keyDict = new Dictionary<Key, IOrders>();
 
-        internal static List<Key> lastBinKeys = new List<Key>();
+        internal static HashSet<Key> lastBinKeys = new HashSet<Key>();
+        private static int initialSkippedLastBinCount;
 
         private static int nextId = 1000000000;
 
@@ -120,8 +122,16 @@ namespace FasterPSFSample
                 session.Upsert(ref key, ref value, context, serialNo);
             }
             ++serialNo;
-            
+
+            initialSkippedLastBinCount = lastBinKeys.Count();
             Console.WriteLine($"Upserted {UpsertCount} elements");
+        }
+
+        private static void RemoveIfSkippedLastBinKey(ref Key key)
+        {
+            // TODO: If we can do IPU in PSFs rather than RCU, we'll need to see what was actually updated.
+            if (!useMultiGroups)
+                lastBinKeys.Remove(key);
         }
 
         internal static void RunReads<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
@@ -255,6 +265,8 @@ namespace FasterPSFSample
 
                 // Reuse the same key
                 session.Upsert(ref providerData.GetKey(), ref value, context, serialNo);
+
+                RemoveIfSkippedLastBinKey(ref providerData.GetKey());
             }
             ++serialNo;
 
@@ -296,6 +308,7 @@ namespace FasterPSFSample
             {
                 // This will call Functions<>.InPlaceUpdater.
                 session.RMW(ref providerData.GetKey(), ref input, context, serialNo);
+                RemoveIfSkippedLastBinKey(ref providerData.GetKey());
             }
             ++serialNo;
 
@@ -326,11 +339,12 @@ namespace FasterPSFSample
 
             // First show we've nothing in the last bin, and get all in bin7.
             var lastBinDatas = GetCountDatas(CountBinKey.LastBin);
-            var ok = lastBinDatas.Length == 0;
-            WriteResult(isInitial: true, "LastBin", 0, lastBinDatas.Length);
+            int expectedLastBinCount = initialSkippedLastBinCount - lastBinKeys.Count();
+            var ok = lastBinDatas.Length == expectedLastBinCount;
+            WriteResult(isInitial: true, "LastBin", expectedLastBinCount, lastBinDatas.Length);
 
             var bin7Datas = GetCountDatas(bin7);
-            ok &= lastBinDatas.Length == 0;
+            ok &= bin7Datas.Length == bin7Count;
             WriteResult(isInitial: true, "Bin7", bin7Count, bin7Datas.Length);
 
             Console.WriteLine($"{indent2}Changing all Bin7 to LastBin");
@@ -348,7 +362,7 @@ namespace FasterPSFSample
             }
             ++serialNo;
 
-            var expectedLastBinCount = bin7Datas.Length;
+            expectedLastBinCount += bin7Datas.Length;
             lastBinDatas = GetCountDatas(CountBinKey.LastBin);
             ok &= lastBinDatas.Length == expectedLastBinCount;
             WriteResult(isInitial: false, "LastBin", expectedLastBinCount, lastBinDatas.Length);

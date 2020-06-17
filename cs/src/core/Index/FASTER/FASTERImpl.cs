@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 #define CPR
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -220,8 +221,18 @@ namespace FASTER.core
 
         #region Upsert Operation
 
+        #region PSF Utilities
         private FasterKVProviderData<Key, Value> CreateProviderData(ref Key key, long physicalAddress)
             => new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref hlog.GetValue(physicalAddress));
+
+        private unsafe static void GetAfterRecordId(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker,
+                                                   ref Value value)
+        {
+            // This indirection is needed because this is the primary FasterKV.
+            Debug.Assert(typeof(Value) == typeof(long));
+            var recordId = changeTracker.AfterRecordId;
+            Buffer.MemoryCopy(Unsafe.AsPointer(ref recordId), Unsafe.AsPointer(ref value), sizeof(long), sizeof(long));
+        }
 
         private void SetBeforeData(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker,
                                    ref Key key, long logicalAddress, long physicalAddress)
@@ -236,6 +247,7 @@ namespace FASTER.core
             changeTracker.AfterRecordId = logicalAddress;
             changeTracker.AfterData = CreateProviderData(ref key, physicalAddress);
         }
+        #endregion PSF Utilities
 
         /// <summary>
         /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists 
@@ -1846,6 +1858,7 @@ namespace FASTER.core
                                     out long foundLogicalAddress,
                                     out long foundPhysicalAddress)
         {
+            Debug.Assert(this.psfKeyAccessor is null);
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minOffset)
             {
@@ -1854,40 +1867,10 @@ namespace FASTER.core
                 {
                     return true;
                 }
-                else
-                {
-                    foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
-                    //This makes testing REALLY slow
-                    //Debug.WriteLine("Tracing back");
-                    continue;
-                }
-            }
-            foundPhysicalAddress = Constants.kInvalidAddress;
-            return false;
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(
-                                    ref Key key,
-                                    long fromLogicalAddress,
-                                    long minOffset,
-                                    out long foundLogicalAddress,
-                                    out long foundPhysicalAddress,
-                                    IPSFInput<Key> psfInput)
-        {
-            foundLogicalAddress = fromLogicalAddress;
-            while (foundLogicalAddress >= minOffset)
-            {
-                foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
-                if (psfInput.EqualsAt(ref key, ref hlog.GetKey(foundPhysicalAddress)))
-                    return true;
-
-                foundLogicalAddress = *(this.psfValueAccessor.GetChainLinkPtrs(ref hlog.GetValue(foundPhysicalAddress)) 
-                                            + psfInput.PsfOrdinal);
-
+                foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
                 //This makes testing REALLY slow
                 //Debug.WriteLine("Tracing back");
-                continue;
             }
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
@@ -2087,8 +2070,7 @@ namespace FASTER.core
         #endregion
 
         #region Read Cache
-        private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress,
-                                   ref int latestRecordVersion, IPSFInput<Key> psfInput = null)
+        private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress, ref int latestRecordVersion)
         {
             HashBucketEntry entry = default;
             entry.word = logicalAddress;
@@ -2101,9 +2083,7 @@ namespace FASTER.core
             {
                 if (!readcache.GetInfo(physicalAddress).Invalid)
                 {
-                    if (psfInput is null
-                            ? comparer.Equals(ref key, ref readcache.GetKey(physicalAddress))
-                            : psfInput.EqualsAt(ref key, ref readcache.GetKey(physicalAddress)))
+                    if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                     {
                         if ((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeReadOnlyAddress)
                             return true;

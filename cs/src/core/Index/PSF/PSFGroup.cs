@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 
@@ -23,7 +22,7 @@ namespace FASTER.core
         where TPSFKey : struct
         where TRecordId : struct
     {
-        internal FasterKV<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+        internal FasterKV<CompositeKey<TPSFKey>, TRecordId, PSFInputSecondary<TPSFKey>,
                           PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>> fht;
         private readonly PSFFunctions<TPSFKey, TRecordId> functions;
         internal IPSFDefinition<TProviderData, TPSFKey>[] psfDefinitions;
@@ -35,20 +34,20 @@ namespace FASTER.core
         public long Id { get; }
 
         private readonly CheckpointSettings checkpointSettings;
-        private readonly int keySize = Utility.GetSize(default(TPSFKey));
+        private readonly int keyPointerSize = Utility.GetSize(default(KeyPointer<TPSFKey>));
         private readonly int recordIdSize = (Utility.GetSize(default(TRecordId)) + sizeof(long) - 1) & ~(sizeof(long) - 1);
 
-        internal ConcurrentStack<ClientSession<PSFCompositeKey<TPSFKey>,
-                        PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+        internal ConcurrentStack<ClientSession<CompositeKey<TPSFKey>,
+                        TRecordId, PSFInputSecondary<TPSFKey>,
                         PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>>> freeSessions
-            = new ConcurrentStack<ClientSession<PSFCompositeKey<TPSFKey>,
-                        PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+            = new ConcurrentStack<ClientSession<CompositeKey<TPSFKey>,
+                        TRecordId, PSFInputSecondary<TPSFKey>,
                         PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>>>();
-        internal ConcurrentBag<ClientSession<PSFCompositeKey<TPSFKey>,
-                        PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+        internal ConcurrentBag<ClientSession<CompositeKey<TPSFKey>,
+                        TRecordId, PSFInputSecondary<TPSFKey>,
                         PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>>> allSessions
-            = new ConcurrentBag<ClientSession<PSFCompositeKey<TPSFKey>,
-                        PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+            = new ConcurrentBag<ClientSession<CompositeKey<TPSFKey>,
+                        TRecordId, PSFInputSecondary<TPSFKey>,
                         PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>>>();
 
         /// <summary>
@@ -59,8 +58,7 @@ namespace FASTER.core
         private int PSFCount => this.PSFs.Length;
 
         private readonly IFasterEqualityComparer<TPSFKey> userKeyComparer;
-        private readonly ICompositeKeyComparer<PSFCompositeKey<TPSFKey>> compositeKeyComparer;
-        private readonly IPSFValueAccessor<PSFValue<TRecordId>> psfValueAccessor;
+        private readonly KeyAccessor<TPSFKey> keyAccessor;
 
         private readonly SectorAlignedBufferPool bufferPool;
 
@@ -73,7 +71,7 @@ namespace FASTER.core
         public override bool Equals(object obj) => this.Equals(obj as PSFGroup<TProviderData, TPSFKey, TRecordId>);
 
         /// <inheritdoc/>
-        public bool Equals(PSFGroup<TProviderData, TPSFKey, TRecordId> other) => other is null ? false : this.Id == other.Id;
+        public bool Equals(PSFGroup<TProviderData, TPSFKey, TRecordId> other) => !(other is null) && this.Id == other.Id;
 
         /// <summary>
         /// Constructor
@@ -90,30 +88,26 @@ namespace FASTER.core
             this.userKeyComparer = GetUserKeyComparer();
 
             this.PSFs = defs.Select((def, ord) => new PSF<TPSFKey, TRecordId>(this.Id, ord, def.Name, this)).ToArray();
-            this.compositeKeyComparer = new PSFCompositeKeyComparer<TPSFKey>(this.userKeyComparer, this.keySize, this.PSFCount);
-
-            this.psfValueAccessor = new PSFValue<TRecordId>.Accessor(this.PSFCount, this.recordIdSize);
+            this.keyAccessor = new KeyAccessor<TPSFKey>(this.userKeyComparer, this.PSFCount, this.keyPointerSize);
 
             this.checkpointSettings = regSettings?.CheckpointSettings;
-            this.functions = new PSFFunctions<TPSFKey, TRecordId>(psfValueAccessor);
-            this.fht = new FasterKV<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+            this.functions = new PSFFunctions<TPSFKey, TRecordId>();
+            this.fht = new FasterKV<CompositeKey<TPSFKey>, TRecordId, PSFInputSecondary<TPSFKey>,
                                     PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>>(
-                    regSettings.HashTableSize, new PSFFunctions<TPSFKey, TRecordId>(psfValueAccessor),
+                    regSettings.HashTableSize, new PSFFunctions<TPSFKey, TRecordId>(),
                     regSettings.LogSettings, this.checkpointSettings, null /*SerializerSettings*/,
-                    new PSFCompositeKey<TPSFKey>.UnusedKeyComparer(),
-                    new VariableLengthStructSettings<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>>
+                    new CompositeKey<TPSFKey>.UnusedKeyComparer(),
+                    new VariableLengthStructSettings<CompositeKey<TPSFKey>, TRecordId>
                     {
-                        keyLength = new PSFCompositeKey<TPSFKey>.VarLenLength(this.keySize, this.PSFCount),
-                        valueLength = new PSFValue<TRecordId>.VarLenLength(this.recordIdSize, this.PSFCount)
+                        keyLength = new CompositeKey<TPSFKey>.VarLenLength(this.keyPointerSize, this.PSFCount)
                     }
-                )
-            { psfValueAccessor = psfValueAccessor };
+                ) { psfKeyAccessor = this.keyAccessor};
 
             this.bufferPool = this.fht.hlog.bufferPool;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private ClientSession<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+        private ClientSession<CompositeKey<TPSFKey>, TRecordId, PSFInputSecondary<TPSFKey>,
                           PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext,
                           PSFFunctions<TPSFKey, TRecordId>> GetSession()
         {
@@ -126,7 +120,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReleaseSession(ClientSession<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>, PSFInputSecondary<TPSFKey>,
+        private void ReleaseSession(ClientSession<CompositeKey<TPSFKey>, TRecordId, PSFInputSecondary<TPSFKey>,
                           PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext,
                           PSFFunctions<TPSFKey, TRecordId>> session)
             => this.freeSessions.Push(session);
@@ -167,14 +161,14 @@ namespace FASTER.core
         {
             ref GroupKeys before = ref keysPair.Before;
             ref GroupKeys after = ref keysPair.After;
-            ref PSFCompositeKey<TPSFKey> beforeCompKey = ref before.GetCompositeKeyRef<PSFCompositeKey<TPSFKey>>();
-            ref PSFCompositeKey<TPSFKey> afterCompKey = ref after.GetCompositeKeyRef<PSFCompositeKey<TPSFKey>>();
+            ref CompositeKey<TPSFKey> beforeCompKey = ref before.GetCompositeKeyRef<CompositeKey<TPSFKey>>();
+            ref CompositeKey<TPSFKey> afterCompKey = ref after.GetCompositeKeyRef<CompositeKey<TPSFKey>>();
             for (var ii = 0; ii < this.PSFCount; ++ii)
             {
                 var beforeIsNull = before.IsNullAt(ii);
                 var afterIsNull = after.IsNullAt(ii);
                 var keysEqual = !beforeIsNull && !afterIsNull
-                    && beforeCompKey.GetKeyRef(ii, this.keySize).Equals(afterCompKey.GetKeyRef(ii, this.keySize));
+                    && beforeCompKey.GetKeyRef(ii, this.keyPointerSize).Equals(afterCompKey.GetKeyRef(ii, this.keyPointerSize));
 
                 // IsNull is already set in PSFGroup.ExecuteAndStore.
                 if (!before.IsNullAt(ii) && (after.IsNullAt(ii) || !keysEqual))
@@ -190,25 +184,26 @@ namespace FASTER.core
         {
             // Note: stackalloc is safe because PendingContext or PSFChangeTracker will copy it to the bufferPool
             // if needed. On the Insert fast path, we don't want any allocations otherwise; changeTracker is null.
-            // TODO: Cutoff (psfCount * keySize) per group to use bufferPool to ensure stackalloc doesn't overflow
-            var keyMemLen = ((keySize * this.PSFCount + sizeof(int) - 1) & ~(sizeof(int) - 1));
-            var keyMemInt = stackalloc int[keyMemLen / sizeof(int)];
-            for (var ii = 0; ii < keyMemLen / sizeof(int); ++ii)
-                keyMemInt[ii] = 0;
-            var keyMem = (byte*)keyMemInt;
-            ref PSFCompositeKey<TPSFKey> compositeKey = ref Unsafe.AsRef<PSFCompositeKey<TPSFKey>>(keyMem);
+            // TODO: Cutoff (psfCount * keyPointerSize) per group to use bufferPool so stackalloc doesn't overflow.
+            var keyMemLen = this.keyPointerSize * this.PSFCount;
+            var keyBytes = stackalloc byte[keyMemLen];
 
             var flagsMemLen = this.PSFCount * sizeof(PSFResultFlags);
             PSFResultFlags* flags = stackalloc PSFResultFlags[this.PSFCount];
             var anyMatch = false;
-            for (int ii = 0; ii < this.psfDefinitions.Length; ++ii)
+
+            for (var ii = 0; ii < this.PSFCount; ++ii)
             {
+                ref KeyPointer<TPSFKey> keyPointer = ref Unsafe.AsRef<KeyPointer<TPSFKey>>(keyBytes + ii * this.keyPointerSize);
+                keyPointer.PrevAddress = Constants.kInvalidAddress;
+                keyPointer.PsfOrdinal = (ushort)ii;     // TODO set limit in # of psfs to 2 << 15
+
                 var key = this.psfDefinitions[ii].Execute(providerData);
+                keyPointer.IsNull = !key.HasValue;
                 *(flags + ii) = key.HasValue ? PSFResultFlags.None : PSFResultFlags.IsNull;
                 if (key.HasValue)
                 {
-                    ref TPSFKey keyPtr = ref Unsafe.AsRef<TPSFKey>(keyMem + keySize * ii);
-                    keyPtr = key.Value;
+                    keyPointer.Key = key.Value;
                     anyMatch = true;
                 }
             }
@@ -216,21 +211,19 @@ namespace FASTER.core
             if (!anyMatch && phase == PSFExecutePhase.Insert)
                 return Status.OK;
 
-            var input = new PSFInputSecondary<TPSFKey>(0, compositeKeyComparer, this.Id, flags);
-
-            var valueMem = stackalloc byte[recordIdSize + sizeof(long) * this.PSFCount];
-            ref PSFValue<TRecordId> psfValue = ref Unsafe.AsRef<PSFValue<TRecordId>>(valueMem);
-            psfValue.RecordId = recordId;
+            ref CompositeKey<TPSFKey> compositeKey = ref Unsafe.AsRef<CompositeKey<TPSFKey>>(keyBytes);
+            var input = new PSFInputSecondary<TPSFKey>(0, this.keyAccessor, this.Id, flags);
+            var value = recordId;
 
             int groupOrdinal = -1;
             if (!(changeTracker is null))
             {
-                psfValue.RecordId = changeTracker.BeforeRecordId;
+                value = changeTracker.BeforeRecordId;
                 if (phase == PSFExecutePhase.PreUpdate)
                 {
                     // Get a free group ref and store the "before" values.
-                    ref GroupKeysPair groupKeysPair = ref changeTracker.FindFreeGroupRef(this.Id, this.keySize);
-                    StoreKeys(ref groupKeysPair.Before, keyMem, keyMemLen, flags, flagsMemLen);
+                    ref GroupKeysPair groupKeysPair = ref changeTracker.FindFreeGroupRef(this.Id);
+                    StoreKeys(ref groupKeysPair.Before, keyBytes, keyMemLen, flags, flagsMemLen);
                     return Status.OK;
                 }
 
@@ -244,7 +237,7 @@ namespace FASTER.core
                     else
                     {
                         ref GroupKeysPair groupKeysPair = ref changeTracker.GetGroupRef(groupOrdinal);
-                        StoreKeys(ref groupKeysPair.After, keyMem, keyMemLen, flags, flagsMemLen);
+                        StoreKeys(ref groupKeysPair.After, keyBytes, keyMemLen, flags, flagsMemLen);
                         this.MarkChanges(ref groupKeysPair);
                         // TODOtest: In debug, for initial dev, follow chains to assert the values match what is in the record's compositeKey
                         if (!groupKeysPair.HasChanges)
@@ -255,20 +248,16 @@ namespace FASTER.core
                 // We don't need to do anything here for Delete.
             }
 
-            long* chainLinkPtrs = this.fht.psfValueAccessor.GetChainLinkPtrs(ref psfValue);
-            for (int ii = 0; ii < this.psfDefinitions.Length; ++ii)
-                *(chainLinkPtrs + ii) = Constants.kInvalidAddress;
-
             var session = this.GetSession();
             try
             {
                 var lsn = session.ctx.serialNum + 1;
                 return phase switch
                 {
-                    PSFExecutePhase.Insert => session.PsfInsert(ref compositeKey, ref psfValue, ref input, lsn),
+                    PSFExecutePhase.Insert => session.PsfInsert(ref compositeKey, ref value, ref input, lsn),
                     PSFExecutePhase.PostUpdate => session.PsfUpdate(ref changeTracker.GetGroupRef(groupOrdinal),
-                                                                    ref psfValue, ref input, lsn, changeTracker),
-                    PSFExecutePhase.Delete => session.PsfDelete(ref compositeKey, ref psfValue, ref input, lsn,
+                                                                    ref value, ref input, lsn, changeTracker),
+                    PSFExecutePhase.Delete => session.PsfDelete(ref compositeKey, ref value, ref input, lsn,
                                                                     changeTracker),
                     _ => throw new PSFInternalErrorException("Unknown PSF execution Phase {phase}")
                 };
@@ -330,29 +319,24 @@ namespace FASTER.core
         /// <inheritdoc/>
         public unsafe IEnumerable<TRecordId> Query(int psfOrdinal, TPSFKey key)
         {
-            // Create a varlen CompositeKey with just one item. This is ONLY used as the query key to
-            // PSFCompositeKeyComparer. Iterator functions cannot contain unsafe code or have byref args,
-            // and bufferPool is needed here because the stack goes away as part of the iterator operation.
-            var keyPtr = new PSFCompositeKey<TPSFKey>.PtrWrapper(this.keySize, this.bufferPool);
-            keyPtr.Set(ref key);
-
-            // These indirections are necessary to avoid issues with passing ref or unsafe to an enumerator function.
+            // Putting the query key in PSFInput is necessary because iterator functions cannot contain unsafe code or have
+            // byref args, and bufferPool is needed here because the stack goes away as part of the iterator operation.
             // TODOperf: PSFInput* and PSFOutput* are classes because we communicate through interfaces to avoid
             // having to add additional generic args. Interfaces on structs incur boxing overhead (plus the complexity
             // of mutable structs). But check the performance here; if necessary perhaps I can figure out a way to
             // pass a struct with no TPSFKey, TRecordId, etc. and use an FHT-level interface to manage it.
-            var psfInput = new PSFInputSecondary<TPSFKey>(psfOrdinal, compositeKeyComparer, this.Id);
-            return Query(keyPtr, psfInput);
+            var psfInput = new PSFInputSecondary<TPSFKey>(psfOrdinal, this.keyAccessor, this.Id);
+            psfInput.SetQueryKey(this.bufferPool, ref key);
+            return Query(psfInput);
         }
 
-        private IEnumerable<TRecordId> Query(PSFCompositeKey<TPSFKey>.PtrWrapper queryKeyPtr,
-                                             PSFInputSecondary<TPSFKey> input)
+        private IEnumerable<TRecordId> Query(PSFInputSecondary<TPSFKey> input)
         {
             // TODOperf: if there are multiple PSFs within this group we can step through in parallel and return them
             // as a single merged stream; will require multiple TPSFKeys and their indexes in queryKeyPtr. Also consider
             // having TPSFKeys[] for a single PSF walk through in parallel, so the FHT log memory access is sequential.
-            var secondaryOutput = new PSFOutputSecondary<TPSFKey, TRecordId>(this.psfValueAccessor);
-            var readArgs = new PSFReadArgs<PSFCompositeKey<TPSFKey>, PSFValue<TRecordId>>(input, secondaryOutput);
+            var secondaryOutput = new PSFOutputSecondary<TPSFKey, TRecordId>(this.keyAccessor);
+            var readArgs = new PSFReadArgs<CompositeKey<TPSFKey>, TRecordId>(input, secondaryOutput);
 
             var session = this.GetSession();
             HashSet<TRecordId> deadRecs = null;
@@ -360,7 +344,7 @@ namespace FASTER.core
             {
                 // Because we traverse the chain, we must wait for any pending read operations to complete.
                 // TODOperf: See if there is a better solution than spinWaiting in CompletePending.
-                Status status = session.PsfReadKey(ref queryKeyPtr.GetRef(), ref readArgs, session.ctx.serialNum + 1);
+                Status status = session.PsfReadKey(ref input.QueryKeyRef, ref readArgs, session.ctx.serialNum + 1);
                 if (status == Status.PENDING)
                     session.CompletePending(spinWait: true);
                 if (status != Status.OK)    // TODOerr: check other status
@@ -404,7 +388,7 @@ namespace FASTER.core
             finally
             {
                 this.ReleaseSession(session);
-                queryKeyPtr.Dispose();
+                input.Dispose();
             }
         }
     }
