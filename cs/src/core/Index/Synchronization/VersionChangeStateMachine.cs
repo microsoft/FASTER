@@ -103,34 +103,6 @@ namespace FASTER.core
 
             return default;
         }
-
-        /// <inheritdoc />
-        public void OnThreadState<Key, Value>(
-            SystemState current, SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default)
-            where Key : new()
-            where Value : new()
-        {
-            switch (current.phase)
-            {
-                case Phase.PREPARE:
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.version))
-                        faster.GlobalStateMachineStep(current);
-                    break;
-                case Phase.IN_PROGRESS:
-                    // Has to be prevCtx, not ctx
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.version))
-                        faster.GlobalStateMachineStep(current);
-                    break;
-                case Phase.WAIT_PENDING:
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, current.version))
-                        faster.GlobalStateMachineStep(current);
-                    break;
-                case Phase.REST:
-                    break;
-            }
-        }
     }
 
     /// <summary>
@@ -173,17 +145,6 @@ namespace FASTER.core
             where FasterSession : IFasterSession
         {
             return default;
-        }
-
-        /// <inheritdoc />
-        public void OnThreadState<Key, Value>(
-            SystemState current,
-            SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default)
-            where Key : new()
-            where Value : new()
-        {
         }
     }
 

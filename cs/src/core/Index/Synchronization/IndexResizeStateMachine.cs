@@ -84,26 +84,6 @@ namespace FASTER.core
                     throw new FasterException("Invalid Enum Argument");
             }
         }
-
-        /// <inheritdoc />
-        public void OnThreadState<Key, Value>(
-            SystemState current,
-            SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default)
-            where Key : new()
-            where Value : new()
-        {
-            switch (current.phase)
-            {
-                case Phase.PREPARE_GROW:
-                case Phase.IN_PROGRESS_GROW:
-                case Phase.REST:
-                    return;
-                default:
-                    throw new FasterException("Invalid Enum Argument");
-            }
-        }
     }
 
     /// <summary>

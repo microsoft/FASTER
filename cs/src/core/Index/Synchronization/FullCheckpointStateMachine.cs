@@ -76,19 +76,6 @@ namespace FASTER.core
 
             faster.GlobalStateMachineStep(current);
         }
-
-        /// <inheritdoc />
-        public void OnThreadState<Key, Value>(
-            SystemState current,
-            SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default) where Key : new()
-            where Value : new()
-        {
-            if (current.phase != Phase.WAIT_INDEX_CHECKPOINT) return;
-
-            faster.GlobalStateMachineStep(current);
-        }
     }
 
     /// <summary>

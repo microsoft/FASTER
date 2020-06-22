@@ -111,22 +111,6 @@ namespace FASTER.core
                 faster.GlobalStateMachineStep(current);
             return default;
         }
-
-        /// <inheritdoc />
-        public virtual void OnThreadState<Key, Value>(
-            SystemState current,
-            SystemState prev, FasterKV<Key, Value> faster,
-            CancellationToken token = default)
-            where Key : new()
-            where Value : new()
-        {
-            if (current.phase != Phase.PERSISTENCE_CALLBACK) return;
-
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.version))
-                faster.GlobalStateMachineStep(current);
-
-            return;
-        }
     }
 
     /// <summary>
@@ -184,24 +168,6 @@ namespace FASTER.core
 
             if (ctx != null)
                 faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
-
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
-                faster.GlobalStateMachineStep(current);
-        }
-
-        public override void OnThreadState<Key, Value>(
-            SystemState current,
-            SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default(CancellationToken))
-        {
-            base.OnThreadState(current, prev, faster, token);
-            if (current.phase != Phase.WAIT_FLUSH) return;
-
-            var notify = faster.hlog.FlushedUntilAddress >=
-                         faster._hybridLogCheckpoint.info.finalLogicalAddress;
-
-            if (!notify) return;
 
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
                 faster.GlobalStateMachineStep(current);
@@ -291,20 +257,6 @@ namespace FASTER.core
 
             if (ctx != null)
                 faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
-
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
-                faster.GlobalStateMachineStep(current);
-        }
-
-        public override void OnThreadState<Key, Value>(SystemState current, SystemState prev, FasterKV<Key, Value> faster, CancellationToken token = default(CancellationToken))
-        {
-            base.OnThreadState(current, prev, faster, token);
-            if (current.phase != Phase.WAIT_FLUSH) return;
-
-            var notify = faster._hybridLogCheckpoint.flushedSemaphore != null &&
-                         faster._hybridLogCheckpoint.flushedSemaphore.CurrentCount > 0;
-
-            if (!notify) return;
 
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
                 faster.GlobalStateMachineStep(current);

@@ -72,25 +72,6 @@ namespace FASTER.core
             where Key : new()
             where Value : new()
             where FasterSession: IFasterSession;
-
-        /// <summary>
-        /// This function is invoked for every thread when they refresh and observe a given state.
-        ///
-        /// Note that the function is not allowed to await when async is set to false.
-        /// </summary>
-        /// <param name="current"></param>
-        /// <param name="prev"></param>
-        /// <param name="faster"></param>
-        /// <param name="token"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        /// <returns></returns>
-        void OnThreadEnteringState<Key, Value>(SystemState current,
-            SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default)
-            where Key : new()
-            where Value : new();
     }
 
     /// <summary>
@@ -157,26 +138,6 @@ namespace FASTER.core
             where Key : new()
             where Value : new()
             where FasterSession: IFasterSession;
-
-        /// <summary>
-        /// This function is invoked for every thread when they refresh and observe a given state.
-        ///
-        /// Note that the function is not allowed to await when async is set to false.
-        /// </summary>
-        /// <param name="current"></param>
-        /// <param name="prev"></param>
-        /// <param name="faster"></param>
-        /// <param name="token"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        /// <returns></returns>
-        void OnThreadState<Key, Value>(
-            SystemState current,
-            SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default)
-            where Key : new()
-            where Value : new();
     }
 
     /// <summary>
@@ -232,18 +193,6 @@ namespace FASTER.core
         {
             foreach (var task in tasks)
                 await task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
-        }
-
-        /// <inheritdoc />
-        public void OnThreadEnteringState<Key, Value>(
-            SystemState current,
-            SystemState prev,
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default) where Key : new()
-            where Value : new()
-        {
-            foreach (var task in tasks)
-                task.OnThreadState(current, prev, faster, token);
         }
     }
 }

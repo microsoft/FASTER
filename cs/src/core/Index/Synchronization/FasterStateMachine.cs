@@ -171,34 +171,5 @@ namespace FASTER.core
                 threadState = currentTask.NextState(threadState);
             } while (previousState.word != targetState.word);
         }
-
-        /// <summary>
-        /// Steps the thread's local state machine. Threads catch up to the current global state and performs
-        /// necessary actions associated with the state as defined by the current state machine
-        /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        private void ThreadStateMachineStep(CancellationToken token = default)
-        {
-            // Target state is the current (non-intermediate state) system state thread needs to catch up to
-            var (currentTask, targetState) = CaptureTaskAndTargetState();
-
-            // the current thread state is what the thread remembers, or simply what the current system
-            // is if we are calling from somewhere other than an execution thread (e.g. waiting on
-            // a checkpoint to complete on a client app thread)
-            var threadState = targetState;
-
-            // If the thread was in the middle of handling some older, unrelated task, fast-forward to the current task
-            // as the old one is no longer relevant
-            threadState = FastForwardToCurrentCycle(threadState, targetState);
-            var previousState = threadState;
-            do
-            {
-                currentTask.OnThreadEnteringState(threadState, previousState, this, token);
-
-                previousState.word = threadState.word;
-                threadState = currentTask.NextState(threadState);
-            } while (previousState.word != targetState.word);
-        }
     }
 }

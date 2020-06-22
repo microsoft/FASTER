@@ -104,27 +104,6 @@ namespace FASTER.core
                     break;
             }
         }
-
-        /// <inheritdoc />
-        public void OnThreadState<Key, Value>(
-            SystemState current,
-            SystemState prev, 
-            FasterKV<Key, Value> faster,
-            CancellationToken token = default)
-            where Key : new()
-            where Value : new()
-        {
-            switch (current.phase)
-            {
-                case Phase.PREP_INDEX_CHECKPOINT:
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, current.version))
-                        faster.GlobalStateMachineStep(current);
-                    break;
-                case Phase.INDEX_CHECKPOINT:
-                    faster.GlobalStateMachineStep(current);
-                    break;
-            }
-        }
     }
 
     /// <summary>
