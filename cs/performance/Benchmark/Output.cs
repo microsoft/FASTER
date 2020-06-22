@@ -3,10 +3,7 @@
 
 #pragma warning disable 1591
 
-using System;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace FASTER.Benchmark
 {

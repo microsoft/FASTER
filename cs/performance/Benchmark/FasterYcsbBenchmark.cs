@@ -57,17 +57,18 @@ namespace FASTER.Benchmark
         readonly Distribution distribution;
         readonly int readPercent;
 
-        const int kRunSeconds = 30;
+        internal int runSeconds = Options.DefaultRunSeconds;
         const int kCheckpointSeconds = -1;
 
         volatile bool done = false;
 
-        public FASTER_YcsbBenchmark(int threadCount_, NumaMode numaMode_, Distribution distribution_, int readPercent_)
+        public FASTER_YcsbBenchmark(int threadCount_, NumaMode numaMode_, Distribution distribution_, int readPercent_, int runSeconds_)
         {
             threadCount = threadCount_;
             numaMode = numaMode_;
             distribution = distribution_;
             readPercent = readPercent_;
+            runSeconds = runSeconds_;
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -280,16 +281,16 @@ namespace FASTER.Benchmark
 
             if (kCheckpointSeconds <= 0)
             {
-                Thread.Sleep(TimeSpan.FromSeconds(kRunSeconds));
+                Thread.Sleep(TimeSpan.FromSeconds(runSeconds));
             }
             else
             {
-                int runSeconds = 0;
-                while (runSeconds < kRunSeconds)
+                int runSec = 0;
+                while (runSec < this.runSeconds)
                 {
                     Thread.Sleep(TimeSpan.FromSeconds(kCheckpointSeconds));
                     store.TakeFullCheckpoint(out Guid token);
-                    runSeconds += kCheckpointSeconds;
+                    runSec += kCheckpointSeconds;
                 }
             }
 
@@ -315,6 +316,10 @@ namespace FASTER.Benchmark
             Console.WriteLine($"##, dist = {distribution}, numa = {numaMode}, read% = {readPercent}, " +
                               $"#threads = {threadCount}, ops/sec = {total_ops_done / tranSec:N3}, " +
                               $"logGrowth = {endTailAddress - startTailAddress}");
+
+            // Clean up memory for the next iteration
+            this.store.Dispose();
+            this.device.Close();
             return ((ulong)initMs, (ulong)tranMs, total_ops_done);
         }
 

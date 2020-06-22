@@ -20,6 +20,7 @@ namespace FASTER.Benchmark
         public const string DefaultDistributionString = UniformDistributionString;
         public const Distribution DefaultDistribution = Performance.Common.Distribution.Uniform;
         public const int DefaultIterationCount = 1;
+        public const int DefaultRunSeconds = 30;
 
         public const char BenchmarkTypeArg = 'b';
         public const char ThreadCountArg = 't';
@@ -27,6 +28,7 @@ namespace FASTER.Benchmark
         public const char ReadPercentArg = 'r';
         public const char DistributionArg = 'd';
         public const char IterationsArg = 'i';
+        public const char RunSecondsArg = 's';
 
         public const char MergeArg = 'm';
         public const char CompareArg = 'c';
@@ -56,6 +58,10 @@ namespace FASTER.Benchmark
          HelpText = "Number of iterations of the test to run")]
         public int IterationCount { get; set; }
 
+        [Option(RunSecondsArg, "seconds", Required = false, Default = DefaultRunSeconds,
+         HelpText = "Number of seconds for the test to run transactions")]
+        public int RunSeconds { get; set; }
+
         [Option(MergeArg, "merge", Required = false, Default = "",
          HelpText = "Result files to merge (must match on Inputs); use ';' to delimit filenames; must be at least two files")]
         public string MergeFiles { get; set; }
@@ -84,7 +90,8 @@ namespace FASTER.Benchmark
                 NumaMode = this.GetNumaMode(),
                 ReadPercent = this.ReadPercent,
                 Distribution = this.GetDistribution(),
-                IterationCount = this.IterationCount
+                IterationCount = this.IterationCount,
+                RunSeconds = this.RunSeconds
             };
 
         private static bool GetFileSpecs(string property, out string[] fileSpecs)

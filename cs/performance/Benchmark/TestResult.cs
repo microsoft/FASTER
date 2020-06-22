@@ -95,23 +95,23 @@ namespace FASTER.Benchmark
 
             void mergeTransactions()
             {
-                merged.Outputs.TransactionSecondsFull = this.Outputs.TransactionSecondsFull.Concat(other.Outputs.TransactionSecondsFull).ToArray();
-                merged.Outputs.TransactionCountsFull = this.Outputs.TransactionCountsFull.Concat(other.Outputs.TransactionCountsFull).ToArray();
-                merged.Outputs.TransactionSecondsTrimmed = this.Outputs.TransactionSecondsTrimmed.Concat(other.Outputs.TransactionSecondsTrimmed).ToArray();
-                merged.Outputs.TransactionCountsTrimmed = this.Outputs.TransactionCountsTrimmed.Concat(other.Outputs.TransactionCountsTrimmed).ToArray();
+                merged.Outputs.Counts.TransactionSecondsFull = this.Outputs.Counts.TransactionSecondsFull.Concat(other.Outputs.Counts.TransactionSecondsFull).ToArray();
+                merged.Outputs.Counts.TransactionCountsFull = this.Outputs.Counts.TransactionCountsFull.Concat(other.Outputs.Counts.TransactionCountsFull).ToArray();
+                merged.Outputs.Counts.TransactionSecondsTrimmed = this.Outputs.Counts.TransactionSecondsTrimmed.Concat(other.Outputs.Counts.TransactionSecondsTrimmed).ToArray();
+                merged.Outputs.Counts.TransactionCountsTrimmed = this.Outputs.Counts.TransactionCountsTrimmed.Concat(other.Outputs.Counts.TransactionCountsTrimmed).ToArray();
 
                 // Convert back to ms for ResultStats calculation
                 static ulong[] toMs(double[] seconds) => seconds.Select(sec => (ulong)(sec * 1000)).ToArray();
-                var fullMs = toMs(merged.Outputs.TransactionSecondsFull);
-                var trimmedMs = toMs(merged.Outputs.TransactionSecondsTrimmed);
+                var fullMs = toMs(merged.Outputs.Counts.TransactionSecondsFull);
+                var trimmedMs = toMs(merged.Outputs.Counts.TransactionSecondsTrimmed);
 
                 var opResults = this.Outputs.Transactions;
                 var threadCount = this.Inputs.ThreadCount;
 
-                opResults.AllThreadsFull = ResultStats.CalcPerSecondStatsFull(fullMs, merged.Outputs.TransactionCountsFull);
-                opResults.PerThreadFull = ResultStats.CalcPerThreadStats(threadCount, fullMs, merged.Outputs.TransactionCountsFull);
-                opResults.AllThreadsTrimmed = ResultStats.CalcPerSecondStatsFull(trimmedMs, merged.Outputs.TransactionCountsTrimmed);
-                opResults.PerThreadTrimmed = ResultStats.CalcPerThreadStats(threadCount, trimmedMs, merged.Outputs.TransactionCountsTrimmed);
+                opResults.AllThreadsFull = ResultStats.CalcPerSecondStatsFull(fullMs, merged.Outputs.Counts.TransactionCountsFull);
+                opResults.PerThreadFull = ResultStats.CalcPerThreadStats(threadCount, fullMs, merged.Outputs.Counts.TransactionCountsFull);
+                opResults.AllThreadsTrimmed = ResultStats.CalcPerSecondStatsFull(trimmedMs, merged.Outputs.Counts.TransactionCountsTrimmed);
+                opResults.PerThreadTrimmed = ResultStats.CalcPerThreadStats(threadCount, trimmedMs, merged.Outputs.Counts.TransactionCountsTrimmed);
             }
 
             mergeInitialInserts();

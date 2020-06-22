@@ -31,6 +31,9 @@ namespace FASTER.Benchmark
         [JsonProperty]
         public int IterationCount { get; set; } = Options.DefaultIterationCount;
 
+        [JsonProperty]
+        public int RunSeconds { get; set; } = Options.DefaultRunSeconds;
+
         public bool Verify()
         {
             static bool fail(string message)

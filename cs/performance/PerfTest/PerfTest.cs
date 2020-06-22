@@ -51,7 +51,7 @@ namespace FASTER.PerfTest
 
         static void ExecuteTestRuns()
         {
-            var results = new TestResults { Results = new[] { new TestResult()} };
+            var results = new TestResults { Results = new TestResult[0] };
             if (!(testParams is null))
                 testParams.Override(parseResult);
             var testRuns = (testParams is null ? new[] { new TestRun(parseResult) } : testParams.GetParamSweeps().Select(sweep => new TestRun(sweep))).ToArray();

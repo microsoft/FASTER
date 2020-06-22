@@ -12,7 +12,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -71,17 +70,18 @@ namespace FASTER.Benchmark
         readonly Distribution distribution;
         readonly int readPercent;
 
-        const int kRunSeconds = 30;
+        internal int runSeconds = Options.DefaultRunSeconds;
         const int kCheckpointSeconds = -1;
 
         volatile bool done = false;
 
-        public ConcurrentDictionary_YcsbBenchmark(int threadCount_, NumaMode numaMode_, Distribution distribution_, int readPercent_)
+        public ConcurrentDictionary_YcsbBenchmark(int threadCount_, NumaMode numaMode_, Distribution distribution_, int readPercent_, int runSeconds_)
         {
             threadCount = threadCount_;
             numaMode = numaMode_;
             distribution = distribution_;
             readPercent = readPercent_;
+            runSeconds = runSeconds_;
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -265,15 +265,15 @@ namespace FASTER.Benchmark
 
             if (kCheckpointSeconds <= 0)
             {
-                Thread.Sleep(TimeSpan.FromSeconds(kRunSeconds));
+                Thread.Sleep(TimeSpan.FromSeconds(runSeconds));
             }
             else
             {
-                int runSeconds = 0;
-                while (runSeconds < kRunSeconds)
+                int runSec = 0;
+                while (runSec < this.runSeconds)
                 {
                     Thread.Sleep(TimeSpan.FromSeconds(kCheckpointSeconds));
-                    runSeconds += kCheckpointSeconds;
+                    runSec += kCheckpointSeconds;
                 }
             }
 

@@ -7,11 +7,7 @@
 //#define FIXED_SIZE_VALUE
 //#define FIXED_SIZE_VALUE_WITH_LOCK
 
-using System;
-using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using FASTER.core;
 
 namespace FASTER.Benchmark
 {
