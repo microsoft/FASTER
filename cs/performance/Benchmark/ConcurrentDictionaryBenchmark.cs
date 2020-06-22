@@ -110,7 +110,7 @@ namespace FASTER.Benchmark
             Stopwatch sw = new Stopwatch();
             sw.Start();
 
-            Value value = default(Value);
+            Value value = default;
             long reads_done = 0;
             long writes_done = 0;
 
@@ -308,7 +308,7 @@ namespace FASTER.Benchmark
             int count = 0;
 #endif
 
-            Value value = default(Value);
+            Value value = default;
 
             for (long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 chunk_idx < kInitCount;

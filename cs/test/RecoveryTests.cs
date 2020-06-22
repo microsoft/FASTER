@@ -162,7 +162,7 @@ namespace FASTER.test.recovery.sumstore
             // Register thread with FASTER
             using var session = fht.NewSession();
 
-            // Prpcess the batch of input data
+            // Process the batch of input data
             for (int i = 0; i < numOps; i++)
             {
                 session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
