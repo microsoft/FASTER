@@ -70,6 +70,9 @@ namespace FASTER.core
             Debug.WriteLine("Index Checkpoint: {0}", indexToken);
             Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
 
+            // Ensure active state machine to null
+            currentSyncStateMachine = null;
+
             // Recovery appropriate context information
             var recoveredICInfo = new IndexCheckpointInfo();
             recoveredICInfo.Recover(indexToken, checkpointManager);

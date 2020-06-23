@@ -108,14 +108,16 @@ namespace FASTER.core
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
+            public int asyncPendingCount;
+
+            public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
             public bool HasNoPendingRequests
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
                 {
-                    return ioPendingRequests.Count == 0
-                        && retryRequests.Count == 0;
+                    return SyncIoPendingCount == 0 && retryRequests.Count == 0;
                 }
             }
 

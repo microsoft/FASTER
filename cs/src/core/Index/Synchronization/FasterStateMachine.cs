@@ -136,6 +136,18 @@ namespace FASTER.core
             // Target state is the current (non-intermediate state) system state thread needs to catch up to
             var (currentTask, targetState) = CaptureTaskAndTargetState();
 
+            // No state machine associated with target, we can
+            // directly fast forward session to target state
+            if (currentTask == null)
+            {
+                if (ctx != null)
+                {
+                    ctx.phase = targetState.phase;
+                    ctx.version = targetState.version;
+                }
+                return;
+            }
+
             // the current thread state is what the thread remembers, or simply what the current system
             // is if we are calling from somewhere other than an execution thread (e.g. waiting on
             // a checkpoint to complete on a client app thread)
