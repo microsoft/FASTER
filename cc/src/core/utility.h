@@ -47,6 +47,23 @@ class Utility {
     return Rotr64(kMagicNum * hashState, 6);
   }
 
+  static inline uint64_t HashBytesUint8(const uint8_t* str, size_t len) {
+    // 40343 is a "magic constant" that works well,
+    // 38299 is another good value.
+    // Both are primes and have a good distribution of bits.
+    const uint64_t kMagicNum = 40343;
+    uint64_t hashState = len;
+
+    for(size_t idx = 0; idx < len; ++idx) {
+      hashState = kMagicNum * hashState + str[idx];
+    }
+
+    // The final scrambling helps with short keys that vary only on the high order bits.
+    // Low order bits are not always well distributed so shift them to the high end, where they'll
+    // form part of the 14-bit tag.
+    return Rotr64(kMagicNum * hashState, 6);
+  }
+
   static constexpr inline bool IsPowerOfTwo(uint64_t x) {
     return (x > 0) && ((x & (x - 1)) == 0);
   }
