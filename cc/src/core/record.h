@@ -59,13 +59,19 @@ struct Record {
   static_assert(alignof(value_t) <= Constants::kCacheLineBytes,
                 "alignof(value_t) > Constants::kCacheLineBytes)");
 
+  Record(RecordInfo header_)
+      : header{ header_ } {
+  }
+
   /// For placement new() operator. Can't set value, since it might be set by value = input (for
   /// upsert), or rmw_initial(...) (for RMW).
+  /*
   Record(RecordInfo header_, const key_t& key_)
     : header{ header_ } {
     void* buffer = const_cast<key_t*>(&key());
     new(buffer)key_t{ key_ };
   }
+  */
 
   /// Key appears immediately after record header (subject to alignment padding). Keys are
   /// immutable.
@@ -93,12 +99,12 @@ struct Record {
 
   /// Size of a record to be created, in memory. (Includes padding, if any, after the value, so
   /// that the next record stored in the log is properly aligned.)
-  static inline constexpr uint32_t size(const key_t& key_, uint32_t value_size) {
+  static inline constexpr uint32_t size(uint32_t key_size, uint32_t value_size) {
     return static_cast<uint32_t>(
              // --plus Value size, all padded to Header alignment.
              pad_alignment(value_size +
                            // --plus Key size, all padded to Value alignment.
-                           pad_alignment(key_.size() +
+                           pad_alignment(key_size +
                                          // Header, padded to Key alignment.
                                          pad_alignment(sizeof(RecordInfo), alignof(key_t)),
                                          alignof(value_t)),
@@ -106,7 +112,7 @@ struct Record {
   }
   /// Size of the existing record, in memory. (Includes padding, if any, after the value.)
   inline constexpr uint32_t size() const {
-    return size(key(), value().size());
+    return size(key().size(), value().size());
   }
 
   /// Minimum size of a read from disk that is guaranteed to include the record's header + whatever
