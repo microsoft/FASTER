@@ -3,7 +3,17 @@
 
 namespace FasterPSFSample
 {
-    public struct Input
+    public interface IInput<TValue>
     {
+        TValue InitialUpdateValue { get; set; }
+
+        int IPUColorInt { get; set; }
+    }
+
+    public struct Input<TValue> : IInput<TValue>
+    {
+        public TValue InitialUpdateValue { get; set; }
+
+        public int IPUColorInt { get; set; }
     }
 }

@@ -175,7 +175,7 @@ namespace FASTER.core
         /// <param name="psfName">The name of the PSF; must be unique across all PSFGroups in this FasterKV instance</param>
         /// <param name="psfFunc">A Func implementing the PSF, it will be wrapped in a delegate</param>
         /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
-        /// <returns>A FasterKV-specific <see cref="PSF{TPSFKey, TRecordId}"/> implementation whose TRecordId is long(</returns>
+        /// <returns>A FasterKV-specific <see cref="PSF{TPSFKey, TRecordId}"/> implementation whose TRecordId is long</returns>
         PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
                 string psfName, Func<Key, Value, TPSFKey?> psfFunc,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)

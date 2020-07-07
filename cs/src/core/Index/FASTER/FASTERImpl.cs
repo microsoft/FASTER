@@ -225,8 +225,7 @@ namespace FASTER.core
         private FasterKVProviderData<Key, Value> CreateProviderData(ref Key key, long physicalAddress)
             => new FasterKVProviderData<Key, Value>(this.hlog, ref key, ref hlog.GetValue(physicalAddress));
 
-        private unsafe static void GetAfterRecordId(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker,
-                                                   ref Value value)
+        private unsafe static void GetAfterRecordId(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker, ref Value value)
         {
             // This indirection is needed because this is the primary FasterKV.
             Debug.Assert(typeof(Value) == typeof(long));
@@ -234,19 +233,14 @@ namespace FASTER.core
             Buffer.MemoryCopy(Unsafe.AsPointer(ref recordId), Unsafe.AsPointer(ref value), sizeof(long), sizeof(long));
         }
 
-        private void SetBeforeData(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker,
-                                   ref Key key, long logicalAddress, long physicalAddress)
-        {
-            changeTracker.BeforeRecordId = logicalAddress;
-            changeTracker.BeforeData = CreateProviderData(ref key, physicalAddress);
-        }
+        private void SetBeforeData(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker, ref Key key, long logicalAddress, long physicalAddress, bool isIpu)
+            // If the value has objects, then an in-place RMW to the data in that object will also affect BeforeData, so we must get the PSFs now. // TODOperf this is in session lock
+            // TODOdoc: If you Read an object value and modify that fetched "ref value" directly, you will break PSFs (the before data is overwritten before we have
+            // a chance to see it and create the keys). An Upsert must use a separate value.
+            => this.PSFManager.SetBeforeData(changeTracker, CreateProviderData(ref key, physicalAddress), logicalAddress, isIpu && this.hlog.ValueHasObjects());
 
-        private void SetAfterData(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker,
-                                   ref Key key, long logicalAddress, long physicalAddress)
-        {
-            changeTracker.AfterRecordId = logicalAddress;
-            changeTracker.AfterData = CreateProviderData(ref key, physicalAddress);
-        }
+        private void SetAfterData(PSFChangeTracker<FasterKVProviderData<Key, Value>, long> changeTracker, ref Key key, long logicalAddress, long physicalAddress) 
+            => this.PSFManager.SetAfterData(changeTracker, CreateProviderData(ref key, physicalAddress), logicalAddress);
         #endregion PSF Utilities
 
         /// <summary>
@@ -326,11 +320,11 @@ namespace FASTER.core
                                         out physicalAddress);
                 }
 
-                if (logicalAddress >= hlog.ReadOnlyAddress && this.PSFManager.HasPSFs)
+                if (logicalAddress >= hlog.ReadOnlyAddress && this.PSFManager.HasPSFs && !hlog.GetInfo(physicalAddress).Tombstone)
                 {
                     // Save the PreUpdate values.
                     psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress, isIpu: true);
                     psfArgs.ChangeTracker.UpdateOp = UpdateOperation.IPU;
                 }
             }
@@ -475,7 +469,7 @@ namespace FASTER.core
                     {
                         // The old record was valid but not in mutable range (that's handled above), so this is an RCU
                         psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                        SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress, isIpu: false);
                         SetAfterData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
                         psfArgs.ChangeTracker.UpdateOp = UpdateOperation.RCU;
                     }
@@ -645,11 +639,11 @@ namespace FASTER.core
                                             out physicalAddress);
                 }
 
-                if (logicalAddress >= hlog.ReadOnlyAddress && this.PSFManager.HasPSFs)
+                if (logicalAddress >= hlog.ReadOnlyAddress && this.PSFManager.HasPSFs && !hlog.GetInfo(physicalAddress).Tombstone)
                 {
                     // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
                     psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress, isIpu: true);
                     psfArgs.ChangeTracker.UpdateOp = UpdateOperation.IPU;
                 }
             }
@@ -858,14 +852,14 @@ namespace FASTER.core
                     {
                         // Old logicalAddress is invalid or deleted, so this is an Insert only.
                         psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                        SetBeforeData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress, isIpu: false);
                         psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Insert;
                     }
                     else 
                     {
                         // The old record was valid but not in mutable range (that's handled above), so this is an RCU
                         psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                        SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress, isIpu: false);
                         SetAfterData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
                         psfArgs.ChangeTracker.UpdateOp = UpdateOperation.RCU;
                     }
@@ -1121,20 +1115,20 @@ namespace FASTER.core
                         // Apply tombstone bit to the record
                         hlog.GetInfo(physicalAddress).Tombstone = true;
 
+                        if (this.PSFManager.HasPSFs)
+                        {
+                            // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
+                            psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                            SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress, isIpu: false);
+                            psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
+                        }
+
                         if (WriteDefaultOnDelete)
                         {
                             // Write default value
                             // Ignore return value, the record is already marked
                             Value v = default;
                             functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
-                        }
-
-                        if (this.PSFManager.HasPSFs)
-                        {
-                            // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
-                            psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                            SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
-                            psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
                         }
 
                         status = OperationStatus.SUCCESS;
@@ -1148,20 +1142,20 @@ namespace FASTER.core
             {
                 hlog.GetInfo(physicalAddress).Tombstone = true;
 
+                if (this.PSFManager.HasPSFs)
+                {
+                    // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
+                    psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
+                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress, isIpu: false);
+                    psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
+                }
+
                 if (WriteDefaultOnDelete)
                 {
                     // Write default value
                     // Ignore return value, the record is already marked
                     Value v = default;
                     functions.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
-                }
-
-                if (this.PSFManager.HasPSFs)
-                {
-                    // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
-                    psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                    SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress);
-                    psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
                 }
 
                 status = OperationStatus.SUCCESS;
@@ -1203,7 +1197,7 @@ namespace FASTER.core
                     {
                         // Get the PreUpdate values (or the secondary FKV position in the IPUCache).
                         psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
-                        SetBeforeData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
+                        SetBeforeData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress, isIpu: false);
                         psfArgs.ChangeTracker.UpdateOp = UpdateOperation.Delete;
                     }
 

@@ -5,7 +5,7 @@ namespace FasterPSFSample
 {
     public interface IOutput<TValue>
     {
-        public TValue Value { get; set; }
+        TValue Value { get; set; }
     }
 
     public struct Output<TValue> : IOutput<TValue>

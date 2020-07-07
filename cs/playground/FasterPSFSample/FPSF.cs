@@ -8,13 +8,13 @@ using System;
 
 namespace FasterPSFSample
 {
-    class FPSF<TValue, TOutput, TFunctions, TSerializer>
+    class FPSF<TValue, TInput, TOutput, TFunctions, TSerializer>
         where TValue : IOrders, new()
         where TOutput : new()
-        where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+        where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
         where TSerializer : BinaryObjectSerializer<TValue>, new()
     {
-        internal IFasterKV<Key, TValue, Input, TOutput, Context<TValue>, TFunctions> fht { get; set; }
+        internal IFasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions> fht { get; set; }
 
         private LogFiles logFiles;
 
@@ -30,7 +30,7 @@ namespace FasterPSFSample
         {
             this.logFiles = new LogFiles(useObjectValues, useReadCache, useMultiGroup ? 3 : 1);
 
-            this.fht = new FasterKV<Key, TValue, Input, TOutput, Context<TValue>, TFunctions>(
+            this.fht = new FasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions>(
                                 1L << 20, new TFunctions(), this.logFiles.LogSettings,
                                 null, // TODO: add checkpoints
                                 useObjectValues ? new SerializerSettings<Key, TValue> { valueSerializer = () => new TSerializer() } : null);

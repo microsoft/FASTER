@@ -24,8 +24,6 @@ namespace FasterPSFSample
 
         public int[] values = new int[numValues];
 
-        public ObjectOrders() => throw new InvalidOperationException("Must use ctor overload");
-
         public override string ToString() => $"{(Constants.Size)this.SizeInt}, {Constants.ColorDict[this.ColorArgb].Name}, {Count}";
 
         public class Serializer : BinaryObjectSerializer<ObjectOrders>
@@ -44,16 +42,18 @@ namespace FasterPSFSample
             }
         }
 
-        public class Functions : IFunctions<Key, ObjectOrders, Input, Output<ObjectOrders>, Context<ObjectOrders>>
+        public class Functions : IFunctions<Key, ObjectOrders, Input<ObjectOrders>, Output<ObjectOrders>, Context<ObjectOrders>>
         {
+            public ObjectOrders InitialUpdateValue { get; set; }
+
             #region Read
-            public void ConcurrentReader(ref Key key, ref Input input, ref ObjectOrders value, ref Output<ObjectOrders> dst)
+            public void ConcurrentReader(ref Key key, ref Input<ObjectOrders> input, ref ObjectOrders value, ref Output<ObjectOrders> dst)
                 => dst.Value = value;
 
-            public void SingleReader(ref Key key, ref Input input, ref ObjectOrders value, ref Output<ObjectOrders> dst)
+            public void SingleReader(ref Key key, ref Input<ObjectOrders> input, ref ObjectOrders value, ref Output<ObjectOrders> dst)
                 => dst.Value = value;
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output<ObjectOrders> output, Context<ObjectOrders> context, Status status)
+            public void ReadCompletionCallback(ref Key key, ref Input<ObjectOrders> input, ref Output<ObjectOrders> output, Context<ObjectOrders> context, Status status)
             {
                 if (((IOrders)output.Value).MemberTuple != key.MemberTuple)
                     throw new Exception("Read mismatch error!");
@@ -75,19 +75,19 @@ namespace FasterPSFSample
             #endregion Upsert
 
             #region RMW
-            public void CopyUpdater(ref Key key, ref Input input, ref ObjectOrders oldValue, ref ObjectOrders newValue)
+            public void CopyUpdater(ref Key key, ref Input<ObjectOrders> input, ref ObjectOrders oldValue, ref ObjectOrders newValue)
                 => throw new NotImplementedException();
 
-            public void InitialUpdater(ref Key key, ref Input input, ref ObjectOrders value)
-                => throw new NotImplementedException();
+            public void InitialUpdater(ref Key key, ref Input<ObjectOrders> input, ref ObjectOrders value)
+                => value = input.InitialUpdateValue;
 
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref ObjectOrders value)
+            public bool InPlaceUpdater(ref Key key, ref Input<ObjectOrders> input, ref ObjectOrders value)
             {
-                value.ColorArgb = FasterPSFSample.IPUColor;
+                value.ColorArgb = input.IPUColorInt;
                 return true;
             }
 
-            public void RMWCompletionCallback(ref Key key, ref Input input, Context<ObjectOrders> context, Status status)
+            public void RMWCompletionCallback(ref Key key, ref Input<ObjectOrders> input, Context<ObjectOrders> context, Status status)
                 => throw new NotImplementedException();
             #endregion RMW
 

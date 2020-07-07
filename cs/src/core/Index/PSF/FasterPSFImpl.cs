@@ -71,7 +71,7 @@ namespace FASTER.core
             var psfInput = psfArgs.Input;
             var psfOutput = psfArgs.Output;
 
-            var hash = this.psfKeyAccessor.GetHashCode64(ref queryKey, 0); // the queryKey has only one key
+            var hash = this.psfKeyAccessor.GetHashCode64(ref queryKey, psfInput.PsfOrdinal, isQuery:true); // the queryKey has only one key
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
@@ -343,7 +343,7 @@ namespace FASTER.core
                 }
 
                 ref CASHelper casHelper = ref casHelpers[psfInput.PsfOrdinal];
-                casHelper.hash = this.psfKeyAccessor.GetHashCode64(ref compositeKey, psfInput.PsfOrdinal);
+                casHelper.hash = this.psfKeyAccessor.GetHashCode64(ref compositeKey, psfInput.PsfOrdinal, isQuery:false);
                 var tag = (ushort)((ulong)casHelper.hash >> Constants.kHashTagShift);
 
                 if (sessionCtx.phase != Phase.REST)

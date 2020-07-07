@@ -43,7 +43,6 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public IEnumerable<TRecordId> Query(TPSFKey key)
-            => this.psfGroup.Query(this.PsfOrdinal, key);
+        internal IEnumerable<TRecordId> Query(TPSFKey key) => this.psfGroup.Query(this.PsfOrdinal, key);
     }
 }

@@ -1,11 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core.Index.PSF;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+
+// TODO: Remove PackageId and PackageOutputPath from csproj when this is folded into master
 
 namespace FASTER.core
 {
@@ -16,10 +19,12 @@ namespace FASTER.core
 
         private readonly ConcurrentDictionary<string, Guid> psfNames = new ConcurrentDictionary<string, Guid>();
 
+        // Default is to let all streams continue to completion.
+        private static readonly PSFQuerySettings DefaultQuerySettings = new PSFQuerySettings { OnStreamEnded = (unusedPsf, unusedIndex) => true };
+
         internal bool HasPSFs => this.psfGroups.Count > 0;
 
-        internal Status Upsert(TProviderData data, TRecordId recordId,
-                               PSFChangeTracker<TProviderData, TRecordId> changeTracker)
+        internal Status Upsert(TProviderData data, TRecordId recordId, PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
             // TODO: RecordId locking, to ensure consistency of multiple PSFs if the same record is updated
             // multiple times; possibly a single Array<CacheLine>[N] which is locked on TRecordId.GetHashCode % N.
@@ -45,7 +50,6 @@ namespace FASTER.core
 
         internal Status Update(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
-            changeTracker.PrepareGroups(this.psfGroups.Count);
             foreach (var group in this.psfGroups.Values)
             {
                 var status = group.Update(changeTracker);
@@ -59,7 +63,6 @@ namespace FASTER.core
 
         internal Status Delete(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
-            changeTracker.PrepareGroups(this.psfGroups.Count);
             foreach (var group in this.psfGroups.Values)
             {
                 var status = group.Delete(changeTracker);
@@ -74,7 +77,31 @@ namespace FASTER.core
         internal string[][] GetRegisteredPSFs() => throw new NotImplementedException("TODO");
 
         internal PSFChangeTracker<TProviderData, TRecordId> CreateChangeTracker() 
-            => new PSFChangeTracker<TProviderData, TRecordId>();
+            => new PSFChangeTracker<TProviderData, TRecordId>(this.psfGroups.Values.Select(group => group.Id));
+
+        public Status SetBeforeData(PSFChangeTracker<TProviderData, TRecordId> changeTracker, TProviderData data, TRecordId recordId, bool executePSFsNow)
+        {
+            changeTracker.SetBeforeData(data, recordId);
+            if (executePSFsNow)
+            {
+                foreach (var group in this.psfGroups.Values)
+                {
+                    var status = group.GetBeforeKeys(changeTracker);
+                    if (status != Status.OK)
+                    {
+                        // TODOerr: handle errors
+                    }
+                }
+                changeTracker.HasBeforeKeys = true;
+            }
+            return Status.OK;
+        }
+
+        public Status SetAfterData(PSFChangeTracker<TProviderData, TRecordId> changeTracker, TProviderData data, TRecordId recordId)
+        {
+            changeTracker.SetAfterData(data, recordId);
+            return Status.OK;
+        }
 
         private static long NextGroupId = 0;
 
@@ -90,12 +117,30 @@ namespace FASTER.core
                 throw new PSFArgumentException("The PSF Key type must be blittable.");
         }
 
-        private void VerifyIsOurPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf)
+        private void VerifyIsOurPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf)   // TODO convert to IPSF externally
         {
             if (psf is null)
                 throw new PSFArgumentException($"The PSF cannot be null.");
             if (!this.psfNames.TryGetValue(psf.Name, out Guid id) || id != psf.Id)
                 throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
+        }
+
+        private PSF<TPSFKey, TRecordId> GetImplementingPSF<TPSFKey>(IPSF ipsf)
+        {
+            if (ipsf is null)
+                throw new PSFArgumentException($"The PSF cannot be null.");
+            var psf = ipsf as PSF<TPSFKey, TRecordId>;
+            if (psf is null || !this.psfNames.TryGetValue(psf.Name, out Guid id) || id != psf.Id)
+                throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
+            return psf;
+        }
+
+        private void VerifyIsOurPSF<TPSFKey>(IEnumerable<(PSF<TPSFKey, TRecordId>, IEnumerable<TPSFKey>)> psfsAndKeys)
+        {
+            if (psfsAndKeys is null)
+                throw new PSFArgumentException($"The PSF enumerable cannot be null.");
+            foreach (var psfAndKeys in psfsAndKeys)
+                this.VerifyIsOurPSF(psfAndKeys.Item1);
         }
 
         internal PSF<TPSFKey, TRecordId> RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey> def,
@@ -158,138 +203,161 @@ namespace FASTER.core
             }
         }
 
-        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf,
-                                                          TPSFKey psfKey, PSFQuerySettings querySettings)
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf, TPSFKey key, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
             this.VerifyIsOurPSF(psf);
-            foreach (var recordId in psf.Query(psfKey))
+            querySettings ??= DefaultQuerySettings;
+            foreach (var recordId in psf.Query(key))
             {
-                if (querySettings != null && querySettings.CancellationToken.IsCancellationRequested)
-                {
-                    if (querySettings.ThrowOnCancellation)
-                        querySettings.CancellationToken.ThrowIfCancellationRequested();
+                if (querySettings.IsCanceled)
                     yield break;
-                }
                 yield return recordId;
             }
         }
 
-        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf,
-                                                          TPSFKey[] psfKeys, PSFQuerySettings querySettings)
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf, IEnumerable<TPSFKey> keys, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
             this.VerifyIsOurPSF(psf);
+            querySettings ??= DefaultQuerySettings;
 
-            // TODO implement range queries. This will start retrieval of a stream of returned values for the
-            // chains for all specified keys for the PSF, returning them via an IEnumerable<TPSFKey> over a PQ
-            // (PriorityQueue) that is populated from each key's stream. This is how multiple range query bins
-            // are handled; the semantics are that a Union (via stream merge) of all records for all keys in the
-            // array is done. Obviously there will be a tradeoff between the granularity of the bins and the
-            // overhead of the PQ for the streams returned.
-            return QueryPSF(psf, psfKeys[0], querySettings);
-        }
-
-        internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
-                    PSF<TPSFKey1, TRecordId> psf1, TPSFKey1 psfKey1,
-                    PSF<TPSFKey2, TRecordId> psf2, TPSFKey2 psfKey2,
-                    Func<bool, bool, bool> matchPredicate,
-                    PSFQuerySettings querySettings)
-        {
-            // TODO: full implementation via PQ
-            using var e1 = psf1.Query(psfKey1).GetEnumerator();
-            using var e2 = psf2.Query(psfKey2).GetEnumerator();
-
-            var e1done = !e1.MoveNext();
-            var e2done = !e2.MoveNext();
-
-            var group1 = this.psfGroups[psf1.GroupId];
-            var group2 = this.psfGroups[psf2.GroupId];
-
-            var cancelToken = querySettings is null ? default : querySettings.CancellationToken;
-            bool cancellationRequested()
+            // The recordIds cannot overlap between keys (unless something's gone wrong), so return them all.
+            // TODOperf: Consider a PQ ordered on secondary FKV LA so we can walk through in parallel (and in memory sequence) in one PsfRead(Key|Address) loop.
+            foreach (var key in keys)
             {
-                if (querySettings is null)
-                    return false;
-                if (querySettings.ThrowOnCancellation)
-                    cancelToken.ThrowIfCancellationRequested();
-                return cancelToken.IsCancellationRequested;
-            }
-
-            while (!e1done && !e2done)
-            {
-                if (cancellationRequested())
-                    yield break;
-
-                // Descending order by recordId. TODO doc: Require IComparable on TRecordId
-                var cmp = e1.Current.CompareTo(e2.Current);
-                var predResult = cmp == 0
-                    ? matchPredicate(true, true)
-                    : cmp > 0 ? matchPredicate(true, false) : matchPredicate(false, true);
-                if (predResult)
-                    yield return cmp < 0 ? e1.Current : e2.Current;
-
-                // Let the trailing one catch up
-                if (cmp <= 0)
-                    e1done = !e1.MoveNext();
-                if (cmp >= 0)
-                    e2done = !e2.MoveNext();
-            }
-
-            // If all streams are done, normal conclusion.
-            if (e1done && e2done)
-                yield break;
-
-            // At least one stream is still alive, but not all. See if they registered a callback.
-            if (!(querySettings is null) && !(querySettings.OnStreamEnded is null))
-            {
-                if (!querySettings.OnStreamEnded(e1done ? (IPSF)psf1 : psf2, e1done ? 0 : 1))
-                    yield break;
-            }
-
-            while ((!e1done || !e2done) && !cancellationRequested())
-            { 
-                var predResult = matchPredicate(!e1done, !e2done);
-                if (predResult)
-                    yield return !e1done ? e1.Current : e2.Current;
-                if (!(!e1done ? e1 : e2).MoveNext())
-                    yield break;
+                foreach (var recordId in QueryPSF(psf, key, querySettings))
+                {
+                    if (querySettings.IsCanceled)
+                        yield break;
+                    yield return recordId;
+                }
             }
         }
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
-                    PSF<TPSFKey1, TRecordId> psf1, TPSFKey1[] psfKeys1,
-                    PSF<TPSFKey2, TRecordId> psf2, TPSFKey2[] psfKeys2,
+                    PSF<TPSFKey1, TRecordId> psf1, TPSFKey1 key1,
+                    PSF<TPSFKey2, TRecordId> psf2, TPSFKey2 key2,
                     Func<bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
         {
-            // TODO: Similar range-query/PQ implementation (and first-element only execution) as discussed above.
-            return QueryPSF(psf1, psfKeys1[0], psf2, psfKeys2[0], matchPredicate, querySettings);
+            this.VerifyIsOurPSF(psf1);
+            this.VerifyIsOurPSF(psf2);
+            querySettings ??= DefaultQuerySettings;
+
+            return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, key1, querySettings), psf2, this.QueryPSF(psf2, key2, querySettings),
+                                                      matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0]), querySettings).Run();
         }
 
-        // Power user versions. We could add up to 3. Anything more complicated than
-        // that, they can just post-process with LINQ.
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
+                    PSF<TPSFKey1, TRecordId> psf1, IEnumerable<TPSFKey1> keys1,
+                    PSF<TPSFKey2, TRecordId> psf2, IEnumerable<TPSFKey2> keys2,
+                    Func<bool, bool, bool> matchPredicate,
+                    PSFQuerySettings querySettings)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+        {
+            this.VerifyIsOurPSF(psf1);
+            this.VerifyIsOurPSF(psf2);
+            querySettings ??= DefaultQuerySettings;
+
+            return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, keys1, querySettings), psf2, this.QueryPSF(psf2, keys2, querySettings),
+                                                      matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0]), querySettings).Run();
+        }
+
+        public IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
+                    PSF<TPSFKey1, TRecordId> psf1, TPSFKey1 key1,
+                    PSF<TPSFKey2, TRecordId> psf2, TPSFKey2 key2,
+                    PSF<TPSFKey3, TRecordId> psf3, TPSFKey3 key3,
+                    Func<bool, bool, bool, bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+            where TPSFKey3 : struct
+        {
+            this.VerifyIsOurPSF(psf1);
+            this.VerifyIsOurPSF(psf2);
+            this.VerifyIsOurPSF(psf3);
+            querySettings ??= DefaultQuerySettings;
+
+            return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, key1, querySettings), psf2, this.QueryPSF(psf2, key2, querySettings),
+                                                      psf3, this.QueryPSF(psf3, key3, querySettings),
+                                                      matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0], matchIndicators[2][0]), querySettings).Run();
+        }
+
+        public IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
+                    PSF<TPSFKey1, TRecordId> psf1, IEnumerable<TPSFKey1> keys1,
+                    PSF<TPSFKey2, TRecordId> psf2, IEnumerable<TPSFKey2> keys2,
+                    PSF<TPSFKey3, TRecordId> psf3, IEnumerable<TPSFKey3> keys3,
+                    Func<bool, bool, bool, bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+            where TPSFKey3 : struct
+        {
+            this.VerifyIsOurPSF(psf1);
+            this.VerifyIsOurPSF(psf2);
+            this.VerifyIsOurPSF(psf3);
+            querySettings ??= DefaultQuerySettings;
+
+            return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, keys1, querySettings), psf2, this.QueryPSF(psf2, keys2, querySettings),
+                                                      psf3, this.QueryPSF(psf3, keys3, querySettings),
+                                                      matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0], matchIndicators[2][0]), querySettings).Run();
+        }
+
+        // Power user versions. Anything more complicated than this the caller can post-process with LINQ.
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(
-                    (PSF<TPSFKey, TRecordId> psf1, TPSFKey[])[] psfsAndKeys,
+                    IEnumerable<(PSF<TPSFKey, TRecordId> psf, IEnumerable<TPSFKey> keys)> psfsAndKeys,
                     Func<bool[], bool> matchPredicate,
-                    PSFQuerySettings querySettings)
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey : struct
         {
-            // TODO: Not implemented. The input argument to the predicate is the matches to each
-            // element of psfsAndKeys.
-            return Array.Empty<TRecordId>();
+            this.VerifyIsOurPSF(psfsAndKeys);
+            querySettings ??= DefaultQuerySettings;
+
+            return new QueryRecordIterator<TRecordId>(new[] { psfsAndKeys.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))) },
+                                                      matchIndicators => matchPredicate(matchIndicators[0]), querySettings).Run();
         }
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
-                    (PSF<TPSFKey1, TRecordId> psf1, TPSFKey1[])[] psfsAndKeys1,
-                    (PSF<TPSFKey2, TRecordId> psf2, TPSFKey2[])[] psfsAndKeys2,
+                    IEnumerable<(PSF<TPSFKey1, TRecordId> psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(PSF<TPSFKey2, TRecordId> psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
                     Func<bool[], bool[], bool> matchPredicate,
-                    PSFQuerySettings querySettings)
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
         {
-            // TODO: Not implemented. The first input argument to the predicate is the matches to each
-            // element of psfsAndKeys1; the second input argument to the predicate is the matches to each
-            // element of psfsAndKeys2.
-            return Array.Empty<TRecordId>();
+            this.VerifyIsOurPSF(psfsAndKeys1);
+            this.VerifyIsOurPSF(psfsAndKeys2);
+            querySettings ??= DefaultQuerySettings;
+
+            return new QueryRecordIterator<TRecordId>(new[] {psfsAndKeys1.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))),
+                                                             psfsAndKeys2.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings)))},
+                                                      matchIndicators => matchPredicate(matchIndicators[0], matchIndicators[1]), querySettings).Run();
+        }
+
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
+                    IEnumerable<(PSF<TPSFKey1, TRecordId> psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(PSF<TPSFKey2, TRecordId> psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
+                    IEnumerable<(PSF<TPSFKey3, TRecordId> psf, IEnumerable<TPSFKey3> keys)> psfsAndKeys3,
+                    Func<bool[], bool[], bool[], bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+            where TPSFKey3 : struct
+        {
+            this.VerifyIsOurPSF(psfsAndKeys1);
+            this.VerifyIsOurPSF(psfsAndKeys2);
+            this.VerifyIsOurPSF(psfsAndKeys3);
+            querySettings ??= DefaultQuerySettings;
+
+            return new QueryRecordIterator<TRecordId>(new[] {psfsAndKeys1.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))),
+                                                             psfsAndKeys2.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))),
+                                                             psfsAndKeys3.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings)))},
+                                                      matchIndicators => matchPredicate(matchIndicators[0], matchIndicators[1], matchIndicators[2]), querySettings).Run();
         }
     }
 }

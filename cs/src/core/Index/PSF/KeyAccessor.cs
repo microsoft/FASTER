@@ -24,7 +24,7 @@ namespace FASTER.core
 
         long GetRecordAddressFromKeyLogicalAddress(long logicalAddress, long psfOrdinal);
 
-        long GetHashCode64(ref TCompositeKey key, int psfOrdinal);
+        long GetHashCode64(ref TCompositeKey key, int psfOrdinal, bool isQuery);
 
         bool Equals(ref TCompositeKey queryKey, long physicalAddress);
 
@@ -69,11 +69,10 @@ namespace FASTER.core
             => logicalAddress - psfOrdinal* this.KeyPointerSize - RecordInfo.GetLength(); // TODO: Assumes all PSFs are present
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetHashCode64(ref CompositeKey<TPSFKey> key, int psfOrdinal)
+        public long GetHashCode64(ref CompositeKey<TPSFKey> key, int psfOrdinal, bool isQuery)
         {
-            // TODO: Incorporate psfOrdinal into the hashcode; remember that queryKey has only position 0 though.
-            ref KeyPointer<TPSFKey> queryKeyPointer = ref key.GetKeyPointerRef(psfOrdinal, this.KeyPointerSize);
-            return this.userComparer.GetHashCode64(ref queryKeyPointer.Key);
+            ref KeyPointer<TPSFKey> queryKeyPointer = ref key.GetKeyPointerRef(isQuery ? 0 : psfOrdinal, this.KeyPointerSize);
+            return Utility.GetHashCode(this.userComparer.GetHashCode64(ref queryKeyPointer.Key)) ^ Utility.GetHashCode(psfOrdinal + 1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

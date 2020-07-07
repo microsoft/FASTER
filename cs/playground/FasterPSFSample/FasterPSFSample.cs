@@ -9,7 +9,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FasterPSFSample
@@ -17,8 +16,11 @@ namespace FasterPSFSample
     public partial class FasterPSFSample
     {
         private const int UpsertCount = 100;
-        private static int blueCount, mediumCount, mediumBlueCount;
-        private static int bin7Count;
+        private static int blueCount, mediumCount, bin7Count;
+        private static int intersectMediumBlueCount, unionMediumBlueCount;
+        private static int intersectMediumBlue7Count, unionMediumBlue7Count;
+        private static int unionMediumLargeCount, unionRedBlueCount;
+        private static int unionMediumLargeRedBlueCount, intersectMediumLargeRedBlueCount;
         
         internal static Dictionary<Key, IOrders> keyDict = new Dictionary<Key, IOrders>();
 
@@ -26,8 +28,6 @@ namespace FasterPSFSample
         private static int initialSkippedLastBinCount;
 
         private static int nextId = 1000000000;
-
-        internal static int IPUColor;
 
         internal static int serialNo;
 
@@ -37,26 +37,28 @@ namespace FasterPSFSample
                 return;
 
             if (useObjectValue)  // TODO add VarLenValue
-                RunSample<ObjectOrders, Output<ObjectOrders>, ObjectOrders.Functions, ObjectOrders.Serializer>();
+                RunSample<ObjectOrders, Input<ObjectOrders>, Output<ObjectOrders>, ObjectOrders.Functions, ObjectOrders.Serializer>();
             else
-                RunSample<BlittableOrders, Output<BlittableOrders>, BlittableOrders.Functions, NoSerializer>();
+                RunSample<BlittableOrders, Input<BlittableOrders>, Output<BlittableOrders>, BlittableOrders.Functions, NoSerializer>();
             return;
         }
 
-        internal static void RunSample<TValue, TOutput, TFunctions, TSerializer>()
+        internal static void RunSample<TValue, TInput, TOutput, TFunctions, TSerializer>()
             where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
-            var fpsf = new FPSF<TValue, TOutput, TFunctions, TSerializer>(useObjectValue, useMultiGroups, useReadCache: true);
+            var fpsf = new FPSF<TValue, TInput, TOutput, TFunctions, TSerializer>(useObjectValue, useMultiGroups, useReadCache: true);
             try
             {
                 CountBinKey.WantLastBin = false;
-                RunUpserts(fpsf);
+                RunInitialInserts(fpsf);
                 CountBinKey.WantLastBin = true;
                 RunReads(fpsf);
-                var ok = QueryPSFs(fpsf)
+                var ok = QueryPSFsWithoutBoolOps(fpsf)
+                        && QueryPSFsWithBoolOps(fpsf)
                         && UpdateSizeByUpsert(fpsf)
                         && UpdateColorByRMW(fpsf)
                         && UpdateCountByUpsert(fpsf)
@@ -79,10 +81,11 @@ namespace FasterPSFSample
 
         [Conditional("PSF_TRACE")] static void PsfTraceLine(string message) => Console.WriteLine(message);
 
-        internal static void RunUpserts<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
+        internal static void RunInitialInserts<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
             where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             Console.WriteLine("Writing keys from 0 to {0} to FASTER", UpsertCount);
@@ -90,8 +93,9 @@ namespace FasterPSFSample
             var rng = new Random(13);
             using var session = fpsf.fht.NewSession();
             var context = new Context<TValue>();
+            var input = default(TInput);
 
-            for (int i = 0; i < UpsertCount; i++)
+            for (int ii = 0; ii < UpsertCount; ii++)
             {
                 // Leave the last value unassigned from each category (we'll use it to update later)
                 var key = new Key(Interlocked.Increment(ref nextId) - 1);
@@ -104,22 +108,62 @@ namespace FasterPSFSample
                 };
 
                 keyDict[key] = value;
-                if (value.ColorArgb == Color.Blue.ToArgb())
+                CountBinKey.GetBin(value.Count, out int bin);
+                var isBlue = value.ColorArgb == Color.Blue.ToArgb();
+                var isRed = value.ColorArgb == Color.Red.ToArgb();
+                var isMedium = value.SizeInt == (int)Constants.Size.Medium;
+                var isLarge = value.SizeInt == (int)Constants.Size.Large;
+                var isBin7 = bin == 7;
+
+                if (isBlue)
                 {
                     ++blueCount;
-                    if (value.SizeInt == (int)Constants.Size.Medium)
-                        ++mediumBlueCount;
+                    if (isMedium)
+                    {
+                        ++intersectMediumBlueCount;
+                        if (isBin7)
+                            ++intersectMediumBlue7Count;
+                    }
                 }
-                if (value.SizeInt == (int)Constants.Size.Medium)
+                if (isMedium)
                     ++mediumCount;
 
-                CountBinKey.GetBin(value.Count, out int bin);
-                if (bin == 7) 
+                if (isBin7) 
                     ++bin7Count;
                 else if (bin == CountBinKey.LastBin)
                     lastBinKeys.Add(key);
+
+                if (isMedium || isBlue)
+                    ++unionMediumBlueCount;
+                if (isMedium || isBlue || isBin7)
+                    ++unionMediumBlue7Count;
+
+                var isMediumOrLarge = isMedium || isLarge;
+                var isRedOrBlue = isBlue || isRed;
+
+                if (isMediumOrLarge)
+                {
+                    ++unionMediumLargeCount;
+                    if (isRedOrBlue)
+                        ++intersectMediumLargeRedBlueCount;
+                }
+                if (isRedOrBlue)
+                    ++unionRedBlueCount;
+                if (isMediumOrLarge || isRedOrBlue)
+                    ++unionMediumLargeRedBlueCount;
+
                 PsfTrace($"{value} |");
-                session.Upsert(ref key, ref value, context, serialNo);
+
+                // Both Upsert and RMW do an insert when the key is not found.
+                if ((ii & 1) == 0)
+                {
+                    session.Upsert(ref key, ref value, context, serialNo);
+                }
+                else
+                {
+                    input.InitialUpdateValue = value;
+                    session.RMW(ref key, ref input, context, serialNo);
+                }
             }
             ++serialNo;
 
@@ -134,10 +178,11 @@ namespace FasterPSFSample
                 lastBinKeys.Remove(key);
         }
 
-        internal static void RunReads<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
+        internal static void RunReads<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
             where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             Console.WriteLine("Reading {0} random keys from FASTER", UpsertCount);
@@ -145,7 +190,7 @@ namespace FasterPSFSample
             var rng = new Random(0);
             int statusPending = 0;
             var output = new TOutput();
-            var input = default(Input);
+            var input = default(TInput);
             var context = new Context<TValue>();
             var readCount = UpsertCount * 2;
 
@@ -169,58 +214,158 @@ namespace FasterPSFSample
         const string indent2 = "  ";
         const string indent4 = "    ";
 
-        internal static bool QueryPSFs<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
+        static bool VerifyProviderDatas<TValue>(FasterKVProviderData<Key, TValue>[] providerDatas, string name, int expectedCount)
             where TValue : IOrders, new()
+        {
+            Console.Write($"{indent4}{name}: ");
+            if (verbose)
+            {
+                foreach (var providerData in providerDatas)
+                {
+                    ref TValue value = ref providerData.GetValue();
+                    Console.WriteLine(indent4 + value);
+                }
+            }
+            Console.WriteLine(providerDatas.Length == expectedCount
+                              ? $"Passed: expected == actual ({expectedCount})"
+                              : $"Failed: expected ({expectedCount}) != actual ({providerDatas.Length})");
+            return expectedCount == providerDatas.Length;
+        }
+
+        internal static bool QueryPSFsWithoutBoolOps<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
+            where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             Console.WriteLine();
-            Console.WriteLine("Querying PSFs from FASTER", UpsertCount);
+            Console.WriteLine("Querying PSFs from FASTER with no boolean ops", UpsertCount);
 
             using var session = fpsf.fht.NewSession();
             FasterKVProviderData<Key, TValue>[] providerDatas = null;
             var ok = true;
 
-            void verifyProviderDatas(string name, int expectedCount)
-            {
-                Console.Write($"{indent4}All {name}: ");
-                if (verbose)
-                {
-                    foreach (var providerData in providerDatas)
-                    {
-                        ref TValue value = ref providerData.GetValue();
-                        Console.WriteLine(indent4 + value);
-                    }
-                }
-                ok &= expectedCount == providerDatas.Length;
-                Console.WriteLine(providerDatas.Length == expectedCount
-                                  ? $"Passed: expected == actual ({expectedCount})"
-                                  : $"Failed: expected ({expectedCount}) != actual ({providerDatas.Length})");
-
-            }
-
-            // TODO: Intersect/Union (mediumBlueDatas, etc.)
-
             providerDatas = useMultiGroups
                                 ? session.QueryPSF(fpsf.SizePsf, new SizeKey(Constants.Size.Medium)).ToArray()
                                 : session.QueryPSF(fpsf.CombinedSizePsf, new CombinedKey(Constants.Size.Medium)).ToArray();
-            verifyProviderDatas("Medium", mediumCount);
+            ok &= VerifyProviderDatas(providerDatas, "Medium", mediumCount);
             
             providerDatas = useMultiGroups
                                 ? session.QueryPSF(fpsf.ColorPsf, new ColorKey(Color.Blue)).ToArray()
                                 : session.QueryPSF(fpsf.CombinedColorPsf, new CombinedKey(Color.Blue)).ToArray();
-            verifyProviderDatas("Blue", blueCount);
+            ok &= VerifyProviderDatas(providerDatas, "Blue", blueCount);
 
             providerDatas = useMultiGroups
                                 ? session.QueryPSF(fpsf.CountBinPsf, new CountBinKey(7)).ToArray()
                                 : session.QueryPSF(fpsf.CombinedCountBinPsf, new CombinedKey(7)).ToArray();
-            verifyProviderDatas("Bin7", bin7Count);
+            ok &= VerifyProviderDatas(providerDatas, "Bin7", bin7Count);
 
             providerDatas = useMultiGroups
                                 ? session.QueryPSF(fpsf.CountBinPsf, new CountBinKey(CountBinKey.LastBin)).ToArray()
                                 : session.QueryPSF(fpsf.CombinedCountBinPsf, new CombinedKey(CountBinKey.LastBin)).ToArray();
-            verifyProviderDatas("LastBin", 0); // Insert skipped (returned null from the PSF) all that fall into the last bin
+            ok &= VerifyProviderDatas(providerDatas, "LastBin", 0); // Insert skipped (returned null from the PSF) all that fall into the last bin
+            return ok;
+        }
+
+        internal static bool QueryPSFsWithBoolOps<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
+            where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
+            where TOutput : IOutput<TValue>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
+            where TSerializer : BinaryObjectSerializer<TValue>, new()
+        {
+            Console.WriteLine();
+            Console.WriteLine("Querying PSFs from FASTER with boolean ops", UpsertCount);
+
+            using var session = fpsf.fht.NewSession();
+            FasterKVProviderData<Key, TValue>[] providerDatas = null;
+            var ok = true;
+
+            if (useMultiGroups)
+            {
+                providerDatas = session.QueryPSF(fpsf.SizePsf, new SizeKey(Constants.Size.Medium),
+                                                 fpsf.ColorPsf, new ColorKey(Color.Blue), (sz, cl) => sz && cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumBlueCount), intersectMediumBlueCount);
+                providerDatas = session.QueryPSF(fpsf.SizePsf, new SizeKey(Constants.Size.Medium),
+                                                 fpsf.ColorPsf, new ColorKey(Color.Blue), (sz, cl) => sz || cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumBlueCount), unionMediumBlueCount);
+
+                providerDatas = session.QueryPSF(fpsf.SizePsf, new SizeKey(Constants.Size.Medium),
+                                                 fpsf.ColorPsf, new ColorKey(Color.Blue),
+                                                 fpsf.CountBinPsf, new CountBinKey(7), (sz, cl, ct) => sz && cl && ct).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumBlue7Count), intersectMediumBlue7Count);
+                providerDatas = session.QueryPSF(fpsf.SizePsf, new SizeKey(Constants.Size.Medium),
+                                                 fpsf.ColorPsf, new ColorKey(Color.Blue),
+                                                 fpsf.CountBinPsf, new CountBinKey(7), (sz, cl, ct) => sz || cl || ct).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumBlue7Count), unionMediumBlue7Count);
+
+                providerDatas = session.QueryPSF(fpsf.SizePsf, new[] { new SizeKey(Constants.Size.Medium), new SizeKey(Constants.Size.Large) }).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumLargeCount), unionMediumLargeCount);
+                providerDatas = session.QueryPSF(fpsf.ColorPsf, new[] { new ColorKey(Color.Blue), new ColorKey(Color.Red) }).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionRedBlueCount), unionRedBlueCount);
+
+                providerDatas = session.QueryPSF(fpsf.SizePsf, new[] { new SizeKey(Constants.Size.Medium), new SizeKey(Constants.Size.Large) },
+                                                 fpsf.ColorPsf, new[] { new ColorKey(Color.Blue), new ColorKey(Color.Red) }, (sz, cl) => sz && cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumLargeRedBlueCount), intersectMediumLargeRedBlueCount);
+                providerDatas = session.QueryPSF(fpsf.SizePsf, new[] { new SizeKey(Constants.Size.Medium), new SizeKey(Constants.Size.Large) },
+                                                 fpsf.ColorPsf, new[] { new ColorKey(Color.Blue), new ColorKey(Color.Red) }, (sz, cl) => sz || cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumLargeRedBlueCount), unionMediumLargeRedBlueCount);
+            }
+            else
+            {
+                providerDatas = session.QueryPSF(fpsf.CombinedSizePsf, new CombinedKey(Constants.Size.Medium),
+                                                 fpsf.CombinedColorPsf, new CombinedKey(Color.Blue), (sz, cl) => sz && cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumBlueCount), intersectMediumBlueCount);
+                providerDatas = session.QueryPSF(new[] { (fpsf.CombinedSizePsf, new[] { new CombinedKey(Constants.Size.Medium) }.AsEnumerable()),
+                                                         (fpsf.CombinedColorPsf, new[] { new CombinedKey(Color.Blue) }.AsEnumerable()) }, sz => sz[0] && sz[1]).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumBlueCount), intersectMediumBlueCount);
+                // ---
+                providerDatas = session.QueryPSF(fpsf.CombinedSizePsf, new CombinedKey(Constants.Size.Medium),
+                                                 fpsf.CombinedColorPsf, new CombinedKey(Color.Blue), (sz, cl) => sz || cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumBlueCount), unionMediumBlueCount);
+                providerDatas = session.QueryPSF(new[] { (fpsf.CombinedSizePsf, new[] { new CombinedKey(Constants.Size.Medium) }.AsEnumerable()),
+                                                         (fpsf.CombinedColorPsf, new[] { new CombinedKey(Color.Blue) }.AsEnumerable()) }, sz => sz[0] || sz[1]).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumBlueCount), unionMediumBlueCount);
+                // ---
+                providerDatas = session.QueryPSF(fpsf.CombinedSizePsf, new CombinedKey(Constants.Size.Medium),
+                                                 fpsf.CombinedColorPsf, new CombinedKey(Color.Blue),
+                                                 fpsf.CombinedCountBinPsf, new CombinedKey(7), (sz, cl, ct) => sz && cl && ct).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumBlue7Count), intersectMediumBlue7Count);
+                providerDatas = session.QueryPSF(new[] {(fpsf.CombinedSizePsf, new [] { new CombinedKey(Constants.Size.Medium) }.AsEnumerable()),
+                                                         (fpsf.CombinedColorPsf, new [] { new CombinedKey(Color.Blue) }.AsEnumerable()),
+                                                         (fpsf.CombinedCountBinPsf, new [] { new CombinedKey(7) }.AsEnumerable()) }, sz => sz[0] && sz[1] && sz[2]).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumBlue7Count), intersectMediumBlue7Count);
+                // ---
+                providerDatas = session.QueryPSF(fpsf.CombinedSizePsf, new CombinedKey(Constants.Size.Medium),
+                                                 fpsf.CombinedColorPsf, new CombinedKey(Color.Blue),
+                                                 fpsf.CombinedCountBinPsf, new CombinedKey(7), (sz, cl, ct) => sz || cl || ct).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumBlue7Count), unionMediumBlue7Count);
+                providerDatas = session.QueryPSF(new[] {(fpsf.CombinedSizePsf, new [] { new CombinedKey(Constants.Size.Medium) }.AsEnumerable()),
+                                                         (fpsf.CombinedColorPsf, new [] { new CombinedKey(Color.Blue) }.AsEnumerable()),
+                                                         (fpsf.CombinedCountBinPsf, new [] { new CombinedKey(7) }.AsEnumerable()) }, sz => sz[0] || sz[1] || sz[2]).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumBlue7Count), unionMediumBlue7Count);
+                // ---
+                providerDatas = session.QueryPSF(fpsf.CombinedSizePsf, new[] { new CombinedKey(Constants.Size.Medium), new CombinedKey(Constants.Size.Large) }).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumLargeCount), unionMediumLargeCount);
+                providerDatas = session.QueryPSF(fpsf.CombinedColorPsf, new[] { new CombinedKey(Color.Blue), new CombinedKey(Color.Red) }).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionRedBlueCount), unionRedBlueCount);
+                // ---
+                providerDatas = session.QueryPSF(fpsf.CombinedSizePsf, new[] { new CombinedKey(Constants.Size.Medium), new CombinedKey(Constants.Size.Large) },
+                                                 fpsf.CombinedColorPsf, new[] { new CombinedKey(Color.Blue), new CombinedKey(Color.Red) }, (sz, cl) => sz && cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumLargeRedBlueCount), intersectMediumLargeRedBlueCount);
+                providerDatas = session.QueryPSF(new[] {(fpsf.CombinedSizePsf, new[] { new CombinedKey(Constants.Size.Medium), new CombinedKey(Constants.Size.Large) }.AsEnumerable()),
+                                                         (fpsf.CombinedColorPsf, new[] { new CombinedKey(Color.Blue), new CombinedKey(Color.Red) }.AsEnumerable())}, sz => sz[0] && sz[1]).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(intersectMediumLargeRedBlueCount), intersectMediumLargeRedBlueCount);
+                // ---
+                providerDatas = session.QueryPSF(fpsf.CombinedSizePsf, new[] { new CombinedKey(Constants.Size.Medium), new CombinedKey(Constants.Size.Large) },
+                                                 fpsf.CombinedColorPsf, new[] { new CombinedKey(Color.Blue), new CombinedKey(Color.Red) }, (sz, cl) => sz || cl).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumLargeRedBlueCount), unionMediumLargeRedBlueCount);
+                providerDatas = session.QueryPSF(new[] {(fpsf.CombinedSizePsf, new[] { new CombinedKey(Constants.Size.Medium), new CombinedKey(Constants.Size.Large) }.AsEnumerable()),
+                                                         (fpsf.CombinedColorPsf, new[] { new CombinedKey(Color.Blue), new CombinedKey(Color.Red) }.AsEnumerable())}, sz => sz[0] || sz[1]).ToArray();
+                ok &= VerifyProviderDatas(providerDatas, nameof(unionMediumLargeRedBlueCount), unionMediumLargeRedBlueCount);
+            }
+
             return ok;
         }
 
@@ -232,10 +377,11 @@ namespace FasterPSFSample
                                 : $"{indent4}{tag} {name} Failed: expected ({expectedCount}) != actual ({actualCount})");
         }
 
-        internal static bool UpdateSizeByUpsert<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
+        internal static bool UpdateSizeByUpsert<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
             where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             Console.WriteLine();
@@ -258,13 +404,21 @@ namespace FasterPSFSample
             var context = new Context<TValue>();
             foreach (var providerData in mediumDatas)
             {
-                // Update the value
-                ref TValue value = ref providerData.GetValue();
-                Debug.Assert(value.SizeInt == (int)Constants.Size.Medium);
-                value.SizeInt = (int)Constants.Size.XXLarge;
+                // Get the old value and confirm it's as expected.
+                ref TValue oldValue = ref providerData.GetValue();
+                Debug.Assert(oldValue.SizeInt == (int)Constants.Size.Medium);
+
+                // Clone the old value with updated Size; note that this cannot modify the "ref providerData.GetValue()" in-place as that will bypass PSFs.
+                var newValue = new TValue
+                {
+                    Id = oldValue.Id,
+                    SizeInt = (int)Constants.Size.XXLarge, // updated
+                    ColorArgb = oldValue.ColorArgb,
+                    Count = oldValue.Count
+                };
 
                 // Reuse the same key
-                session.Upsert(ref providerData.GetKey(), ref value, context, serialNo);
+                session.Upsert(ref providerData.GetKey(), ref newValue, context, serialNo);
 
                 RemoveIfSkippedLastBinKey(ref providerData.GetKey());
             }
@@ -278,10 +432,11 @@ namespace FasterPSFSample
             return ok;
         }
 
-        internal static bool UpdateColorByRMW<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
+        internal static bool UpdateColorByRMW<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
             where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             Console.WriteLine();
@@ -301,9 +456,8 @@ namespace FasterPSFSample
             var expected = blueDatas.Length;
             Console.WriteLine($"{indent2}Changing all Blue to Purple");
 
-            IPUColor = Color.Purple.ToArgb();
             var context = new Context<TValue>();
-            var input = default(Input);
+            var input = new TInput { IPUColorInt = Color.Purple.ToArgb() };
             foreach (var providerData in blueDatas)
             {
                 // This will call Functions<>.InPlaceUpdater.
@@ -320,10 +474,11 @@ namespace FasterPSFSample
             return ok;
         }
 
-        internal static bool UpdateCountByUpsert<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
+        internal static bool UpdateCountByUpsert<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
             where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             Console.WriteLine();
@@ -351,14 +506,22 @@ namespace FasterPSFSample
             var context = new Context<TValue>();
             foreach (var providerData in bin7Datas)
             {
-                // Update the value
-                ref TValue value = ref providerData.GetValue();
-                Debug.Assert(CountBinKey.GetBin(value.Count, out int tempBin) && tempBin == bin7);
-                value.Count += (CountBinKey.LastBin - bin7) * CountBinKey.BinSize;
-                Debug.Assert(CountBinKey.GetBin(value.Count, out tempBin) && tempBin == CountBinKey.LastBin);
+                // Get the old value and confirm it's as expected.
+                ref TValue oldValue = ref providerData.GetValue();
+                Debug.Assert(CountBinKey.GetBin(oldValue.Count, out int tempBin) && tempBin == bin7);
+
+                // Clone the old value with updated Count; note that this cannot modify the "ref providerData.GetValue()" in-place as that will bypass PSFs.
+                var newValue = new TValue
+                {
+                    Id = oldValue.Id,
+                    SizeInt = oldValue.SizeInt,
+                    ColorArgb = oldValue.ColorArgb,
+                    Count = oldValue.Count + (CountBinKey.LastBin - bin7) * CountBinKey.BinSize // updated
+                };
+                Debug.Assert(CountBinKey.GetBin(newValue.Count, out tempBin) && tempBin == CountBinKey.LastBin);
 
                 // Reuse the same key
-                session.Upsert(ref providerData.GetKey(), ref value, context, serialNo);
+                session.Upsert(ref providerData.GetKey(), ref newValue, context, serialNo);
             }
             ++serialNo;
 
@@ -373,10 +536,11 @@ namespace FasterPSFSample
             return ok;
         }
 
-        internal static bool Delete<TValue, TOutput, TFunctions, TSerializer>(FPSF<TValue, TOutput, TFunctions, TSerializer> fpsf)
+        internal static bool Delete<TValue, TInput, TOutput, TFunctions, TSerializer>(FPSF<TValue, TInput, TOutput, TFunctions, TSerializer> fpsf)
             where TValue : IOrders, new()
+            where TInput : IInput<TValue>, new()
             where TOutput : IOutput<TValue>, new()
-            where TFunctions : IFunctions<Key, TValue, Input, TOutput, Context<TValue>>, new()
+            where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
             where TSerializer : BinaryObjectSerializer<TValue>, new()
         {
             Console.WriteLine();

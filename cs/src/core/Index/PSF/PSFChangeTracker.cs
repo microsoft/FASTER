@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -19,25 +21,36 @@ namespace FASTER.core
     public unsafe class PSFChangeTracker<TProviderData, TRecordId> : IDisposable
         where TRecordId : new()
     {
-        #region External API
-        public TProviderData BeforeData { get; set; }
-        public TRecordId BeforeRecordId { get; set; }
+        #region Data API
+        internal TProviderData BeforeData { get; private set; }
+        internal TRecordId BeforeRecordId { get; private set; }
 
-        public TProviderData AfterData { get; set; }
-        public TRecordId AfterRecordId { get; set; }
+        internal void SetBeforeData(TProviderData data, TRecordId recordId)
+        {
+            this.BeforeData = data;
+            this.BeforeRecordId = recordId;
+        }
+
+        internal TProviderData AfterData { get; private set; }
+        internal TRecordId AfterRecordId { get; private set; }
+
+        internal void SetAfterData(TProviderData data, TRecordId recordId)
+        {
+            this.AfterData = data;
+            this.AfterRecordId = recordId;
+        }
 
         public UpdateOperation UpdateOp { get; set; }
-        #endregion External API
+        #endregion Data API
 
         private GroupKeysPair[] groups;
+        internal bool HasBeforeKeys { get; set; }
 
         internal long CachedBeforeLA = Constants.kInvalidAddress;
 
-        internal void PrepareGroups(int numGroups)
+        internal PSFChangeTracker(IEnumerable<long> groupIds)
         {
-            this.groups = new GroupKeysPair[numGroups];
-            for (var ii = 0; ii < numGroups; ++ii)
-                this.groups[ii].GroupId = Constants.kInvalidPsfGroupId;
+            this.groups = groupIds.Select(id => new GroupKeysPair(id)).ToArray();
         }
 
         internal bool FindGroup(long groupId, out int ordinal)
@@ -56,14 +69,13 @@ namespace FASTER.core
             return false;
         }
 
-        internal ref GroupKeysPair GetGroupRef(int ordinal) 
-            => ref groups[ordinal];
+        internal ref GroupKeysPair GetGroupRef(int ordinal) => ref groups[ordinal];
 
-        internal ref GroupKeysPair FindFreeGroupRef(long groupId, long logAddr = Constants.kInvalidAddress)
+        internal ref GroupKeysPair FindGroupRef(long groupId, long logAddr = Constants.kInvalidAddress)
         {
-            if (!this.FindGroup(Constants.kInvalidPsfGroupId, out var ordinal))
+            if (!this.FindGroup(groupId, out var ordinal))
             {
-                // A new group was added while we were populating this; should be quite rare. // TODOtest: this case
+                // A new group was added while we were populating this changeTracker; should be quite rare. // TODOtest: this case
                 var groups = new GroupKeysPair[this.groups.Length + 1];
                 Array.Copy(this.groups, groups, this.groups.Length);
                 this.groups = groups;

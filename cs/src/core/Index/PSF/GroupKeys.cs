@@ -27,13 +27,12 @@ namespace FASTER.core
         public unsafe bool IsUnlinkOldAt(int ordinal) => (this.ResultFlags + ordinal)->HasFlag(PSFResultFlags.UnlinkOld);
         public unsafe bool IsLinkNewAt(int ordinal) => (this.ResultFlags + ordinal)->HasFlag(PSFResultFlags.LinkNew);
 
-        public unsafe bool HasChanges => this.ResultFlags->HasFlag(PSFResultFlags.UnlinkOld)
-                                      || this.ResultFlags->HasFlag(PSFResultFlags.LinkNew);
+        public unsafe bool HasChanges => this.ResultFlags->HasFlag(PSFResultFlags.UnlinkOld) || this.ResultFlags->HasFlag(PSFResultFlags.LinkNew);
 
         public void Dispose()
         {
-            this.compositeKeyMem.Return();
-            this.flagsMem.Return();
+            this.compositeKeyMem?.Return();
+            this.flagsMem?.Return();
         }
     }
 
@@ -46,6 +45,14 @@ namespace FASTER.core
 
         internal GroupKeys Before;
         internal GroupKeys After;
+
+        internal GroupKeysPair(long id)
+        {
+            this.GroupId = id;
+            this.LogicalAddress = Constants.kInvalidAddress;
+            this.Before = default;
+            this.After = default;
+        }
 
         internal bool HasAddress => this.LogicalAddress != Constants.kInvalidAddress;
 

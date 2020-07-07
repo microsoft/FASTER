@@ -194,7 +194,7 @@ namespace FASTER.core
                 if (SupportAsync) UnsafeSuspendThread();
             }
 
-            return status == Status.OK && this.fht.PSFManager.HasPSFs
+            return (status == Status.OK || status == Status.NOTFOUND) && this.fht.PSFManager.HasPSFs
                 ? this.fht.PSFManager.Update(updateArgs.ChangeTracker)
                 : status;
         }

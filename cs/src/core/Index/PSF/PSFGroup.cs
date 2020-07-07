@@ -222,7 +222,7 @@ namespace FASTER.core
                 if (phase == PSFExecutePhase.PreUpdate)
                 {
                     // Get a free group ref and store the "before" values.
-                    ref GroupKeysPair groupKeysPair = ref changeTracker.FindFreeGroupRef(this.Id);
+                    ref GroupKeysPair groupKeysPair = ref changeTracker.FindGroupRef(this.Id);
                     StoreKeys(ref groupKeysPair.Before, keyBytes, keyMemLen, flags, flagsMemLen);
                     return Status.OK;
                 }
@@ -271,6 +271,9 @@ namespace FASTER.core
         /// <inheritdoc/>
         public Status GetBeforeKeys(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
+            if (changeTracker.HasBeforeKeys)
+                return Status.OK;
+
             // Obtain the "before" values. TODOcache: try to find TRecordId in the IPUCache first.
             return ExecuteAndStore(changeTracker.BeforeData, default, PSFExecutePhase.PreUpdate, changeTracker);
         }
@@ -280,6 +283,12 @@ namespace FASTER.core
         /// </summary>
         public Status Update(PSFChangeTracker<TProviderData, TRecordId> changeTracker)
         {
+            if (changeTracker.UpdateOp == UpdateOperation.Insert)
+            {
+                // RMW did not find the record so did an insert. Go through Insert logic here.
+                return this.ExecuteAndStore(changeTracker.BeforeData, changeTracker.BeforeRecordId, PSFExecutePhase.Insert, changeTracker:null);
+            }
+
             changeTracker.CachedBeforeLA = Constants.kInvalidAddress; // TODOcache: Find BeforeRecordId in IPUCache
             if (changeTracker.CachedBeforeLA != Constants.kInvalidAddress)
             {
