@@ -1,0 +1,15 @@
+{
+  "ParameterSweeps": [
+    {
+      "HashSizeShifts": [ 20 ],
+      "DistributionSeed": 42,
+      "ThreadCounts": [ 1 ],
+      "InitKeyCounts": [ 1000000 ],
+      "OperationKeyCounts": [ 1000000 ],
+      "UpsertCounts": [ 100000 ],
+      "ReadCounts": [ 200000 ],
+      "RMWCounts": [ 300000 ],
+      "MixOperations": [ true ],
+    }
+  ]
+}

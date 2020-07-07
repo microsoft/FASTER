@@ -29,9 +29,11 @@ namespace Performance.Common
             var stats = new ResultStats { OperationsPerSecond = opsPerSecond };
             var totalSec = stats.OperationsPerSecond.Length == 0
                 ? 0.0
-                : stats.OperationsPerSecond.Sum(opsPerSec => opsPerIter / opsPerSec);
-            stats.Mean = (opsPerIter * opsPerSecond.Length) / totalSec;
-            stats.StdDev = stats.OperationsPerSecond.Length <= 1
+                : stats.OperationsPerSecond.Sum(opsPerSec => opsPerSec == 0 ? 0.0 : opsPerIter / opsPerSec);
+            stats.Mean = totalSec == 0
+                ? 0.0
+                : (opsPerIter * opsPerSecond.Length) / totalSec;
+            stats.StdDev = totalSec == 0 || stats.OperationsPerSecond.Length <= 1
                 ? 0.0
                 : Math.Sqrt(stats.OperationsPerSecond.Sum(n => Math.Pow(n - stats.Mean, 2)) / stats.OperationsPerSecond.Length);
             return stats;
@@ -40,10 +42,13 @@ namespace Performance.Common
         internal static ResultStats Create(ulong[] runMs, long[] runOps)
         {
             var runSec = runMs.Select(ms => ms / 1000.0).ToArray();
-            var opsPerSecond = Enumerable.Range(0, runMs.Length).Select(ii => runOps[ii] / runSec[ii]).ToArray();
+            var opsPerSecond = Enumerable.Range(0, runMs.Length).Select(ii => runSec[ii] == 0 ? 0.0 : runOps[ii] / runSec[ii]).ToArray();
             var stats = new ResultStats { OperationsPerSecond = opsPerSecond };
-            stats.Mean = runOps.Sum() / runSec.Sum();
-            stats.StdDev = stats.OperationsPerSecond.Length <= 1
+            var runSecSum = runSec.Sum();
+            stats.Mean = runSecSum == 0
+                ? 0.0
+                : runOps.Sum() / runSecSum;
+            stats.StdDev = runSecSum == 0 || stats.OperationsPerSecond.Length <= 1
                 ? 0.0
                 : Math.Sqrt(stats.OperationsPerSecond.Sum(n => Math.Pow(n - stats.Mean, 2)) / stats.OperationsPerSecond.Length);
             return stats;

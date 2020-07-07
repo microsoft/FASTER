@@ -57,8 +57,7 @@ namespace FASTER.Benchmark
                 Console.WriteLine($"Iteration {iter + 1} of {options.IterationCount}");
                 if (b == BenchmarkType.Ycsb)
                 {
-                    var test = new FASTER_YcsbBenchmark(options.ThreadCount, options.GetNumaMode(), 
-                                                        options.GetDistribution(), options.ReadPercent, options.RunSeconds);
+                    var test = new FASTER_YcsbBenchmark(options);
                     (ulong initMs, ulong tranMs, long count) = test.Run();
                     initializeMs[iter] = initMs;
                     transactionMs[iter] = tranMs;
@@ -66,8 +65,7 @@ namespace FASTER.Benchmark
                 }
                 else if (b == BenchmarkType.ConcurrentDictionaryYcsb)
                 {
-                    var test = new ConcurrentDictionary_YcsbBenchmark(options.ThreadCount, options.GetNumaMode(), 
-                                                                      options.GetDistribution(), options.ReadPercent, options.RunSeconds);
+                    var test = new ConcurrentDictionary_YcsbBenchmark(options);
                     test.Run();
                 }
 

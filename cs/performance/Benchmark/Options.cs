@@ -7,7 +7,7 @@ using System;
 
 namespace FASTER.Benchmark
 {
-    internal class Options
+    public class Options
     {
         public const string UniformDistributionString = "uniform";
         public const string ZipfDistributionString = "zipf";
@@ -27,8 +27,9 @@ namespace FASTER.Benchmark
         public const char NumaStyleArg = 'n';
         public const char ReadPercentArg = 'r';
         public const char DistributionArg = 'd';
+        public const char DistributionSeedArg = 's';
         public const char IterationsArg = 'i';
-        public const char RunSecondsArg = 's';
+        public const char RunSecondsArg = 'e';
 
         public const char MergeArg = 'm';
         public const char CompareArg = 'c';
@@ -47,12 +48,16 @@ namespace FASTER.Benchmark
         public int NumaStyle { get; set; }
 
         [Option(ReadPercentArg, "read_percent", Required = false, Default = DefaultReadPercent,
-         HelpText = "Percentage of reads (-1 for 100% read-modify-write")]
+         HelpText = "Percentage of reads (-1 for 100% read-modify-write)")]
         public int ReadPercent { get; set; }
 
         [Option(DistributionArg, "distribution", Required = false, Default = DefaultDistributionString,
             HelpText = "Distribution of keys in workload")]
         public string Distribution { get; set; }
+
+        [Option(DistributionSeedArg, "distributionseed", Required = false, Default = RandomGenerator.DefaultDistributionSeed,
+            HelpText = "Seed for synthetic Distribution; if <= 0, the current timestamp is used")]
+        public uint DistributionSeed { get; set; }
 
         [Option(IterationsArg, "iterations", Required = false, Default = DefaultIterationCount,
          HelpText = "Number of iterations of the test to run")]
@@ -90,6 +95,7 @@ namespace FASTER.Benchmark
                 NumaMode = this.GetNumaMode(),
                 ReadPercent = this.ReadPercent,
                 Distribution = this.GetDistribution(),
+                DistributionSeed = this.DistributionSeed,
                 IterationCount = this.IterationCount,
                 RunSeconds = this.RunSeconds
             };

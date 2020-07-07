@@ -67,7 +67,7 @@ namespace FASTER.PerfTest
         public double[] DistributionParameters { get; set; } = new[] { Globals.DefaultDistributionParameter };
 
         [JsonProperty]
-        public int DistributionSeed { get; set; } = Globals.DefaultDistributionSeed;
+        public uint DistributionSeed { get; set; } = RandomGenerator.DefaultDistributionSeed;
 
         [JsonProperty]
         public int[] ThreadCounts { get; set; } = new[] { 1 };

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
-using Newtonsoft.Json;
 using Performance.Common;
 
 namespace FASTER.PerfTest
@@ -16,7 +15,6 @@ namespace FASTER.PerfTest
         public const NumaMode DefaultNumaMode = NumaMode.RoundRobin;
         public const Distribution DefaultDistribution = Distribution.Uniform;
         public const double DefaultDistributionParameter = 0.99; // For Zipf only, now; same as YCSB to match Benchmark
-        public const int DefaultDistributionSeed = 10193;
         public const long ChunkSize = 500;
         public const int DefaultAsyncReadBatchSize = 1000;  // If async reads are enabled
         public const int DefaultCheckpointMs = 5000;        // Every 5 seconds, if Checkpointing is specified

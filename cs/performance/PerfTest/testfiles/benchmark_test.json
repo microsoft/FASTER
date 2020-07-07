@@ -4,7 +4,7 @@
       "HashSizeShifts": [ 27 ],
       "NumaModes": [ "RoundRobin" ],
       "Distributions": [ "Uniform", "ZipfSmooth" ],
-      "ThreadCounts": [ 1, 8 ],
+      "ThreadCounts": [ 1, 8, 32 ],
       "InitKeyCounts": [ 250000000 ],
       "OperationKeyCounts": [ 1000000000 ],
       "UpsertCounts": [ 40000000 ],

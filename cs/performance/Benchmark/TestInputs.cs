@@ -29,6 +29,9 @@ namespace FASTER.Benchmark
         public Distribution Distribution { get; set; } = Options.DefaultDistribution;
 
         [JsonProperty]
+        public uint DistributionSeed { get; set; } = RandomGenerator.DefaultDistributionSeed;
+
+        [JsonProperty]
         public int IterationCount { get; set; } = Options.DefaultIterationCount;
 
         [JsonProperty]

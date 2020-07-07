@@ -8,6 +8,8 @@ namespace Performance.Common
 {
     public class RandomGenerator
     {
+        public const uint DefaultDistributionSeed = 10193;
+
         private uint x;
         private uint y;
         private uint z;

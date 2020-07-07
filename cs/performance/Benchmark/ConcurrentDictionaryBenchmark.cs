@@ -68,6 +68,7 @@ namespace FASTER.Benchmark
         readonly int threadCount;
         readonly NumaMode numaMode;
         readonly Distribution distribution;
+        readonly uint distributionSeed;
         readonly int readPercent;
 
         internal int runSeconds = Options.DefaultRunSeconds;
@@ -75,13 +76,14 @@ namespace FASTER.Benchmark
 
         volatile bool done = false;
 
-        public ConcurrentDictionary_YcsbBenchmark(int threadCount_, NumaMode numaMode_, Distribution distribution_, int readPercent_, int runSeconds_)
+        public ConcurrentDictionary_YcsbBenchmark(Options options)
         {
-            threadCount = threadCount_;
-            numaMode = numaMode_;
-            distribution = distribution_;
-            readPercent = readPercent_;
-            runSeconds = runSeconds_;
+            threadCount = options.ThreadCount;
+            numaMode = options.GetNumaMode();
+            distribution = options.GetDistribution();
+            distributionSeed = options.DistributionSeed;
+            readPercent = options.ReadPercent;
+            runSeconds = options.RunSeconds;
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -195,8 +197,6 @@ namespace FASTER.Benchmark
 
         public unsafe void Run()
         {
-            RandomGenerator rng = new RandomGenerator();
-
             LoadData();
 
             input_ = new Input[8];
@@ -534,7 +534,7 @@ namespace FASTER.Benchmark
 
             Console.WriteLine("loaded " + kInitCount + " keys.");
 
-            RandomGenerator generator = new RandomGenerator();
+            RandomGenerator generator = new RandomGenerator(this.distributionSeed);
 
             if (distribution == Distribution.Uniform)
             {

@@ -78,9 +78,9 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"            {Distribution.Uniform}: Uniformly random distribution of keys");
                 Console.WriteLine($"            {Distribution.ZipfSmooth}: Smooth curve (most localized keys)");
                 Console.WriteLine($"            {Distribution.ZipfShuffled}: Shuffle keys after curve generation");
-                Console.WriteLine($"        {DistParamArg} <double value>: A parameter for the distribution of the keys; default is {defaultTestResult.Inputs.DistributionParameter}");
+                Console.WriteLine($"        {DistParamArg} <double value>: A parameter for the distribution of the keys; default is {Globals.DefaultDistributionParameter}");
                 Console.WriteLine($"            Currently used for Zipf theta and must be > 0.0 and != 1.0 (note: Benchmark (YCSB) uses 0.99; higher values are more skewed).");
-                Console.WriteLine($"        {DistSeedArg} <seed>: The distribution rng seed; 0 means create one based on current timestamp. Default is {defaultTestResult.Inputs.DistributionSeed}");
+                Console.WriteLine($"        {DistSeedArg} <seed>: The distribution rng seed; <= 0 means create one based on current timestamp. Default is {RandomGenerator.DefaultDistributionSeed}");
                 Console.WriteLine($"    {ThreadsArg} <threads>: Number of threads for initialization and operations; default is {defaultTestResult.Inputs.ThreadCount}");
                 Console.WriteLine($"        On initialization (the initial Upserts (which are Inserts) to populate the store), threads divide the full operation count.");
                 Console.WriteLine($"        On subsequent operations (Upsert, Read, and RMW), each thread runs the full operation counts.");
@@ -104,12 +104,12 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"        {ThreadMode.Sync}: Use sync calls (Upsert(), etc.) and do not create thread-affinitized sessions");
                 Console.WriteLine($"        {ThreadMode.Affinitized}: Use sync calls (Upsert(), etc.) and create thread-affinitized sessions");
                 Console.WriteLine($"        {ThreadMode.Async}: Use async calls (UpsertAsync(), etc.); thread-affinitized sessions are not allowed");
-                Console.WriteLine($"    {AsyncReadBatchSizeArg} [value]: Async batch size (ignored unless {ThreadMode.Async} specified); default is {defaultTestResult.Inputs.AsyncReadBatchSize}");
+                Console.WriteLine($"    {AsyncReadBatchSizeArg} [value]: Async batch size (ignored unless {ThreadMode.Async} specified); default is {Globals.DefaultAsyncReadBatchSize}");
                 Console.WriteLine($"    {CheckpointModeArg} [value]: Call TakeFullCheckpoint; default is {defaultTestResult.Inputs.CheckpointMode}");
                 Console.WriteLine($"        {Checkpoint.Mode.None}: Do not do checkpoints");
                 Console.WriteLine($"        {Checkpoint.Mode.Snapshot}: Do a snapshot checkpoint to a separate file");
                 Console.WriteLine($"        {Checkpoint.Mode.FoldOver}: Do an incremental checkpoint to the main log");
-                Console.WriteLine($"    {CheckpointMsArg} [value]: Number of milliseconds between TakeFullCheckpoint calls (ignored if {CheckpointModeArg} is {Checkpoint.Mode.None}); default is {defaultTestResult.Inputs.CheckpointMs}");
+                Console.WriteLine($"    {CheckpointMsArg} [value]: Number of milliseconds between TakeFullCheckpoint calls (ignored if {CheckpointModeArg} is {Checkpoint.Mode.None}); default is {Globals.DefaultCheckpointMs}");
                 Console.WriteLine($"    {LogArg} <mode>: The disposition of the log after initial Inserts; default is {defaultTestResult.Inputs.LogMode}");
                 Console.WriteLine($"        {LogMode.None}: Do not flush log");
                 Console.WriteLine($"        {LogMode.Flush}: Copy entire log to disk, but retain tail of log in memory");
@@ -148,6 +148,7 @@ namespace FASTER.PerfTest
                 Console.WriteLine($"        {nameof(TestResults)} otherwise");
                 Console.WriteLine($"    {VerboseArg}: Verbose; print status messages; default = {Globals.Verbose}");
                 Console.WriteLine($"    {PromptArg}: Print a message and wait before exiting; default = {prompt}");
+                Console.WriteLine($"    /?, -?, --help: Print this screen");
                 Console.WriteLine();
 
                 if (!string.IsNullOrEmpty(message))
@@ -184,6 +185,22 @@ namespace FASTER.PerfTest
                     if (mult != 1)
                         value = value[0..^1];
                     if (int.TryParse(value, out num))
+                    {
+                        num *= mult;
+                        return true;
+                    }
+                    return Usage($"{arg} requires a valid int value");
+                }
+
+                bool hasUintValue(out uint num)
+                {
+                    num = 0;
+                    if (!hasValue(out string value))
+                        return false;
+                    var mult = (uint)(value.EndsWith("m", StringComparison.OrdinalIgnoreCase) ? 1_000_000 : 1);
+                    if (mult != 1)
+                        value = value[0..^1];
+                    if (uint.TryParse(value, out num))
                     {
                         num *= mult;
                         return true;
@@ -252,7 +269,7 @@ namespace FASTER.PerfTest
                 }
                 if (string.Compare(arg, DistSeedArg, ignoreCase: true) == 0)
                 {
-                    if (!hasIntValue(out var value))
+                    if (!hasUintValue(out var value))
                         return false;
                     parseResult.Inputs.DistributionSeed = value;
                     TestParameters.CommandLineOverrides |= TestParameterFlags.DistributionSeed;

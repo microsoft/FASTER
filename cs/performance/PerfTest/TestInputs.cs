@@ -25,7 +25,7 @@ namespace FASTER.PerfTest
         public double DistributionParameter { get; set; } = Globals.DefaultDistributionParameter;
 
         [JsonProperty]
-        public int DistributionSeed { get; set; } = Globals.DefaultDistributionSeed;
+        public uint DistributionSeed { get; set; } = RandomGenerator.DefaultDistributionSeed;
 
         [JsonProperty]
         public int ThreadCount { get; set; } = 1;
@@ -125,8 +125,6 @@ namespace FASTER.PerfTest
                 return fail($"Invalid {nameof(HashSizeShift)}: {HashSizeShift}. Must be >= 10");
             if (DistributionParameter <= 0.0 || DistributionParameter == 1.0)
                 return fail($"Invalid {nameof(DistributionParameter)}: {DistributionParameter}. Must be > 0.0 and != 1.0");
-            if (DistributionSeed <= 0.0)
-                return fail($"Invalid {nameof(DistributionSeed)}: {DistributionSeed}. Must be > 0.0");
             if (ThreadCount <= 0)
                 return fail($"Invalid {nameof(ThreadCount)}: {ThreadCount}. Must be > 0");
             if (InitKeyCount <= 0 || InitKeyCount % Globals.ChunkSize != 0)
@@ -220,7 +218,7 @@ namespace FASTER.PerfTest
                 $" {PerfTest.ItersArg} {this.IterationCount}"
             ;
 
-        internal (int, NumaMode, Distribution, double, int, int, int, int, int, int, int, bool, int, int, bool, bool, bool, bool, bool, LogMode,
+        internal (int, NumaMode, Distribution, double, uint, int, int, int, int, int, int, bool, int, int, bool, bool, bool, bool, bool, LogMode,
                  int, int, int, double, bool, int, int, double, int) MemberTuple
             => (this.HashSizeShift, this.NumaMode,
                 this.Distribution, this.DistributionParameter, this.DistributionSeed, this.ThreadCount,

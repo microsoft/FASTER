@@ -35,7 +35,7 @@ namespace FASTER.PerfTest
 
             prevTestResult = null;
 
-            var rng = new RandomGenerator((uint)testResult.Inputs.DistributionSeed);
+            var rng = new RandomGenerator(testResult.Inputs.DistributionSeed);
             var zipfSettings = testResult.Inputs.Distribution == Distribution.Uniform
                 ? null
                 : new ZipfSettings
