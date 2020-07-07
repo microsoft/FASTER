@@ -14,23 +14,19 @@ namespace FasterPSFSample
         where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
         where TSerializer : BinaryObjectSerializer<TValue>, new()
     {
-        internal IFasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions> fht { get; set; }
+        internal IFasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions> FasterKV { get; set; }
 
         private LogFiles logFiles;
 
-        internal PSF<SizeKey, long> SizePsf;
-        internal PSF<ColorKey, long> ColorPsf;
-        internal PSF<CountBinKey, long> CountBinPsf;
-
-        internal PSF<CombinedKey, long> CombinedSizePsf;
-        internal PSF<CombinedKey, long> CombinedColorPsf;
-        internal PSF<CombinedKey, long> CombinedCountBinPsf;
+        // MultiGroup PSFs -- different key types, one per group.
+        internal IPSF SizePsf, ColorPsf, CountBinPsf;
+        internal IPSF CombinedSizePsf, CombinedColorPsf, CombinedCountBinPsf;
 
         internal FPSF(bool useObjectValues, bool useMultiGroup, bool useReadCache)
         {
             this.logFiles = new LogFiles(useObjectValues, useReadCache, useMultiGroup ? 3 : 1);
 
-            this.fht = new FasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions>(
+            this.FasterKV = new FasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions>(
                                 1L << 20, new TFunctions(), this.logFiles.LogSettings,
                                 null, // TODO: add checkpoints
                                 useObjectValues ? new SerializerSettings<Key, TValue> { valueSerializer = () => new TSerializer() } : null);
@@ -38,20 +34,20 @@ namespace FasterPSFSample
             if (useMultiGroup)
             {
                 var psfOrdinal = 0;
-                this.SizePsf = fht.RegisterPSF("sizePsf", (k, v) => new SizeKey((Constants.Size)v.SizeInt),
+                this.SizePsf = FasterKV.RegisterPSF(nameof(this.SizePsf), (k, v) => new SizeKey((Constants.Size)v.SizeInt),
                     CreatePSFRegistrationSettings<SizeKey>(psfOrdinal++));
-                this.ColorPsf = fht.RegisterPSF("colorPsf", (k, v) => new ColorKey(Constants.ColorDict[v.ColorArgb]),
+                this.ColorPsf = FasterKV.RegisterPSF(nameof(this.ColorPsf), (k, v) => new ColorKey(Constants.ColorDict[v.ColorArgb]),
                     CreatePSFRegistrationSettings<ColorKey>(psfOrdinal++));
-                this.CountBinPsf = fht.RegisterPSF("countBinPsf", (k, v) => CountBinKey.GetBin(v.Count, out int bin)
+                this.CountBinPsf = FasterKV.RegisterPSF(nameof(this.CountBinPsf), (k, v) => CountBinKey.GetBin(v.Count, out int bin)
                                                                     ? new CountBinKey(bin) : (CountBinKey?)null,
                     CreatePSFRegistrationSettings<CountBinKey>(psfOrdinal++));
             }
             else
             {
-                var psfs = fht.RegisterPSF(new(string, Func<Key, TValue, CombinedKey?>)[] {
-                    ("sizePsf", (k, v) => new CombinedKey((Constants.Size)v.SizeInt)),
-                    ("colorPsf", (k, v) => new CombinedKey(Constants.ColorDict[v.ColorArgb])),
-                    ("countBinPsf", (k, v) => CountBinKey.GetBin(v.Count, out int bin)
+                var psfs = FasterKV.RegisterPSF(new(string, Func<Key, TValue, CombinedKey?>)[] {
+                    (nameof(this.SizePsf), (k, v) => new CombinedKey((Constants.Size)v.SizeInt)),
+                    (nameof(this.ColorPsf), (k, v) => new CombinedKey(Constants.ColorDict[v.ColorArgb])),
+                    (nameof(this.CountBinPsf), (k, v) => CountBinKey.GetBin(v.Count, out int bin)
                                                                     ? new CombinedKey(bin) : (CombinedKey?)null)
                     }, CreatePSFRegistrationSettings<CombinedKey>(0)
                 );
@@ -88,10 +84,10 @@ namespace FasterPSFSample
 
     internal void Close()
         {
-            if (!(this.fht is null))
+            if (!(this.FasterKV is null))
             {
-                this.fht.Dispose();
-                this.fht = null;
+                this.FasterKV.Dispose();
+                this.FasterKV = null;
             }
             if (!(this.logFiles is null))
             {

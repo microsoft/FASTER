@@ -136,7 +136,7 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey>(
-                PSF<TPSFKey, long> psf, TPSFKey key, PSFQuerySettings querySettings = null)
+                IPSF psf, TPSFKey key, PSFQuerySettings querySettings = null)
             where TPSFKey : struct
         {
             // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
@@ -158,7 +158,7 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey>(
-                PSF<TPSFKey, long> psf, IEnumerable<TPSFKey> keys, PSFQuerySettings querySettings = null)
+                IPSF psf, IEnumerable<TPSFKey> keys, PSFQuerySettings querySettings = null)
             where TPSFKey : struct
         {
             // Unsafe(Resume|Suspend)Thread are done in the session.PsfRead* operations called by PSFGroup.QueryPSF.
@@ -185,8 +185,8 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey1, TPSFKey2>(
-                    PSF<TPSFKey1, long> psf1, TPSFKey1 key1,
-                    PSF<TPSFKey2, long> psf2, TPSFKey2 key2,
+                    IPSF psf1, TPSFKey1 key1,
+                    IPSF psf2, TPSFKey2 key2,
                     Func<bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
@@ -219,8 +219,8 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey1, TPSFKey2>(
-                    PSF<TPSFKey1, long> psf1, IEnumerable<TPSFKey1> keys1,
-                    PSF<TPSFKey2, long> psf2, IEnumerable<TPSFKey2> keys2,
+                    IPSF psf1, IEnumerable<TPSFKey1> keys1,
+                    IPSF psf2, IEnumerable<TPSFKey2> keys2,
                     Func<bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
@@ -253,9 +253,9 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
-                    PSF<TPSFKey1, long> psf1, TPSFKey1 key1,
-                    PSF<TPSFKey2, long> psf2, TPSFKey2 key2,
-                    PSF<TPSFKey3, long> psf3, TPSFKey3 key3,
+                    IPSF psf1, TPSFKey1 key1,
+                    IPSF psf2, TPSFKey2 key2,
+                    IPSF psf3, TPSFKey3 key3,
                     Func<bool, bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
@@ -293,9 +293,9 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
-                    PSF<TPSFKey1, long> psf1, IEnumerable<TPSFKey1> keys1,
-                    PSF<TPSFKey2, long> psf2, IEnumerable<TPSFKey2> keys2,
-                    PSF<TPSFKey3, long> psf3, IEnumerable<TPSFKey3> keys3,
+                    IPSF psf1, IEnumerable<TPSFKey1> keys1,
+                    IPSF psf2, IEnumerable<TPSFKey2> keys2,
+                    IPSF psf3, IEnumerable<TPSFKey3> keys3,
                     Func<bool, bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
@@ -328,7 +328,7 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey>(
-                    IEnumerable<(PSF<TPSFKey, long> psf, IEnumerable<TPSFKey> keys)> psfsAndKeys,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey> keys)> psfsAndKeys,
                     Func<bool[], bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey : struct
@@ -366,8 +366,8 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey1, TPSFKey2>(
-                    IEnumerable<(PSF<TPSFKey1, long> psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
-                    IEnumerable<(PSF<TPSFKey2, long> psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
                     Func<bool[], bool[], bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
@@ -405,9 +405,9 @@ namespace FASTER.core
         /// <returns>An enumerable of the FasterKV-specific provider data from the primary FasterKV 
         /// instance, as identified by the TRecordIds stored in the secondary FasterKV instances</returns>
         public IEnumerable<FasterKVProviderData<Key, Value>> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
-                    IEnumerable<(PSF<TPSFKey1, long> psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
-                    IEnumerable<(PSF<TPSFKey2, long> psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
-                    IEnumerable<(PSF<TPSFKey3, long> psf, IEnumerable<TPSFKey3> keys)> psfsAndKeys3,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey3> keys)> psfsAndKeys3,
                     Func<bool[], bool[], bool[], bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct

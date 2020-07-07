@@ -37,21 +37,21 @@ namespace FASTER.core
 
         #region PSF Registration API
         /// <inheritdoc/>
-        public PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
+        public IPSF RegisterPSF<TPSFKey>(
                 FasterKVPSFDefinition<Key, Value, TPSFKey> def,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct
             => this.PSFManager.RegisterPSF(def, registrationSettings ?? CreateDefaultRegistrationSettings<TPSFKey>());
 
         /// <inheritdoc/>
-        public PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>
+        public IPSF[] RegisterPSF<TPSFKey>
                 (FasterKVPSFDefinition<Key, Value, TPSFKey>[] defs,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct
             => this.PSFManager.RegisterPSF(defs, registrationSettings ?? CreateDefaultRegistrationSettings<TPSFKey>());
 
         /// <inheritdoc/>
-        public PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
+        public IPSF RegisterPSF<TPSFKey>(
                 string psfName, Func<Key, Value, TPSFKey?> psfFunc,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct
@@ -59,14 +59,14 @@ namespace FASTER.core
                                            registrationSettings ?? CreateDefaultRegistrationSettings<TPSFKey>());
 
         /// <inheritdoc/>
-        public PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
+        public IPSF[] RegisterPSF<TPSFKey>(
                 params (string, Func<Key, Value, TPSFKey?>)[] psfFuncs)
             where TPSFKey : struct
             => this.PSFManager.RegisterPSF(psfFuncs.Select(e => new FasterKVPSFDefinition<Key, Value, TPSFKey>(e.Item1, e.Item2)).ToArray(),
                                            CreateDefaultRegistrationSettings<TPSFKey>());
 
         /// <inheritdoc/>
-        public PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
+        public IPSF[] RegisterPSF<TPSFKey>(
                 (string, Func<Key, Value, TPSFKey?>)[] psfDefs,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct
@@ -74,7 +74,7 @@ namespace FASTER.core
                                            CreateDefaultRegistrationSettings<TPSFKey>());
 
         /// <inheritdoc/>
-        public string[][] GetRegisteredPSFs() => this.PSFManager.GetRegisteredPSFs();
+        public string[][] GetRegisteredPSFNames() => this.PSFManager.GetRegisteredPSFNames();
         #endregion PSF Registration API
     }
 }

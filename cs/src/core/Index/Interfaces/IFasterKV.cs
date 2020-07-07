@@ -143,7 +143,7 @@ namespace FASTER.core
         /// <param name="def">A FasterKV-specific form of a PSF definition</param>
         /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
         /// <returns>A FasterKV-specific PSF implementation whose TRecordId is long(</returns>
-        PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
+        IPSF RegisterPSF<TPSFKey>(
                 FasterKVPSFDefinition<Key, Value, TPSFKey> def,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct;
@@ -160,7 +160,7 @@ namespace FASTER.core
         /// <param name="defs">An array of FasterKV-specific forms of PSF definitions</param>
         /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
         /// <returns>A FasterKV-specific PSF implementation whose TRecordId is long(</returns>
-        PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>
+        IPSF[] RegisterPSF<TPSFKey>
                 (FasterKVPSFDefinition<Key, Value, TPSFKey>[] defs,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct;
@@ -176,7 +176,7 @@ namespace FASTER.core
         /// <param name="psfFunc">A Func implementing the PSF, it will be wrapped in a delegate</param>
         /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
         /// <returns>A FasterKV-specific <see cref="PSF{TPSFKey, TRecordId}"/> implementation whose TRecordId is long</returns>
-        PSF<TPSFKey, long> RegisterPSF<TPSFKey>(
+        IPSF RegisterPSF<TPSFKey>(
                 string psfName, Func<Key, Value, TPSFKey?> psfFunc,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct;
@@ -193,7 +193,7 @@ namespace FASTER.core
         /// unique across all PSFGroups in this FasterKV instance, and the Func will be wrapped in a delegate</param>
         /// <remarks>"params" won't allow the optional fromAddress and keyComparer, so an overload is provided
         /// to specify those</remarks>
-        PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
+        IPSF[] RegisterPSF<TPSFKey>(
                 params (string, Func<Key, Value, TPSFKey?>)[] psfFuncs)
             where TPSFKey : struct;
 
@@ -213,7 +213,7 @@ namespace FASTER.core
         /// <param name="registrationSettings">Optional registration settings for the secondary FasterKV instances, etc.</param>
         /// <remarks>If the registrationSettings parameters are null, then it is simpler to call the "params" overload
         /// than to create the vector explicitly</remarks>
-        PSF<TPSFKey, long>[] RegisterPSF<TPSFKey>(
+        IPSF[] RegisterPSF<TPSFKey>(
                 (string, Func<Key, Value, TPSFKey?>)[] psfDefs,
                 PSFRegistrationSettings<TPSFKey> registrationSettings = null)
             where TPSFKey : struct;
@@ -224,7 +224,7 @@ namespace FASTER.core
         /// </summary>
         /// <returns>An array of string arrays; each outer array corresponds to a 
         ///     <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/></returns>
-        string[][] GetRegisteredPSFs();
+        string[][] GetRegisteredPSFNames();
 
         #endregion PSF Registration
 

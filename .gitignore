@@ -193,3 +193,4 @@ packages/
 *.lib
 nativebin/
 /cs/benchmark/Properties/launchSettings.json
+/cs/playground/FasterPSFSample/Properties/launchSettings.json

@@ -74,7 +74,7 @@ namespace FASTER.core
             return Status.OK;
         }
 
-        internal string[][] GetRegisteredPSFs() => throw new NotImplementedException("TODO");
+        internal string[][] GetRegisteredPSFNames() => throw new NotImplementedException("TODO");
 
         internal PSFChangeTracker<TProviderData, TRecordId> CreateChangeTracker() 
             => new PSFChangeTracker<TProviderData, TRecordId>(this.psfGroups.Values.Select(group => group.Id));
@@ -117,34 +117,35 @@ namespace FASTER.core
                 throw new PSFArgumentException("The PSF Key type must be blittable.");
         }
 
-        private void VerifyIsOurPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf)   // TODO convert to IPSF externally
-        {
-            if (psf is null)
-                throw new PSFArgumentException($"The PSF cannot be null.");
-            if (!this.psfNames.TryGetValue(psf.Name, out Guid id) || id != psf.Id)
-                throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
-        }
-
         private PSF<TPSFKey, TRecordId> GetImplementingPSF<TPSFKey>(IPSF ipsf)
         {
             if (ipsf is null)
                 throw new PSFArgumentException($"The PSF cannot be null.");
             var psf = ipsf as PSF<TPSFKey, TRecordId>;
-            if (psf is null || !this.psfNames.TryGetValue(psf.Name, out Guid id) || id != psf.Id)
-                throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
+            Guid id = default;
+            if (psf is null || !this.psfNames.TryGetValue(psf.Name, out id) || id != psf.Id)
+                throw new PSFArgumentException($"The PSF {psf.Name} with Id {(psf is null ? "(unavailable)" : id.ToString())} is not registered with this FasterKV.");
             return psf;
         }
 
-        private void VerifyIsOurPSF<TPSFKey>(IEnumerable<(PSF<TPSFKey, TRecordId>, IEnumerable<TPSFKey>)> psfsAndKeys)
+        private void VerifyIsOurPSF<TPSFKey>(IPSF psf)
+        {
+            if (psf is null)
+                throw new PSFArgumentException($"The PSF cannot be null.");
+            if (!this.psfNames.ContainsKey(psf.Name))
+                throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
+        }
+
+        private void VerifyIsOurPSF<TPSFKey>(IEnumerable<(IPSF, IEnumerable<TPSFKey>)> psfsAndKeys)
         {
             if (psfsAndKeys is null)
                 throw new PSFArgumentException($"The PSF enumerable cannot be null.");
             foreach (var psfAndKeys in psfsAndKeys)
-                this.VerifyIsOurPSF(psfAndKeys.Item1);
+                this.VerifyIsOurPSF<TPSFKey>(psfAndKeys.Item1);
         }
 
-        internal PSF<TPSFKey, TRecordId> RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey> def,
-                                                              PSFRegistrationSettings<TPSFKey> registrationSettings)
+        internal IPSF RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey> def,
+                                           PSFRegistrationSettings<TPSFKey> registrationSettings)
             where TPSFKey : struct
         {
             this.VerifyIsBlittable<TPSFKey>();
@@ -165,8 +166,8 @@ namespace FASTER.core
             }
         }
 
-        internal PSF<TPSFKey, TRecordId>[] RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey>[] defs,
-                                                              PSFRegistrationSettings<TPSFKey> registrationSettings)
+        internal IPSF[] RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey>[] defs,
+                                             PSFRegistrationSettings<TPSFKey> registrationSettings)
             where TPSFKey : struct
         {
             this.VerifyIsBlittable<TPSFKey>();
@@ -203,12 +204,12 @@ namespace FASTER.core
             }
         }
 
-        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf, TPSFKey key, PSFQuerySettings querySettings)
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(IPSF psf, TPSFKey key, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
-            this.VerifyIsOurPSF(psf);
+            var psfImpl = this.GetImplementingPSF<TPSFKey>(psf);
             querySettings ??= DefaultQuerySettings;
-            foreach (var recordId in psf.Query(key))
+            foreach (var recordId in psfImpl.Query(key))
             {
                 if (querySettings.IsCanceled)
                     yield break;
@@ -216,10 +217,10 @@ namespace FASTER.core
             }
         }
 
-        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(PSF<TPSFKey, TRecordId> psf, IEnumerable<TPSFKey> keys, PSFQuerySettings querySettings)
+        internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(IPSF psf, IEnumerable<TPSFKey> keys, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
-            this.VerifyIsOurPSF(psf);
+            this.VerifyIsOurPSF<TPSFKey>(psf);
             querySettings ??= DefaultQuerySettings;
 
             // The recordIds cannot overlap between keys (unless something's gone wrong), so return them all.
@@ -236,15 +237,15 @@ namespace FASTER.core
         }
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
-                    PSF<TPSFKey1, TRecordId> psf1, TPSFKey1 key1,
-                    PSF<TPSFKey2, TRecordId> psf2, TPSFKey2 key2,
+                     IPSF psf1, TPSFKey1 key1,
+                     IPSF psf2, TPSFKey2 key2,
                     Func<bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings)
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            this.VerifyIsOurPSF(psf1);
-            this.VerifyIsOurPSF(psf2);
+            this.VerifyIsOurPSF<TPSFKey1>(psf1);
+            this.VerifyIsOurPSF<TPSFKey2>(psf2);
             querySettings ??= DefaultQuerySettings;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, key1, querySettings), psf2, this.QueryPSF(psf2, key2, querySettings),
@@ -252,15 +253,15 @@ namespace FASTER.core
         }
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
-                    PSF<TPSFKey1, TRecordId> psf1, IEnumerable<TPSFKey1> keys1,
-                    PSF<TPSFKey2, TRecordId> psf2, IEnumerable<TPSFKey2> keys2,
+                     IPSF psf1, IEnumerable<TPSFKey1> keys1,
+                     IPSF psf2, IEnumerable<TPSFKey2> keys2,
                     Func<bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings)
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            this.VerifyIsOurPSF(psf1);
-            this.VerifyIsOurPSF(psf2);
+            this.VerifyIsOurPSF<TPSFKey1>(psf1);
+            this.VerifyIsOurPSF<TPSFKey2>(psf2);
             querySettings ??= DefaultQuerySettings;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, keys1, querySettings), psf2, this.QueryPSF(psf2, keys2, querySettings),
@@ -268,18 +269,18 @@ namespace FASTER.core
         }
 
         public IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
-                    PSF<TPSFKey1, TRecordId> psf1, TPSFKey1 key1,
-                    PSF<TPSFKey2, TRecordId> psf2, TPSFKey2 key2,
-                    PSF<TPSFKey3, TRecordId> psf3, TPSFKey3 key3,
+                     IPSF psf1, TPSFKey1 key1,
+                     IPSF psf2, TPSFKey2 key2,
+                     IPSF psf3, TPSFKey3 key3,
                     Func<bool, bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
             where TPSFKey2 : struct
             where TPSFKey3 : struct
         {
-            this.VerifyIsOurPSF(psf1);
-            this.VerifyIsOurPSF(psf2);
-            this.VerifyIsOurPSF(psf3);
+            this.VerifyIsOurPSF<TPSFKey1>(psf1);
+            this.VerifyIsOurPSF<TPSFKey2>(psf2);
+            this.VerifyIsOurPSF<TPSFKey3>(psf3);
             querySettings ??= DefaultQuerySettings;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, key1, querySettings), psf2, this.QueryPSF(psf2, key2, querySettings),
@@ -288,18 +289,18 @@ namespace FASTER.core
         }
 
         public IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
-                    PSF<TPSFKey1, TRecordId> psf1, IEnumerable<TPSFKey1> keys1,
-                    PSF<TPSFKey2, TRecordId> psf2, IEnumerable<TPSFKey2> keys2,
-                    PSF<TPSFKey3, TRecordId> psf3, IEnumerable<TPSFKey3> keys3,
+                     IPSF psf1, IEnumerable<TPSFKey1> keys1,
+                     IPSF psf2, IEnumerable<TPSFKey2> keys2,
+                     IPSF psf3, IEnumerable<TPSFKey3> keys3,
                     Func<bool, bool, bool, bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
             where TPSFKey2 : struct
             where TPSFKey3 : struct
         {
-            this.VerifyIsOurPSF(psf1);
-            this.VerifyIsOurPSF(psf2);
-            this.VerifyIsOurPSF(psf3);
+            this.VerifyIsOurPSF<TPSFKey1>(psf1);
+            this.VerifyIsOurPSF<TPSFKey2>(psf2);
+            this.VerifyIsOurPSF<TPSFKey3>(psf3);
             querySettings ??= DefaultQuerySettings;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, keys1, querySettings), psf2, this.QueryPSF(psf2, keys2, querySettings),
@@ -310,7 +311,7 @@ namespace FASTER.core
         // Power user versions. Anything more complicated than this the caller can post-process with LINQ.
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(
-                    IEnumerable<(PSF<TPSFKey, TRecordId> psf, IEnumerable<TPSFKey> keys)> psfsAndKeys,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey> keys)> psfsAndKeys,
                     Func<bool[], bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey : struct
@@ -323,8 +324,8 @@ namespace FASTER.core
         }
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
-                    IEnumerable<(PSF<TPSFKey1, TRecordId> psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
-                    IEnumerable<(PSF<TPSFKey2, TRecordId> psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
                     Func<bool[], bool[], bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
@@ -340,9 +341,9 @@ namespace FASTER.core
         }
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
-                    IEnumerable<(PSF<TPSFKey1, TRecordId> psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
-                    IEnumerable<(PSF<TPSFKey2, TRecordId> psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
-                    IEnumerable<(PSF<TPSFKey3, TRecordId> psf, IEnumerable<TPSFKey3> keys)> psfsAndKeys3,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey3> keys)> psfsAndKeys3,
                     Func<bool[], bool[], bool[], bool> matchPredicate,
                     PSFQuerySettings querySettings = null)
             where TPSFKey1 : struct
