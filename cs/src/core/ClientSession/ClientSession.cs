@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #pragma warning disable 0162
@@ -31,9 +31,9 @@ namespace FASTER.core
         internal readonly FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx;
         internal CommitPoint LatestCommitPoint;
 
-        internal Functions functions;
+        internal readonly Functions functions;
 
-        internal AsyncFasterSession FasterSession => new AsyncFasterSession(this);
+        internal readonly AsyncFasterSession FasterSession;
 
         internal ClientSession(
             FasterKV<Key, Value> fht,
@@ -46,6 +46,8 @@ namespace FASTER.core
             this.functions = functions;
             SupportAsync = supportAsync;
             LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
+            FasterSession = new AsyncFasterSession(this);
+            
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();
