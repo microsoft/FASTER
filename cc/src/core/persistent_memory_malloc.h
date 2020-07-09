@@ -243,7 +243,7 @@ class PersistentMemoryMalloc {
   /// The first 4 HLOG pages should be below the head (i.e., being flushed to disk).
   static constexpr uint32_t kNumHeadPages = 4;
 
-  PersistentMemoryMalloc(uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
+  PersistentMemoryMalloc(bool has_no_backing_storage, uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
                          Address start_address, double log_mutable_fraction, bool pre_allocate_log)
     : sector_size{ static_cast<uint32_t>(file_.alignment()) }
     , epoch_{ &epoch }
@@ -282,6 +282,13 @@ class PersistentMemoryMalloc {
       // mutable page is full.
       throw std::invalid_argument{ "Must have at least 2 mutable pages" };
     }
+    // Make sure we have at least 'kNumHeadPages' immutable pages.
+    // Otherwise, we will not be able to dump log to disk when our in-memory log is full.
+    // If the user is certain that we will never need to dump anything to disk
+    // (this is the case in compaction), skip this check.
+    if(!has_no_backing_storage && buffer_size_ - num_mutable_pages_ < kNumHeadPages) {
+      throw std::invalid_argument{ "Must have at least 'kNumHeadPages' immutable pages" };
+    }
 
     page_status_ = new FullPageStatus[buffer_size_];
 
@@ -302,9 +309,9 @@ class PersistentMemoryMalloc {
     AllocatePage(tail_page_offset.page() + 1);
   }
 
-  PersistentMemoryMalloc(uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
+  PersistentMemoryMalloc(bool has_no_backing_storage, uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
                          double log_mutable_fraction, bool pre_allocate_log)
-    : PersistentMemoryMalloc(log_size, epoch, disk_, file_, Address{ 0 }, log_mutable_fraction, pre_allocate_log) {
+    : PersistentMemoryMalloc(has_no_backing_storage, log_size, epoch, disk_, file_, Address{ 0 }, log_mutable_fraction, pre_allocate_log) {
     /// Allocate the invalid page. Supports allocations aligned up to kCacheLineBytes.
     uint32_t discard;
     Allocate(Constants::kCacheLineBytes, discard);
