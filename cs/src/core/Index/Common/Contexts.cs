@@ -294,14 +294,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Reset
-        /// </summary>
-        public void Reset()
-        {
-            Initialize(default, -1);
-        }
-
-        /// <summary>
         /// Write info to byte array
         /// </summary>
         public byte[] ToByteArray()
@@ -369,28 +361,29 @@ namespace FASTER.core
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
         public SemaphoreSlim flushedSemaphore;
-        public long started;
 
         public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _version);
-            started = 0;
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager)
         {
             info.Recover(token, checkpointManager);
-            started = 0;
         }
 
         public void Reset()
         {
-            started = 0;
             flushedSemaphore = null;
-            info.Reset();
+            info = default;
             if (snapshotFileDevice != null) snapshotFileDevice.Close();
             if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Close();
+        }
+
+        public bool IsDefault()
+        {
+            return info.guid == default;
         }
     }
 
@@ -507,8 +500,13 @@ namespace FASTER.core
 
         public void Reset()
         {
-            info.Reset();
+            info = default;
             main_ht_device.Close();
+        }
+
+        public bool IsDefault()
+        {
+            return info.token == default;
         }
     }
 }
