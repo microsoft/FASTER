@@ -14,6 +14,8 @@
 #include "test_types.h"
 
 using namespace FASTER::core;
+using FASTER::test::NonMovable;
+using FASTER::test::NonCopyable;
 using FASTER::test::FixedSizeKey;
 using FASTER::test::SimpleAtomicValue;
 
@@ -1907,30 +1909,15 @@ TEST(InMemFaster, GrowHashTable) {
 }
 
 TEST(InMemFaster, UpsertRead_VariableLengthKey) {
-  class Key {
+  class Key : NonCopyable, NonMovable {
   public:
-      /// This constructor is called when creating a Context so we keep track of memory containing key
-      Key(const uint16_t* key, const uint64_t key_length)
-              : temp_buffer{ key }
-              , key_length_{ key_length } {
+      static uint32_t size(uint32_t key_length) {
+        return static_cast<uint32_t>(sizeof(Key) + key_length);
       }
 
-      /// This constructor is called when record is being allocated so we can freely copy into our buffer
-      Key(const Key& other) {
-        key_length_ = other.key_length_;
-        temp_buffer = NULL;
-        if (other.temp_buffer == NULL) {
-          memcpy(buffer(), other.buffer(), key_length_);
-        } else {
-          memcpy(buffer(), other.temp_buffer, key_length_);
-        }
-      }
-
-      /// This destructor ensures we don't leak memory due to Key objects not allocated on HybridLog
-      ~Key() {
-        if (this->temp_buffer != NULL) {
-          free((void*)temp_buffer);
-        }
+      static void Create(Key* dst, uint32_t key_length, uint8_t* key_data) {
+        dst->key_length_ = key_length;
+        memcpy(dst->buffer(), key_data, key_length);
       }
 
       /// Methods and operators required by the (implicit) interface:
@@ -1938,38 +1925,54 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
         return static_cast<uint32_t>(sizeof(Key) + key_length_);
       }
       inline KeyHash GetHash() const {
-        if (this->temp_buffer != NULL) {
-          return KeyHash(Utility::HashBytes(temp_buffer, key_length_));
-        }
-        return KeyHash(Utility::HashBytes(buffer(), key_length_));
+        return KeyHash(Utility::HashBytesUint8(buffer(), key_length_));
       }
 
       /// Comparison operators.
       inline bool operator==(const Key& other) const {
         if (this->key_length_ != other.key_length_) return false;
-        if (this->temp_buffer != NULL) {
-          return memcmp(temp_buffer, other.buffer(), key_length_) == 0;
-        }
         return memcmp(buffer(), other.buffer(), key_length_) == 0;
       }
       inline bool operator!=(const Key& other) const {
-        if (this->key_length_ != other.key_length_) return true;
-        if (this->temp_buffer != NULL) {
-          return memcmp(temp_buffer, other.buffer(), key_length_) != 0;
-        }
-        return memcmp(buffer(), other.buffer(), key_length_) != 0;
+        return !(*this == other);
       }
 
-  private:
-      uint64_t key_length_;
-      const uint16_t* temp_buffer;
+      uint32_t key_length_;
 
-      inline const uint16_t* buffer() const {
-        return reinterpret_cast<const uint16_t*>(this + 1);
+      inline const uint8_t* buffer() const {
+        return reinterpret_cast<const uint8_t*>(this + 1);
       }
-      inline uint16_t* buffer() {
-        return reinterpret_cast<uint16_t*>(this + 1);
+      inline uint8_t* buffer() {
+        return reinterpret_cast<uint8_t*>(this + 1);
       }
+  };
+
+  class ShallowKey {
+  public:
+      ShallowKey(uint8_t* key_data, uint32_t key_length)
+          : key_length_(key_length), key_data_(key_data)
+      { }
+
+      inline uint32_t size() const {
+        return Key::size(key_length_);
+      }
+      inline KeyHash GetHash() const {
+        return KeyHash(Utility::HashBytesUint8(key_data_, key_length_));
+      }
+      inline void write_deep_key_at(Key* dst) const {
+        Key::Create(dst, key_length_, key_data_);
+      }
+      /// Comparison operators.
+      inline bool operator==(const Key& other) const {
+        if (this->key_length_ != other.key_length_) return false;
+        return memcmp(key_data_, other.buffer(), key_length_) == 0;
+      }
+      inline bool operator!=(const Key& other) const {
+        return !(*this == other);
+      }
+
+      uint32_t key_length_;
+      uint8_t* key_data_;
   };
 
   using Value = SimpleAtomicValue<uint8_t>;
@@ -1979,17 +1982,17 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
       typedef Key key_t;
       typedef Value value_t;
 
-      UpsertContext(uint16_t* key, uint64_t key_length)
+      UpsertContext(uint8_t* key, uint32_t key_length)
               : key_{ key, key_length } {
       }
 
       /// Copy (and deep-copy) constructor.
       UpsertContext(const UpsertContext& other)
-              : key_{ other.key_ } {
+          : key_{ other.key_ } {
       }
 
       /// The implicit and explicit interfaces require a key() accessor.
-      inline const Key& key() const {
+      inline const ShallowKey& key() const {
         return key_;
       }
       inline static constexpr uint32_t value_size() {
@@ -2007,11 +2010,15 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
   protected:
       /// The explicit interface requires a DeepCopy_Internal() implementation.
       Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+        // In this particular test, the key content is always on the heap and always available,
+        // so we don't need to copy the key content. If the key content were on the stack,
+        // we would need to copy the key content to the heap as well
+        //
         return IAsyncContext::DeepCopy_Internal(*this, context_copy);
       }
 
   private:
-      Key key_;
+      ShallowKey key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -2019,7 +2026,7 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
       typedef Key key_t;
       typedef Value value_t;
 
-      ReadContext(uint16_t* key, uint64_t key_length)
+      ReadContext(uint8_t* key, uint32_t key_length)
               : key_{ key, key_length } {
       }
 
@@ -2029,7 +2036,7 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
       }
 
       /// The implicit and explicit interfaces require a key() accessor.
-      inline const Key& key() const {
+      inline const ShallowKey& key() const {
         return key_;
       }
 
@@ -2048,7 +2055,7 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
       }
 
   private:
-      Key key_;
+      ShallowKey key_;
   public:
       uint8_t output;
   };
@@ -2058,14 +2065,14 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
   store.StartSession();
 
   // Insert.
-  for(size_t idx = 1; idx < 256; ++idx) {
+  for(uint32_t idx = 1; idx < 256; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
     };
 
     // Create the key as a variable length array
-    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    uint8_t* key = (uint8_t*) malloc(idx);
     for (size_t j = 0; j < idx; ++j) {
       key[j] = 42;
     }
@@ -2075,14 +2082,14 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
     ASSERT_EQ(Status::Ok, result);
   }
   // Read.
-  for(size_t idx = 1; idx < 256; ++idx) {
+  for(uint32_t idx = 1; idx < 256; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
     };
 
     // Create the key as a variable length array
-    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    uint8_t* key = (uint8_t*) malloc(idx);
     for (size_t j = 0; j < idx; ++j) {
       key[j] = 42;
     }
@@ -2094,14 +2101,14 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
     ASSERT_EQ(23, context.output);
   }
   // Update.
-  for(size_t idx = 1; idx < 256; ++idx) {
+  for(uint32_t idx = 1; idx < 256; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
     };
 
     // Create the key as a variable length array
-    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    uint8_t* key = (uint8_t*) malloc(idx);
     for (size_t j = 0; j < idx; ++j) {
       key[j] = 42;
     }
@@ -2111,14 +2118,14 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
     ASSERT_EQ(Status::Ok, result);
   }
   // Read again.
-  for(size_t idx = 1; idx < 256; ++idx) {
+  for(uint32_t idx = 1; idx < 256; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
         // In-memory test.
         ASSERT_TRUE(false);
     };
 
     // Create the key as a variable length array
-    uint16_t* key = (uint16_t*) malloc(idx * sizeof(uint16_t));
+    uint8_t* key = (uint8_t*) malloc(idx);
     for (size_t j = 0; j < idx; ++j) {
       key[j] = 42;
     }
