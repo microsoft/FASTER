@@ -101,7 +101,7 @@ class FasterKv {
            double log_mutable_fraction = 0.9, bool pre_allocate_log = false)
     : min_table_size_{ table_size }
     , disk{ filename, epoch_ }
-    , hlog{ log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
+    , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , num_pending_ios{ 0 } {
     if(!Utility::IsPowerOfTwo(table_size)) {
