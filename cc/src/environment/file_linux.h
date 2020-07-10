@@ -66,7 +66,7 @@ class File {
 
   ~File() {
     if(owner_) {
-      Status s = Close();
+      core::Status s = Close();
     }
   }
 
@@ -86,11 +86,11 @@ class File {
   }
 
  protected:
-  Status Open(int flags, FileCreateDisposition create_disposition, bool* exists = nullptr);
+  core::Status Open(int flags, FileCreateDisposition create_disposition, bool* exists = nullptr);
 
  public:
-  Status Close();
-  Status Delete();
+  core::Status Close();
+  core::Status Delete();
 
   uint64_t size() const {
     struct stat stat_buffer;
@@ -119,7 +119,7 @@ class File {
 #endif
 
  private:
-  Status GetDeviceAlignment();
+  core::Status GetDeviceAlignment();
   static int GetCreateDisposition(FileCreateDisposition create_disposition);
 
  protected:
@@ -175,7 +175,7 @@ class QueueIoHandler {
 
   struct IoCallbackContext {
     IoCallbackContext(FileOperationType operation, int fd, size_t offset, uint32_t length,
-                      uint8_t* buffer, IAsyncContext* context_, AsyncIOCallback callback_)
+                      uint8_t* buffer, core::IAsyncContext* context_, core::AsyncIOCallback callback_)
       : caller_context{ context_ }
       , callback{ callback_ } {
       if(FileOperationType::Read == operation) {
@@ -193,10 +193,10 @@ class QueueIoHandler {
     struct iocb parent_iocb;
 
     /// Caller callback context.
-    IAsyncContext* caller_context;
+    core::IAsyncContext* caller_context;
 
     /// The caller's asynchronous callback function
-    AsyncIOCallback callback;
+    core::AsyncIOCallback callback;
   };
 
   inline io_context_t io_object() const {
@@ -235,17 +235,17 @@ class QueueFile : public File {
     return *this;
   }
 
-  Status Open(FileCreateDisposition create_disposition, const FileOptions& options,
+  core::Status Open(FileCreateDisposition create_disposition, const FileOptions& options,
               QueueIoHandler* handler, bool* exists = nullptr);
 
-  Status Read(size_t offset, uint32_t length, uint8_t* buffer,
-              IAsyncContext& context, AsyncIOCallback callback) const;
-  Status Write(size_t offset, uint32_t length, const uint8_t* buffer,
-               IAsyncContext& context, AsyncIOCallback callback);
+  core::Status Read(size_t offset, uint32_t length, uint8_t* buffer,
+                    core::IAsyncContext& context, core::AsyncIOCallback callback) const;
+  core::Status Write(size_t offset, uint32_t length, const uint8_t* buffer,
+                     core::IAsyncContext& context, core::AsyncIOCallback callback);
 
  private:
-  Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
-                           uint32_t length, IAsyncContext& context, AsyncIOCallback callback);
+  core::Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
+                           uint32_t length, core::IAsyncContext& context, core::AsyncIOCallback callback);
 
   io_context_t io_object_;
 };

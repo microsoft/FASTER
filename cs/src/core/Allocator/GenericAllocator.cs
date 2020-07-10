@@ -114,7 +114,6 @@ namespace FASTER.core
             return ref Unsafe.AsRef<Record<Key, Value>>(ptr).info;
         }
 
-
         public override ref Key GetKey(long physicalAddress)
         {
             // Offset within page
@@ -138,6 +137,11 @@ namespace FASTER.core
         }
 
         public override int GetRecordSize(long physicalAddress)
+        {
+            return recordSize;
+        }
+
+        public override int GetRecordSize<Input>(long physicalAddress, ref Input input)
         {
             return recordSize;
         }

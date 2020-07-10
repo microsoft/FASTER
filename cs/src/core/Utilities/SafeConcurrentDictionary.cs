@@ -18,9 +18,19 @@ namespace FASTER.core
     /// <typeparam name="TValue">Type of values in the dictionary</typeparam>
     internal sealed class SafeConcurrentDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
     {
-        private readonly ConcurrentDictionary<TKey, TValue> dictionary = new ConcurrentDictionary<TKey, TValue>();
+        private readonly ConcurrentDictionary<TKey, TValue> dictionary;
 
         private readonly ConcurrentDictionary<TKey, object> keyLocks = new ConcurrentDictionary<TKey, object>();
+
+        public SafeConcurrentDictionary()
+        {
+            this.dictionary = new ConcurrentDictionary<TKey, TValue>();
+        }
+
+        public SafeConcurrentDictionary(IEnumerable<KeyValuePair<TKey, TValue>> initialCollection)
+        {
+            this.dictionary = new ConcurrentDictionary<TKey, TValue>(initialCollection);
+        }
 
         /// <summary>
         /// Returns the count of the dictionary.

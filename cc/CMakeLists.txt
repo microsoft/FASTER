@@ -1,5 +1,7 @@
 cmake_minimum_required (VERSION 3.2.2)
 
+set(CMAKE_CXX_STANDARD 14)
+
 enable_testing()
 
 include(ExternalProject)
@@ -17,7 +19,7 @@ if (MSVC)
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og -g -D_DEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -D_DEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -g")
 endif()
 

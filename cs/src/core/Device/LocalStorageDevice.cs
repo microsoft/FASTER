@@ -37,14 +37,36 @@ namespace FASTER.core
                                   bool disableFileBuffering = true,
                                   long capacity = Devices.CAPACITY_UNSPECIFIED,
                                   bool recoverDevice = false)
+            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, initialLogFileHandles: null)
+        {
+        }
+
+        /// <summary>
+        /// Constructor with more options for derived classes
+        /// </summary>
+        /// <param name="filename">File name (or prefix) with path</param>
+        /// <param name="preallocateFile"></param>
+        /// <param name="deleteOnClose"></param>
+        /// <param name="disableFileBuffering"></param>
+        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
+        /// <param name="initialLogFileHandles">Optional set of preloaded safe file handles, which can speed up hydration of preexisting log file handles</param>
+        protected internal LocalStorageDevice(string filename,
+                                  bool preallocateFile = false,
+                                  bool deleteOnClose = false,
+                                  bool disableFileBuffering = true,
+                                  long capacity = Devices.CAPACITY_UNSPECIFIED,
+                                  bool recoverDevice = false,
+                                  IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null)
             : base(filename, GetSectorSize(filename), capacity)
-        
         {
             Native32.EnableProcessPrivileges();
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
-            logHandles = new SafeConcurrentDictionary<int, SafeFileHandle>();
+            logHandles = initialLogFileHandles != null
+                ? new SafeConcurrentDictionary<int, SafeFileHandle>(initialLogFileHandles)
+                : new SafeConcurrentDictionary<int, SafeFileHandle>();
             if (recoverDevice)
                 RecoverFiles();
         }
@@ -218,14 +240,69 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Creates a SafeFileHandle for the specified segment. This can be used by derived classes to prepopulate logHandles in the constructor.
+        /// </summary>
+        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName)
+        {
+            uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
+            uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
+            uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
+            uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
+
+            if (disableFileBuffering)
+            {
+                fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+            }
+
+            if (deleteOnClose)
+            {
+                fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
+
+                // FILE_SHARE_DELETE allows multiple FASTER instances to share a single log directory and each can specify deleteOnClose.
+                // This will allow the files to persist until all handles across all instances have been closed.
+                fileShare = fileShare | Native32.FILE_SHARE_DELETE;
+            }
+
+            var logHandle = Native32.CreateFileW(
+                GetSegmentName(fileName, segmentId),
+                fileAccess, fileShare,
+                IntPtr.Zero, fileCreation,
+                fileFlags, IntPtr.Zero);
+
+            if (logHandle.IsInvalid)
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw new IOException($"Error creating log file for {GetSegmentName(fileName, segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
+            }
+
+            if (preallocateFile && segmentSize != -1)
+                SetFileSize(fileName, logHandle, segmentSize);
+
+            try
+            {
+                ThreadPool.BindHandle(logHandle);
+            }
+            catch (Exception e)
+            {
+                throw new FasterException("Error binding log handle for " + GetSegmentName(fileName, segmentId) + ": " + e.ToString());
+            }
+            return logHandle;
+        }
+
+        /// <summary>
+        /// Static method to construct segment name
+        /// </summary>
+        protected static string GetSegmentName(string fileName, int segmentId)
+        {
+            return fileName + "." + segmentId;
+        }
+
+        /// <summary>
         ///
         /// </summary>
         /// <param name="segmentId"></param>
         /// <returns></returns>
-        protected string GetSegmentName(int segmentId)
-        {
-            return FileName + "." + segmentId;
-        }
+        protected string GetSegmentName(int segmentId) => GetSegmentName(FileName, segmentId);
 
         /// <summary>
         /// 
@@ -237,6 +314,9 @@ namespace FASTER.core
         {
             return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
         }
+
+        private SafeFileHandle CreateHandle(int segmentId)
+            => CreateHandle(segmentId, this.disableFileBuffering, this.deleteOnClose, this.preallocateFile, this.segmentSize, this.FileName);
 
         private static uint GetSectorSize(string filename)
         {
@@ -252,58 +332,11 @@ namespace FASTER.core
             return _sectorSize;
         }
 
-        private SafeFileHandle CreateHandle(int segmentId)
-        {
-            uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
-            uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
-            uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
-            uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
-
-            if (this.disableFileBuffering)
-            {
-                fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
-            }
-
-            if (deleteOnClose)
-            {
-                fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
-
-                // FILE_SHARE_DELETE allows multiple FASTER instances to share a single log directory and each can specify deleteOnClose.
-                // This will allow the files to persist until all handles across all instances have been closed.
-                fileShare = fileShare | Native32.FILE_SHARE_DELETE;
-            }
-
-            var logHandle = Native32.CreateFileW(
-                GetSegmentName(segmentId),
-                fileAccess, fileShare,
-                IntPtr.Zero, fileCreation,
-                fileFlags, IntPtr.Zero);
-
-            if (logHandle.IsInvalid)
-            {
-                var error = Marshal.GetLastWin32Error();
-                throw new IOException($"Error creating log file for {GetSegmentName(segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
-            }
-
-            if (preallocateFile && segmentSize != -1)
-                SetFileSize(FileName, logHandle, segmentSize);
-
-            try
-            {
-                ThreadPool.BindHandle(logHandle);
-            }
-            catch (Exception e)
-            {
-                throw new FasterException("Error binding log handle for " + GetSegmentName(segmentId) + ": " + e.ToString());
-            }
-            return logHandle;
-        }
-
         /// Sets file size to the specified value.
         /// Does not reset file seek pointer to original location.
-        private bool SetFileSize(string filename, SafeFileHandle logHandle, long size)
+        private static bool SetFileSize(string filename, SafeFileHandle logHandle, long size)
         {
-            if (segmentSize <= 0)
+            if (size <= 0)
                 return false;
 
             if (Native32.EnableVolumePrivileges(filename, logHandle))

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#pragma warning disable 0162
+
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -115,7 +117,7 @@ namespace FasterKVDiskReadBenchmark
                 Input input = default;
                 int i = 0;
 
-                var tasks = new (long, ValueTask<FasterKV<Key, Value, Input, Output, Empty, MyFuncs>.ReadAsyncResult>)[batchSize];
+                var tasks = new (long, ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Empty, MyFuncs>>)[batchSize];
                 while (true)
                 {
                     key = new Key(NumKeys * id + rand.Next(0, NumKeys));

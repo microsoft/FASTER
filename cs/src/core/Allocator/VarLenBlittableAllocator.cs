@@ -89,6 +89,11 @@ namespace FASTER.core
             return ValueLength.GetLength(ref GetValue(physicalAddress));
         }
 
+        private int ValueSize<Input>(long physicalAddress, ref Input input)
+        {
+            return ValueLength.GetLength(ref GetValue(physicalAddress), ref input);
+        }
+
         public override int GetRecordSize(long physicalAddress)
         {
             ref var recordInfo = ref GetInfo(physicalAddress);
@@ -96,6 +101,17 @@ namespace FASTER.core
                 return RecordInfo.GetLength();
 
             var size = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            size = (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
+            return size;
+        }
+
+        public override int GetRecordSize<Input>(long physicalAddress, ref Input input)
+        {
+            ref var recordInfo = ref GetInfo(physicalAddress);
+            if (recordInfo.IsNull())
+                return RecordInfo.GetLength();
+
+            var size = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress, ref input);
             size = (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
             return size;
         }

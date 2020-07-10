@@ -47,8 +47,8 @@ static_assert(kCompletePendingInterval % kRefreshInterval == 0,
 static constexpr uint64_t kNanosPerSecond = 1000000000;
 
 static constexpr uint64_t kMaxKey = 268435456;
-static constexpr uint64_t kRunSeconds = 360;
-static constexpr uint64_t kCheckpointSeconds = 30;
+static constexpr uint64_t kRunSeconds = 30;
+static constexpr uint64_t kCheckpointSeconds = 0;
 
 aligned_unique_ptr_t<uint64_t> init_keys_;
 aligned_unique_ptr_t<uint64_t> txn_keys_;
@@ -577,9 +577,9 @@ void run_benchmark(store_t* store, size_t num_threads) {
         last_checkpoint_time = current_time;
       }
     }
-
-    done_ = true;
   }
+
+  done_ = true;
 
   for(auto& thread : threads) {
     thread.join();

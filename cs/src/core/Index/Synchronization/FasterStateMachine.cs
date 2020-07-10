@@ -6,15 +6,14 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         // The current system state, defined as the combination of a phase and a version number. This value
         // is observed by all sessions and a state machine communicates its progress to sessions through
         // this value
-        private SystemState _systemState;
+        internal SystemState systemState;
         // This flag ensures that only one state machine is active at a given time.
         private volatile int stateMachineActive = 0;
         // The current state machine in the system. The value could be stale and point to the previous state machine
@@ -34,7 +33,7 @@ namespace FASTER.core
             currentSyncStateMachine = stateMachine;
             // No latch required because the taskMutex guards against other tasks starting, and only a new task
             // is allowed to change faster global state from REST
-            GlobalStateMachineStep(_systemState);
+            GlobalStateMachineStep(systemState);
             return true;
         }
         
@@ -42,7 +41,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool MakeTransition(SystemState expectedState, SystemState nextState)
         {
-            if (Interlocked.CompareExchange(ref _systemState.word, nextState.word, expectedState.word) !=
+            if (Interlocked.CompareExchange(ref systemState.word, nextState.word, expectedState.word) !=
                 expectedState.word) return false;
             Debug.WriteLine("Moved to {0}, {1}", nextState.phase, nextState.version);
             return true;
@@ -107,7 +106,7 @@ namespace FASTER.core
             while (true)
             {
                 var task = currentSyncStateMachine;
-                var targetState = SystemState.Copy(ref _systemState);
+                var targetState = SystemState.Copy(ref systemState);
                 // We have to make sure that we are not looking at a state resulted from a different 
                 // task. It's ok to be behind when the thread steps through the state machine, but not
                 // ok if we are using the wrong task.
@@ -121,20 +120,34 @@ namespace FASTER.core
         /// necessary actions associated with the state as defined by the current state machine
         /// </summary>
         /// <param name="ctx">null if calling without a context (e.g. waiting on a checkpoint)</param>
-        /// <param name="clientSession">null if calling without a session (e.g. waiting on a checkpoint)</param>
+        /// <param name="fasterSession">Faster session.</param>
         /// <param name="async"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async ValueTask ThreadStateMachineStep(FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        private async ValueTask ThreadStateMachineStep<Input, Output, Context, FasterSession>(
+            FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
+            where FasterSession : IFasterSession
         {
             if (async)
-                clientSession?.UnsafeResumeThread();
+                fasterSession.UnsafeResumeThread();
 
             // Target state is the current (non-intermediate state) system state thread needs to catch up to
             var (currentTask, targetState) = CaptureTaskAndTargetState();
+
+            // No state machine associated with target, we can
+            // directly fast forward session to target state
+            if (currentTask == null)
+            {
+                if (ctx != null)
+                {
+                    ctx.phase = targetState.phase;
+                    ctx.version = targetState.version;
+                }
+                return;
+            }
 
             // the current thread state is what the thread remembers, or simply what the current system
             // is if we are calling from somewhere other than an execution thread (e.g. waiting on
@@ -147,8 +160,7 @@ namespace FASTER.core
             var previousState = threadState;
             do
             {
-                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, clientSession, async,
-                    token);
+                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
                 if (ctx != null)
                 {
                     ctx.phase = threadState.phase;

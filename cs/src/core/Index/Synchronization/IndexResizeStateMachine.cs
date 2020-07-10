@@ -9,12 +9,11 @@ namespace FASTER.core
     internal sealed class IndexResizeTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (next.phase)
             {
@@ -29,8 +28,7 @@ namespace FASTER.core
                     faster.numPendingChunksToBeSplit = numChunks;
                     faster.splitStatus = new long[numChunks];
 
-                    faster.Initialize(1 - faster.resizeInfo.version, faster.state[faster.resizeInfo.version].size * 2,
-                        faster.sectorSize);
+                    faster.Initialize(1 - faster.resizeInfo.version, faster.state[faster.resizeInfo.version].size * 2, faster.sectorSize);
 
                     faster.resizeInfo.version = 1 - faster.resizeInfo.version;
                     break;
@@ -43,12 +41,11 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (next.phase)
             {
@@ -65,17 +62,17 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where FasterSession : IFasterSession
         {
             switch (current.phase)
             {
