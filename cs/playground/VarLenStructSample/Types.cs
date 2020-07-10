@@ -77,5 +77,10 @@ namespace VarLenStructSample
         {
             return sizeof(int) * t.length;
         }
+
+        public int GetLength<Input>(ref VarLenType t, ref Input input)
+        {
+            return sizeof(int) * t.length;
+        }
     }
 }
