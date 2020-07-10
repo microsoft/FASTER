@@ -161,6 +161,9 @@ namespace FASTER.test
 
         public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
+            if (dst == null)
+                dst = new MyOutput();
+
             dst.value = value;
         }
 
@@ -205,6 +208,9 @@ namespace FASTER.test
 
         public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
+            if (dst == null)
+                dst = new MyOutput();
+
             dst.value = value;
         }
 

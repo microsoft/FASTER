@@ -69,18 +69,4 @@ namespace FASTER.core
 
         public bool CompletedSynchronously => throw new NotImplementedException();
     }
-
-    internal struct CountdownEventAsyncResult : IAsyncResult
-    {
-        public CountdownEvent countdown;
-        public Action action;
-
-        public bool IsCompleted => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
-    }
 }

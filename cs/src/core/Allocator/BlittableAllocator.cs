@@ -67,6 +67,11 @@ namespace FASTER.core
             return recordSize;
         }
 
+        public override int GetRecordSize<Input>(long physicalAddress, ref Input input)
+        {
+            return recordSize;
+        }
+
         public override int GetAverageRecordSize()
         {
             return recordSize;
