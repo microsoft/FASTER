@@ -34,6 +34,11 @@ namespace FASTER.test
             return sizeof(long);
         }
 
+        public int GetLength<Input>(ref Key t, ref Input input)
+        {
+            return sizeof(long);
+        }
+
         public int GetAverageLength()
         {
             return sizeof(long);
@@ -56,15 +61,20 @@ namespace FASTER.test
 
         public int GetAverageLength()
         {
-            return 2*sizeof(int);
+            return 2 * sizeof(int);
         }
 
         public int GetInitialLength<Input>(ref Input input)
         {
-            return 2*sizeof(int);
+            return 2 * sizeof(int);
         }
 
         public int GetLength(ref VLValue t)
+        {
+            return sizeof(int) * t.length;
+        }
+
+        public int GetLength<Input>(ref VLValue t, ref Input input)
         {
             return sizeof(int) * t.length;
         }
@@ -120,7 +130,7 @@ namespace FASTER.test
         public void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
-            for (int i=0; i<output.Length; i++)
+            for (int i = 0; i < output.Length; i++)
             {
                 Assert.IsTrue(output[i] == output.Length);
             }

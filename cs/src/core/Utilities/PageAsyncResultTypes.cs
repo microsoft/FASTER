@@ -91,7 +91,6 @@ namespace FASTER.core
         internal bool partial;
         internal long fromAddress;
         internal long untilAddress;
-        internal IDevice objlogDevice;
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
         internal AutoResetEvent done;

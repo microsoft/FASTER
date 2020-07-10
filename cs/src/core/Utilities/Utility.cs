@@ -300,22 +300,22 @@ namespace FASTER.core
                 return Task.FromCanceled<T>(token);
             }
 
-            return Inner(task, token, useSynchronizationContext, continueOnCapturedContext);
+            return SlowWithCancellationAsync(task, token, useSynchronizationContext, continueOnCapturedContext);
+        }
 
-            static async Task<T> Inner(Task<T> task, CancellationToken token, bool useSynchronizationContext, bool continueOnCapturedContext)
+        private static async Task<T> SlowWithCancellationAsync<T>(Task<T> task, CancellationToken token, bool useSynchronizationContext, bool continueOnCapturedContext)
+        {
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
             {
-                var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
+                if (task != await Task.WhenAny(task, tcs.Task))
                 {
-                    if (task != await Task.WhenAny(task, tcs.Task))
-                    {
-                        token.ThrowIfCancellationRequested();
-                    }
+                    token.ThrowIfCancellationRequested();
                 }
-
-                // make sure any exceptions in the task get unwrapped and exposed to the caller.
-                return await task.ConfigureAwait(continueOnCapturedContext);
             }
+
+            // make sure any exceptions in the task get unwrapped and exposed to the caller.
+            return await task.ConfigureAwait(continueOnCapturedContext);
         }
     }
 }
