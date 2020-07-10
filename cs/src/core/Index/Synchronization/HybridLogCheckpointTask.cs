@@ -42,14 +42,12 @@ namespace FASTER.core
                         Array.Copy(seg, faster._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
                     }
 
-                    if (faster._activeSessions != null)
-                    {
+                    // Temporarily block new sessions from starting, which may add an entry to the table and resize the
+                    // dictionary. There should be minimal contention here.
+                    lock (faster._activeSessions)
                         // write dormant sessions to checkpoint
                         foreach (var kvp in faster._activeSessions)
-                        {
                             kvp.Value.AtomicSwitch(next.version - 1);
-                        }
-                    }
 
                     faster.WriteHybridLogMetaInfo();
                     break;

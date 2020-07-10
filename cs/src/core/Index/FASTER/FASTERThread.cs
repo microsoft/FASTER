@@ -87,7 +87,10 @@ namespace FASTER.core
         internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, string token, long lsn = -1)
         {
             ctx.phase = Phase.REST;
-            ctx.version = systemState.version;
+            // The system version starts at 1. Because we do not know what the current state machine state is,
+            // we need to play it safe and initialize context behind the system state. Otherwise the session may
+            // never "catch up" with the rest of the system when stepping through the state machine as it is ahead.
+            ctx.version = 1;
             ctx.markers = new bool[8];
             ctx.serialNum = lsn;
             ctx.guid = token;

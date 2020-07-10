@@ -13,7 +13,7 @@ namespace FASTER.core
         where Key : new()
         where Value : new()
     {
-        internal Dictionary<string, IClientSession> _activeSessions;
+        internal Dictionary<string, IClientSession> _activeSessions = new Dictionary<string, IClientSession>();
 
         /// <summary>
         /// Client session type helper
@@ -109,7 +109,7 @@ namespace FASTER.core
             prevCtx.version--;
 
             ctx.prevCtx = prevCtx;
-
+            
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<string, IClientSession>(), null);
 
@@ -143,6 +143,7 @@ namespace FASTER.core
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <returns>Session instance</returns>
+
         public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
@@ -155,6 +156,7 @@ namespace FASTER.core
             commitPoint = InternalContinue<Input, Output, Context>(sessionId, out var ctx);
             if (commitPoint.UntilSerialNo == -1)
                 throw new Exception($"Unable to find session {sessionId} to recover");
+
 
             var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, !threadAffinitized);
 
