@@ -137,7 +137,7 @@ jobs:
     displayName: 'Compile'
 
   - script: |
-      CTEST_OUTPUT_ON_FAILURE=1 make test
+    for i in {1..100}; do CTEST_OUTPUT_ON_FAILURE=1 make test; done 
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests'
 
