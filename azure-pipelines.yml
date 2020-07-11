@@ -137,12 +137,12 @@ jobs:
     displayName: 'Compile'
 
   - script: |
-      for i in {1..100}; do CTEST_OUTPUT_ON_FAILURE=1 make test; done 
+      CTEST_OUTPUT_ON_FAILURE=1 make test
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests (Debug)'
 
   - script: |
-      for i in {1..100}; do CTEST_OUTPUT_ON_FAILURE=1 make test; done 
+      CTEST_OUTPUT_ON_FAILURE=1 make test
     workingDirectory: 'cc/build/Release'
     displayName: 'Run Tests (Release)'
 
