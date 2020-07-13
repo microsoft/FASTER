@@ -272,10 +272,16 @@ namespace FASTER.core
         public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) => _fasterKV.TakeFullCheckpoint(out token, targetVersion);
 
         /// <inheritdoc />
+        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1) => _fasterKV.TakeFullCheckpoint(out token, checkpointType, targetVersion);
+
+        /// <inheritdoc />
         public bool TakeIndexCheckpoint(out Guid token) => _fasterKV.TakeIndexCheckpoint(out token);
 
         /// <inheritdoc />
         public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1) => _fasterKV.TakeHybridLogCheckpoint(out token, targetVersion);
+
+        /// <inheritdoc />
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1) => _fasterKV.TakeHybridLogCheckpoint(out token, checkpointType, targetVersion);
 
         /// <inheritdoc />
         public void Recover() => _fasterKV.Recover();
