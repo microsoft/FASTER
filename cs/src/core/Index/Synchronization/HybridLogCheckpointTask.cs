@@ -20,7 +20,7 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREPARE:
-                    if (faster._hybridLogCheckpointToken == default)
+                    if (faster._hybridLogCheckpoint.IsDefault())
                     {
                         faster._hybridLogCheckpointToken = Guid.NewGuid();
                         faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
@@ -52,7 +52,6 @@ namespace FASTER.core
                     faster.WriteHybridLogMetaInfo();
                     break;
                 case Phase.REST:
-                    faster._hybridLogCheckpointToken = default;
                     faster._hybridLogCheckpoint.Reset();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     faster.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });

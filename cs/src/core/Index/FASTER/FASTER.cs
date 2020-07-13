@@ -205,6 +205,32 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Initiate full checkpoint
+        /// </summary>
+        /// <param name="token">Checkpoint token</param>
+        /// <param name="checkpointType">Checkpoint type</param>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
+        /// <returns>
+        /// Whether we successfully initiated the checkpoint (initiation may
+        /// fail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index).
+        /// </returns>
+        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
+        {
+            ISynchronizationTask backend;
+            if (checkpointType == CheckpointType.FoldOver)
+                backend = new FoldOverCheckpointTask();
+            else if (checkpointType == CheckpointType.Snapshot)
+                backend = new SnapshotCheckpointTask();
+            else
+                throw new FasterException("Unsupported full checkpoint type");
+
+            var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
+            token = _hybridLogCheckpointToken;
+            return result;
+        }
+
+        /// <summary>
         /// Initiate index checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
@@ -229,6 +255,28 @@ namespace FASTER.core
                 backend = new FoldOverCheckpointTask();
             else
                 backend = new SnapshotCheckpointTask();
+
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
+            token = _hybridLogCheckpointToken;
+            return result;
+        }
+
+        /// <summary>
+        /// Take incremental hybrid log checkpoint
+        /// </summary>
+        /// <param name="token">Checkpoint token</param>
+        /// <param name="checkpointType">Checkpoint type</param>
+        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
+        /// <returns>Whether we could initiate the checkpoint</returns>
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
+        {
+            ISynchronizationTask backend;
+            if (checkpointType == CheckpointType.FoldOver)
+                backend = new FoldOverCheckpointTask();
+            else if (checkpointType == CheckpointType.Snapshot)
+                backend = new SnapshotCheckpointTask();
+            else
+                throw new FasterException("Unsupported checkpoint type");
 
             var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
             token = _hybridLogCheckpointToken;

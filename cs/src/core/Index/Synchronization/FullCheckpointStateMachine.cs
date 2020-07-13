@@ -20,8 +20,8 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    Debug.Assert(faster._indexCheckpointToken == default &&
-                                 faster._hybridLogCheckpointToken == default);
+                    Debug.Assert(faster._indexCheckpoint.IsDefault() &&
+                                 faster._hybridLogCheckpoint.IsDefault());
                     var fullCheckpointToken = Guid.NewGuid();
                     faster._indexCheckpointToken = fullCheckpointToken;
                     faster._hybridLogCheckpointToken = fullCheckpointToken;
@@ -39,7 +39,7 @@ namespace FASTER.core
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     faster.WriteIndexMetaInfo();
-                    faster._indexCheckpointToken = default;
+                    faster._indexCheckpoint.Reset();
                     break;
             }
         }

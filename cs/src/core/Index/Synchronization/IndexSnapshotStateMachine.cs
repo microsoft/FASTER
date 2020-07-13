@@ -20,7 +20,7 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    if (faster._indexCheckpointToken == default)
+                    if (faster._indexCheckpoint.IsDefault())
                     {
                         faster._indexCheckpointToken = Guid.NewGuid();
                         faster.InitializeIndexCheckpoint(faster._indexCheckpointToken);
@@ -40,12 +40,11 @@ namespace FASTER.core
                     // the tail address.
                     if (faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress))
                         faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
-                    if (faster._indexCheckpointToken != default)
+                    if (!faster._indexCheckpoint.IsDefault())
                     {
                         faster.WriteIndexMetaInfo();
-                        faster._indexCheckpointToken = default;
+                        faster._indexCheckpoint.Reset();
                     }
-                    faster._indexCheckpoint.Reset();
 
                     break;
             }
