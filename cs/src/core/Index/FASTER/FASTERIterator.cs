@@ -80,10 +80,7 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
         where CompactionFunctions : ICompactionFunctions<Key, Value>
     {
-        private readonly Functions functions;
         private readonly CompactionFunctions cf;
-        private readonly long untilAddress;
-        private readonly VariableLengthStructSettings<Key, Value> variableLengthStructSettings;
         private readonly FasterKV<Key, Value> fht;
         private readonly FasterKV<Key, Value> tempKv;
         private readonly ClientSession<Key, Value, Empty, Empty, Empty, Functions> fhtSession;
@@ -95,11 +92,7 @@ namespace FASTER.core
 
         public FasterKVIterator(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
         {
-            this.functions = functions;
             this.cf = cf;
-            this.untilAddress = untilAddress;
-            this.variableLengthStructSettings = variableLengthStructSettings;
-
             enumerationPhase = 0;
             fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
             tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
