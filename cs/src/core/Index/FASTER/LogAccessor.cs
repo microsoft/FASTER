@@ -183,18 +183,18 @@ namespace FASTER.core
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
-                var functions = new LogVariableCompactFunctions<DefaultVariableCompactionFunctions>(varLen, default(DefaultVariableCompactionFunctions));
+                var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
                 var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
                     keyLength = varLen.KeyLength,
                     valueLength = varLen.ValueLength,
                 };
 
-                Compact(functions, default(DefaultVariableCompactionFunctions), untilAddress, variableLengthStructSettings);
+                Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings);
             }
             else
             {
-                Compact(new LogCompactFunctions<DefaultCompactionFunctions>(default(DefaultCompactionFunctions)), default(DefaultCompactionFunctions), untilAddress, null);
+                Compact(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default(DefaultCompactionFunctions<Key, Value>), untilAddress, null);
             }
         }
 
@@ -209,7 +209,7 @@ namespace FASTER.core
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
-                var functions = new LogVariableCompactFunctions<CompactionFunctions>(varLen, compactionFunctions);
+                var functions = new LogVariableCompactFunctions<Key, Value, CompactionFunctions>(varLen, compactionFunctions);
                 var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
                     keyLength = varLen.KeyLength,
@@ -220,7 +220,7 @@ namespace FASTER.core
             }
             else
             {
-                Compact(new LogCompactFunctions<CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null);
+                Compact(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null);
             }
         }
 
@@ -310,109 +310,6 @@ namespace FASTER.core
                         tempKvSession.Delete(ref key, default, 0);
                     }
                 }
-            }
-        }
-
-        private sealed class LogVariableCompactFunctions<CompactionFunctions> : IFunctions<Key, Value, Empty, Empty, Empty>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            private readonly VariableLengthBlittableAllocator<Key, Value> _allocator;
-            private readonly CompactionFunctions _functions;
-
-            public LogVariableCompactFunctions(VariableLengthBlittableAllocator<Key, Value> allocator, CompactionFunctions functions)
-            {
-                _allocator = allocator;
-                _functions = functions;
-            }
-
-            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
-            public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, _allocator.ValueLength); }
-            public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
-            public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
-            public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) => false;
-            public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
-            public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
-            public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, _allocator.ValueLength); }
-            public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
-            public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
-        }
-
-        private sealed class LogCompactFunctions<CompactionFunctions> : IFunctions<Key, Value, Empty, Empty, Empty>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            private readonly CompactionFunctions _functions;
-
-            public LogCompactFunctions(CompactionFunctions functions)
-            {
-                _functions = functions;
-            }
-
-            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
-            public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, null); }
-            public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
-            public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
-            public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) { return true; }
-            public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
-            public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
-            public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, null); }
-            public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
-            public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
-        }
-
-        private unsafe struct DefaultVariableCompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            public void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
-            {
-                var srcLength = valueLength.GetLength(ref src);
-                Buffer.MemoryCopy(
-                    Unsafe.AsPointer(ref src),
-                    Unsafe.AsPointer(ref dst),
-                    srcLength,
-                    srcLength);
-            }
-
-            public bool CopyInPlace(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
-            {
-                var srcLength = valueLength.GetLength(ref src);
-                var dstLength = valueLength.GetLength(ref dst);
-                if (srcLength != dstLength)
-                    return false;
-
-                Buffer.MemoryCopy(
-                    Unsafe.AsPointer(ref src),
-                    Unsafe.AsPointer(ref dst),
-                    dstLength,
-                    srcLength);
-
-                return true;
-            }
-
-            public bool IsDeleted(in Key key, in Value value)
-            {
-                return false;
-            }
-        }
-
-        private struct DefaultCompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            public void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
-            {
-                dst = src;
-            }
-
-            public bool CopyInPlace(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
-            {
-                dst = src;
-                return true;
-            }
-
-            public bool IsDeleted(in Key key, in Value value)
-            {
-                return false;
             }
         }
     }
