@@ -33,37 +33,37 @@ namespace FasterPSFSample
 
             if (useMultiGroup)
             {
-                var psfOrdinal = 0;
-                this.SizePsf = FasterKV.RegisterPSF(nameof(this.SizePsf), (k, v) => new SizeKey((Constants.Size)v.SizeInt),
-                    CreatePSFRegistrationSettings<SizeKey>(psfOrdinal++));
-                this.ColorPsf = FasterKV.RegisterPSF(nameof(this.ColorPsf), (k, v) => new ColorKey(Constants.ColorDict[v.ColorArgb]),
-                    CreatePSFRegistrationSettings<ColorKey>(psfOrdinal++));
-                this.CountBinPsf = FasterKV.RegisterPSF(nameof(this.CountBinPsf), (k, v) => CountBinKey.GetBin(v.Count, out int bin)
-                                                                    ? new CountBinKey(bin) : (CountBinKey?)null,
-                    CreatePSFRegistrationSettings<CountBinKey>(psfOrdinal++));
+                var groupOrdinal = 0;
+                this.SizePsf = FasterKV.RegisterPSF(CreatePSFRegistrationSettings<SizeKey>(groupOrdinal++), nameof(this.SizePsf),
+                                                    (k, v) => new SizeKey((Constants.Size)v.SizeInt));
+                this.ColorPsf = FasterKV.RegisterPSF(CreatePSFRegistrationSettings<ColorKey>(groupOrdinal++), nameof(this.ColorPsf),
+                                                    (k, v) => new ColorKey(Constants.ColorDict[v.ColorArgb]));
+                this.CountBinPsf = FasterKV.RegisterPSF(CreatePSFRegistrationSettings<CountBinKey>(groupOrdinal++), nameof(this.CountBinPsf),
+                                                    (k, v) => CountBinKey.GetBin(v.Count, out int bin) ? new CountBinKey(bin) : (CountBinKey?)null);
             }
             else
             {
-                var psfs = FasterKV.RegisterPSF(new(string, Func<Key, TValue, CombinedKey?>)[] {
-                    (nameof(this.SizePsf), (k, v) => new CombinedKey((Constants.Size)v.SizeInt)),
-                    (nameof(this.ColorPsf), (k, v) => new CombinedKey(Constants.ColorDict[v.ColorArgb])),
-                    (nameof(this.CountBinPsf), (k, v) => CountBinKey.GetBin(v.Count, out int bin)
-                                                                    ? new CombinedKey(bin) : (CombinedKey?)null)
-                    }, CreatePSFRegistrationSettings<CombinedKey>(0)
-                );
+                var psfs = FasterKV.RegisterPSF(CreatePSFRegistrationSettings<CombinedKey>(0),
+                                                new (string, Func<Key, TValue, CombinedKey?>)[]
+                                                {
+                                                    (nameof(this.SizePsf), (k, v) => new CombinedKey((Constants.Size)v.SizeInt)),
+                                                    (nameof(this.ColorPsf), (k, v) => new CombinedKey(Constants.ColorDict[v.ColorArgb])),
+                                                    (nameof(this.CountBinPsf), (k, v) => CountBinKey.GetBin(v.Count, out int bin)
+                                                                                                    ? new CombinedKey(bin) : (CombinedKey?)null)
+                                                });
                 this.CombinedSizePsf = psfs[0];
                 this.CombinedColorPsf = psfs[1];
                 this.CombinedCountBinPsf = psfs[2];
             }
         }
 
-        PSFRegistrationSettings<TKey> CreatePSFRegistrationSettings<TKey>(int psfOrdinal)
+        PSFRegistrationSettings<TKey> CreatePSFRegistrationSettings<TKey>(int groupOrdinal)
         {
             var regSettings = new PSFRegistrationSettings<TKey>
             {
                 HashTableSize = 1L << 20,
-                LogSettings = this.logFiles.PSFLogSettings[psfOrdinal],
-                CheckpointSettings = null,  // TODO checkpoints
+                LogSettings = this.logFiles.PSFLogSettings[groupOrdinal],
+                CheckpointSettings = new CheckpointSettings(),  // TODO checkpoints
                 IPU1CacheSize = 0,          // TODO IPUCache
                 IPU2CacheSize = 0
             };

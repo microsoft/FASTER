@@ -184,13 +184,7 @@ namespace FASTER.core
             _systemState.phase = Phase.REST;
             _systemState.version = 1;
 
-            // To pass along to PSF-implementing secondary FasterKV
-            this.hashTableSize = size;
-            this.logSettings = logSettings;
-            this.checkpointSettings = checkpointSettings;
-            this.serializerSettings = serializerSettings;
-            this.variableLengthStructSettings = variableLengthStructSettings;
-            this.InitializePSFs();
+            this.InitializePSFManager();
         }
 
         /// <summary>
@@ -205,14 +199,15 @@ namespace FASTER.core
         /// </returns>
         public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1)
         {
-            ISynchronizationTask backend;
-            if (FoldOverSnapshot)
-                backend = new FoldOverCheckpointTask();
-            else
-                backend = new SnapshotCheckpointTask();
+            var backend = FoldOverSnapshot ? (ISynchronizationTask)new FoldOverCheckpointTask() : new SnapshotCheckpointTask();
 
             var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
             token = _hybridLogCheckpointToken;
+
+            // Do not return the PSF token here. TODO Separate Tasks?
+            if (result && this.PSFManager.HasPSFs)
+                result &= this.PSFManager.TakeFullCheckpoint();
+
             return result;
         }
 
@@ -225,6 +220,10 @@ namespace FASTER.core
         {
             var result = StartStateMachine(new IndexSnapshotStateMachine());
             token = _indexCheckpointToken;
+
+            // Do not return the PSF token here. TODO Separate Tasks?
+            if (result && this.PSFManager.HasPSFs)
+                result &= this.PSFManager.TakeIndexCheckpoint();
             return result;
         }
 
@@ -236,14 +235,14 @@ namespace FASTER.core
         /// <returns>Whether we could initiate the checkpoint</returns>
         public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
         {
-            ISynchronizationTask backend;
-            if (FoldOverSnapshot)
-                backend = new FoldOverCheckpointTask();
-            else
-                backend = new SnapshotCheckpointTask();
+            var backend = FoldOverSnapshot ? (ISynchronizationTask)new FoldOverCheckpointTask() : new SnapshotCheckpointTask();
 
             var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
             token = _hybridLogCheckpointToken;
+
+            // Do not return the PSF token here. TODO Separate Tasks?
+            if (result && this.PSFManager.HasPSFs)
+                result &= this.PSFManager.TakeHybridLogCheckpoint();
             return result;
         }
 
@@ -253,6 +252,9 @@ namespace FASTER.core
         public void Recover()
         {
             InternalRecoverFromLatestCheckpoints();
+
+            if (this.PSFManager.HasPSFs)    // TODO Separate Tasks?
+                this.PSFManager.Recover();
         }
 
         /// <summary>
@@ -290,10 +292,13 @@ namespace FASTER.core
                 var systemState = _systemState;
                 if (systemState.phase == Phase.REST || systemState.phase == Phase.PREPARE_GROW ||
                     systemState.phase == Phase.IN_PROGRESS_GROW)
-                    return;
+                    break;
 
                 await ThreadStateMachineStep(null, null, true, token);
             }
+
+            if (this.PSFManager.HasPSFs)    // TODO Separate Task?
+                await this.PSFManager.CompleteCheckpointAsync();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

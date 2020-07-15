@@ -6,6 +6,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -76,11 +78,11 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
+        /// <param name="regSettings">Optional registration settings</param>
+        /// <param name="defs">PSF definitions</param>
         /// <param name="id">The ordinal of this PSFGroup in the <see cref="PSFManager{TProviderData, TRecordId}"/>'s
         /// PSFGroup list.</param>
-        /// <param name="defs">PSF definitions</param>
-        /// <param name="regSettings">Optional registration settings</param>
-        public PSFGroup(long id, IPSFDefinition<TProviderData, TPSFKey>[] defs, PSFRegistrationSettings<TPSFKey> regSettings)
+        public PSFGroup(PSFRegistrationSettings<TPSFKey> regSettings, IPSFDefinition<TProviderData, TPSFKey>[] defs, long id)
         {
             this.psfDefinitions = defs;
             this.Id = id;
@@ -400,5 +402,20 @@ namespace FASTER.core
                 input.Dispose();
             }
         }
+
+        /// <inheritdoc/>
+        public bool TakeFullCheckpoint() => this.fht.TakeFullCheckpoint(out _);
+
+        /// <inheritdoc/>
+        public ValueTask CompleteCheckpointAsync(CancellationToken token = default) => this.fht.CompleteCheckpointAsync(token);
+
+        /// <inheritdoc/>
+        public bool TakeIndexCheckpoint() => this.fht.TakeIndexCheckpoint(out _);
+
+        /// <inheritdoc/>
+        public bool TakeHybridLogCheckpoint() => this.fht.TakeHybridLogCheckpoint(out _);
+
+        /// <inheritdoc/>
+        public void Recover() => this.fht.Recover();
     }
 }

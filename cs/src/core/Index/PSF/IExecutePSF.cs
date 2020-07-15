@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -49,5 +51,30 @@ namespace FASTER.core
         /// <param name="changeTracker">The record of previous key values and updated values</param>
         /// </summary>
         Status Delete(PSFChangeTracker<TProviderData, TRecordId> changeTracker);
+
+        /// <summary>
+        /// Take a full checkpoint of the FasterKV implementing the group's PSFs.
+        /// </summary>
+        bool TakeFullCheckpoint();
+
+        /// <summary>
+        /// Complete ongoing checkpoint (spin-wait)
+        /// </summary>
+        ValueTask CompleteCheckpointAsync(CancellationToken token = default);
+
+        /// <summary>
+        /// Take a checkpoint of the Index (hashtable) only
+        /// </summary>
+        bool TakeIndexCheckpoint();
+
+        /// <summary>
+        /// Take a checkpoint of the hybrid log only
+        /// </summary>
+        bool TakeHybridLogCheckpoint();
+
+        /// <summary>
+        /// Recover from last successful checkpoints
+        /// </summary>
+        void Recover();
     }
 }

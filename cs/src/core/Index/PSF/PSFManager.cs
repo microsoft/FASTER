@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 // TODO: Remove PackageId and PackageOutputPath from csproj when this is folded into master
 
@@ -144,11 +145,21 @@ namespace FASTER.core
                 this.VerifyIsOurPSF<TPSFKey>(psfAndKeys.Item1);
         }
 
-        internal IPSF RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey> def,
-                                           PSFRegistrationSettings<TPSFKey> registrationSettings)
+        private static void VerifyRegistrationSettings<TPSFKey>(PSFRegistrationSettings<TPSFKey> registrationSettings) where TPSFKey : struct
+        {
+            if (registrationSettings is null)
+                throw new PSFArgumentException("PSFRegistrationSettings is required");
+            if (registrationSettings.LogSettings is null)
+                throw new PSFArgumentException("PSFRegistrationSettings.LogSettings is required");
+            if (registrationSettings.CheckpointSettings is null)
+                throw new PSFArgumentException("PSFRegistrationSettings.CheckpointSettings is required");
+        }
+
+        internal IPSF RegisterPSF<TPSFKey>(PSFRegistrationSettings<TPSFKey> registrationSettings, IPSFDefinition<TProviderData, TPSFKey> def)
             where TPSFKey : struct
         {
             this.VerifyIsBlittable<TPSFKey>();
+            VerifyRegistrationSettings(registrationSettings);
             if (def is null)
                 throw new PSFArgumentException("PSF definition cannot be null");
 
@@ -158,7 +169,7 @@ namespace FASTER.core
             {
                 if (psfNames.ContainsKey(def.Name))
                     throw new PSFArgumentException($"A PSF named {def.Name} is already registered in another group");
-                var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, new[] { def }, registrationSettings);
+                var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(registrationSettings, new[] { def }, this.psfGroups.Count);
                 AddGroup(group);
                 var psf = group[def.Name];
                 this.psfNames.TryAdd(psf.Name, psf.Id);
@@ -166,19 +177,13 @@ namespace FASTER.core
             }
         }
 
-        internal IPSF[] RegisterPSF<TPSFKey>(IPSFDefinition<TProviderData, TPSFKey>[] defs,
-                                             PSFRegistrationSettings<TPSFKey> registrationSettings)
+        internal IPSF[] RegisterPSF<TPSFKey>(PSFRegistrationSettings<TPSFKey> registrationSettings, IPSFDefinition<TProviderData, TPSFKey>[] defs)
             where TPSFKey : struct
         {
             this.VerifyIsBlittable<TPSFKey>();
+            VerifyRegistrationSettings(registrationSettings);
             if (defs is null || defs.Length == 0 || defs.Any(def => def is null) || defs.Length == 0)
-                throw new PSFArgumentException("PSF definitions cannot be null");
-
-            // For PSFs defined on a FasterKV instance we create intelligent defaults in regSettings.
-            if (registrationSettings is null)
-                throw new PSFArgumentException("PSFRegistrationSettings is required");
-            if (registrationSettings.LogSettings is null)
-                throw new PSFArgumentException("PSFRegistrationSettings.LogSettings is required");
+                throw new PSFArgumentException("PSF definitions cannot be null or empty");
 
             // This is a very rare operation and unlikely to have any contention, and locking the dictionary
             // makes it much easier to recover from duplicates if needed.
@@ -196,7 +201,7 @@ namespace FASTER.core
                     }
                 }
 
-                var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(this.psfGroups.Count, defs, registrationSettings);
+                var group = new PSFGroup<TProviderData, TPSFKey, TRecordId>(registrationSettings, defs, this.psfGroups.Count);
                 AddGroup(group);
                 foreach (var psf in group.PSFs)
                     this.psfNames.TryAdd(psf.Name, psf.Id);
@@ -359,6 +364,28 @@ namespace FASTER.core
                                                              psfsAndKeys2.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))),
                                                              psfsAndKeys3.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings)))},
                                                       matchIndicators => matchPredicate(matchIndicators[0], matchIndicators[1], matchIndicators[2]), querySettings).Run();
+        }
+
+        // TODO Separate Tasks for each group's commit/restore operations?
+        public bool TakeFullCheckpoint()
+            => this.psfGroups.Values.Aggregate(true, (result, group) => group.TakeFullCheckpoint() && result);
+
+        public Task CompleteCheckpointAsync(CancellationToken token = default)
+        {
+            var tasks = this.psfGroups.Values.Select(group => group.CompleteCheckpointAsync(token).AsTask()).ToArray();
+            return Task.WhenAll(tasks);
+        }
+
+        public bool TakeIndexCheckpoint()
+            => this.psfGroups.Values.Aggregate(true, (result, group) => group.TakeIndexCheckpoint() && result);
+
+        public bool TakeHybridLogCheckpoint() 
+            => this.psfGroups.Values.Aggregate(true, (result, group) => group.TakeHybridLogCheckpoint() && result);
+
+        public void Recover()
+        {
+            foreach (var group in this.psfGroups.Values)
+                group.Recover();
         }
     }
 }
