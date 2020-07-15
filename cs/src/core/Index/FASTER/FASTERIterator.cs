@@ -31,12 +31,12 @@ namespace FASTER.core
                 };
 
                 return new FasterKVIterator<Key, Value, LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>, DefaultVariableCompactionFunctions<Key, Value>>
-                    (functions, default, untilAddress, variableLengthStructSettings);
+                    (this, functions, default, untilAddress, variableLengthStructSettings);
             }
             else
             {
                 return new FasterKVIterator<Key, Value, LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>, DefaultCompactionFunctions<Key, Value>>
-                    (new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default, untilAddress, null);
+                    (this, new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default, untilAddress, null);
             }
         }
 
@@ -62,12 +62,12 @@ namespace FASTER.core
                 };
 
                 return new FasterKVIterator<Key, Value, LogVariableCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>
-                    (functions, compactionFunctions, untilAddress, variableLengthStructSettings);
+                    (this, functions, compactionFunctions, untilAddress, variableLengthStructSettings);
             }
             else
             {
                 return new FasterKVIterator<Key, Value, LogCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>
-                    (new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null);
+                    (this, new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null);
 
             }
         }
@@ -90,12 +90,13 @@ namespace FASTER.core
 
         private int enumerationPhase;
 
-        public FasterKVIterator(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        public FasterKVIterator(FasterKV<Key, Value> fht, Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
         {
+            this.fht = fht;
             this.cf = cf;
             enumerationPhase = 0;
             fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
-            tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
+            tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { MutableFraction = 1 }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
             tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions);
             iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
         }
@@ -120,57 +121,70 @@ namespace FASTER.core
 
         public unsafe bool GetNext(out RecordInfo recordInfo)
         {
-            if (enumerationPhase == 0)
+            while (true)
             {
-                if (iter1.GetNext(out recordInfo))
+                if (enumerationPhase == 0)
                 {
-                    ref var key = ref iter1.GetKey();
-                    ref var value = ref iter1.GetValue();
-
-                    var bucket = default(HashBucket*);
-                    var slot = default(int);
-                    var entry = default(HashBucketEntry);
-                    var hash = fht.Comparer.GetHashCode64(ref key);
-                    var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-                    if (fht.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter1.CurrentAddress)
+                    if (iter1.GetNext(out recordInfo))
                     {
-                        if (recordInfo.PreviousAddress >= fht.Log.BeginAddress)
-                        {
-                            if (tempKvSession.ContainsKeyInMemory(ref key) == Status.OK)
-                            {
-                                tempKvSession.Delete(ref key, Empty.Default, 0);
-                            }
-                        }
+                        ref var key = ref iter1.GetKey();
+                        ref var value = ref iter1.GetValue();
 
-                        if (!recordInfo.Tombstone && !cf.IsDeleted(in key, in value))
-                            return true;
+                        var bucket = default(HashBucket*);
+                        var slot = default(int);
+                        var entry = default(HashBucketEntry);
+                        var hash = fht.Comparer.GetHashCode64(ref key);
+                        var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+                        if (fht.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter1.CurrentAddress)
+                        {
+                            if (recordInfo.PreviousAddress >= fht.Log.BeginAddress)
+                            {
+                                if (tempKvSession.ContainsKeyInMemory(ref key) == Status.OK)
+                                {
+                                    tempKvSession.Delete(ref key, Empty.Default, 0);
+                                }
+                            }
+
+                            if (!recordInfo.Tombstone && !cf.IsDeleted(in key, in value))
+                                return true;
+
+                            continue;
+                        }
+                        else
+                        {
+                            if (recordInfo.Tombstone || cf.IsDeleted(in key, in value))
+                                tempKvSession.Delete(ref key, Empty.Default, 0);
+                            else
+                                tempKvSession.Upsert(ref key, ref value, default, 0);
+                            continue;
+                        }
                     }
                     else
                     {
-                        if (recordInfo.Tombstone || cf.IsDeleted(in key, in value))
-                            tempKvSession.Delete(ref key, Empty.Default, 0);
-                        else
-                            tempKvSession.Upsert(ref key, ref value, default, 0);
+                        iter1.Dispose();
+                        enumerationPhase = 1;
+                        iter2 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                     }
                 }
-                else
+
+                if (enumerationPhase == 1)
                 {
-                    iter1.Dispose();
-                    enumerationPhase = 1;
-                    iter2 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
+                    if (iter2.GetNext(out recordInfo))
+                    {
+                        if (!recordInfo.Tombstone)
+                            return true;
+                        continue;
+                    }
+                    else
+                    {
+                        iter2.Dispose();
+                        enumerationPhase = 2;
+                    }
                 }
-            }
 
-            if (enumerationPhase == 1)
-            {
-                if (iter2.GetNext(out recordInfo))
-                    return true;
-                else
-                    iter2.Dispose();
+                recordInfo = default;
+                return false;
             }
-
-            recordInfo = default;
-            return false;
         }
 
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
