@@ -32,7 +32,7 @@ namespace FASTER.test
         public void PageBlobWriteRead()
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "", "BasicDiskFASTERTests", false));
         }
 
         [Test]
@@ -42,7 +42,7 @@ namespace FASTER.test
             IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
-                IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
+                IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "", "BasicDiskFASTERTests", false);
                 tested = new TieredStorageDevice(1, localDevice, cloudDevice);
             }
             else
