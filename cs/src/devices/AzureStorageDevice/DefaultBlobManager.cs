@@ -160,7 +160,7 @@ namespace FASTER.devices
                 }
                 catch (Exception e)
                 {
-                    HandleError(nameof(AcquireOwnership), "Could not acquire partition lease", e, true);
+                    HandleError(nameof(AcquireOwnership), "Could not acquire lease", e, true);
                     throw;
                 }
             }
@@ -170,7 +170,7 @@ namespace FASTER.devices
         {
             Debug.WriteLine(context + ": " + message + ", " + exception.ToString());
 
-            // terminate this partition in response to the error
+            // terminate in response to the error
             if (terminate && !cts.IsCancellationRequested)
             {
                 Terminate();
@@ -221,11 +221,11 @@ namespace FASTER.devices
             catch (StorageException ex) when (LeaseConflict(ex))
             {
                 // We lost the lease to someone else. Terminate ownership immediately.
-                HandleError(nameof(MaintenanceLoopAsync), "Lost partition lease", ex, true);
+                HandleError(nameof(MaintenanceLoopAsync), "Lost lease", ex, true);
             }
             catch (Exception e) when (!IsFatal(e))
             {
-                HandleError(nameof(MaintenanceLoopAsync), "Could not maintain partition lease", e, true);
+                HandleError(nameof(MaintenanceLoopAsync), "Could not maintain lease", e, true);
             }
 
             Debug.WriteLine("Exited lease maintenance loop");
