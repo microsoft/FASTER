@@ -36,17 +36,23 @@ namespace FASTER.devices
         /// <summary>
         /// Constructs a new AzureStorageDevice instance, backed by Azure Page Blobs
         /// </summary>
-        /// <param name="blobName">A descriptive name that will be the prefix of all segments created</param>
-        /// <param name="blobDirectory">the directory containing the blob</param>
-        /// <param name="blobManager">the blob manager handling the leases</param>
-        /// <param name="underLease">whether this device needs to be protected by the lease</param>
-        public AzureStorageDevice(string blobName, CloudBlobDirectory blobDirectory, IBlobManager blobManager, bool underLease)
-            : base($"{blobDirectory}\\{blobName}", PAGE_BLOB_SECTOR_SIZE, Devices.CAPACITY_UNSPECIFIED)
+        /// <param name="cloudBlobDirectory">Cloud blob directory containing the blobs</param>
+        /// <param name="blobName">A descriptive name that will be the prefix of all blobs created with this device</param>
+        /// <param name="blobManager">Blob manager instance</param>
+        /// <param name="underLease">Whether we use leases</param>
+        /// <param name="deleteOnClose">
+        /// True if the program should delete all blobs created on call to <see cref="Close">Close</see>. False otherwise. 
+        /// The container is not deleted even if it was created in this constructor
+        /// </param>
+        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        public AzureStorageDevice(CloudBlobDirectory cloudBlobDirectory, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
+            : base($"{cloudBlobDirectory}\\{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
-            this.blobDirectory = blobDirectory;
+            this.blobDirectory = cloudBlobDirectory;
             this.blobName = blobName;
             this.underLease = underLease;
+            this.deleteOnClose = deleteOnClose;
 
             this.BlobManager = blobManager ?? new DefaultBlobManager(this.underLease, this.blobDirectory);
             this.BlobRequestOptions = BlobManager.GetBlobRequestOptions();
@@ -59,17 +65,17 @@ namespace FASTER.devices
         /// </summary>
         /// <param name="connectionString"> The connection string to use when estblishing connection to Azure Blobs</param>
         /// <param name="containerName">Name of the Azure Blob container to use. If there does not exist a container with the supplied name, one is created</param>
-        /// <param name="directoryAddress">Directory within blob container to use.</param>
+        /// <param name="directoryName">Directory within blob container to use.</param>
         /// <param name="blobName">A descriptive name that will be the prefix of all blobs created with this device</param>
+        /// <param name="blobManager">Blob manager instance</param>
+        /// <param name="underLease">Whether we use leases</param>
         /// <param name="deleteOnClose">
         /// True if the program should delete all blobs created on call to <see cref="Close">Close</see>. False otherwise. 
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        /// <param name="blobManager">Blob manager instance</param>
-        /// <param name="underLease">Whether we use leases</param>
-        public AzureStorageDevice(string connectionString, string containerName, string directoryAddress, string blobName, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, IBlobManager blobManager = null, bool underLease = false)
-            : base(connectionString + "/" + containerName + "/" + blobName, PAGE_BLOB_SECTOR_SIZE, capacity)
+        public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
+            : base($"{connectionString}\\{containerName}\\{directoryName}\\{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             var storageAccount = CloudStorageAccount.Parse(connectionString);
             var client = storageAccount.CreateCloudBlobClient();
@@ -77,7 +83,7 @@ namespace FASTER.devices
             container.CreateIfNotExists();
 
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
-            this.blobDirectory = container.GetDirectoryReference(directoryAddress);
+            this.blobDirectory = container.GetDirectoryReference(directoryName);
             this.blobName = blobName;
             this.underLease = underLease;
             this.deleteOnClose = deleteOnClose;

@@ -74,17 +74,20 @@ namespace FASTER.devices
         public CancellationToken CancellationToken => cts.Token;
 
         /// <inheritdoc />
-        public ValueTask ConfirmLeaseAsync()
+        public async ValueTask ConfirmLeaseAsync()
         {
             if (!underLease)
-                return new ValueTask();
+                return;
 
-            if (this.leaseTimer?.Elapsed < this.LeaseDuration - this.LeaseSafetyBuffer)
+            while (true)
             {
-                return default;
+                if (this.leaseTimer?.Elapsed < this.LeaseDuration - this.LeaseSafetyBuffer)
+                    return;
+
+                Debug.WriteLine("Access is waiting for fresh lease");
+
+                await this.NextLeaseRenewalTask;
             }
-            Debug.WriteLine("Access is waiting for fresh lease");
-            return new ValueTask(this.NextLeaseRenewalTask);
         }
 
         /// <inheritdoc />
