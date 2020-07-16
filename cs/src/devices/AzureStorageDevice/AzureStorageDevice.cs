@@ -31,8 +31,7 @@ namespace FASTER.devices
         // Azure Page Blobs have a fixed sector size of 512 bytes.
         private const uint PAGE_BLOB_SECTOR_SIZE = 512;
         // Whether blob files are deleted on close
-        private bool deleteOnClose;
-
+        private readonly bool deleteOnClose;
 
         /// <summary>
         /// Constructs a new AzureStorageDevice instance, backed by Azure Page Blobs
@@ -47,9 +46,12 @@ namespace FASTER.devices
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
             this.blobDirectory = blobDirectory;
             this.blobName = blobName;
-            this.BlobManager = blobManager;
             this.underLease = underLease;
-            this.BlobRequestOptions = BlobManager.GetBlobRequestOptions(underLease);
+
+            this.BlobManager = blobManager ?? new DefaultBlobManager(this.underLease, this.blobDirectory);
+            this.BlobRequestOptions = BlobManager.GetBlobRequestOptions();
+
+            StartAsync().Wait();
         }
 
         /// <summary>
@@ -77,12 +79,16 @@ namespace FASTER.devices
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
             this.blobDirectory = container.GetDirectoryReference(directoryAddress);
             this.blobName = blobName;
-            this.BlobManager = blobManager;
             this.underLease = underLease;
-            this.BlobRequestOptions = BlobManager.GetBlobRequestOptions(underLease);
+            this.deleteOnClose = deleteOnClose;
+
+            this.BlobManager = blobManager ?? new DefaultBlobManager(this.underLease, this.blobDirectory);
+            this.BlobRequestOptions = BlobManager.GetBlobRequestOptions();
+
+            StartAsync().Wait();
         }
 
-        public async Task StartAsync()
+        private async Task StartAsync()
         {
             // list all the blobs representing the segments
 
@@ -135,7 +141,7 @@ namespace FASTER.devices
         /// <summary>
         /// Is called on exceptions, if non-null; can be set by application
         /// </summary>
-        internal IBlobManager BlobManager { get; set; }
+        private IBlobManager BlobManager { get; set; }
 
         private string GetSegmentBlobName(int segmentId)
         {
@@ -147,6 +153,16 @@ namespace FASTER.devices
         /// </summary>
         public override void Close()
         {
+            // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system
+            // to delete files after the end of our process. This leads to potential problems if multiple instances are sharing the same underlying page blobs.
+            // Since this flag is only used for testing, it is probably fine.
+            if (deleteOnClose)
+            {
+                foreach (var entry in blobs)
+                {
+                    entry.Value.PageBlob.Delete();
+                }
+            }
         }
 
         /// <summary>
@@ -311,7 +327,7 @@ namespace FASTER.devices
 
                     // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
                     // After creation is done, we can call write.
-                    var ignoredTask = entry.CreateAsync(size, pageBlob, underLease);
+                    var _ = entry.CreateAsync(size, pageBlob);
                 }
                 // Otherwise, some other thread beat us to it. Okay to use their blobs.
                 blobEntry = blobs[segmentId];

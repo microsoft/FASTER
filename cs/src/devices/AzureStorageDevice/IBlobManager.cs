@@ -16,9 +16,8 @@ namespace FASTER.devices
         /// <summary>
         /// Get blob request options
         /// </summary>
-        /// <param name="underLease">Whether under lease</param>
         /// <returns></returns>
-        BlobRequestOptions GetBlobRequestOptions(bool underLease);
+        BlobRequestOptions GetBlobRequestOptions();
 
         /// <summary>
         /// Cancellation token for blob operations

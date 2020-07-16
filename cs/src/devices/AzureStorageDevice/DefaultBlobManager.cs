@@ -3,6 +3,7 @@
 
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
+using Microsoft.Azure.Storage.Blob.Protocol;
 using Microsoft.Azure.Storage.RetryPolicies;
 using System;
 using System.Diagnostics;
@@ -12,26 +13,70 @@ using System.Threading.Tasks;
 namespace FASTER.devices
 {
     /// <summary>
-    /// Default blob manager
+    /// Default blob manager with lease support
     /// </summary>
     public class DefaultBlobManager : IBlobManager
     {
+        private readonly CancellationTokenSource cts;
+        private readonly bool underLease;
         private string leaseId;
 
-        private TimeSpan LeaseDuration = TimeSpan.FromSeconds(45); // max time the lease stays after unclean shutdown
-        private TimeSpan LeaseRenewal = TimeSpan.FromSeconds(30); // how often we renew the lease
-        private TimeSpan LeaseSafetyBuffer = TimeSpan.FromSeconds(10); // how much time we want left on the lease before issuing a protected access
+        private readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(45); // max time the lease stays after unclean shutdown
+        private readonly TimeSpan LeaseRenewal = TimeSpan.FromSeconds(30); // how often we renew the lease
+        private readonly TimeSpan LeaseSafetyBuffer = TimeSpan.FromSeconds(10); // how much time we want left on the lease before issuing a protected access
         private volatile Stopwatch leaseTimer;
-        private CloudBlockBlob leaseBlob;
         private Task LeaseMaintenanceLoopTask = Task.CompletedTask;
         private volatile Task NextLeaseRenewalTask = Task.CompletedTask;
 
+        private readonly CloudBlobDirectory leaseDirectory;
+        private const string LeaseBlobName = "lease";
+        private CloudBlockBlob leaseBlob;
+
+        /// <summary>
+        /// Create instance of blob manager
+        /// </summary>
+        /// <param name="underLease">Should we use blob leases</param>
+        /// <param name="leaseDirectory">Directory to store lease file</param>
+        public DefaultBlobManager(bool underLease, CloudBlobDirectory leaseDirectory = null)
+        {
+            this.underLease = underLease;
+            this.leaseDirectory = leaseDirectory;
+            this.cts = new CancellationTokenSource();
+            StartAsync().Wait();
+        }
+
+        /// <summary>
+        /// Start blob manager and acquire lease
+        /// </summary>
+        /// <returns></returns>
+        private async Task StartAsync()
+        {
+            if (underLease)
+            {
+                this.leaseBlob = this.leaseDirectory.GetBlockBlobReference(LeaseBlobName);
+                await this.AcquireOwnership().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Clean shutdown, wait for everything, then terminate
+        /// </summary>
+        /// <returns></returns>
+        public async Task StopAsync()
+        {
+            this.cts.Cancel(); // has no effect if already cancelled
+            await this.LeaseMaintenanceLoopTask.ConfigureAwait(false); // wait for loop to terminate cleanly
+        }
+
         /// <inheritdoc />
-        public CancellationToken CancellationToken => throw new NotImplementedException();
+        public CancellationToken CancellationToken => cts.Token;
 
         /// <inheritdoc />
         public ValueTask ConfirmLeaseAsync()
         {
+            if (!underLease)
+                return new ValueTask();
+
             if (this.leaseTimer?.Elapsed < this.LeaseDuration - this.LeaseSafetyBuffer)
             {
                 return default;
@@ -41,7 +86,7 @@ namespace FASTER.devices
         }
 
         /// <inheritdoc />
-        public BlobRequestOptions GetBlobRequestOptions(bool underLease)
+        public BlobRequestOptions GetBlobRequestOptions()
         {
             if (underLease)
             {
@@ -64,11 +109,12 @@ namespace FASTER.devices
         /// <inheritdoc />
         public void HandleBlobError(string where, string message, string blobName, Exception e, bool isFatal)
         {
+            HandleError(where, $"Encountered storage exception for blob {blobName}", e, isFatal);
         }
 
         private async Task AcquireOwnership()
         {
-            var newLeaseTimer = new System.Diagnostics.Stopwatch();
+            var newLeaseTimer = new Stopwatch();
 
             while (true)
             {
@@ -79,13 +125,13 @@ namespace FASTER.devices
                     newLeaseTimer.Restart();
 
                     this.leaseId = await this.leaseBlob.AcquireLeaseAsync(LeaseDuration, null,
-                        accessCondition: null, options: this.GetBlobRequestOptions(true), operationContext: null, this.CancellationToken).ConfigureAwait(false);
+                        accessCondition: null, options: this.GetBlobRequestOptions(), operationContext: null, this.CancellationToken).ConfigureAwait(false);
 
                     this.leaseTimer = newLeaseTimer;
                     this.LeaseMaintenanceLoopTask = Task.Run(() => this.MaintenanceLoopAsync());
                     return;
                 }
-                catch (StorageException ex) when (BlobUtils.LeaseConflictOrExpired(ex))
+                catch (StorageException ex) when (LeaseConflictOrExpired(ex))
                 {
                     Debug.WriteLine("Waiting for lease");
 
@@ -96,7 +142,7 @@ namespace FASTER.devices
 
                     continue;
                 }
-                catch (StorageException ex) when (BlobUtils.BlobDoesNotExist(ex))
+                catch (StorageException ex) when (BlobDoesNotExist(ex))
                 {
                     try
                     {
@@ -105,7 +151,7 @@ namespace FASTER.devices
                         await this.leaseBlob.UploadFromByteArrayAsync(Array.Empty<byte>(), 0, 0).ConfigureAwait(false);
                         continue;
                     }
-                    catch (StorageException ex2) when (BlobUtils.LeaseConflictOrExpired(ex2))
+                    catch (StorageException ex2) when (LeaseConflictOrExpired(ex2))
                     {
                         // creation race, try from top
                         Debug.WriteLine("Creation race observed, retrying");
@@ -114,18 +160,28 @@ namespace FASTER.devices
                 }
                 catch (Exception e)
                 {
-                    this.PartitionErrorHandler.HandleError(nameof(AcquireOwnership), "Could not acquire partition lease", e, true, false);
+                    HandleError(nameof(AcquireOwnership), "Could not acquire partition lease", e, true);
                     throw;
                 }
             }
         }
 
+        private void HandleError(string context, string message, Exception exception, bool terminate)
+        {
+            Debug.WriteLine(context + ": " + message + ", " + exception.ToString());
 
-        public async Task RenewLeaseTask()
+            // terminate this partition in response to the error
+            if (terminate && !cts.IsCancellationRequested)
+            {
+                Terminate();
+            }
+        }
+
+        private async Task RenewLeaseTask()
         {
             try
             {
-                await Task.Delay(this.LeaseRenewal, this.shutDownOrTermination.Token).ConfigureAwait(false);
+                await Task.Delay(this.LeaseRenewal, this.CancellationToken).ConfigureAwait(false);
                 AccessCondition acc = new AccessCondition() { LeaseId = this.leaseId };
                 var nextLeaseTimer = new System.Diagnostics.Stopwatch();
                 nextLeaseTimer.Start();
@@ -139,7 +195,7 @@ namespace FASTER.devices
             }
         }
 
-        public async Task MaintenanceLoopAsync()
+        private async Task MaintenanceLoopAsync()
         {
             try
             {
@@ -162,14 +218,14 @@ namespace FASTER.devices
                 // it's o.k. to cancel a lease renewal
                 Debug.WriteLine("Lease renewal storage operation canceled");
             }
-            catch (StorageException ex) when (BlobUtils.LeaseConflict(ex))
+            catch (StorageException ex) when (LeaseConflict(ex))
             {
                 // We lost the lease to someone else. Terminate ownership immediately.
-                this.PartitionErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Lost partition lease", ex, true, true);
+                HandleError(nameof(MaintenanceLoopAsync), "Lost partition lease", ex, true);
             }
-            catch (Exception e) when (!Utils.IsFatal(e))
+            catch (Exception e) when (!IsFatal(e))
             {
-                this.PartitionErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Could not maintain partition lease", e, true, false);
+                HandleError(nameof(MaintenanceLoopAsync), "Could not maintain partition lease", e, true);
             }
 
             Debug.WriteLine("Exited lease maintenance loop");
@@ -188,7 +244,7 @@ namespace FASTER.devices
                     AccessCondition acc = new AccessCondition() { LeaseId = this.leaseId };
 
                     await this.leaseBlob.ReleaseLeaseAsync(accessCondition: acc,
-                        options: this.GetBlobRequestOptions(true), operationContext: null, cancellationToken: this.CancellationToken).ConfigureAwait(false);
+                        options: this.GetBlobRequestOptions(), operationContext: null, cancellationToken: this.CancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -198,16 +254,60 @@ namespace FASTER.devices
                 {
                     // it's o.k. if termination is triggered while we are releasing the lease
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     Debug.WriteLine("could not release lease for " + this.leaseBlob.Name);
                     // swallow exceptions when releasing a lease
                 }
             }
 
-            this.PartitionErrorHandler.TerminateNormally();
+            Terminate();
 
-            this.TraceHelper.LeaseProgress("Blob manager stopped");
+            Debug.WriteLine("Blob manager stopped");
+        }
+
+        private void Terminate()
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (AggregateException aggregate)
+            {
+                foreach (var e in aggregate.InnerExceptions)
+                {
+                    HandleError("Terminate", "Encountered exeption while canceling token", e, false);
+                }
+            }
+            catch (Exception e)
+            {
+                HandleError("Terminate", "Encountered exeption while canceling token", e, false);
+            }
+        }
+
+        private static bool LeaseConflict(StorageException e)
+        {
+            return (e.RequestInformation.HttpStatusCode == 409);
+        }
+
+        private static bool LeaseConflictOrExpired(StorageException e)
+        {
+            return (e.RequestInformation.HttpStatusCode == 409) || (e.RequestInformation.HttpStatusCode == 412);
+        }
+
+        private static bool BlobDoesNotExist(StorageException e)
+        {
+            var information = e.RequestInformation.ExtendedErrorInformation;
+            return (e.RequestInformation.HttpStatusCode == 404) && (information.ErrorCode.Equals(BlobErrorCodeStrings.BlobNotFound));
+        }
+
+        private static bool IsFatal(Exception exception)
+        {
+            if (exception is OutOfMemoryException || exception is StackOverflowException)
+            {
+                return true;
+            }
+            return false;
         }
     }
 }

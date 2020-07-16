@@ -22,7 +22,7 @@ namespace FASTER.devices
         public CloudPageBlob PageBlob { get; private set; }
 
         private ConcurrentQueue<Action<CloudPageBlob>> pendingWrites;
-        private IBlobManager blobManager;
+        private readonly IBlobManager blobManager;
         private int waitingCount;
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace FASTER.devices
         }
 
         /// <summary>
-        /// Creates a new BlobEntry, does not initialize a page blob. Use <see cref="CreateAsync(long, CloudPageBlob, bool)"/>
+        /// Creates a new BlobEntry, does not initialize a page blob. Use <see cref="CreateAsync(long, CloudPageBlob)"/>
         /// for actual creation.
         /// </summary>
         public BlobEntry(IBlobManager blobManager) : this(null, blobManager)
@@ -55,8 +55,7 @@ namespace FASTER.devices
         /// </summary>
         /// <param name="size">maximum size of the blob</param>
         /// <param name="pageBlob">The page blob to create</param>
-        /// <param name="underLease">Whether blob is created under a lease</param>
-        public async Task CreateAsync(long size, CloudPageBlob pageBlob, bool underLease)
+        public async Task CreateAsync(long size, CloudPageBlob pageBlob)
         {
             try
             {
@@ -66,7 +65,7 @@ namespace FASTER.devices
                 }
 
                 await pageBlob.CreateAsync(size,
-                    accessCondition: null, options: this.blobManager.GetBlobRequestOptions(underLease), operationContext: null, this.blobManager.CancellationToken);
+                    accessCondition: null, options: this.blobManager.GetBlobRequestOptions(), operationContext: null, this.blobManager.CancellationToken);
 
                 // At this point the blob is fully created. After this line all consequent writers will write immediately. We just
                 // need to clear the queue of pending writers.
