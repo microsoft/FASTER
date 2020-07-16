@@ -42,7 +42,12 @@ namespace FASTER.devices
             this.underLease = underLease;
             this.leaseDirectory = leaseDirectory;
             this.cts = new CancellationTokenSource();
-            StartAsync().Wait();
+
+            if (underLease)
+            {
+                // Start lease maintenance loop
+                var _ = StartAsync();
+            }
         }
 
         /// <summary>
@@ -51,11 +56,8 @@ namespace FASTER.devices
         /// <returns></returns>
         private async Task StartAsync()
         {
-            if (underLease)
-            {
-                this.leaseBlob = this.leaseDirectory.GetBlockBlobReference(LeaseBlobName);
-                await this.AcquireOwnership().ConfigureAwait(false);
-            }
+            this.leaseBlob = this.leaseDirectory.GetBlockBlobReference(LeaseBlobName);
+            await this.AcquireOwnership().ConfigureAwait(false);
         }
 
         /// <summary>
@@ -183,7 +185,7 @@ namespace FASTER.devices
             {
                 await Task.Delay(this.LeaseRenewal, this.CancellationToken).ConfigureAwait(false);
                 AccessCondition acc = new AccessCondition() { LeaseId = this.leaseId };
-                var nextLeaseTimer = new System.Diagnostics.Stopwatch();
+                var nextLeaseTimer = new Stopwatch();
                 nextLeaseTimer.Start();
                 await this.leaseBlob.RenewLeaseAsync(acc, this.CancellationToken).ConfigureAwait(false);
                 this.leaseTimer = nextLeaseTimer;
