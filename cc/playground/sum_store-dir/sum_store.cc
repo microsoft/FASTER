@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <experimental/filesystem>
 #include <string>
 
 #include "concurrent_recovery_test.h"

@@ -38,6 +38,14 @@ namespace FASTER.core
         int GetLength(ref T t);
 
         /// <summary>
+        /// Actual length of object
+        /// </summary>
+        /// <param name="t"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        int GetLength<Input>(ref T t, ref Input input);
+
+        /// <summary>
         /// Average length of objects, make sure this includes the object
         /// header needed to compute the actual object length
         /// </summary>
@@ -52,7 +60,6 @@ namespace FASTER.core
         /// <returns></returns>
         int GetInitialLength<Input>(ref Input input);
     }
-
 
     /// <summary>
     /// Length specification for fixed size (normal) structs
@@ -82,6 +89,14 @@ namespace FASTER.core
         /// <param name="t"></param>
         /// <returns></returns>
         public int GetLength(ref T t) => size;
+
+        /// <summary>
+        /// Actual length of object
+        /// </summary>
+        /// <param name="t"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public int GetLength<Input>(ref T t, ref Input input) => size;
     }
 
     /// <summary>

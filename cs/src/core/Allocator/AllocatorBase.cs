@@ -293,6 +293,13 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract int GetRecordSize(long physicalAddress);
 
+        /// <summary>
+        /// Get record size
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public abstract int GetRecordSize<Input>(long physicalAddress, ref Input input);
 
         /// <summary>
         /// Get number of bytes required

@@ -12,16 +12,15 @@ namespace FASTER.core
     internal abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public virtual void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+        public virtual void GlobalBeforeEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (next.phase)
             {
                 case Phase.PREPARE:
-                    if (faster._hybridLogCheckpointToken == default)
+                    if (faster._hybridLogCheckpoint.IsDefault())
                     {
                         faster._hybridLogCheckpointToken = Guid.NewGuid();
                         faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
@@ -43,19 +42,16 @@ namespace FASTER.core
                         Array.Copy(seg, faster._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
                     }
 
-                    if (faster._activeSessions != null)
-                    {
+                    // Temporarily block new sessions from starting, which may add an entry to the table and resize the
+                    // dictionary. There should be minimal contention here.
+                    lock (faster._activeSessions)
                         // write dormant sessions to checkpoint
                         foreach (var kvp in faster._activeSessions)
-                        {
-                            faster.AtomicSwitch(kvp.Value.ctx, kvp.Value.ctx.prevCtx, next.version - 1);
-                        }
-                    }
-                    
+                            kvp.Value.AtomicSwitch(next.version - 1);
+
                     faster.WriteHybridLogMetaInfo();
                     break;
                 case Phase.REST:
-                    faster._hybridLogCheckpointToken = default;
                     faster._hybridLogCheckpoint.Reset();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     faster.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
@@ -65,24 +61,24 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public virtual void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+        public virtual void GlobalAfterEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
         /// <inheritdoc />
-        public virtual ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public virtual ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            SystemState prev, FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
+            bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where FasterSession : IFasterSession
         {
             if (current.phase != Phase.PERSISTENCE_CALLBACK) return default;
 
@@ -99,8 +95,7 @@ namespace FASTER.core
                         };
 
                         // Thread local action
-                        faster.functions.CheckpointCompletionCallback(ctx.guid, commitPoint);
-                        if (clientSession != null) clientSession.LatestCommitPoint = commitPoint;
+                        fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
                     }
 
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
@@ -123,8 +118,8 @@ namespace FASTER.core
     internal sealed class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next,
+            FasterKV<Key, Value> faster)
         {
             base.GlobalBeforeEnteringState(next, faster);
             if (next.phase != Phase.WAIT_FLUSH) return;
@@ -135,14 +130,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            SystemState prev,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
+            bool async = true,
             CancellationToken token = default)
         {
-            await base.OnThreadState(current, prev, faster, ctx, clientSession, async, token);
+            await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
             if (current.phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
@@ -154,9 +151,9 @@ namespace FASTER.core
                 {
                     var semaphore = faster._hybridLogCheckpoint.flushedSemaphore;   // TODO temp for early Reset()
                     Debug.Assert(semaphore != null);
-                    clientSession?.UnsafeSuspendThread();
+                    fasterSession?.UnsafeSuspendThread();
                     await semaphore.WaitAsync(token);
-                    clientSession?.UnsafeResumeThread();
+                    fasterSession?.UnsafeResumeThread();
                     semaphore.Release();
                     notify = true;
                 }
@@ -183,8 +180,7 @@ namespace FASTER.core
     internal sealed class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
             base.GlobalBeforeEnteringState(next, faster);
             switch (next.phase)
@@ -225,14 +221,15 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public override async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            SystemState prev, FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
+            bool async = true,
             CancellationToken token = default)
         {
-            await base.OnThreadState(current, prev, faster, ctx, clientSession, async, token);
+            await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
             if (current.phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
@@ -244,15 +241,15 @@ namespace FASTER.core
                 {
                     var semaphore = faster._hybridLogCheckpoint.flushedSemaphore;   // TODO temp for early Reset()
                     Debug.Assert(semaphore != null);
-                    clientSession?.UnsafeSuspendThread();
+                    fasterSession?.UnsafeSuspendThread();
                     await semaphore.WaitAsync(token);
-                    clientSession?.UnsafeResumeThread();
+                    fasterSession?.UnsafeResumeThread();
                     semaphore.Release();
                     notify = true;
                 }
 
                 if (!notify) return;
-                
+
                 if (ctx != null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
@@ -277,7 +274,7 @@ namespace FASTER.core
         /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         public HybridLogCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1)
-            : base(targetVersion, new VersionChangeTask(), checkpointBackend) {}
+            : base(targetVersion, new VersionChangeTask(), checkpointBackend) { }
 
         /// <summary>
         /// Construct a new HybridLogCheckpointStateMachine with the given tasks. Does not load any tasks by default.
@@ -285,7 +282,7 @@ namespace FASTER.core
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <param name="tasks">The tasks to load onto the state machine</param>
         protected HybridLogCheckpointStateMachine(long targetVersion, params ISynchronizationTask[] tasks)
-            : base(targetVersion, tasks) {}
+            : base(targetVersion, tasks) { }
 
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)

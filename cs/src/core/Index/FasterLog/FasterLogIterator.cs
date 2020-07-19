@@ -153,25 +153,24 @@ namespace FASTER.core
                 return new ValueTask<bool>(true);
 
             return SlowWaitAsync(this, token);
+        }
 
-            // use static local function to guarantee there's no accidental closure getting allocated here
-            static async ValueTask<bool> SlowWaitAsync(FasterLogScanIterator @this, CancellationToken token)
+        private static async ValueTask<bool> SlowWaitAsync(FasterLogScanIterator @this, CancellationToken token)
+        {
+            while (true)
             {
-                while (true)
+                if (@this.disposed)
+                    return false;
+                var commitTask = @this.fasterLog.CommitTask;
+                if (@this.NextAddress < @this.fasterLog.CommittedUntilAddress)
+                    return true;
+                // Ignore commit exceptions, except when the token is signaled
+                try
                 {
-                    if (@this.disposed)
-                        return false;
-                    var commitTask = @this.fasterLog.CommitTask;
-                    if (@this.NextAddress < @this.fasterLog.CommittedUntilAddress)
-                        return true;
-                    // Ignore commit exceptions, except when the token is signaled
-                    try
-                    {
-                        await commitTask.WithCancellationAsync(token);
-                    }
-                    catch (ObjectDisposedException) { return false; }
-                    catch when (!token.IsCancellationRequested) { }
+                    await commitTask.WithCancellationAsync(token);
                 }
+                catch (ObjectDisposedException) { return false; }
+                catch when (!token.IsCancellationRequested) { }
             }
         }
 
