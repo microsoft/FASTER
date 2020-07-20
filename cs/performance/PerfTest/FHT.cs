@@ -13,11 +13,13 @@ namespace FASTER.PerfTest
         where TValue : new() 
         where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
     {
-        internal IFasterKV<TKey, TValue, Input, TOutput, Empty, TFunctions> Faster { get; set; }
+        internal IFasterKV<TKey, TValue> Faster { get; set; }
 
         private readonly long fhtSize;
         private LogFiles logFiles;
         private Checkpoint checkpoint;
+
+        internal TFunctions Functions = new TFunctions();
 
         internal FHT(bool usePsf, int sizeShift, bool useObjectLog, TestInputs testInputs,
                      SerializerSettings<TKey, TValue> serializerSettings, VariableLengthStructSettings<TKey, TValue> varLenSettings,
@@ -40,9 +42,7 @@ namespace FASTER.PerfTest
 
             this.Faster = usePsf
                 ? throw new NotImplementedException("TODO: FasterPSF")
-                : new FasterKV<TKey, TValue, Input, TOutput, Empty, TFunctions>(
-                                fhtSize, new TFunctions(), this.logFiles.LogSettings,
-                                checkpointSettings, serializerSettings, keyComparer, varLenSettings);
+                : new FasterKV<TKey, TValue>(fhtSize, this.logFiles.LogSettings, checkpointSettings, serializerSettings, keyComparer, varLenSettings);
             this.checkpoint?.Start();
         }
 

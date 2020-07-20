@@ -124,7 +124,8 @@ namespace FASTER.PerfTest
         {
             // Each thread needs to set NUMA and create a FASTER session
             Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
-            using var session = fht.Faster.NewSession($"Initialize_{threadIndex}", testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
+            using var session = fht.Faster.NewSession<Input, TOutput, Empty, TFunctions>(fht.Functions, $"Initialize_{threadIndex}",
+                                                                                         testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
             var useAsync = testRun.TestResult.Inputs.ThreadMode == ThreadMode.Async;
 
             long serialNo = 0;
@@ -156,15 +157,14 @@ namespace FASTER.PerfTest
                         }
                     }
 
-                    var key = this.keyManager.GetInitKey((int)ii);
-                    threadValueRef.SetInitialValue(threadIndex, key.Value);
+                    threadValueRef.SetInitialValue(threadIndex, this.keyManager.GetInitKey((int)ii).Value);
                     var status = Status.OK; // TODO: UpsertAsync does not return status
                     if (useAsync)
-                        await session.UpsertAsync(ref key, ref threadValueRef.GetRef(threadIndex), waitForCommit:false);
+                        await session.UpsertAsync(ref this.keyManager.GetInitKey((int)ii), ref threadValueRef.GetRef(threadIndex), waitForCommit:false);
                     else
-                        status = session.Upsert(ref key, ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
+                        status = session.Upsert(ref this.keyManager.GetInitKey((int)ii), ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
                     if (status != Status.OK && status != Status.PENDING)
-                        throw new ApplicationException($"Error: Unexpected status in {nameof(Initialize)}; key[{ii}] = {key.Value}: {status}");
+                        throw new ApplicationException($"Error: Unexpected status in {nameof(Initialize)}; key[{ii}] = {this.keyManager.GetInitKey((int)ii).Value}: {status}");
                 }
             }
             session.CompletePending(true);
@@ -229,7 +229,6 @@ namespace FASTER.PerfTest
             }
 
             var ops = prepareOps();
-
             var sw = new Stopwatch();
 
             // Reset the global chunk tracker here (outside the loop).
@@ -287,7 +286,8 @@ namespace FASTER.PerfTest
         {
             // Each thread needs to set NUMA and create a FASTER session
             Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
-            using var session = fht.Faster.NewSession($"RunOperations_{threadIndex}", testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
+            using var session = fht.Faster.NewSession<Input, TOutput, Empty, TFunctions>(fht.Functions, $"RunOperations_{threadIndex}",
+                                                                                         testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
             var useAsync = testRun.TestResult.Inputs.ThreadMode == ThreadMode.Async;
 
             if (Globals.Verbose)
@@ -308,35 +308,33 @@ namespace FASTER.PerfTest
 
             bool doReadBatch = useAsync && testRun.TestResult.Inputs.AsyncReadBatchSize > 1;
             var readTasks = doReadBatch
-                                ? new ValueTask<FasterKV<TKey, TValue, Input, TOutput, Empty, TFunctions>.ReadAsyncResult>[testRun.TestResult.Inputs.AsyncReadBatchSize]
+                                ? new ValueTask<FasterKV<TKey, TValue>.ReadAsyncResult<Input, TOutput, Empty, TFunctions>>[testRun.TestResult.Inputs.AsyncReadBatchSize]
                                 : null;
             int numReadTasks = 0;
-            long currentCount = 0;
 
-            // We multiply the number of operations by the number of threads, so we will wrap around
-            // the end of the operations keys if we get there
-            for (long chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
-                currentCount < opCount;
-                chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize)
-            {
-                chunkStart %= testRun.TestResult.Inputs.OperationKeyCount;
-                currentCount += Globals.ChunkSize;
+            // We multiply the number of operations by the number of threads, so we will wrap around the end of the operations keys.
+            for (long currentCount = 0;  currentCount < opCount; currentCount += Globals.ChunkSize) {
+                long chunkStart = Interlocked.Add(ref NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
+                int opKeyCount = testRun.TestResult.Inputs.OperationKeyCount;
+                while (chunkStart >= opKeyCount) {
+                    // Make sure only one thread resets to zero. Note: TestInputs.Verify ensures that OperationKeyCount % Globals.ChunkSize == 0.
+                    if (chunkStart == opKeyCount)
+                        this.NextChunkStart = 0;
+                    chunkStart = Interlocked.Add(ref this.NextChunkStart, Globals.ChunkSize) - Globals.ChunkSize;
+                }
+
                 var chunkEnd = chunkStart + Globals.ChunkSize;
                 for (var ii = chunkStart; ii < chunkEnd; ii++)
                 {
-                    var thisOp = op;
-                    if (thisOp == Operations.Mixed)
-                    {
-                        var rand = rng.Generate((uint)totalOpCount);
-                        if (rand < upsertThreshold)
-                            thisOp = Operations.Upsert;
-                        else if (rand <= readThreshold)
-                            thisOp = Operations.Read;
-                        else if (rand <= rmwThreshold)
-                            thisOp = Operations.RMW;
-                        else
-                            throw new InvalidOperationException($"rand {rand} out of threshold ranges: u {upsertThreshold} r {readThreshold} m {rmwThreshold}");
-                    }
+                    var thisOp = op != Operations.Mixed
+                        ? op
+                        : rng.Generate((uint)totalOpCount) switch
+                            {
+                                var rand when rand < upsertThreshold => Operations.Upsert,
+                                var rand when rand <= readThreshold => Operations.Read,
+                                var rand when rand <= rmwThreshold => Operations.RMW,
+                                var rand => throw new InvalidOperationException($"rand {rand} out of threshold ranges: u {upsertThreshold} r {readThreshold} m {rmwThreshold}")
+                            };
 
                     if (serialNo % 256 == 0)
                     {
@@ -347,28 +345,25 @@ namespace FASTER.PerfTest
                             if (!useAsync)
                                 session.CompletePending(false);
                             if (Globals.Verbose && serialNo % verboseInterval < pendingInterval)
-                            {
                                 Console.WriteLine($"tid {threadIndex}, {thisOp}: {serialNo}");
-                            }
                         }
                     }
 
                     Status status = Status.OK;
-                    var key = keyManager.GetOpKey((int)ii);
                     switch (thisOp)
                     {
                         case Operations.Upsert:
-                            threadValueRef.SetUpsertValue(ref threadValueRef.GetRef(threadIndex), key.Value, ii & 7);
+                            threadValueRef.SetUpsertValue(ref threadValueRef.GetRef(threadIndex), keyManager.GetOpKey((int)ii).Value, ii & 7);
                             if (useAsync)   // TODO: UpsertAsync does not return status
-                                await session.UpsertAsync(ref key, ref threadValueRef.GetRef(threadIndex), waitForCommit:false);
+                                await session.UpsertAsync(ref keyManager.GetOpKey((int)ii), ref threadValueRef.GetRef(threadIndex), waitForCommit: false);
                             else
-                                status = session.Upsert(ref key, ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
+                                status = session.Upsert(ref keyManager.GetOpKey((int)ii), ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
                             break;
 
                         case Operations.Read:
                             if (useAsync)
                             {
-                                var readTask = session.ReadAsync(ref key, ref input);
+                                var readTask = session.ReadAsync(ref keyManager.GetOpKey((int)ii), ref input);
                                 if (doReadBatch)
                                 {
                                     readTasks[numReadTasks] = readTask;
@@ -379,7 +374,7 @@ namespace FASTER.PerfTest
                                             var readStatus = (await readTasks[jj]).CompleteRead().Item1;
                                             if (readStatus != Status.OK)
                                                 throw new ApplicationException($"Error: Unexpected readStatus in {nameof(RunOperations)} async {thisOp};" +
-                                                                               $" key[{ii}] = {key.Value}: {readStatus}");
+                                                                                $" key[{ii}] = {keyManager.GetOpKey((int)ii).Value}: {readStatus}");
                                             readTasks[jj] = default;
                                         }
                                         numReadTasks = 0;
@@ -389,20 +384,20 @@ namespace FASTER.PerfTest
                                     status = (await readTask).CompleteRead().Item1;
                             }
                             else
-                                status = session.Read(ref key, ref input, ref output, Empty.Default, serialNo);
+                                status = session.Read(ref keyManager.GetOpKey((int)ii), ref input, ref output, Empty.Default, serialNo);
                             break;
 
                         case Operations.RMW:
                             input.value = (int)(ii & 7);
                             if (useAsync)   // TODO: RMWAsync does not return status
-                                await session.RMWAsync(ref key, ref input, waitForCommit:false);
+                                await session.RMWAsync(ref keyManager.GetOpKey((int)ii), ref input, waitForCommit: false);
                             else
-                                status = session.RMW(ref key, ref input, Empty.Default, serialNo);
+                                status = session.RMW(ref keyManager.GetOpKey((int)ii), ref input, Empty.Default, serialNo);
                             break;
                     }
 
                     if (status != Status.OK && status != Status.PENDING)
-                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)} {thisOp}; key[{ii}] = {key.Value}: {status}");
+                        throw new ApplicationException($"Error: Unexpected status in {nameof(RunOperations)} {thisOp}; key[{ii}] = {keyManager.GetOpKey((int)ii).Value}: {status}");
                 }
             }
 

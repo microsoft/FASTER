@@ -168,6 +168,8 @@ namespace FASTER.PerfTest
         public int GetInitialLength<Input>(ref Input input) => sizeof(VarLenType.Data);
 
         public int GetLength(ref VarLenType t) => t.ByteLength;
+
+        public int GetLength<Input>(ref VarLenType t, ref Input input) => t.ByteLength;
     }
 
     public struct VarLenOutput
