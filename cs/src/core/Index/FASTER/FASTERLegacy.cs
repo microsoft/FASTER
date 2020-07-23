@@ -218,6 +218,15 @@ namespace FASTER.core
             return false;
         }
 
+        /// <inheritdoc />
+        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1) => _fasterKV.Iterate(untilAddress);
+
+        /// <inheritdoc />
+        public IFasterScanIterator<Key, Value> Iterate<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress = -1)
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+            => _fasterKV.Iterate(compactionFunctions, untilAddress);
+
+
         private Guid InternalAcquire()
         {
             _fasterKV.epoch.Resume();
