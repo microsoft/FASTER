@@ -285,7 +285,7 @@ namespace FASTER.core
         /// <returns></returns>
         internal void Recover(Guid token, ICheckpointManager checkpointManager)
         {
-            var metadata = checkpointManager.GetLogCommitMetadata(token);
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token);
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
 
@@ -439,7 +439,7 @@ namespace FASTER.core
 
         public void Recover(Guid guid, ICheckpointManager checkpointManager)
         {
-            var metadata = checkpointManager.GetIndexCommitMetadata(guid);
+            var metadata = checkpointManager.GetIndexCheckpointMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
             using (StreamReader s = new StreamReader(new MemoryStream(metadata)))

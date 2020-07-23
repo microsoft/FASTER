@@ -108,7 +108,7 @@ namespace FASTER.test.recovery.sumstore
                 if (populateLogHandles)
                 {
                     var segmentIds = new List<int>();
-                    foreach (FileInfo item in new DirectoryInfo(logDirectory).GetFiles(logFileName + "*"))
+                    foreach (System.IO.FileInfo item in new DirectoryInfo(logDirectory).GetFiles(logFileName + "*"))
                     {
                         segmentIds.Add(int.Parse(item.Name.Replace(logFileName, "").Replace(".", "")));
                     }

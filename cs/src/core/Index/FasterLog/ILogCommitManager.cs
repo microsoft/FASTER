@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Collections;
+using System.Collections.Generic;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -17,9 +20,16 @@ namespace FASTER.core
         void Commit(long beginAddress, long untilAddress, byte[] commitMetadata);
 
         /// <summary>
-        /// Return prior commit metadata during recovery
+        /// Return commit metadata
+        /// </summary>
+        /// <param name="commitNum"></param>
+        /// <returns></returns>
+        byte[] GetCommitMetadata(long commitNum);
+
+        /// <summary>
+        /// Get list of commits, in order of usage preference
         /// </summary>
         /// <returns></returns>
-        byte[] GetCommitMetadata();
+        public IEnumerable<long> ListCommits();
     }
 }

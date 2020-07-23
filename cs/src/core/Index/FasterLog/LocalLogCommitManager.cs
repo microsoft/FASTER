@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Collections.Generic;
 using System.IO;
 
 namespace FASTER.core
@@ -30,18 +31,16 @@ namespace FASTER.core
         public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
         {
             // Two phase to ensure we write metadata in single Write operation
-            using (var ms = new MemoryStream())
+            using var ms = new MemoryStream();
+            using (var writer = new BinaryWriter(ms))
             {
-                using (var writer = new BinaryWriter(ms))
-                {
-                    writer.Write(commitMetadata.Length);
-                    writer.Write(commitMetadata);
-                }
-                using (var writer = new BinaryWriter(new FileStream(commitFile, FileMode.OpenOrCreate)))
-                {
-                    writer.Write(ms.ToArray());
-                    writer.Flush();
-                }
+                writer.Write(commitMetadata.Length);
+                writer.Write(commitMetadata);
+            }
+            using (var writer = new BinaryWriter(new FileStream(commitFile, FileMode.OpenOrCreate)))
+            {
+                writer.Write(ms.ToArray());
+                writer.Flush();
             }
         }
 
@@ -49,16 +48,24 @@ namespace FASTER.core
         /// Retrieve commit metadata
         /// </summary>
         /// <returns>Metadata, or null if invalid</returns>
-        public byte[] GetCommitMetadata()
+        public byte[] GetCommitMetadata(long commitNum)
         {
             if (!File.Exists(commitFile))
                 return null;
 
-            using (var reader = new BinaryReader(new FileStream(commitFile, FileMode.Open)))
-            {
-                var len = reader.ReadInt32();
-                return reader.ReadBytes(len);
-            }
+            using var reader = new BinaryReader(new FileStream(commitFile, FileMode.Open));
+            var len = reader.ReadInt32();
+            return reader.ReadBytes(len);
+        }
+
+        /// <summary>
+        /// List of commit numbers
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerable<long> ListCommits()
+        {
+            // we only use a single commit file in this implementation
+            yield return 0;
         }
     }
 }

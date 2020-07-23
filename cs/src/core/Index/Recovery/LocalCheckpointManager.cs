@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -92,7 +93,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="indexToken">Token</param>
         /// <returns>Metadata, or null if invalid</returns>
-        public byte[] GetIndexCommitMetadata(Guid indexToken)
+        public byte[] GetIndexCheckpointMetadata(Guid indexToken)
         {
             var dir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(indexToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
@@ -111,7 +112,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logToken">Token</param>
         /// <returns>Metadata, or null if invalid</returns>
-        public byte[] GetLogCommitMetadata(Guid logToken)
+        public byte[] GetLogCheckpointMetadata(Guid logToken)
         {
             var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(logToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
@@ -155,13 +156,8 @@ namespace FASTER.core
             return Devices.CreateLogDevice(directoryConfiguration.GetObjectLogSnapshotFileName(token), false);
         }
 
-        /// <summary>
-        /// Get latest valid checkpoint for recovery
-        /// </summary>
-        /// <param name="indexToken"></param>
-        /// <param name="logToken"></param>
-        /// <returns></returns>
-        public bool GetLatestCheckpoint(out Guid indexToken, out Guid logToken)
+        /// <inheritdoc />
+        public IEnumerable<Guid> GetIndexCheckpointTokens()
         {
             var indexCheckpointDir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder());
             var dirs = indexCheckpointDir.GetDirectories();
@@ -173,15 +169,26 @@ namespace FASTER.core
                     Directory.Delete(dir.FullName, true);
                 }
             }
-            var latestICFolder = indexCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
-            if (latestICFolder == null || !Guid.TryParse(latestICFolder.Name, out indexToken))
+
+            bool found = false;
+            foreach (var folder in indexCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime))
             {
-                throw new FasterException("No valid index checkpoint to recover from");
+                if (Guid.TryParse(folder.Name, out var indexToken))
+                {
+                    found = true;
+                    yield return indexToken;
+                }
             }
 
+            if (!found)
+                throw new FasterException("No valid index checkpoint to recover from");
+        }
 
+        /// <inheritdoc />
+        public IEnumerable<Guid> GetLogCheckpointTokens()
+        {
             var hlogCheckpointDir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder());
-            dirs = hlogCheckpointDir.GetDirectories();
+            var dirs = hlogCheckpointDir.GetDirectories();
             foreach (var dir in dirs)
             {
                 // Remove incomplete checkpoints
@@ -190,12 +197,19 @@ namespace FASTER.core
                     Directory.Delete(dir.FullName, true);
                 }
             }
-            var latestHLCFolder = hlogCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime).First();
-            if (latestHLCFolder == null || !Guid.TryParse(latestHLCFolder.Name, out logToken))
+
+            bool found = false;
+            foreach (var folder in hlogCheckpointDir.GetDirectories().OrderByDescending(f => f.LastWriteTime))
             {
-                throw new FasterException("No valid hybrid log checkpoint to recover from");
+                if (Guid.TryParse(folder.Name, out var logToken))
+                {
+                    found = true;
+                    yield return logToken;
+                }
             }
-            return true;
+
+            if (!found)
+                throw new FasterException("No valid hybrid log checkpoint to recover from");
         }
     }
 }

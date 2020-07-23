@@ -72,16 +72,16 @@ namespace FASTER.core
 
         private void RecoverFiles()
         {
-            FileInfo fi = new FileInfo(FileName); // may not exist
+            System.IO.FileInfo fi = new System.IO.FileInfo(FileName); // may not exist
             DirectoryInfo di = fi.Directory;
             if (!di.Exists) return;
 
             string bareName = fi.Name;
 
             List<int> segids = new List<int>();
-            foreach (FileInfo item in di.GetFiles(bareName + "*"))
+            foreach (System.IO.FileInfo item in di.GetFiles(bareName + "*"))
             {
-                segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
+                segids.Add(int.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
             }
             segids.Sort();
 

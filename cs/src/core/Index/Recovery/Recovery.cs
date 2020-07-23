@@ -5,6 +5,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Resources;
 using System.Threading;
 
 namespace FASTER.core
@@ -52,8 +53,63 @@ namespace FASTER.core
 
         private void InternalRecoverFromLatestCheckpoints()
         {
-            checkpointManager.GetLatestCheckpoint(out Guid indexCheckpointGuid, out Guid hybridLogCheckpointGuid);
-            InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid);
+            Debug.WriteLine("********* Primary Recovery Information ********");
+
+            HybridLogCheckpointInfo recoveredHLCInfo = default;
+
+            foreach (var hybridLogToken in checkpointManager.GetLogCheckpointTokens())
+            {
+                try
+                {
+                    recoveredHLCInfo = new HybridLogCheckpointInfo();
+                    recoveredHLCInfo.Recover(hybridLogToken, checkpointManager);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
+                break;
+            }
+
+            if (recoveredHLCInfo.IsDefault())
+                throw new FasterException("Unable to find valid index token");
+
+            recoveredHLCInfo.info.DebugPrint();
+
+            IndexCheckpointInfo recoveredICInfo = default;
+
+            foreach (var indexToken in checkpointManager.GetIndexCheckpointTokens())
+            {
+                try
+                {
+                    // Recovery appropriate context information
+                    recoveredICInfo = new IndexCheckpointInfo();
+                    recoveredICInfo.Recover(indexToken, checkpointManager);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
+                {
+                    recoveredICInfo = default;
+                    continue;
+                }
+
+                Debug.WriteLine("Index Checkpoint: {0}", indexToken);
+                break;
+            }
+
+            if (recoveredICInfo.IsDefault())
+                throw new FasterException("Unable to find valid index token");
+
+            recoveredICInfo.info.DebugPrint();
+
+
+            InternalRecover(recoveredICInfo, recoveredHLCInfo);
         }
 
         private bool IsCompatible(in IndexRecoveryInfo indexInfo, in HybridLogRecoveryInfo recoveryInfo)
@@ -69,8 +125,6 @@ namespace FASTER.core
             Debug.WriteLine("Index Checkpoint: {0}", indexToken);
             Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
 
-            // Ensure active state machine to null
-            currentSyncStateMachine = null;
 
             // Recovery appropriate context information
             var recoveredICInfo = new IndexCheckpointInfo();
@@ -86,6 +140,14 @@ namespace FASTER.core
             {
                 throw new FasterException("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
             }
+
+            InternalRecover(recoveredICInfo, recoveredHLCInfo);
+        }
+
+        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo)
+        {
+            // Ensure active state machine to null
+            currentSyncStateMachine = null;
 
             // Set new system state after recovery
             var v = recoveredHLCInfo.info.version;
