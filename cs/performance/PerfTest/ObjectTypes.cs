@@ -125,23 +125,30 @@ namespace FASTER.PerfTest
         public override string ToString() => this.Value.ToString();
     }
 
-    class ObjectThreadValueRef : IThreadValueRef<ObjectType, ObjectTypeOutput>
+    class ObjectValueWrapperFactory : IValueWrapperFactory<ObjectType, ObjectTypeOutput, ObjectValueWrapper>
     {
-        readonly ObjectType[] values;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ObjectValueWrapper GetValueWrapper(int threadIndex) => new ObjectValueWrapper();
 
-        internal ObjectThreadValueRef(int count)
-            => values = Enumerable.Range(0, count).Select(ii => new ObjectType()).ToArray();
-
-        public ref ObjectType GetRef(int threadIndex) => ref values[threadIndex];
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ObjectTypeOutput GetOutput(int threadIndex) => new ObjectTypeOutput();
-
-        public void SetInitialValue(int threadIndex, long value) => GetRef(threadIndex).SetInitialValue(value, 0, isKey:false);
-
-        public void SetUpsertValue(ref ObjectType valueRef, long value, long mod) => valueRef.SetInitialValue(value, mod, isKey:false);
     }
 
-    internal class ObjectKeyManager : KeyManager<ObjectType>
+    class ObjectValueWrapper : IValueWrapper<ObjectType>
+    {
+        private ObjectType value = new ObjectType();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref ObjectType GetRef() => ref this.value;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetInitialValue(long value) => this.value.SetInitialValue(value, 0, isKey: false);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetUpsertValue(long value, long mod) => this.value.SetInitialValue(value, mod, isKey: false);
+    }
+
+    internal class ObjectKeyManager : KeyManagerBase<ObjectType>, IKeyManager<ObjectType>
     {
         ObjectType[] initKeys;
         ObjectType[] opKeys;
@@ -169,9 +176,11 @@ namespace FASTER.PerfTest
             }
         }
 
-        internal override ref ObjectType GetInitKey(int index) => ref this.initKeys[index];
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref ObjectType GetInitKey(int index) => ref this.initKeys[index];
 
-        internal override ref ObjectType GetOpKey(int index) => ref this.opKeys[index];
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref ObjectType GetOpKey(int index) => ref this.opKeys[index];
 
         public override void Dispose() { }
     }

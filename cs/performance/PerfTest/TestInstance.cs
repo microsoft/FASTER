@@ -12,30 +12,40 @@ using System.Threading.Tasks;
 
 namespace FASTER.PerfTest
 {
-    internal class TestInstance<TKey>
+    internal class TestInstance<TKey, TKeyManager, TValue, TOutput, TValueWrapperFactory, TValueWrapper>
         where TKey : IKey, new()
+        where TKeyManager : KeyManagerBase<TKey>, IKeyManager<TKey>
+        where TValue : new()
+        where TOutput : new()
+        where TValueWrapperFactory : IValueWrapperFactory<TValue, TOutput, TValueWrapper>
+        where TValueWrapper: IValueWrapper<TValue>
     {
         private readonly TestRun testRun;
 
-        readonly KeyManager<TKey> keyManager;
+        private readonly TKeyManager keyManager;
         private readonly IFasterEqualityComparer<TKey> keyComparer;
+        private readonly TValueWrapperFactory valueWrapperFactory;
 
         long NextChunkStart = 0;
         const int numVerboseIntervals = 10;
         const int pendingInterval = 65536;
 
+        // Readonly for inlining benefit
+        private readonly bool useAsync;
+        private readonly bool doReadBatch;
+
         // The TKey information is specified on the constructor; the TValue and other information on the Run() call.
-        internal TestInstance(TestRun testRun, KeyManager<TKey> keyManager, IFasterEqualityComparer<TKey> keyComparer)
+        internal TestInstance(TestRun testRun, TKeyManager keyManager, IFasterEqualityComparer<TKey> keyComparer, TValueWrapperFactory wrapperFactory)
         {
             this.testRun = testRun;
             this.keyManager = keyManager;
             this.keyComparer = keyComparer;
+            this.valueWrapperFactory = wrapperFactory;
+            this.useAsync = testRun.TestResult.Inputs.ThreadMode == ThreadMode.Async;
+            this.doReadBatch = this.useAsync && testRun.TestResult.Inputs.AsyncReadBatchSize > 1;
         }
 
-        internal bool Run<TValue, TOutput, TFunctions>(SerializerSettings<TKey, TValue> serializerSettings, VariableLengthStructSettings<TKey, TValue> varLenSettings,
-                                                       IThreadValueRef<TValue, TOutput> threadValueRef)
-            where TValue: new()
-            where TOutput: new()
+        internal bool Run<TFunctions>(SerializerSettings<TKey, TValue> serializerSettings, VariableLengthStructSettings<TKey, TValue> varLenSettings)
             where TFunctions: IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
         {
             this.keyManager.CreateKeys(testRun.TestResult);
@@ -62,31 +72,23 @@ namespace FASTER.PerfTest
                 var fht = new FHT<TKey, TValue, TOutput, TFunctions>(
                     false, testRun.TestResult.Inputs.HashSizeShift, testRun.TestResult.Inputs.UseObjectKey || testRun.TestResult.Inputs.UseObjectValue,
                     testRun.TestResult.Inputs, serializerSettings, varLenSettings, this.keyComparer);
-                RunIteration(fht, testRun, threadValueRef);
+                RunIteration(fht, testRun);
             }
             this.keyManager.Dispose();
             return true;
         }
         
-        private bool RunIteration<TValue, TOutput, TFunctions>(
-                    FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun,
-                    IThreadValueRef<TValue, TOutput> threadValueRef)
-            where TValue : new()
-            where TOutput : new()
+        private bool RunIteration<TFunctions>(FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun)
             where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
         {
-            Initialize(fht, testRun, threadValueRef);
+            Initialize(fht, testRun);
             FlushLog(fht, testRun);
-            RunOperations(fht, testRun, threadValueRef);
+            RunOperations(fht, testRun);
             fht.Close();
             return true;
         }
 
-        private void Initialize<TValue, TOutput, TFunctions>(
-                FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun,
-                IThreadValueRef<TValue, TOutput> threadValueRef)
-            where TValue : new()
-            where TOutput : new()
+        private void Initialize<TFunctions>(FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun)
             where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
         {
             if (Globals.Verbose)
@@ -100,7 +102,7 @@ namespace FASTER.PerfTest
 
             Globals.IsInitialInsertPhase = true;
             var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                  .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun, threadValueRef)));
+                                  .Select(threadIdx => Task.Run(() => Initialize(fht, threadIdx, testRun)));
             Task.WaitAll(tasks.ToArray());
             Globals.IsInitialInsertPhase = false;
 
@@ -115,22 +117,16 @@ namespace FASTER.PerfTest
                               $" working set {workingSetMB:N0}MB");
         }
 
-        private async Task Initialize<TValue, TOutput, TFunctions>(
-                FHT<TKey, TValue, TOutput, TFunctions> fht, int threadIndex, TestRun testRun,
-                IThreadValueRef<TValue, TOutput> threadValueRef)
-            where TValue : new()
-            where TOutput : new()
+        private async Task Initialize<TFunctions>(FHT<TKey, TValue, TOutput, TFunctions> fht, int threadIndex, TestRun testRun)
             where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
         {
             // Each thread needs to set NUMA and create a FASTER session
             Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
             using var session = fht.Faster.NewSession<Input, TOutput, Empty, TFunctions>(fht.Functions, $"Initialize_{threadIndex}",
                                                                                          testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
-            var useAsync = testRun.TestResult.Inputs.ThreadMode == ThreadMode.Async;
-
             long serialNo = 0;
-
             var verboseInterval = testRun.TestResult.Inputs.InitKeyCount / (testRun.TestResult.Inputs.ThreadCount * numVerboseIntervals);
+            var valueWrapper = this.valueWrapperFactory.GetValueWrapper(threadIndex);
 
             // We just do one iteration through the KeyCount to insert the initial keys. If there are
             // multiple threads, each thread does (KeyCount / #threads) Inserts (on average).
@@ -143,11 +139,11 @@ namespace FASTER.PerfTest
                 {
                     if (serialNo % 256 == 0)
                     {
-                        if (!useAsync)
+                        if (!this.useAsync)
                             session.Refresh();
                         if (++serialNo % 65536 == 0)
                         {
-                            if (!useAsync)
+                            if (!this.useAsync)
                                 session.CompletePending(false);
                             if (Globals.Verbose && serialNo % verboseInterval < pendingInterval)
                             {
@@ -157,12 +153,12 @@ namespace FASTER.PerfTest
                         }
                     }
 
-                    threadValueRef.SetInitialValue(threadIndex, this.keyManager.GetInitKey((int)ii).Value);
+                    valueWrapper.SetInitialValue(this.keyManager.GetInitKey((int)ii).Value);
                     var status = Status.OK; // TODO: UpsertAsync does not return status
-                    if (useAsync)
-                        await session.UpsertAsync(ref this.keyManager.GetInitKey((int)ii), ref threadValueRef.GetRef(threadIndex), waitForCommit:false);
+                    if (this.useAsync)
+                        await session.UpsertAsync(ref this.keyManager.GetInitKey((int)ii), ref valueWrapper.GetRef(), waitForCommit:false);
                     else
-                        status = session.Upsert(ref this.keyManager.GetInitKey((int)ii), ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
+                        status = session.Upsert(ref this.keyManager.GetInitKey((int)ii), ref valueWrapper.GetRef(), Empty.Default, serialNo);
                     if (status != Status.OK && status != Status.PENDING)
                         throw new ApplicationException($"Error: Unexpected status in {nameof(Initialize)}; key[{ii}] = {this.keyManager.GetInitKey((int)ii).Value}: {status}");
                 }
@@ -170,10 +166,7 @@ namespace FASTER.PerfTest
             session.CompletePending(true);
         }
 
-        private void FlushLog<TValue, TOutput, TFunctions>(
-                FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun)
-            where TValue : new()
-            where TOutput : new()
+        private void FlushLog<TFunctions>(FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun)
             where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
         {
             if (Globals.Verbose)
@@ -197,11 +190,7 @@ namespace FASTER.PerfTest
             }
         }
 
-        private void RunOperations<TValue, TOutput, TFunctions>(
-                FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun,
-                IThreadValueRef<TValue, TOutput> threadValueRef)
-            where TValue : new()
-            where TOutput : new()
+        private void RunOperations<TFunctions>(FHT<TKey, TValue, TOutput, TFunctions> fht, TestRun testRun)
             where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
         {
             IEnumerable<(Operations, string, int)> prepareOps()
@@ -237,16 +226,14 @@ namespace FASTER.PerfTest
             foreach (var (op, opName, opCount) in ops)
             {
                 long startTailAddress = fht.LogTailAddress;
-
                 sw.Restart();
 
                 // Each thread does the full count
                 var tasks = Enumerable.Range(0, testRun.TestResult.Inputs.ThreadCount)
-                                      .Select(threadIdx => Task.Run(() => RunOperations(fht, op, opCount, threadIdx, testRun, threadValueRef)));
+                                      .Select(threadIdx => Task.Run(() => RunOperations(fht, op, opCount, threadIdx, testRun)));
                 Task.WaitAll(tasks.ToArray());
 
                 sw.Stop();
-
                 var numSec = sw.ElapsedMilliseconds / 1000.0;
 
                 // Total Ops/Second is always reported 
@@ -264,7 +251,7 @@ namespace FASTER.PerfTest
 
                 var suffix = op == Operations.Mixed ? "" : "s";
                 Console.WriteLine($"Operations: Time for {opCount:N0} {opName}{suffix} per thread ({opCount * testRun.TestResult.Inputs.ThreadCount:N0} total):" +
-                                  $" {numSec:N3} sec ({opCount / numSec:N2} {op}{suffix}/sec)");
+                                  $" {numSec:N3} sec ({(opCount * testRun.TestResult.Inputs.ThreadCount) / numSec:N2} {op}{suffix}/sec; {opCount / numSec:N2} thread/sec)");
                 var endTailAddress = fht.LogTailAddress;
                 if (endTailAddress != startTailAddress)
                 {
@@ -277,19 +264,13 @@ namespace FASTER.PerfTest
             }
         }
 
-        private async Task RunOperations<TValue, TOutput, TFunctions>(
-                FHT<TKey, TValue, TOutput, TFunctions> fht, Operations op, long opCount,
-                int threadIndex, TestRun testRun, IThreadValueRef<TValue, TOutput> threadValueRef)
-            where TValue : new()
-            where TOutput : new()
+        private async Task RunOperations<TFunctions>(FHT<TKey, TValue, TOutput, TFunctions> fht, Operations op, long opCount, int threadIndex, TestRun testRun)
             where TFunctions : IFunctions<TKey, TValue, Input, TOutput, Empty>, new()
         {
             // Each thread needs to set NUMA and create a FASTER session
             Numa.AffinitizeThread(testRun.TestResult.Inputs.NumaMode, threadIndex);
             using var session = fht.Faster.NewSession<Input, TOutput, Empty, TFunctions>(fht.Functions, $"RunOperations_{threadIndex}",
                                                                                          testRun.TestResult.Inputs.ThreadMode == ThreadMode.Affinitized);
-            var useAsync = testRun.TestResult.Inputs.ThreadMode == ThreadMode.Async;
-
             if (Globals.Verbose)
                 Console.WriteLine($"Running Operation {op} count {opCount:N0} for threadId {threadIndex}");
 
@@ -300,13 +281,13 @@ namespace FASTER.PerfTest
             var rmwThreshold = readThreshold + testRun.TestResult.Inputs.RMWCount;
 
             var input = default(Input);
-            var output = threadValueRef.GetOutput(threadIndex);
+            var valueWrapper = this.valueWrapperFactory.GetValueWrapper(threadIndex);
+            var output = this.valueWrapperFactory.GetOutput(threadIndex);
 
             long serialNo = 0;
 
             var verboseInterval = opCount / numVerboseIntervals;
 
-            bool doReadBatch = useAsync && testRun.TestResult.Inputs.AsyncReadBatchSize > 1;
             var readTasks = doReadBatch
                                 ? new ValueTask<FasterKV<TKey, TValue>.ReadAsyncResult<Input, TOutput, Empty, TFunctions>>[testRun.TestResult.Inputs.AsyncReadBatchSize]
                                 : null;
@@ -338,11 +319,11 @@ namespace FASTER.PerfTest
 
                     if (serialNo % 256 == 0)
                     {
-                        if (!useAsync)
+                        if (!this.useAsync)
                             session.Refresh();
                         if (++serialNo % 65536 == 0)
                         {
-                            if (!useAsync)
+                            if (!this.useAsync)
                                 session.CompletePending(false);
                             if (Globals.Verbose && serialNo % verboseInterval < pendingInterval)
                                 Console.WriteLine($"tid {threadIndex}, {thisOp}: {serialNo}");
@@ -353,15 +334,15 @@ namespace FASTER.PerfTest
                     switch (thisOp)
                     {
                         case Operations.Upsert:
-                            threadValueRef.SetUpsertValue(ref threadValueRef.GetRef(threadIndex), keyManager.GetOpKey((int)ii).Value, ii & 7);
-                            if (useAsync)   // TODO: UpsertAsync does not return status
-                                await session.UpsertAsync(ref keyManager.GetOpKey((int)ii), ref threadValueRef.GetRef(threadIndex), waitForCommit: false);
+                            valueWrapper.SetUpsertValue(keyManager.GetOpKey((int)ii).Value, ii & 7);
+                            if (this.useAsync)   // TODO: UpsertAsync does not return status
+                                await session.UpsertAsync(ref keyManager.GetOpKey((int)ii), ref valueWrapper.GetRef(), waitForCommit: false);
                             else
-                                status = session.Upsert(ref keyManager.GetOpKey((int)ii), ref threadValueRef.GetRef(threadIndex), Empty.Default, serialNo);
+                                status = session.Upsert(ref keyManager.GetOpKey((int)ii), ref valueWrapper.GetRef(), Empty.Default, serialNo);
                             break;
 
                         case Operations.Read:
-                            if (useAsync)
+                            if (this.useAsync)
                             {
                                 var readTask = session.ReadAsync(ref keyManager.GetOpKey((int)ii), ref input);
                                 if (doReadBatch)
@@ -389,7 +370,7 @@ namespace FASTER.PerfTest
 
                         case Operations.RMW:
                             input.value = (int)(ii & 7);
-                            if (useAsync)   // TODO: RMWAsync does not return status
+                            if (this.useAsync)   // TODO: RMWAsync does not return status
                                 await session.RMWAsync(ref keyManager.GetOpKey((int)ii), ref input, waitForCommit: false);
                             else
                                 status = session.RMW(ref keyManager.GetOpKey((int)ii), ref input, Empty.Default, serialNo);

@@ -7,13 +7,16 @@ using System.Diagnostics;
 
 namespace FASTER.PerfTest
 {
-    internal abstract class KeyManager<TKey> : IDisposable
+    internal interface IKeyManager<TKey>
+    {
+        ref TKey GetInitKey(int index);
+
+        ref TKey GetOpKey(int index);
+    }
+
+    internal abstract class KeyManagerBase<TKey> : IDisposable
     {
         internal abstract void Initialize(ZipfSettings zipfSettings, RandomGenerator rng, int initCount, int opCount);
-
-        internal abstract ref TKey GetInitKey(int index);
-
-        internal abstract ref TKey GetOpKey(int index);
 
         private TestResult prevTestResult;
 

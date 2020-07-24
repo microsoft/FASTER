@@ -39,7 +39,7 @@ namespace Performance.Common
             return stats;
         }
 
-        internal static ResultStats Create(ulong[] runMs, long[] runOps)
+        internal static ResultStats Create(ulong[] runMs, double[] runOps)
         {
             var runSec = runMs.Select(ms => ms / 1000.0).ToArray();
             var opsPerSecond = Enumerable.Range(0, runMs.Length).Select(ii => runSec[ii] == 0 ? 0.0 : runOps[ii] / runSec[ii]).ToArray();
@@ -58,9 +58,9 @@ namespace Performance.Common
         {
             // Get the index of the highest and lowest values to trim. 
             // There may be ties so we can't just delete at min/max value.
-            ulong max = 0, min = ulong.MaxValue;
+            ulong min = runMs[0], max = runMs[0];
             int maxIndex = 0, minIndex = 0;
-            for (int ii = 0; ii < runMs.Length; ++ii)
+            for (int ii = 1; ii < runMs.Length; ++ii)
             {
                 if (runMs[ii] > max)
                 {
@@ -108,29 +108,29 @@ namespace Performance.Common
 
         // For tests that run for a given period of time rather than for a specific number of operations.
         internal static ResultStats CalcPerSecondStatsFull(ulong[] runMs, long[] runOps)
-            => Create(runMs, runOps);
+            => Create(runMs, runOps.Select(ops => ops * 1.0).ToArray());
 
         private static (ResultStats, ulong[], long[]) CalcPerSecondStatsTrimmed(ulong[] runMs, long[] runOps)
         {
             if (runMs.Length < 3)
                 return (CalcPerSecondStatsFull(runMs, runOps), runMs, runOps);
 
-            var (minIndex, maxIndex) = GetMinMaxIndexes(runMs);
+            var (minIndex, maxIndex) = GetMinMaxIndexes(runOps.Select(ops => (ulong)ops).ToArray());
             var trimmedMs = runMs.Where((_, ii) => ii != maxIndex && ii != minIndex).ToArray();
             var trimmedOps = runOps.Where((_, ii) => ii != maxIndex && ii != minIndex).ToArray();
             return (CalcPerSecondStatsFull(trimmedMs, trimmedOps), trimmedMs, trimmedOps);
         }
 
-        internal static ResultStats CalcPerThreadStats(int threadCount, ulong[] runMs, long[] runOps)
-            => Create(runMs.Select(ms => ms / (ulong)threadCount).ToArray(), runOps.Select(ops => ops / threadCount).ToArray());
+        internal static ResultStats CalcPerThreadStats(int threadCount, ulong[] runMs, ResultStats allThreads)
+            => Create(runMs.Select(ms => ms / (ulong)threadCount).ToArray(), allThreads.OperationsPerSecond.Select(ops => ops / threadCount).ToArray());
 
         internal static (ulong[], long[]) Calc(OperationResults opResults, int threadCount, ulong[] runMs, long[] runOps)
         {
             opResults.AllThreadsFull = CalcPerSecondStatsFull(runMs, runOps);
-            opResults.PerThreadFull = CalcPerThreadStats(threadCount, runMs, runOps);
+            opResults.PerThreadFull = CalcPerThreadStats(threadCount, runMs, opResults.AllThreadsFull);
             var (trimmedResult, trimmedMs, trimmedOps) = CalcPerSecondStatsTrimmed(runMs, runOps);
             opResults.AllThreadsTrimmed = trimmedResult;
-            opResults.PerThreadTrimmed = CalcPerThreadStats(threadCount, trimmedMs, trimmedOps);
+            opResults.PerThreadTrimmed = CalcPerThreadStats(threadCount, trimmedMs, opResults.AllThreadsTrimmed);
             return (trimmedMs, trimmedOps);
         }
     }

@@ -49,14 +49,20 @@ namespace FASTER.PerfTest
         public override string ToString() => this.value.ToString();
     }
 
-    interface IThreadValueRef<TValue, TOutput>
+    interface IValueWrapperFactory<TValue, TOutput, TValueWrapper>
+        where TValueWrapper : IValueWrapper<TValue>
     {
-        ref TValue GetRef(int threadIndex);
+        TValueWrapper GetValueWrapper(int threadIndex);
 
         TOutput GetOutput(int threadIndex);
+    }
 
-        void SetInitialValue(int threadIndex, long value);
+    interface IValueWrapper<TValue>
+    {
+        ref TValue GetRef();
 
-        void SetUpsertValue(ref TValue valueRef, long value, long mod);
+        void SetInitialValue(long value);
+
+        void SetUpsertValue(long value, long mod);
     }
 }

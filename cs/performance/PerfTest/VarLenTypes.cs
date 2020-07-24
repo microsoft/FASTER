@@ -174,62 +174,76 @@ namespace FASTER.PerfTest
 
     public struct VarLenOutput
     {
-        internal VarLenThreadValueRef getThreadValueRef;
-        internal int threadIndex;
+        internal VarLenValueWrapper valueWrapper;
 
-        internal VarLenOutput(VarLenThreadValueRef getThreadValueRef, int threadIndex)
-        {
-            this.getThreadValueRef = getThreadValueRef;
-            this.threadIndex = threadIndex;
-        }
+        internal VarLenOutput(VarLenValueWrapper wrapper) => this.valueWrapper = wrapper;
 
-        internal ref VarLenType ThreadValueRef => ref this.getThreadValueRef.GetRef(this.threadIndex);
+        internal ref VarLenType ValueRef => ref this.valueWrapper.GetRef();
 
-        public override string ToString() => this.ThreadValueRef.ToString();
+        public override string ToString() => this.ValueRef.ToString();
     }
 
-    unsafe class VarLenThreadValueRef : IThreadValueRef<VarLenType, VarLenOutput>, IDisposable
+    unsafe class VarLenValueWrapperFactory : IValueWrapperFactory<VarLenType, VarLenOutput, VarLenValueWrapper>, IDisposable
     {
-        // This class is why we need the whole IThreadValueRef idea; allocating unmanaged memory
-        // for VarLenType. These are per-thread (that's why we keep an array, and that also
-        // makes it easier to free on Dispose()). During operations, Upserts can copy from this
-        // to the store (in VERIFY mode we can write values to be copied) and Reads can copy from
-        // the store to this (in VERIFY mode, verifying the values read), without fear of conflict.
-        IntPtr[] values;
+        // This class is why we need the whole IValueWrapperFactory idea; allocating unmanaged memory for VarLenType. These are per-thread
+        // (that's why we keep an array, and that also makes it easier to free on Dispose()). During operations, Upserts can copy from this
+        // to the store (in VERIFY mode we can write values to be copied) and Reads can copy from the store to this (in VERIFY mode, verifying
+        // the values read), without fear of conflict.
+        VarLenValueWrapper[] wrappers;
 
-        internal VarLenThreadValueRef(int threadCount)
+        internal VarLenValueWrapperFactory(int threadCount)
         {
-            this.values = new IntPtr[threadCount];
+            this.wrappers = new VarLenValueWrapper[threadCount];
             for (var ii = 0; ii < threadCount; ++ii)
-            {
-                values[ii] = Marshal.AllocHGlobal(sizeof(int) * VarLenType.MaxIntLength);
-                for (var jj = 0; jj < VarLenType.MaxIntLength; ++jj)
-                    Marshal.WriteInt32(values[ii], jj * sizeof(int), 0);
-                ref var varlen = ref *(VarLenType*)values[ii].ToPointer();
-                varlen.SetInitialValueAndLength(0, 0);
-            }
+                this.wrappers[ii].Initialize();
         }
 
-        public ref VarLenType GetRef(int threadIndex) => ref *(VarLenType*)values[threadIndex].ToPointer();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public VarLenValueWrapper GetValueWrapper(int threadIndex) => this.wrappers[threadIndex];
 
-        public VarLenOutput GetOutput(int threadIndex) => new VarLenOutput(this, threadIndex);
-
-        public void SetInitialValue(int threadIndex, long value) => GetRef(threadIndex).SetInitialValueAndLength(value, 0);
-
-        public void SetUpsertValue(ref VarLenType valueRef, long value, long mod) => valueRef.SetInitialValueAndLength((int)(value % int.MaxValue), mod);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public VarLenOutput GetOutput(int threadIndex) => new VarLenOutput(this.wrappers[threadIndex]);
 
         public void Dispose()
         {
-            if (!(values is null))
+            if (!(wrappers is null))
             {
-                foreach (var intptr in values)
-                    Marshal.FreeHGlobal(intptr);
-                values = null;
+                foreach (var wrapper in wrappers)
+                    wrapper.Dispose();
+                wrappers = null;
             }
         }
     }
 
-    internal unsafe class VarLenKeyManager : KeyManager<VarLenType>, IDisposable
+    unsafe class VarLenValueWrapper : IValueWrapper<VarLenType>
+    {
+        private IntPtr value;
+
+        internal void Initialize()
+        {
+            this.value = Marshal.AllocHGlobal(sizeof(int) * VarLenType.MaxIntLength);
+            for (var jj = 0; jj < VarLenType.MaxIntLength; ++jj)
+                Marshal.WriteInt32(this.value, jj * sizeof(int), 0);
+            ref var varlen = ref *(VarLenType*)this.value.ToPointer();
+            varlen.SetInitialValueAndLength(0, 0);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal VarLenValueWrapper(IntPtr intValue) => this.value = intValue;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref VarLenType GetRef() => ref *(VarLenType*)value.ToPointer();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetInitialValue(long value) => this.GetRef().SetInitialValueAndLength(value, 0);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetUpsertValue(long value, long mod) => this.GetRef().SetInitialValueAndLength((int)(value % int.MaxValue), mod);
+
+        internal void Dispose() => Marshal.FreeHGlobal(this.value);
+    }
+
+    internal unsafe class VarLenKeyManager : KeyManagerBase<VarLenType>, IKeyManager<VarLenType>, IDisposable
     {
         readonly List<IntPtr> chunks = new List<IntPtr>();
         VarLenType*[] initKeys;
@@ -282,9 +296,11 @@ namespace FASTER.PerfTest
             }
         }
 
-        internal override ref VarLenType GetInitKey(int index) => ref *this.initKeys[index];
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref VarLenType GetInitKey(int index) => ref *this.initKeys[index];
 
-        internal override ref VarLenType GetOpKey(int index) => ref *this.opKeys[index];
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref VarLenType GetOpKey(int index) => ref *this.opKeys[index];
 
         public override void Dispose()
         {
@@ -335,14 +351,14 @@ namespace FASTER.PerfTest
         {
             if (Globals.Verify)
                 value.Verify(key.Value);
-            value.CopyTo(ref dst.ThreadValueRef, false);
+            value.CopyTo(ref dst.ValueRef, false);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ReadCompletionCallback(ref TKey key, ref Input _, ref VarLenOutput output, Empty ctx, Status status)
         {
             if (Globals.Verify)
-                output.ThreadValueRef.Verify(key.Value);
+                output.ValueRef.Verify(key.Value);
         }
         #endregion Read
 

@@ -4,7 +4,6 @@
 using FASTER.core;
 using Performance.Common;
 using System;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -26,6 +25,7 @@ namespace FASTER.PerfTest
     {
         internal BlittableData data;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInitialValue(long value, long mod)
         {
             this.data.Value = (int)value;
@@ -300,24 +300,32 @@ namespace FASTER.PerfTest
         public override string ToString() => this.Value.ToString();
     }
 
-    class BlittableThreadValueRef<TBlittableType> : IThreadValueRef<TBlittableType, BlittableOutput<TBlittableType>>
+    class BlittableValueWrapperFactory<TBlittableType> : IValueWrapperFactory<TBlittableType, BlittableOutput<TBlittableType>, BlittableValueWrapper<TBlittableType>>
         where TBlittableType : IBlittableType, new()
     {
-        readonly TBlittableType[] values;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public BlittableValueWrapper<TBlittableType> GetValueWrapper(int threadIndex) => new BlittableValueWrapper<TBlittableType>();
 
-        internal BlittableThreadValueRef(int count)
-            => values = Enumerable.Range(0, count).Select(ii => new TBlittableType()).ToArray();
-
-        public ref TBlittableType GetRef(int threadIndex) => ref values[threadIndex];
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public BlittableOutput<TBlittableType> GetOutput(int threadIndex) => new BlittableOutput<TBlittableType>();
-
-        public void SetInitialValue(int threadIndex, long value) => GetRef(threadIndex).SetInitialValue(value, 0);
-
-        public void SetUpsertValue(ref TBlittableType valueRef, long value, long mod) => valueRef.SetInitialValue(value, mod);
     }
 
-    internal class BlittableKeyManager<TBV> : KeyManager<TBV>
+    class BlittableValueWrapper<TBlittableType> : IValueWrapper<TBlittableType>
+        where TBlittableType : IBlittableType, new()
+    {
+        private TBlittableType value = new TBlittableType();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref TBlittableType GetRef() => ref this.value;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetInitialValue(long value) => this.value.SetInitialValue(value, 0);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetUpsertValue(long value, long mod) => this.value.SetInitialValue(value, mod);
+    }
+
+    internal class BlittableKeyManager<TBV> : KeyManagerBase<TBV>, IKeyManager<TBV>
         where TBV : struct, IBlittableType
     {
         TBV[] initKeys;
@@ -350,9 +358,11 @@ namespace FASTER.PerfTest
             }
         }
 
-        internal override ref TBV GetInitKey(int index) => ref this.initKeys[index];
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref TBV GetInitKey(int index) => ref this.initKeys[index];
 
-        internal override ref TBV GetOpKey(int index) => ref this.opKeys[index];
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref TBV GetOpKey(int index) => ref this.opKeys[index];
 
         public override void Dispose() { }
     }

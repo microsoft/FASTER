@@ -105,35 +105,40 @@ namespace FASTER.PerfTest
 
             if (testRun.TestResult.Inputs.UseVarLenKey)
             {
-                var testInstance = new TestInstance<VarLenType>(testRun, new VarLenKeyManager(), new VarLenType.EqualityComparer());
                 if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
-                    return testInstance.Run<VarLenType, VarLenOutput, VarLenFunctions<VarLenType>>(null,
+                    var testInstance = new TestInstance<VarLenType, VarLenKeyManager, VarLenType, VarLenOutput, VarLenValueWrapperFactory, VarLenValueWrapper>(
+                        testRun, new VarLenKeyManager(), new VarLenType.EqualityComparer(), new VarLenValueWrapperFactory(testRun.TestResult.Inputs.ThreadCount));
+                    return testInstance.Run<VarLenFunctions<VarLenType>>(null,
                                             new VariableLengthStructSettings<VarLenType, VarLenType>
                                             {
                                                 keyLength = new VarLenTypeLength(),
                                                 valueLength = new VarLenTypeLength()
-                                            },
-                                            new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+                                            });
                 }
                 if (testRun.TestResult.Inputs.UseObjectValue)
                 {
-                    return testInstance.Run<ObjectType, ObjectTypeOutput, ObjectTypeFunctions<VarLenType>>(new SerializerSettings<VarLenType, ObjectType>
+                    var testInstance = new TestInstance<VarLenType, VarLenKeyManager, ObjectType, ObjectTypeOutput, ObjectValueWrapperFactory, ObjectValueWrapper>(
+                        testRun, new VarLenKeyManager(), new VarLenType.EqualityComparer(), new ObjectValueWrapperFactory());
+                    return testInstance.Run<ObjectTypeFunctions<VarLenType>>(new SerializerSettings<VarLenType, ObjectType>
                                             {
                                                 valueSerializer = () => new ObjectTypeSerializer(isKey: false)
                                             },
                                             new VariableLengthStructSettings<VarLenType, ObjectType>
                                             {
                                                 keyLength = new VarLenTypeLength()
-                                            },
-                                            new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+                                            });
                 }
 
                 // Value is Blittable
                 bool run_VarLen_Key_BV_Value<TBV>() where TBV : IBlittableType, new()
-                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<VarLenType, TBV>>
-                        (null, new VariableLengthStructSettings<VarLenType, TBV> { keyLength = new VarLenTypeLength() },
-                        new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
+                {
+                    var testInstance = new TestInstance<VarLenType, VarLenKeyManager, TBV, BlittableOutput<TBV>, BlittableValueWrapperFactory<TBV>, BlittableValueWrapper<TBV>>(
+                        testRun, new VarLenKeyManager(), new VarLenType.EqualityComparer(), new BlittableValueWrapperFactory<TBV>());
+
+                    return testInstance.Run<BlittableFunctions<VarLenType, TBV>>(null,
+                                            new VariableLengthStructSettings<VarLenType, TBV> { keyLength = new VarLenTypeLength() });
+                }
 
                 return Globals.ValueSize switch
                 {
@@ -149,35 +154,39 @@ namespace FASTER.PerfTest
             
             if (testRun.TestResult.Inputs.UseObjectKey)
             {
-                var testInstance = new TestInstance<ObjectType>(testRun, new ObjectKeyManager(), new ObjectType.EqualityComparer());
                 if (testRun.TestResult.Inputs.UseVarLenValue)
                 {
-                    return testInstance.Run<VarLenType, VarLenOutput, VarLenFunctions<ObjectType>>(new SerializerSettings<ObjectType, VarLenType>
+                    var testInstance = new TestInstance<ObjectType, ObjectKeyManager, VarLenType, VarLenOutput, VarLenValueWrapperFactory, VarLenValueWrapper>(
+                        testRun, new ObjectKeyManager(), new ObjectType.EqualityComparer(), new VarLenValueWrapperFactory(testRun.TestResult.Inputs.ThreadCount));
+                    return testInstance.Run<VarLenFunctions<ObjectType>>(new SerializerSettings<ObjectType, VarLenType>
                                             {
                                                 keySerializer = () => new ObjectTypeSerializer(isKey: true)
                                             },
                                             new VariableLengthStructSettings<ObjectType, VarLenType>
                                             {
                                                 valueLength = new VarLenTypeLength()
-                                            },
-                                            new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+                                            });
                 }
                 if (testRun.TestResult.Inputs.UseObjectValue)
                 {
-                    return testInstance.Run<ObjectType, ObjectTypeOutput, ObjectTypeFunctions<ObjectType>>(new SerializerSettings<ObjectType, ObjectType>
+                    var testInstance = new TestInstance<ObjectType, ObjectKeyManager, ObjectType, ObjectTypeOutput, ObjectValueWrapperFactory, ObjectValueWrapper>(
+                        testRun, new ObjectKeyManager(), new ObjectType.EqualityComparer(), new ObjectValueWrapperFactory());
+                    return testInstance.Run<ObjectTypeFunctions<ObjectType>>(new SerializerSettings<ObjectType, ObjectType>
                                             {
                                                 keySerializer = () => new ObjectTypeSerializer(isKey: true),
                                                 valueSerializer = () => new ObjectTypeSerializer(isKey: false)
                                             },
-                                            null,
-                                            new ObjectThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+                                            null);
                 }
 
                 // Value is Blittable
                 bool run_Object_Key_BV_Value<TBV>() where TBV : IBlittableType, new()
-                    => testInstance.Run<TBV, BlittableOutput<TBV>, BlittableFunctions<ObjectType, TBV>>(
-                        new SerializerSettings<ObjectType, TBV> { keySerializer = () => new ObjectTypeSerializer(isKey: true) }, null,
-                        new BlittableThreadValueRef<TBV>(testRun.TestResult.Inputs.ThreadCount));
+                {
+                    var testInstance = new TestInstance<ObjectType, ObjectKeyManager, TBV, BlittableOutput<TBV>, BlittableValueWrapperFactory<TBV>, BlittableValueWrapper<TBV>>(
+                        testRun, new ObjectKeyManager(), new ObjectType.EqualityComparer(), new BlittableValueWrapperFactory<TBV>());
+                    return testInstance.Run<BlittableFunctions<ObjectType, TBV>>(
+                                            new SerializerSettings<ObjectType, TBV> { keySerializer = () => new ObjectTypeSerializer(isKey: true) }, null);
+                }
 
                 return Globals.ValueSize switch
                 {
@@ -195,11 +204,13 @@ namespace FASTER.PerfTest
 
             if (testRun.TestResult.Inputs.UseVarLenValue)
             {
-                bool run_BV_Key_VarLen_Value<TBV>() where TBV : struct, IBlittableType 
-                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(), new BlittableEqualityComparer<TBV>())
-                            .Run<VarLenType, VarLenOutput, VarLenFunctions<TBV>>(
-                                null, new VariableLengthStructSettings<TBV, VarLenType> { valueLength = new VarLenTypeLength() },
-                                new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+                bool run_BV_Key_VarLen_Value<TBV>() where TBV : struct, IBlittableType
+                {
+                    var testInstance = new TestInstance<TBV, BlittableKeyManager<TBV>, VarLenType, VarLenOutput, VarLenValueWrapperFactory, VarLenValueWrapper>(
+                        testRun, new BlittableKeyManager<TBV>(), new BlittableEqualityComparer<TBV>(), new VarLenValueWrapperFactory(testRun.TestResult.Inputs.ThreadCount));
+                    return testInstance.Run<VarLenFunctions<TBV>>(null,
+                                            new VariableLengthStructSettings<TBV, VarLenType> { valueLength = new VarLenTypeLength() });
+                }
 
                 return Globals.KeySize switch
                 {
@@ -216,10 +227,15 @@ namespace FASTER.PerfTest
             if (testRun.TestResult.Inputs.UseObjectValue)
             {
                 bool run_BV_Key_Object_Value<TBV>() where TBV : struct, IBlittableType
-                    => new TestInstance<TBV>(testRun, new BlittableKeyManager<TBV>(), new BlittableEqualityComparer<TBV>())
-                            .Run<VarLenType, VarLenOutput, VarLenFunctions<TBV>>(
-                                null, new VariableLengthStructSettings<TBV, VarLenType> { valueLength = new VarLenTypeLength() },
-                                new VarLenThreadValueRef(testRun.TestResult.Inputs.ThreadCount));
+                {
+                    var testInstance = new TestInstance<TBV, BlittableKeyManager<TBV>, ObjectType, ObjectTypeOutput, ObjectValueWrapperFactory, ObjectValueWrapper>(
+                        testRun, new BlittableKeyManager<TBV>(), new BlittableEqualityComparer<TBV>(), new ObjectValueWrapperFactory());
+                    return testInstance.Run<ObjectTypeFunctions<TBV>>(new SerializerSettings<TBV, ObjectType>
+                                            {
+                                                valueSerializer = () => new ObjectTypeSerializer(isKey: false)
+                                            },
+                                            null);
+                }
 
                 return Globals.KeySize switch
                 {
@@ -236,9 +252,11 @@ namespace FASTER.PerfTest
             // Key and value are Blittable
 
             bool run_BV_Key_BV_Value<TBVKey, TBVValue>() where TBVKey : struct, IBlittableType where TBVValue : IBlittableType, new()
-                => new TestInstance<TBVKey>(testRun, new BlittableKeyManager<TBVKey>(), new BlittableEqualityComparer<TBVKey>())
-                            .Run<TBVValue, BlittableOutput<TBVValue>, BlittableFunctions<TBVKey, TBVValue>>(
-                                null, null, new BlittableThreadValueRef<TBVValue>(testRun.TestResult.Inputs.ThreadCount));
+            {
+                var testInstance = new TestInstance<TBVKey, BlittableKeyManager<TBVKey>, TBVValue, BlittableOutput<TBVValue>, BlittableValueWrapperFactory<TBVValue>, BlittableValueWrapper<TBVValue>>(
+                   testRun, new BlittableKeyManager<TBVKey>(), new BlittableEqualityComparer<TBVKey>(), new BlittableValueWrapperFactory<TBVValue>());
+                return testInstance.Run<BlittableFunctions<TBVKey, TBVValue>>(null, null);
+            }
 
             return Globals.KeySize switch
             {

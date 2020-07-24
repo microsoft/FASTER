@@ -82,15 +82,14 @@ namespace FASTER.Benchmark
             outputs.Counts.TransactionSecondsTrimmed = trimmedMs.Select(ms => ms / 1000.0).ToArray();
             outputs.Counts.TransactionCountsTrimmed = trimmedOps;
 
-            var initSec = outputs.Counts.TransactionSecondsFull.Average();
-            var iCount = outputs.Counts.TransactionCountsFull.Average() / inputs.IterationCount;
-            var tCount = (int)(outputs.Counts.TransactionCountsFull.Average() / inputs.ThreadCount);
-            var totalOpSec = outputs.Counts.TransactionSecondsFull.Average();
+            var initSec = initializeMs.Select(ms => ms / 1000.0).Average();
+            var opCount = outputs.Counts.TransactionCountsFull.Average();
+            var opSec = outputs.Counts.TransactionSecondsFull.Average();
             Console.WriteLine($"----- Averages:");
             Console.WriteLine($"{FASTER_YcsbBenchmark.kInitCount:N0} Initial Keys inserted in {initSec:N3} sec" +
                               $" ({outputs.InitialInserts.AllThreadsFull.Mean:N2} Inserts/sec;" +
                               $" {outputs.InitialInserts.PerThreadFull.Mean:N2} thread/sec)");
-            Console.WriteLine($"{tCount:N0} Mixed Operations per thread ({iCount * inputs.ThreadCount:N0} total) in {totalOpSec:N3} sec" +
+            Console.WriteLine($"{opCount:N0} Mixed Operations in {opSec:N3} sec" +
                               $" ({outputs.Transactions.AllThreadsFull.Mean:N2} Operations/sec;" +
                               $" {outputs.Transactions.PerThreadFull.Mean:N2} thread/sec)");
 
