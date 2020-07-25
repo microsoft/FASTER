@@ -288,7 +288,7 @@ namespace FASTER.test
                 {
                     recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _);
                     Assert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");  // we should have read in input2, not input1 or input3
-                    Assert.True(false, $"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");  // we should have read in input2, not input1 or input3
+                    // Assert.True(false, $"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");  // we should have read in input2, not input1 or input3
                 }
             }
 

@@ -76,6 +76,7 @@ namespace FASTER.core
         public byte[] GetCommitMetadata(long commitNum)
         {
             this.commitNum = commitNum + 1;
+            commitNum = 0;
 
             var fd = checkpointNamingScheme.FasterLogCommitMetadata(commitNum);
             var device = deviceFactory.Get(fd);
@@ -96,10 +97,10 @@ namespace FASTER.core
         {
             if (!removeOutdated)
             {
-                return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
+                return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
             }
 
-            var c = commitNum++ % 2;
+            var c = commitNum % 2;
             devicePair[c] = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(c));
             return devicePair[c];
         }
