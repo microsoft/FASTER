@@ -246,7 +246,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task ResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool removeOutdated)
+        public async Task ResumePersistedReader2([Values] bool removeOutdated)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
@@ -260,7 +260,7 @@ namespace FASTER.test
 
             var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), removeOutdated);
 
-            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = logCommitManager }))
             {
                 await l.EnqueueAsync(input1);
                 await l.CommitAsync();
