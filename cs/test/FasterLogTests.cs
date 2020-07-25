@@ -260,6 +260,8 @@ namespace FASTER.test
 
             var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), removeOutdated);
 
+            long originalCompleted;
+
             using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
             {
                 await l.EnqueueAsync(input1);
@@ -276,6 +278,7 @@ namespace FASTER.test
                     originalIterator.CompleteUntil(recoveryAddress);
                     originalIterator.GetNext(out _, out _, out _, out _);  // move the reader ahead
                     await l.CommitAsync();
+                    originalCompleted = originalIterator.CompletedUntilAddress;
                 }
             }
 
@@ -283,9 +286,9 @@ namespace FASTER.test
             {
                 using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
                 {
-                    byte[] outBuf;
-                    recoveredIterator.GetNext(out outBuf, out _, out _, out _);
-                    Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
+                    recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _);
+                    Assert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");  // we should have read in input2, not input1 or input3
+                    Assert.True(false, $"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");  // we should have read in input2, not input1 or input3
                 }
             }
 
