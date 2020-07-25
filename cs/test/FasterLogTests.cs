@@ -290,6 +290,8 @@ namespace FASTER.test
             }
 
             DeleteDirectory(commitPath);
+            if (Directory.Exists(commitPath))
+                Assert.True(false, "Directory still exists");
         }
 
         private static void DeleteDirectory(string path)
