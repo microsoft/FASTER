@@ -21,6 +21,7 @@ namespace FASTER.core
 
         private readonly bool removeOutdated;
         private readonly IDevice[] devicePair; // used if removeOutdated is true
+        private SectorAlignedBufferPool bufferPool;
 
         /// <summary>
         /// Next commit number
@@ -61,14 +62,7 @@ namespace FASTER.core
             writer.Write(commitMetadata.Length);
             writer.Write(commitMetadata);
 
-            var numBytesToWrite = ms.Position;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
-
-            fixed (byte* commit = ms.ToArray())
-            {
-                device.WriteAsync((IntPtr)commit, 0, (uint)numBytesToWrite, IOCallback, null);
-            }
-            semaphore.Wait();
+            WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Close();
         }
 
@@ -85,6 +79,7 @@ namespace FASTER.core
 
             var fd = checkpointNamingScheme.FasterLogCommitMetadata(commitNum);
             var device = deviceFactory.Get(fd);
+
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
             int size = BitConverter.ToInt32(writePad, 0);
 
@@ -123,14 +118,7 @@ namespace FASTER.core
             writer.Write(commitMetadata.Length);
             writer.Write(commitMetadata);
 
-            var numBytesToWrite = ms.Position;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
-
-            fixed (byte* commit = ms.ToArray())
-            {
-                device.WriteAsync((IntPtr)commit, 0, (uint)numBytesToWrite, IOCallback, null);
-            }
-            semaphore.Wait();
+            WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Close();
         }
 
@@ -168,14 +156,7 @@ namespace FASTER.core
             writer.Write(commitMetadata.Length);
             writer.Write(commitMetadata);
 
-            var numBytesToWrite = ms.Position;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
-
-            fixed (byte* commit = ms.ToArray())
-            {
-                device.WriteAsync((IntPtr)commit, 0, (uint)numBytesToWrite, IOCallback, null);
-            }
-            semaphore.Wait();
+            WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Close();
         }
 
@@ -267,16 +248,41 @@ namespace FASTER.core
 
         private unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
+            if (bufferPool == null)
+                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
+            var pbuffer = bufferPool.Get(size);
+            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
+                (uint)numBytesToRead, IOCallback, null);
+            semaphore.Wait();
+
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
+                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+            pbuffer.Return();
+        }
+
+        private unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
+        {
+            if (bufferPool == null)
+                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+
+            long numBytesToWrite = size;
+            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+
+            var pbuffer = bufferPool.Get(size);
+            fixed (byte* bufferRaw = buffer)
             {
-                device.ReadAsync(address, (IntPtr)bufferRaw,
-                    (uint)numBytesToRead, IOCallback, null);
-                semaphore.Wait();
+                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
             }
+            
+            device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
+            semaphore.Wait();
+
+            pbuffer.Return();
         }
     }
 }
