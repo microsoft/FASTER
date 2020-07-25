@@ -243,5 +243,70 @@ namespace FASTER.test
                 }
             }
         }
+
+        [Test]
+        public async Task ResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool removeOutdated)
+        {
+            var input1 = new byte[] { 0, 1, 2, 3 };
+            var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
+            var input3 = new byte[] { 11, 12 };
+            string readerName = "abc";
+
+            var commitPath = TestContext.CurrentContext.TestDirectory + "\\ResumePersistedReader2";
+            var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), removeOutdated);
+
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+            {
+                await l.EnqueueAsync(input1);
+                await l.CommitAsync();
+                await l.EnqueueAsync(input2);
+                await l.CommitAsync();
+                await l.EnqueueAsync(input3);
+                await l.CommitAsync();
+                long recoveryAddress;
+
+                using (var originalIterator = l.Scan(0, long.MaxValue, readerName))
+                {
+                    originalIterator.GetNext(out _, out _, out _, out recoveryAddress);
+                    originalIterator.CompleteUntil(recoveryAddress);
+                    originalIterator.GetNext(out _, out _, out _, out _);  // move the reader ahead
+                    await l.CommitAsync();
+                }
+            }
+
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+            {
+                using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
+                {
+                    byte[] outBuf;
+                    recoveredIterator.GetNext(out outBuf, out _, out _, out _);
+                    Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
+                }
+            }
+
+            DeleteDirectory(commitPath);
+        }
+
+        private static void DeleteDirectory(string path)
+        {
+            foreach (string directory in Directory.GetDirectories(path))
+            {
+                DeleteDirectory(directory);
+            }
+
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException)
+            {
+                Directory.Delete(path, true);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Directory.Delete(path, true);
+            }
+        }
+
     }
 }

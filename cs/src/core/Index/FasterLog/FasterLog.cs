@@ -839,7 +839,7 @@ namespace FASTER.core
                 }
                 catch { }
             }
-            throw new FasterException("Unable to recover using any available commit");
+            Debug.WriteLine("Unable to recover using any available commit");
         }
 
         /// <summary>

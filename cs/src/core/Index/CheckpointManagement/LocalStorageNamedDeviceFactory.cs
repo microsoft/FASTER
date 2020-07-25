@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security;
 
 namespace FASTER.core
 {
@@ -14,9 +15,19 @@ namespace FASTER.core
     public class LocalStorageNamedDeviceFactory : INamedDeviceFactory
     {
         private string baseName;
+        private readonly bool deleteOnClose;
+        private readonly bool preallocateFile;
 
-        /// <inheritdoc />
-        public LocalStorageNamedDeviceFactory() { }
+        /// <summary>
+        /// Create instance of factory
+        /// </summary>
+        /// <param name="preallocateFile">Whether files should be preallocated</param>
+        /// <param name="deleteOnClose">Whether file should be deleted on close</param>
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false)
+        {
+            this.preallocateFile = preallocateFile;
+            this.deleteOnClose = deleteOnClose;
+        }
 
         /// <inheritdoc />
         public void Initialize(string baseName)
@@ -28,7 +39,7 @@ namespace FASTER.core
         public IDevice Get(FileDescriptor fileInfo)
         {
             Directory.CreateDirectory(fileInfo.directoryName);
-            return new LocalStorageDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), initialLogFileHandles: null);
+            return new LocalStorageDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), initialLogFileHandles: null, preallocateFile: preallocateFile, deleteOnClose: deleteOnClose);
         }
 
 
@@ -37,21 +48,18 @@ namespace FASTER.core
         {
             var pathInfo = new DirectoryInfo(Path.Combine(baseName, path));
 
-            bool found = false;
-            foreach (var folder in pathInfo.GetDirectories().OrderByDescending(f => f.LastWriteTime))
+            if (pathInfo.Exists)
             {
-                found = true;
-                yield return new FileDescriptor(folder.Name, "");
-            }
+                foreach (var folder in pathInfo.GetDirectories().OrderByDescending(f => f.LastWriteTime))
+                {
+                    yield return new FileDescriptor(folder.Name, "");
+                }
 
-            foreach (var file in pathInfo.GetFiles().OrderByDescending(f => f.LastWriteTime))
-            {
-                found = true;
-                yield return new FileDescriptor("", file.Name);
+                foreach (var file in pathInfo.GetFiles().OrderByDescending(f => f.LastWriteTime))
+                {
+                    yield return new FileDescriptor("", file.Name);
+                }
             }
-
-            if (!found)
-                throw new FasterException($"No contents in path {path}");
         }
     }
 }

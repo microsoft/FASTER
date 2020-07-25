@@ -87,6 +87,74 @@ namespace FASTER.test.recovery.sumstore.simple
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
 
+        [TestCase(CheckpointType.FoldOver)]
+        [TestCase(CheckpointType.Snapshot)]
+        public void SimpleRecoveryTest2(CheckpointType checkpointType)
+        {
+            var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestContext.CurrentContext.TestDirectory + "\\checkpoints4"), false);
+
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
+
+            // Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
+
+            fht1 = new FasterKV
+                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                );
+
+            fht2 = new FasterKV
+                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
+                (128, new SimpleFunctions(),
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                );
+
+
+            int numOps = 5000;
+            var inputArray = new AdId[numOps];
+            for (int i = 0; i < numOps; i++)
+            {
+                inputArray[i].adId = i;
+            }
+
+            NumClicks value;
+            AdInput inputArg = default;
+            Output output = default;
+
+            var session1 = fht1.NewSession();
+            for (int key = 0; key < numOps; key++)
+            {
+                value.numClicks = key;
+                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+            }
+            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            session1.Dispose();
+
+            fht2.Recover(token);
+
+            var session2 = fht2.NewSession();
+            for (int key = 0; key < numOps; key++)
+            {
+                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+
+                if (status == Status.PENDING)
+                    session2.CompletePending(true);
+                else
+                {
+                    Assert.IsTrue(output.value.numClicks == key);
+                }
+            }
+            session2.Dispose();
+
+            log.Close();
+            fht1.Dispose();
+            fht2.Dispose();
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
+        }
+
         [Test]
         public void ShouldRecoverBeginAddress()
         {
