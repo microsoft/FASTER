@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.AccessControl;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -253,6 +254,10 @@ namespace FASTER.test
             string readerName = "abc";
 
             var commitPath = TestContext.CurrentContext.TestDirectory + "\\ResumePersistedReader2";
+
+            if (Directory.Exists(commitPath))
+                DeleteDirectory(commitPath);
+
             var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), removeOutdated);
 
             using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
