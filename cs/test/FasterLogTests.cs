@@ -279,7 +279,7 @@ namespace FASTER.test
                 }
             }
 
-            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = logCommitManager }))
             {
                 using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
                 {
