@@ -76,7 +76,6 @@ namespace FASTER.core
         public byte[] GetCommitMetadata(long commitNum)
         {
             this.commitNum = commitNum + 1;
-            commitNum = 0;
 
             var fd = checkpointNamingScheme.FasterLogCommitMetadata(commitNum);
             var device = deviceFactory.Get(fd);
@@ -97,10 +96,10 @@ namespace FASTER.core
         {
             if (!removeOutdated)
             {
-                return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
             }
 
-            var c = commitNum % 2;
+            var c = commitNum++ % 2;
             devicePair[c] = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(c));
             return devicePair[c];
         }
@@ -247,6 +246,13 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Note: will read potentially more data (based on sector alignment)
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="address"></param>
+        /// <param name="buffer"></param>
+        /// <param name="size"></param>
         private unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
             if (bufferPool == null)
@@ -255,7 +261,7 @@ namespace FASTER.core
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
-            var pbuffer = bufferPool.Get(size);
+            var pbuffer = bufferPool.Get((int)numBytesToRead);
             device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
                 (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
@@ -266,6 +272,13 @@ namespace FASTER.core
             pbuffer.Return();
         }
 
+        /// <summary>
+        /// Note: pads the bytes with zeros to achieve sector alignment
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="address"></param>
+        /// <param name="buffer"></param>
+        /// <param name="size"></param>
         private unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
         {
             if (bufferPool == null)
@@ -274,10 +287,10 @@ namespace FASTER.core
             long numBytesToWrite = size;
             numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
-            var pbuffer = bufferPool.Get(size);
+            var pbuffer = bufferPool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = buffer)
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, numBytesToWrite, numBytesToWrite);
+                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
             }
             
             device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
