@@ -211,5 +211,10 @@ namespace FASTER.core
             if (!found)
                 throw new FasterException("No valid hybrid log checkpoint to recover from");
         }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+        }
     }
 }

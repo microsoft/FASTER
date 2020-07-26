@@ -67,7 +67,8 @@ namespace FASTER.core
         {
             // We only delete shard 0
             var file = new FileInfo(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName + ".0"));
-            file.Delete();
+            if (file.Exists)
+                file.Delete();
         }
     }
 }

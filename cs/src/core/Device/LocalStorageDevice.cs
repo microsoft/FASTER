@@ -60,7 +60,9 @@ namespace FASTER.core
             : base(filename, GetSectorSize(filename), capacity)
         {
             Native32.EnableProcessPrivileges();
-            Directory.CreateDirectory(new FileInfo(filename).Directory.FullName);
+            string path = new FileInfo(filename).Directory.FullName;
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;

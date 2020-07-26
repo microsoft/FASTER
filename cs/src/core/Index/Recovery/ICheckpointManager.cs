@@ -28,7 +28,7 @@ namespace FASTER.core
     /// 
     /// Provided devices will be closed directly by FASTER when done.
     /// </summary>
-    public interface ICheckpointManager
+    public interface ICheckpointManager :  IDisposable
     {
         /// <summary>
         /// Initialize index checkpoint

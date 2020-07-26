@@ -22,6 +22,7 @@ namespace FASTER.core
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
         private readonly ILogCommitManager logCommitManager;
+        private readonly bool disposeLogCommitManager;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
@@ -81,9 +82,25 @@ namespace FASTER.core
         /// <param name="logSettings"></param>
         public FasterLog(FasterLogSettings logSettings)
         {
-            logCommitManager = logSettings.LogCommitManager ??
-                new LocalLogCommitManager(logSettings.LogCommitFile ??
-                logSettings.LogDevice.FileName + ".commit");
+            bool oldCommitManager = false;
+
+            if (oldCommitManager)
+            {
+                logCommitManager = logSettings.LogCommitManager ??
+                    new LocalLogCommitManager(logSettings.LogCommitFile ??
+                    logSettings.LogDevice.FileName + ".commit");
+            }
+            else
+            {
+                logCommitManager = logSettings.LogCommitManager ??
+                    new DeviceLogCommitCheckpointManager
+                    (new LocalStorageNamedDeviceFactory(),
+                        new DefaultCheckpointNamingScheme(
+                          new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
+            }
+
+            if (logSettings.LogCommitManager == null)
+                disposeLogCommitManager = true;
 
             // Reserve 8 byte checksum in header if requested
             logChecksum = logSettings.LogChecksum;
@@ -114,6 +131,8 @@ namespace FASTER.core
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
             epoch.Dispose();
+            if (disposeLogCommitManager)
+                logCommitManager.Dispose();
         }
 
         #region Enqueue

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -9,7 +10,7 @@ namespace FASTER.core
     /// <summary>
     /// Log commit manager
     /// </summary>
-    public interface ILogCommitManager
+    public interface ILogCommitManager : IDisposable
     {
         /// <summary>
         /// Perform (synchronous) commit with specified metadata

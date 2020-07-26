@@ -45,6 +45,13 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+        }
+
+        /// <summary>
         /// Retrieve commit metadata
         /// </summary>
         /// <returns>Metadata, or null if invalid</returns>

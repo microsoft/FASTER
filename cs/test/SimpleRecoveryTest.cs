@@ -152,6 +152,8 @@ namespace FASTER.test.recovery.sumstore.simple
             log.Close();
             fht1.Dispose();
             fht2.Dispose();
+            checkpointManager.Dispose();
+
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
 

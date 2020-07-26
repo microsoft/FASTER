@@ -23,6 +23,8 @@ namespace FASTER.core
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
 
+        private IDevice singleLogCommitDevice;
+
         /// <summary>
         /// Next commit number
         /// </summary>
@@ -64,9 +66,18 @@ namespace FASTER.core
             writer.Write(commitMetadata);
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
-            device.Close();
+
+            if (!overwriteLogCommits)
+                device.Close();
 
             RemoveOutdated();
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            singleLogCommitDevice?.Close();
+            singleLogCommitDevice = null;
         }
 
         /// <inheritdoc />
@@ -78,10 +89,19 @@ namespace FASTER.core
         /// <inheritdoc />
         public byte[] GetCommitMetadata(long commitNum)
         {
-            this.commitNum = commitNum + 1;
-
-            var fd = checkpointNamingScheme.FasterLogCommitMetadata(commitNum);
-            var device = deviceFactory.Get(fd);
+            IDevice device;
+            if (overwriteLogCommits)
+            {
+                if (singleLogCommitDevice == null)
+                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                device = singleLogCommitDevice;
+            }
+            else
+            {
+                device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                this.commitNum = commitNum + 1;
+            }
+            
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
             int size = BitConverter.ToInt32(writePad, 0);
@@ -91,14 +111,21 @@ namespace FASTER.core
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Close();
+            
+            if (!overwriteLogCommits)
+                device.Close();
+
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
 
         private IDevice NextCommitDevice()
         {
             if (overwriteLogCommits)
-                return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+            {
+                if (singleLogCommitDevice == null)
+                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                return singleLogCommitDevice;
+            }
 
             return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
         }
