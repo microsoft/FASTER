@@ -246,7 +246,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task ResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool removeOutdated)
+        public async Task ResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool overwriteLogCommits, [Values] bool removeOutdated)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
@@ -258,7 +258,7 @@ namespace FASTER.test
             if (Directory.Exists(commitPath))
                 DeleteDirectory(commitPath);
 
-            var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), removeOutdated);
+            var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), overwriteLogCommits, removeOutdated);
 
             long originalCompleted;
 
@@ -281,14 +281,19 @@ namespace FASTER.test
                     originalCompleted = originalIterator.CompletedUntilAddress;
                 }
             }
-
+            
+            // TestContext.Progress.WriteLine(string.Join(",", logCommitManager.ListCommits()));
+            
             using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
             {
                 using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
                 {
                     recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _);
-                    Assert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");  // we should have read in input2, not input1 or input3
-                    // Assert.True(false, $"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");  // we should have read in input2, not input1 or input3
+
+                    // we should have read in input2, not input1 or input3
+                    Assert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");
+
+                    // TestContext.Progress.WriteLine($"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}"); 
                 }
             }
 

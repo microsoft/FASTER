@@ -25,6 +25,13 @@ namespace FASTER.core
         IDevice Get(FileDescriptor fileInfo);
 
         /// <summary>
+        /// Delete IDevice for given file info
+        /// </summary>
+        /// <param name="fileInfo">File info</param>
+        /// <returns></returns>
+        void Delete(FileDescriptor fileInfo);
+
+        /// <summary>
         /// List path contents, in order of preference
         /// </summary>
         /// <returns></returns>

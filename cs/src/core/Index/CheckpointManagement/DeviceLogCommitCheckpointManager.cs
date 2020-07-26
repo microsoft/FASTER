@@ -19,8 +19,8 @@ namespace FASTER.core
         private readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
 
+        private readonly bool overwriteLogCommits;
         private readonly bool removeOutdated;
-        private readonly IDevice[] devicePair; // used if removeOutdated is true
         private SectorAlignedBufferPool bufferPool;
 
         /// <summary>
@@ -34,17 +34,18 @@ namespace FASTER.core
         /// </summary>
         /// <param name="deviceFactory">Factory for getting devices</param>
         /// <param name="checkpointNamingScheme">Checkpoint naming helper</param>
-        /// <param name="removeOutdated">Remote outdated commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = false)
+        /// <param name="overwriteLogCommits">Overwrite same FASTER log commits each time</param>
+        /// <param name="removeOutdated">Remote older FASTER log commits</param>
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool overwriteLogCommits = true, bool removeOutdated = false)
         {
             this.deviceFactory = deviceFactory;
             this.checkpointNamingScheme = checkpointNamingScheme;
 
             this.commitNum = 0;
             this.semaphore = new SemaphoreSlim(0);
+
+            this.overwriteLogCommits = overwriteLogCommits;
             this.removeOutdated = removeOutdated;
-            if (removeOutdated)
-                this.devicePair = new IDevice[2];
 
             deviceFactory.Initialize(checkpointNamingScheme.BaseName());
         }
@@ -64,12 +65,14 @@ namespace FASTER.core
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Close();
+
+            RemoveOutdated();
         }
 
         /// <inheritdoc />
         public IEnumerable<long> ListCommits()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.FasterLogCommitBasePath()).Select(e => checkpointNamingScheme.CommitNumber(e));
+            return deviceFactory.ListContents(checkpointNamingScheme.FasterLogCommitBasePath()).Select(e => checkpointNamingScheme.CommitNumber(e)).OrderByDescending(e => e);
         }
 
         /// <inheritdoc />
@@ -94,14 +97,16 @@ namespace FASTER.core
 
         private IDevice NextCommitDevice()
         {
-            if (!removeOutdated)
-            {
-                return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
-            }
+            if (overwriteLogCommits)
+                return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
 
-            var c = commitNum++ % 2;
-            devicePair[c] = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(c));
-            return devicePair[c];
+            return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
+        }
+
+        private void RemoveOutdated()
+        {
+            if (removeOutdated && commitNum > 1)
+                deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(commitNum - 2));
         }
         #endregion
 

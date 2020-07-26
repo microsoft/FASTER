@@ -61,5 +61,13 @@ namespace FASTER.core
                 }
             }
         }
+
+        /// <inheritdoc />
+        public void Delete(FileDescriptor fileInfo)
+        {
+            // We only delete shard 0
+            var file = new FileInfo(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName + ".0"));
+            file.Delete();
+        }
     }
 }

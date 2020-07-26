@@ -2,6 +2,7 @@
 using Microsoft.Azure.Storage.Blob;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -23,6 +24,12 @@ namespace FASTER.devices
         public AzureStorageNamedDeviceFactory(CloudBlobClient client)
         {
             this.client = client;
+        }
+
+        /// <inheritdoc />
+        public void Delete(FileDescriptor fileInfo)
+        {
+            Debug.WriteLine("Delete of Azure blobs not yet supported");
         }
 
         /// <inheritdoc />
