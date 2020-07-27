@@ -64,10 +64,17 @@ namespace FASTER.core
         /// <inheritdoc />
         public void Delete(FileDescriptor fileInfo)
         {
-            // We only delete shard 0
-            var file = new FileInfo(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName + ".0"));
-            if (file.Exists)
-                file.Delete();
+            if (fileInfo.fileName != null)
+            {
+                var file = new FileInfo(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName + ".0"));
+                if (file.Exists)
+                    file.Delete();
+            }
+            else
+            {
+                var dir = new DirectoryInfo(Path.Combine(baseName, fileInfo.directoryName));
+                dir.Delete(true);
+            }
         }
     }
 }

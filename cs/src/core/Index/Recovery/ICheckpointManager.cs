@@ -105,5 +105,10 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns></returns>
         IDevice GetSnapshotObjectLogDevice(Guid token);
+
+        /// <summary>
+        /// Cleanup all data (subfolder) related to checkpoints by this manager
+        /// </summary>
+        public void PurgeAll();
     }
 }

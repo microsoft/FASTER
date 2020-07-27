@@ -25,6 +25,14 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Cleanup all files in this folder
+        /// </summary>
+        public void PurgeAll()
+        {
+            new DirectoryInfo(directoryConfiguration.checkpointDir).Delete(true);
+        }
+
+        /// <summary>
         /// Initialize index checkpoint
         /// </summary>
         /// <param name="indexToken"></param>

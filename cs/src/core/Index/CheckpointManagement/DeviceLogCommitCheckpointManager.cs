@@ -52,6 +52,23 @@ namespace FASTER.core
             deviceFactory.Initialize(checkpointNamingScheme.BaseName());
         }
 
+        /// <inheritdoc />
+        public void PurgeAll()
+        {
+            deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+        }
+
+        /// <summary>
+        /// Create new instance of log commit manager
+        /// </summary>
+        /// <param name="deviceFactory">Factory for getting devices</param>
+        /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
+        /// <param name="overwriteLogCommits">Overwrite same FASTER log commits each time</param>
+        /// <param name="removeOutdated">Remote older FASTER log commits</param>
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, string baseName, bool overwriteLogCommits = true, bool removeOutdated = false)
+            : this(deviceFactory, new DefaultCheckpointNamingScheme(baseName), overwriteLogCommits, removeOutdated)
+                  { }
+
         #region ILogCommitManager
 
         /// <inheritdoc />
