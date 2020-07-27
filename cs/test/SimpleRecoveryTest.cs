@@ -29,7 +29,7 @@ namespace FASTER.test.recovery.sumstore.simple
         [TestCase(CheckpointType.Snapshot)]
         public void PageBlobSimpleRecoveryTest(CheckpointType checkpointType)
         {
-            //if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
                 ICheckpointManager checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
