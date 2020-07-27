@@ -38,8 +38,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            Directory.CreateDirectory(fileInfo.directoryName);
-            return new LocalStorageDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), initialLogFileHandles: null, preallocateFile: preallocateFile, deleteOnClose: deleteOnClose);
+            return Devices.CreateLogDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), preallocateFile: preallocateFile, deleteOnClose: deleteOnClose);
         }
 
 

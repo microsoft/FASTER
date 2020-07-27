@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
+using System.Linq;
 
 namespace FASTER.core
 {
@@ -41,9 +43,9 @@ namespace FASTER.core
         public FileDescriptor FasterLogCommitMetadata(long commitNumber) => new FileDescriptor($"{FasterLogCommitBasePath()}", $"commit.{commitNumber}");
         
         /// <inheritdoc />
-        public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(fileDescriptor.directoryName.Split('/')[1]);
+        public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);
         /// <inheritdoc />
-        public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.')[1]);
+        public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.').Reverse().Take(2).Last());
 
         /// <inheritdoc />
         public string IndexCheckpointBasePath() => "index-checkpoints";

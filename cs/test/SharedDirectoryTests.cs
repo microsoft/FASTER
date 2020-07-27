@@ -169,7 +169,11 @@ namespace FASTER.test.recovery.sumstore
         private void Test(FasterTestInstance fasterInstance, Guid checkpointToken)
         {
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(checkpointToken, new LocalCheckpointManager(fasterInstance.CheckpointDirectory));
+            checkpointInfo.Recover(checkpointToken,
+                new DeviceLogCommitCheckpointManager(
+                    new LocalStorageNamedDeviceFactory(),
+                        new DefaultCheckpointNamingScheme(
+                          new DirectoryInfo(fasterInstance.CheckpointDirectory).FullName)));
 
             // Create array for reading
             var inputArray = new AdInput[numUniqueKeys];
