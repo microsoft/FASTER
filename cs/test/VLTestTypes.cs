@@ -34,17 +34,7 @@ namespace FASTER.test
             return sizeof(long);
         }
 
-        public int GetLength<Input>(ref Key t, ref Input input)
-        {
-            return sizeof(long);
-        }
-
         public int GetAverageLength()
-        {
-            return sizeof(long);
-        }
-
-        public int GetInitialLength<Input>(ref Input input)
         {
             return sizeof(long);
         }
@@ -64,17 +54,7 @@ namespace FASTER.test
             return 2 * sizeof(int);
         }
 
-        public int GetInitialLength<Input>(ref Input input)
-        {
-            return 2 * sizeof(int);
-        }
-
         public int GetLength(ref VLValue t)
-        {
-            return sizeof(int) * t.length;
-        }
-
-        public int GetLength<Input>(ref VLValue t, ref Input input)
         {
             return sizeof(int) * t.length;
         }
