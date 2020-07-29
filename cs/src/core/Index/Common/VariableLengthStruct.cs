@@ -11,18 +11,18 @@ namespace FASTER.core
     public interface IVariableLengthStruct<T>
     {
         /// <summary>
-        /// Actual length of object
+        /// Actual length of given object
         /// </summary>
         /// <param name="t"></param>
         /// <returns></returns>
         int GetLength(ref T t);
 
         /// <summary>
-        /// Average length of objects, make sure this includes the object
+        /// Initial expected length of objects, make sure this includes the object
         /// header needed to compute the actual object length
         /// </summary>
         /// <returns></returns>
-        int GetAverageLength();
+        int GetInitialLength();
     }
 
     /// <summary>
@@ -37,7 +37,7 @@ namespace FASTER.core
         /// Get average length
         /// </summary>
         /// <returns></returns>
-        public int GetAverageLength() => size;
+        public int GetInitialLength() => size;
 
         /// <summary>
         /// Get length
@@ -66,30 +66,30 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// Interface for variable length in-place objects
+    /// Input-specific interface for variable length in-place objects
     /// modeled as structs, in FASTER
     /// </summary>
-    /// <typeparam name="Value"></typeparam>
+    /// <typeparam name="T"></typeparam>
     /// <typeparam name="Input"></typeparam>
-    public interface IVariableLengthStruct<Value, Input>
+    public interface IVariableLengthStruct<T, Input>
     {
         /// <summary>
-        /// Length of resulting Value when performing RMW with
+        /// Length of resulting object when performing RMW with given input
         /// </summary>
         /// <param name="t"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        int GetLength(ref Value t, ref Input input);
+        int GetLength(ref T t, ref Input input);
 
         /// <summary>
-        /// Initial length, when populating for RMW from given input
+        /// Initial expected length of object, when populated by RMW using given input
         /// </summary>
         /// <param name="input"></param>
         /// <returns></returns>
         int GetInitialLength(ref Input input);
     }
 
-    internal readonly struct DefaultVariableLengthStruct<T, TInput> : IVariableLengthStruct<T, TInput>
+    internal readonly struct DefaultVariableLengthStruct<T, Input> : IVariableLengthStruct<T, Input>
     {
         private readonly IVariableLengthStruct<T> variableLengthStruct;
 
@@ -102,12 +102,12 @@ namespace FASTER.core
             this.variableLengthStruct = variableLengthStruct;
         }
 
-        public int GetInitialLength(ref TInput input)
+        public int GetInitialLength(ref Input input)
         {
-            return variableLengthStruct.GetAverageLength();
+            return variableLengthStruct.GetInitialLength();
         }
 
-        public int GetLength(ref T t, ref TInput input)
+        public int GetLength(ref T t, ref Input input)
         {
             return variableLengthStruct.GetLength(ref t);
         }

@@ -121,7 +121,7 @@ namespace FASTER.core
             }
 
             // We need at least [record size] + [actual key size] + [average value size]
-            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueLength.GetAverageLength();
+            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueLength.GetInitialLength();
             if (availableBytes < reqBytes)
             {
                 return reqBytes;
@@ -137,8 +137,8 @@ namespace FASTER.core
         {
             return RecordInfo.GetLength() +
                 kRecordAlignment +
-                KeyLength.GetAverageLength() +
-                ValueLength.GetAverageLength();
+                KeyLength.GetInitialLength() +
+                ValueLength.GetInitialLength();
         }
 
         public override int GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)

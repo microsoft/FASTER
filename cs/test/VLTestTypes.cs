@@ -34,7 +34,7 @@ namespace FASTER.test
             return sizeof(long);
         }
 
-        public int GetAverageLength()
+        public int GetInitialLength()
         {
             return sizeof(long);
         }
@@ -49,7 +49,7 @@ namespace FASTER.test
         [FieldOffset(4)]
         public int field1;
 
-        public int GetAverageLength()
+        public int GetInitialLength()
         {
             return 2 * sizeof(int);
         }
