@@ -62,7 +62,7 @@ namespace FASTER.core
             }
             else
             {
-                if (fht.hlog is VariableLengthBlittableAllocator<Key, Value>)
+                if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
                     Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
