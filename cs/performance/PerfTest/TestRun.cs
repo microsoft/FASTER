@@ -82,23 +82,23 @@ namespace FASTER.PerfTest
                               $" {outputs.InitialInserts.PerThreadFull.Mean:N2} thread/sec)");
             if (inputs.MixOperations)
             {
-                Console.WriteLine($"{tCount} Mixed Operations per thread ({inputs.TotalOperationCount * inputs.ThreadCount:N0} total) in {totalOpSec:N3} sec" +
+                Console.WriteLine($"{tCount} Mixed Operations per thread ({(ulong)inputs.TotalOperationCount * (ulong)inputs.ThreadCount:N0} total) in {totalOpSec:N3} sec" +
                                   $" ({outputs.TotalOperations.AllThreadsFull.Mean:N2} Operations/sec;" +
                                   $" {outputs.TotalOperations.PerThreadFull.Mean:N2} thread/sec)");
-                Console.WriteLine($"    {uCount} Upserts per thread ({inputs.UpsertCount * inputs.ThreadCount:N0} total) ({((double)inputs.UpsertCount / inputs.TotalOperationCount) * 100:N2}%)");
-                Console.WriteLine($"    {rCount} Reads per thread ({inputs.ReadCount * inputs.ThreadCount:N0} total) ({((double)inputs.ReadCount / inputs.TotalOperationCount) * 100:N2}%)");
-                Console.WriteLine($"    {mCount} RMWs per thread ({inputs.RMWCount * inputs.ThreadCount:N0} total) ({((double)inputs.RMWCount / inputs.TotalOperationCount) * 100:N2}%)");
+                Console.WriteLine($"    {uCount} Upserts per thread ({(ulong)inputs.UpsertCount * (ulong)inputs.ThreadCount:N0} total) ({((double)inputs.UpsertCount / inputs.TotalOperationCount) * 100:N2}%)");
+                Console.WriteLine($"    {rCount} Reads per thread ({(ulong)inputs.ReadCount * (ulong)inputs.ThreadCount:N0} total) ({((double)inputs.ReadCount / inputs.TotalOperationCount) * 100:N2}%)");
+                Console.WriteLine($"    {mCount} RMWs per thread ({(ulong)inputs.RMWCount * (ulong)inputs.ThreadCount:N0} total) ({((double)inputs.RMWCount / inputs.TotalOperationCount) * 100:N2}%)");
             }
             else
             {
-                Console.WriteLine($"{tCount} per thread ({inputs.TotalOperationCount * inputs.ThreadCount:N0} total) Separate Operations in {totalOpSec:N3} sec" +
+                Console.WriteLine($"{tCount} per thread ({(ulong)inputs.TotalOperationCount * (ulong)inputs.ThreadCount:N0} total) Separate Operations in {totalOpSec:N3} sec" +
                                   $" ({outputs.TotalOperations.AllThreadsFull.Mean:N2} Operations/sec;" +
                                   $" {outputs.TotalOperations.PerThreadFull.Mean:N2} thread/sec)");
-                Console.WriteLine($"{uCount} Upserts per thread ({inputs.UpsertCount * inputs.ThreadCount:N0} total) in {upsertSec:N3} sec" +
+                Console.WriteLine($"{uCount} Upserts per thread ({(ulong)inputs.UpsertCount * (ulong)inputs.ThreadCount:N0} total) in {upsertSec:N3} sec" +
                                   $" ({outputs.Upserts.AllThreadsFull.Mean:N2} Upserts/sec; {outputs.Upserts.PerThreadFull.Mean:N2} thread/sec)");
-                Console.WriteLine($"{rCount} Reads per thread ({inputs.ReadCount * inputs.ThreadCount:N0} total) in {readSec:N3} sec ({outputs.Reads.AllThreadsFull.Mean:N2} Reads/sec;" +
+                Console.WriteLine($"{rCount} Reads per thread ({(ulong)inputs.ReadCount * (ulong)inputs.ThreadCount:N0} total) in {readSec:N3} sec ({outputs.Reads.AllThreadsFull.Mean:N2} Reads/sec;" +
                                   $" {outputs.Reads.PerThreadFull.Mean:N2} thread/sec)");
-                Console.WriteLine($"{mCount} RMWs per thread ({inputs.RMWCount * inputs.ThreadCount:N0} total) in {rmwSec:N3} sec ({outputs.RMWs.AllThreadsFull.Mean:N2} RMWs/sec;" +
+                Console.WriteLine($"{mCount} RMWs per thread ({(ulong)inputs.RMWCount * (ulong)inputs.ThreadCount:N0} total) in {rmwSec:N3} sec ({outputs.RMWs.AllThreadsFull.Mean:N2} RMWs/sec;" +
                                   $" {outputs.RMWs.PerThreadFull.Mean:N2} thread/sec)");
             }
             Console.WriteLine();

@@ -250,8 +250,9 @@ namespace FASTER.PerfTest
                 }
 
                 var suffix = op == Operations.Mixed ? "" : "s";
-                Console.WriteLine($"Operations: Time for {opCount:N0} {opName}{suffix} per thread ({opCount * testRun.TestResult.Inputs.ThreadCount:N0} total):" +
-                                  $" {numSec:N3} sec ({(opCount * testRun.TestResult.Inputs.ThreadCount) / numSec:N2} {op}{suffix}/sec; {opCount / numSec:N2} thread/sec)");
+                ulong totalOpsAllThreads = (ulong)opCount * (ulong)testRun.TestResult.Inputs.ThreadCount;
+                Console.WriteLine($"Operations: Time for {opCount:N0} {opName}{suffix} per thread ({totalOpsAllThreads:N0} total):" +
+                                  $" {numSec:N3} sec ({totalOpsAllThreads / numSec:N2} {op}{suffix}/sec; {opCount / numSec:N2} thread/sec)");
                 var endTailAddress = fht.LogTailAddress;
                 if (endTailAddress != startTailAddress)
                 {

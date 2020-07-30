@@ -287,8 +287,10 @@ namespace FASTER.PerfTest
     public struct BlittableEqualityComparer<TBV> : IFasterEqualityComparer<TBV>
         where TBV : IBlittableType
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetHashCode64(ref TBV k) => k.Data.GetHashCode64();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool Equals(ref TBV k1, ref TBV k2)
             => k1.Data == k2.Data && (!Globals.Verify || (k1.Verify(k1.Data.Value) && k2.Verify(k2.Data.Value)));
     }
@@ -349,6 +351,7 @@ namespace FASTER.PerfTest
             else
             {
                 // Note: Since we pay the storage cost anyway, make it faster by creating a new key rather than reading initKeys.
+                // Also, this RNG generation is slower than Benchmark's, which uses a constant max value that allows the call to be inlined.
                 this.opKeys = new TBV[opCount];
                 for (var ii = 0; ii < opCount; ++ii)
                 {

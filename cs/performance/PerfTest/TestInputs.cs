@@ -170,14 +170,14 @@ namespace FASTER.PerfTest
                 return fail($"{nameof(this.LogSegmentSizeBits)} must be between {LogSettings.kMinSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
             if (this.LogMemorySizeBits < LogSettings.kMinMemorySizeBits || this.LogMemorySizeBits > LogSettings.kMaxMemorySizeBits)
                 return fail($"{nameof(this.LogMemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}");
-            if (this.LogMutableFraction <= 0.0 || this.LogMutableFraction >= 1.0)
-                return fail($"{nameof(this.LogMutableFraction)} must be > 0.0 and < 1.0");
+            if (this.LogMutableFraction < 0.0 || this.LogMutableFraction > 1.0)
+                return fail($"{nameof(this.LogMutableFraction)} must be >= 0.0 and <= 1.0");
             if (this.ReadCachePageSizeBits < LogSettings.kMinPageSizeBits || this.ReadCachePageSizeBits > LogSettings.kMaxPageSizeBits)
                 return fail($"{nameof(this.ReadCachePageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
             if (this.ReadCacheMemorySizeBits < LogSettings.kMinMemorySizeBits || this.ReadCacheMemorySizeBits > LogSettings.kMaxMemorySizeBits)
                 return fail($"{nameof(this.ReadCacheMemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}");
-            if (this.ReadCacheSecondChanceFraction <= 0.0 || this.ReadCacheSecondChanceFraction >= 1.0)
-                return fail($"{(this.ReadCacheSecondChanceFraction)} must be > 0.0 and < 1.0");
+            if (this.ReadCacheSecondChanceFraction < 0.0 || this.ReadCacheSecondChanceFraction > 1.0)
+                return fail($"{(this.ReadCacheSecondChanceFraction)} must be >= 0.0 and <= 1.0");
 
             return true;
         }

@@ -1,0 +1,17 @@
+{
+  "ParameterSweeps": [
+    {
+      "HashSizeShifts": [ 27 ],
+      "NumaModes": [ "RoundRobin" ],
+      "Distributions": [ "Uniform" ],
+      "ThreadCounts": [ 1, 8, 32 ],
+      "InitKeyCounts": [ 250000000 ],
+      "OperationKeyCounts": [ 1000000000 ],
+      "UpsertCounts": [ 40000000 ],
+      "ReadCounts": [ 40000000 ],
+      "MixOperations": [ true ],
+      "UseVarLenValues": [ false ],
+      "IterationCounts": [ 7 ]
+    }
+  ]
+}

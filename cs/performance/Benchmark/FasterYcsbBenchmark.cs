@@ -253,7 +253,7 @@ namespace FASTER.Benchmark
                 var initSec = initMs / 1000.0;
                 var upserts_sec = kInitCount / initSec;
                 var workingSetMB = (ulong)Process.GetCurrentProcess().WorkingSet64 / 1048576;
-                Console.WriteLine($"Loading time: {initSec:N3} sec ({upserts_sec:N3} inserts/sec), working set {workingSetMB:N0}MB");
+                Console.WriteLine($"Loading time: {initSec:N3} sec, {upserts_sec:N3} inserts/sec ({upserts_sec / threadCount:N3} per thread), working set {workingSetMB:N0}MB");
             }
 
             long startTailAddress = store.Log.TailAddress;
@@ -312,9 +312,10 @@ namespace FASTER.Benchmark
             long endTailAddress = store.Log.TailAddress;
             Console.WriteLine($"End tail address = {endTailAddress}");
 
+            var opsPerSec = total_ops_done / tranSec;
             Console.WriteLine($"Total {total_ops_done:N0} ops done in {tranSec:N3} secs.");
             Console.WriteLine($"##, dist = {distribution}, numa = {numaMode}, read% = {readPercent}, " +
-                              $"#threads = {threadCount}, ops/sec = {total_ops_done / tranSec:N3}, " +
+                              $"#threads = {threadCount}, ops/sec = {opsPerSec:N3} ({opsPerSec / threadCount:N3} per thread), " +
                               $"logGrowth = {endTailAddress - startTailAddress}");
 
             // Clean up memory for the next iteration

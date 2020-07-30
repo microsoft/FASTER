@@ -8,7 +8,7 @@
       "InitKeyCounts": [ 250000000 ],
       "OperationKeyCounts": [ 1000000000 ],
       "UpsertCounts": [ 80000000 ],
-      "MixOperations": [ true ],
+      "MixOperations": [ false ],
       "UseVarLenValues": [ false ],
       "IterationCounts": [ 7 ]
     },
@@ -33,7 +33,7 @@
       "InitKeyCounts": [ 250000000 ],
       "OperationKeyCounts": [ 1000000000 ],
       "ReadCounts": [ 80000000 ],
-      "MixOperations": [ true ],
+      "MixOperations": [ false ],
       "UseVarLenValues": [ false ],
       "IterationCounts": [ 7 ]
     }

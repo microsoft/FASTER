@@ -4,15 +4,14 @@
 using FASTER.core;
 using Performance.Common;
 using System;
-using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.PerfTest
 {
     public class ObjectType : IKey
     {
-        public static int KeyVectorSize => (Globals.KeySize - Globals.MinDataSize) / BlittableData.SizeOf;
-        public static int ValueVectorSize => (Globals.ValueSize - Globals.MinDataSize) / BlittableData.SizeOf;
+        public static int KeyVectorSize = (Globals.KeySize - Globals.MinDataSize) / BlittableData.SizeOf;
+        public static int ValueVectorSize = (Globals.ValueSize - Globals.MinDataSize) / BlittableData.SizeOf;
 
         internal BlittableData data;
         internal BlittableData[] vector;
@@ -83,8 +82,10 @@ namespace FASTER.PerfTest
 
         public struct EqualityComparer : IFasterEqualityComparer<ObjectType>
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public long GetHashCode64(ref ObjectType k) => k.data.GetHashCode64();
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public unsafe bool Equals(ref ObjectType k1, ref ObjectType k2)
                 => k1.data == k2.data && (!Globals.Verify || (k1.Verify(k1.data.Value) && k2.Verify(k2.data.Value)));
         }

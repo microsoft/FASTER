@@ -16,7 +16,7 @@ namespace FASTER.PerfTest
         // This is key.Value which we know must fit in an int as we allocate an array of sequential Keys
         internal int Value;
 
-        public static int SizeOf => sizeof(uint) + sizeof(int);
+        public static int SizeOf = sizeof(uint) + sizeof(int);
 
         internal void Read(BinaryReader reader)
         {
@@ -30,25 +30,23 @@ namespace FASTER.PerfTest
             writer.Write(this.Value);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(BlittableData other)
-            => this.Modified == other.Modified && this.Value == other.Value;
-
-        public override bool Equals(object other) => other is BlittableData bd && this.Equals(bd);
-
-        public override int GetHashCode() => HashCode.Combine(Modified, Value);
+        private readonly long LongValue => (long)this.Modified << 32 | (uint)this.Value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetHashCode64()
-            => Utility.GetHashCode(this.Modified) ^ Utility.GetHashCode(this.Value);
+        public readonly bool Equals(BlittableData other) => this.LongValue == other.LongValue;
+
+        public readonly override bool Equals(object other) => other is BlittableData bd && this.Equals(bd);
+
+        public readonly override int GetHashCode() => HashCode.Combine(Modified, Value);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool operator ==(BlittableData lhs, BlittableData rhs) 
-            => lhs.Equals(rhs);
+        public readonly long GetHashCode64() => Utility.GetHashCode(this.LongValue);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool operator !=(BlittableData lhs, BlittableData rhs)
-            => !lhs.Equals(rhs);
+        public static bool operator ==(BlittableData lhs, BlittableData rhs) => lhs.Equals(rhs);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator !=(BlittableData lhs, BlittableData rhs) => !lhs.Equals(rhs);
 
         public override string ToString() => $"mod {Modified}, val {Value}";
     }

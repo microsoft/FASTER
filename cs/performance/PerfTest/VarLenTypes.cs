@@ -176,6 +176,7 @@ namespace FASTER.PerfTest
     {
         internal VarLenValueWrapper valueWrapper;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal VarLenOutput(VarLenValueWrapper wrapper) => this.valueWrapper = wrapper;
 
         internal ref VarLenType ValueRef => ref this.valueWrapper.GetRef();
@@ -192,11 +193,7 @@ namespace FASTER.PerfTest
         VarLenValueWrapper[] wrappers;
 
         internal VarLenValueWrapperFactory(int threadCount)
-        {
-            this.wrappers = new VarLenValueWrapper[threadCount];
-            for (var ii = 0; ii < threadCount; ++ii)
-                this.wrappers[ii].Initialize();
-        }
+            => this.wrappers = Enumerable.Range(0, threadCount).Select(ii => new VarLenValueWrapper()).ToArray();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public VarLenValueWrapper GetValueWrapper(int threadIndex) => this.wrappers[threadIndex];
@@ -217,9 +214,9 @@ namespace FASTER.PerfTest
 
     unsafe class VarLenValueWrapper : IValueWrapper<VarLenType>
     {
-        private IntPtr value;
+        private readonly IntPtr value;
 
-        internal void Initialize()
+        internal VarLenValueWrapper()
         {
             this.value = Marshal.AllocHGlobal(sizeof(int) * VarLenType.MaxIntLength);
             for (var jj = 0; jj < VarLenType.MaxIntLength; ++jj)

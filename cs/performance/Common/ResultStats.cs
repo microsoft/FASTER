@@ -39,7 +39,7 @@ namespace Performance.Common
             return stats;
         }
 
-        internal static ResultStats Create(ulong[] runMs, double[] runOps)
+        private static ResultStats Create(double[] runMs, double[] runOps)
         {
             var runSec = runMs.Select(ms => ms / 1000.0).ToArray();
             var opsPerSecond = Enumerable.Range(0, runMs.Length).Select(ii => runSec[ii] == 0 ? 0.0 : runOps[ii] / runSec[ii]).ToArray();
@@ -108,7 +108,7 @@ namespace Performance.Common
 
         // For tests that run for a given period of time rather than for a specific number of operations.
         internal static ResultStats CalcPerSecondStatsFull(ulong[] runMs, long[] runOps)
-            => Create(runMs, runOps.Select(ops => ops * 1.0).ToArray());
+            => Create(runMs.Select(ms => ms * 1.0).ToArray(), runOps.Select(ops => ops * 1.0).ToArray());
 
         private static (ResultStats, ulong[], long[]) CalcPerSecondStatsTrimmed(ulong[] runMs, long[] runOps)
         {
@@ -121,16 +121,16 @@ namespace Performance.Common
             return (CalcPerSecondStatsFull(trimmedMs, trimmedOps), trimmedMs, trimmedOps);
         }
 
-        internal static ResultStats CalcPerThreadStats(int threadCount, ulong[] runMs, ResultStats allThreads)
-            => Create(runMs.Select(ms => ms / (ulong)threadCount).ToArray(), allThreads.OperationsPerSecond.Select(ops => ops / threadCount).ToArray());
+        internal static ResultStats CalcPerThreadStats(int threadCount, ulong[] runMs, long[] runOps)
+            => Create(runMs.Select(ms => ms * 1.0).ToArray(), runOps.Select(ops => (double)ops / threadCount).ToArray());
 
         internal static (ulong[], long[]) Calc(OperationResults opResults, int threadCount, ulong[] runMs, long[] runOps)
         {
             opResults.AllThreadsFull = CalcPerSecondStatsFull(runMs, runOps);
-            opResults.PerThreadFull = CalcPerThreadStats(threadCount, runMs, opResults.AllThreadsFull);
+            opResults.PerThreadFull = CalcPerThreadStats(threadCount, runMs, runOps);
             var (trimmedResult, trimmedMs, trimmedOps) = CalcPerSecondStatsTrimmed(runMs, runOps);
             opResults.AllThreadsTrimmed = trimmedResult;
-            opResults.PerThreadTrimmed = CalcPerThreadStats(threadCount, trimmedMs, opResults.AllThreadsTrimmed);
+            opResults.PerThreadTrimmed = CalcPerThreadStats(threadCount, trimmedMs, runOps);
             return (trimmedMs, trimmedOps);
         }
     }

@@ -54,7 +54,16 @@ namespace FASTER.PerfTest
             var results = new TestResults { Results = new TestResult[0] };
             if (!(testParams is null))
                 testParams.Override(parseResult);
-            var testRuns = (testParams is null ? new[] { new TestRun(parseResult) } : testParams.GetParamSweeps().Select(sweep => new TestRun(sweep))).ToArray();
+            TestRun[] testRuns;
+            try
+            {
+                testRuns = (testParams is null ? new[] { new TestRun(parseResult) } : testParams.GetParamSweeps().Select(sweep => new TestRun(sweep))).ToArray();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                return;
+            }
 
             // This overall time includes overhead for allocating and distributing the keys, 
             // which has to be done per-test-run.

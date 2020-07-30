@@ -109,9 +109,9 @@ namespace FASTER.Benchmark
                 var threadCount = this.Inputs.ThreadCount;
 
                 opResults.AllThreadsFull = ResultStats.CalcPerSecondStatsFull(fullMs, merged.Outputs.Counts.TransactionCountsFull);
-                opResults.PerThreadFull = ResultStats.CalcPerThreadStats(threadCount, fullMs, opResults.AllThreadsFull);
+                opResults.PerThreadFull = ResultStats.CalcPerThreadStats(threadCount, fullMs, merged.Outputs.Counts.TransactionCountsFull);
                 opResults.AllThreadsTrimmed = ResultStats.CalcPerSecondStatsFull(trimmedMs, merged.Outputs.Counts.TransactionCountsTrimmed);
-                opResults.PerThreadTrimmed = ResultStats.CalcPerThreadStats(threadCount, trimmedMs, opResults.AllThreadsTrimmed);
+                opResults.PerThreadTrimmed = ResultStats.CalcPerThreadStats(threadCount, trimmedMs, merged.Outputs.Counts.TransactionCountsTrimmed);
             }
 
             mergeInitialInserts();

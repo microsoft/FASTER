@@ -233,7 +233,9 @@ namespace FASTER.PerfTest
             }
 
             var results = getResults().ToArray();
-            return results.Any(result => !result.Inputs.Verify()) ? Enumerable.Empty<TestResult>() : results;
+            if (results.Any(result => !result.Inputs.Verify()))
+                throw new InvalidOperationException("Invalid parameter specification");
+            return results;
         }
     }
 
