@@ -286,18 +286,20 @@ namespace FASTER.core
         /// <summary>
         /// Recover from the latest checkpoints
         /// </summary>
-        public void Recover()
+        /// <param name="numPagesToPreload"></param>
+        public void Recover(int numPagesToPreload = -1)
         {
-            InternalRecoverFromLatestCheckpoints();
+            InternalRecoverFromLatestCheckpoints(numPagesToPreload);
         }
 
         /// <summary>
         /// Recover
         /// </summary>
-        /// <param name="fullCheckpointToken"></param>
-        public void Recover(Guid fullCheckpointToken)
+        /// <param name="fullCheckpointToken">Token</param>
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        public void Recover(Guid fullCheckpointToken, int numPagesToPreload = -1)
         {
-            InternalRecover(fullCheckpointToken, fullCheckpointToken);
+            InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload);
         }
 
         /// <summary>
@@ -305,9 +307,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="indexCheckpointToken"></param>
         /// <param name="hybridLogCheckpointToken"></param>
-        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken)
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1)
         {
-            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken);
+            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload);
         }
 
         /// <summary>

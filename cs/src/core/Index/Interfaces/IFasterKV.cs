@@ -164,20 +164,23 @@ namespace FASTER.core
         /// <summary>
         /// Recover from last successfuly checkpoints
         /// </summary>
-        void Recover();
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(int numPagesToPreload = -1);
 
         /// <summary>
         /// Recover using full checkpoint token
         /// </summary>
         /// <param name="fullcheckpointToken"></param>
-        void Recover(Guid fullcheckpointToken);
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(Guid fullcheckpointToken, int numPagesToPreload = -1);
 
         /// <summary>
         /// Recover using a separate index and log checkpoint token
         /// </summary>
         /// <param name="indexToken"></param>
         /// <param name="hybridLogToken"></param>
-        void Recover(Guid indexToken, Guid hybridLogToken);
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1);
 
         /// <summary>
         /// Complete ongoing checkpoint (spin-wait)
@@ -291,20 +294,23 @@ namespace FASTER.core
         /// <summary>
         /// Recover from last successfuly checkpoints
         /// </summary>
-        void Recover();
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(int numPagesToPreload = -1);
 
         /// <summary>
         /// Recover using full checkpoint token
         /// </summary>
         /// <param name="fullcheckpointToken"></param>
-        void Recover(Guid fullcheckpointToken);
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(Guid fullcheckpointToken, int numPagesToPreload = -1);
 
         /// <summary>
         /// Recover using a separate index and log checkpoint token
         /// </summary>
         /// <param name="indexToken"></param>
         /// <param name="hybridLogToken"></param>
-        void Recover(Guid indexToken, Guid hybridLogToken);
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1);
 
         /// <summary>
         /// Complete ongoing checkpoint (spin-wait)

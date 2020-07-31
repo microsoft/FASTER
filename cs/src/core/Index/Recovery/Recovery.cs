@@ -50,10 +50,10 @@ namespace FASTER.core
         where Value : new()
     {
 
-        private void InternalRecoverFromLatestCheckpoints()
+        private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload)
         {
             checkpointManager.GetLatestCheckpoint(out Guid indexCheckpointGuid, out Guid hybridLogCheckpointGuid);
-            InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid);
+            InternalRecover(indexCheckpointGuid, hybridLogCheckpointGuid, numPagesToPreload);
         }
 
         private bool IsCompatible(in IndexRecoveryInfo indexInfo, in HybridLogRecoveryInfo recoveryInfo)
@@ -63,7 +63,7 @@ namespace FASTER.core
             return l1 <= l2;
         }
 
-        private void InternalRecover(Guid indexToken, Guid hybridLogToken)
+        private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload)
         {
             Debug.WriteLine("********* Primary Recovery Information ********");
             Debug.WriteLine("Index Checkpoint: {0}", indexToken);
@@ -112,9 +112,8 @@ namespace FASTER.core
                 RecoverHybridLogFromSnapshotFile(recoveredICInfo.info, recoveredHLCInfo.info);
             }
 
-
             // Read appropriate hybrid log pages into memory
-            hlog.RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress, recoveredHLCInfo.info.beginAddress);
+            hlog.RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress, recoveredHLCInfo.info.beginAddress, numPagesToPreload);
 
             // Recover session information
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
@@ -415,8 +414,16 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         /// <param name="headAddress"></param>
         /// <param name="beginAddress"></param>
-        public void RestoreHybridLog(long untilAddress, long headAddress, long beginAddress)
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        public void RestoreHybridLog(long untilAddress, long headAddress, long beginAddress, int numPagesToPreload = -1)
         {
+            if (numPagesToPreload != -1)
+            {
+                var head = (GetPage(untilAddress) - numPagesToPreload) << LogPageSizeBits;
+                if (head > headAddress)
+                    headAddress = head;
+            }
+
             Debug.Assert(beginAddress <= headAddress);
             Debug.Assert(headAddress <= untilAddress);
 
