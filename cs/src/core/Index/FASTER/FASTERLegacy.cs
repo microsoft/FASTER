@@ -29,6 +29,7 @@ namespace FASTER.core
 
         private readonly FasterKV<Key, Value> _fasterKV;
         private readonly Functions _functions;
+        private readonly IVariableLengthStruct<Value, Input> _variableLengthStructForInput;
 
         private LegacyFasterSession FasterSession => new LegacyFasterSession(this);
 
@@ -51,10 +52,15 @@ namespace FASTER.core
         public FasterKV(long size, Functions functions, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, IVariableLengthStruct<Value, Input> variableLengthStructForInput = null)
         {
             _functions = functions;
             _fasterKV = new FasterKV<Key, Value>(size, logSettings, checkpointSettings, serializerSettings, comparer, variableLengthStructSettings);
+            _variableLengthStructForInput = variableLengthStructForInput;
+            if (_fasterKV.hlog is VariableLengthBlittableAllocator<Key, Value> allocator && _variableLengthStructForInput == default)
+            {
+                _variableLengthStructForInput = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
+            }
         }
 
         /// <summary>
@@ -340,6 +346,16 @@ namespace FASTER.core
             public void DeleteCompletionCallback(ref Key key, Context ctx)
             {
                 _fasterKV._functions.DeleteCompletionCallback(ref key, ctx);
+            }
+
+            public int GetInitialLength(ref Input input)
+            {
+                return _fasterKV._variableLengthStructForInput.GetInitialLength(ref input);
+            }
+
+            public int GetLength(ref Value t, ref Input input)
+            {
+                return _fasterKV._variableLengthStructForInput.GetLength(ref t, ref input);
             }
 
             public void InitialUpdater(ref Key key, ref Input input, ref Value value)

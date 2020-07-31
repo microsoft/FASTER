@@ -298,8 +298,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <param name="input"></param>
+        /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract int GetRecordSize<Input>(long physicalAddress, ref Input input);
+        public abstract int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+            where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
         /// Get number of bytes required
@@ -314,14 +316,17 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         public abstract int GetAverageRecordSize();
+
         /// <summary>
         /// Get initial record size
         /// </summary>
-        /// <typeparam name="Input"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract int GetInitialRecordSize<Input>(ref Key key, ref Input input);
+        public abstract int GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+            where FasterSession : IVariableLengthStruct<Value, Input>;
+
         /// <summary>
         /// Get record size
         /// </summary>
