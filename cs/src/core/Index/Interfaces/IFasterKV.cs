@@ -237,8 +237,9 @@ namespace FASTER.core
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <param name="variableLengthStruct">Implementation of input-specific length computation for variable-length structs</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false)
+        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false, IVariableLengthStruct<Value, Input> variableLengthStruct = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
 
         /// <summary>
@@ -249,8 +250,9 @@ namespace FASTER.core
         /// <param name="sessionId">ID/name of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <param name="variableLengthStruct">Implementation of input-specific length computation for variable-length structs</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
+        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, IVariableLengthStruct<Value, Input> variableLengthStruct = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>;
 
         #endregion
