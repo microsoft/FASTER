@@ -73,16 +73,21 @@ namespace FASTER.core
                                 IDevice device,
                                 ulong num_bytes)
         {
-            int numChunksToBeRecovered = 1;
             long totalSize = state[version].size * sizeof(HashBucket);
-            Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
 
-            uint chunkSize = (uint)(totalSize / numChunksToBeRecovered);
-            mainIndexRecoveryEvent = new CountdownEvent(numChunksToBeRecovered);
+            int numChunks = 1;
+            if (totalSize > uint.MaxValue)
+            {
+                numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
+                numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
+            }
+
+            uint chunkSize = (uint)(totalSize / numChunks);
+            mainIndexRecoveryEvent = new CountdownEvent(numChunks);
             HashBucket* start = state[version].tableAligned;
  
             ulong numBytesRead = 0;
-            for (int index = 0; index < numChunksToBeRecovered; index++)
+            for (int index = 0; index < numChunks; index++)
             {
                 long chunkStartBucket = (long)start + (index * chunkSize);
                 HashIndexPageAsyncReadResult result = default(HashIndexPageAsyncReadResult);
