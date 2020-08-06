@@ -107,10 +107,16 @@ namespace FASTER.core
             {
                 var task = currentSyncStateMachine;
                 var targetState = SystemState.Copy(ref systemState);
+                while (targetState.phase == Phase.INTERMEDIATE)
+                {
+                    Thread.Yield();
+                    targetState = SystemState.Copy(ref systemState);
+                }
+
                 // We have to make sure that we are not looking at a state resulted from a different 
                 // task. It's ok to be behind when the thread steps through the state machine, but not
                 // ok if we are using the wrong task.
-                if (targetState.phase != Phase.INTERMEDIATE && currentSyncStateMachine == task)
+                if (currentSyncStateMachine == task)
                     return ValueTuple.Create(task, targetState);
             }
         }
