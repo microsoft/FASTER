@@ -465,25 +465,16 @@ namespace FASTER.core
 
         private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
         {
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
+                System.Diagnostics.Trace.TraceError("AsyncFlushCallback error: {0}", errorCode);
             }
-            catch (Exception ex)
+
+            if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
             {
-                System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
+                checkpointSemaphore.Release();
             }
-            finally
-            {
-                if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
-                {
-                    checkpointSemaphore.Release();
-                }
-                Overlapped.Free(overlap);
-            }
+            Overlapped.Free(overlap);
         }
 
         /// <summary>
@@ -571,27 +562,13 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncPageReadCallback(
-                                    uint errorCode,
-                                    uint numBytes,
-                                    IAsyncResult result)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, IAsyncResult result)
         {
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
+                System.Diagnostics.Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref numLevelsToBeRecovered);
-                // Overlapped.Free(overlap);
-            }
+            Interlocked.Decrement(ref numLevelsToBeRecovered);
         }
         #endregion
     }

@@ -125,16 +125,12 @@ namespace FASTER.devices
         }
 
         /// <summary>
-        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
+        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // It is up to the allocator to make sure no reads are issued to segments before they are written
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry)) throw new InvalidOperationException("Attempting to read non-existent segments");
-
-            // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
-            //Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-            //NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
 
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength, readLength, FileAccess.Write);
             CloudPageBlob pageBlob = blobEntry.GetPageBlob();
@@ -143,12 +139,9 @@ namespace FASTER.devices
                 {
                     pageBlob.EndDownloadRangeToStream(ar);
                 }
-                // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
                     Trace.TraceError(e.Message);
-                    // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
-                    // but does not distinguish between them.
                     callback(2, readLength, asyncResult);
                 }
                 callback(0, readLength, asyncResult);
@@ -170,7 +163,7 @@ namespace FASTER.devices
                     // page blobs are not backed by real pages on creation, and the given size is only a the physical limit of 
                     // how large it can grow to.
                     var size = segmentSize == -1 ? MAX_BLOB_SIZE : segmentSize;
-                    // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
+                    // If no blob exists for the segment, we must first create the segment asynchronouly.
                     // After creation is done, we can call write.
                     entry.CreateAsync(size, pageBlob);
                 }
@@ -205,12 +198,9 @@ namespace FASTER.devices
                 {
                     blob.EndWritePages(ar);
                 }
-                // I don't think I can be more specific in catch here because no documentation on exception behavior is provided
                 catch (Exception e)
                 {
                     Trace.TraceError(e.Message);
-                    // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
-                    // but does not distinguish between them.
                     callback(1, numBytesToWrite, ovNative);
                 }
                 callback(0, numBytesToWrite, ovNative);

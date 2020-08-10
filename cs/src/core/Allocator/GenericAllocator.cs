@@ -455,15 +455,13 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncReadPageCallback error: {0}", errorCode);
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncReadResult<Empty>)asyncResult; //  Overlapped.Unpack(overlap).AsyncResult;
+            var result = (PageAsyncReadResult<Empty>)asyncResult;
 
             result.handle.Signal();
-
-            // Overlapped.Free(overlap);
         }
 
         protected override void ReadAsync<TContext>(
@@ -504,7 +502,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-               Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+               Trace.TraceError("AsyncFlushPartialObjectLogCallback error: {0}", errorCode);
             }
 
             // Set the page status to flushed
@@ -518,11 +516,10 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncReadPageWithObjectsCallback error: {0}", errorCode);
             }
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)asyncresult;
-            // Overlapped.Unpack(overlap).AsyncResult;
 
             Record<Key, Value>[] src;
 
@@ -558,9 +555,6 @@ namespace FASTER.core
                 result.callback(errorCode, numBytes, asyncresult);
                 return;
             }
-
-            // We will be re-issuing I/O, so free current overlap
-            // Overlapped.Free(overlap);
 
             // We will now be able to process all records until (but not including) untilPtr
             GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long size);

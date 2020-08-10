@@ -339,6 +339,7 @@ namespace FASTER.benchmark
             Console.WriteLine("##, " + distribution + ", " + numaStyle + ", " + readPercent + ", "
                 + threadCount + ", " + total_ops_done / seconds + ", "
                 + (endTailAddress - startTailAddress));
+            device.Close();
         }
 
         private void SetupYcsb(int thread_idx)

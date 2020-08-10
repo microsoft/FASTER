@@ -66,7 +66,12 @@ namespace FASTER.core
         /// </param>
         void Initialize(long segmentSize, LightEpoch epoch = null);
 
-        
+        /// <summary>
+        /// Whether device should be throttled
+        /// </summary>
+        /// <returns></returns>
+        bool Throttle();
+
         /* Segmented addressing API */
         /// <summary>
         /// Write
@@ -167,26 +172,5 @@ namespace FASTER.core
         void Close();
 
         // IDeviceReaderWriter GetDeviceReaderWriter(IOCompletionCallback callback);
-    }
-
-    public interface IDeviceReaderWriter
-    {
-        /// <summary>
-        /// Write
-        /// </summary>
-        /// <param name="alignedSourceAddress"></param>
-        /// <param name="alignedDestinationAddress"></param>
-        /// <param name="numBytesToWrite"></param>
-        /// <param name="asyncResult"></param>
-        void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IAsyncResult asyncResult);
-
-        /// <summary>
-        /// Read
-        /// </summary>
-        /// <param name="alignedSourceAddress"></param>
-        /// <param name="alignedDestinationAddress"></param>
-        /// <param name="aligned_read_length"></param>
-        /// <param name="asyncResult"></param>
-        void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IAsyncResult asyncResult);
     }
 }

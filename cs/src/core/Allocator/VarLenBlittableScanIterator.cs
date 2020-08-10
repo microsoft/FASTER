@@ -202,10 +202,10 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
             }
 
-            var result = (PageAsyncReadResult<Empty>)asyncResult; // Overlapped.Unpack(overlap).AsyncResult;
+            var result = (PageAsyncReadResult<Empty>)asyncResult;
 
             if (result.freeBuffer1 != null)
             {
@@ -220,7 +220,6 @@ namespace FASTER.core
             }
 
             Interlocked.MemoryBarrier();
-            // Overlapped.Free(overlap);
         }
     }
 }

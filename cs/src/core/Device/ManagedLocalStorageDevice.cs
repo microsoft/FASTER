@@ -26,6 +26,11 @@ namespace FASTER.core
         private readonly SectorAlignedBufferPool pool;
 
         /// <summary>
+        /// Number of pending reads on device
+        /// </summary>
+        private int numPendingReads = 0;
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="filename">File name (or prefix) with path</param>
@@ -45,6 +50,8 @@ namespace FASTER.core
                 RecoverFiles();
         }
 
+        /// <inheritdoc />
+        public override bool Throttle() => numPendingReads > 120;
 
         private void RecoverFiles()
         {
@@ -102,9 +109,12 @@ namespace FASTER.core
             (logReadHandle, offset) = streampool.Get();
 
             logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+            Interlocked.Increment(ref numPendingReads);
             logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength)
                 .ContinueWith(t =>
                 {
+                    Interlocked.Decrement(ref numPendingReads);
+
                     uint errorCode = 0;
                     if (!t.IsFaulted)
                     {
@@ -126,8 +136,8 @@ namespace FASTER.core
                         }
                     }
                     memory.Return();
-                    // Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                    callback(errorCode, (uint)t.Result, asyncResult); // ov.UnsafePack(callback, IntPtr.Zero));
+
+                    callback(errorCode, (uint)t.Result, asyncResult);
                 }
                 );
             if (offset >= 0)

@@ -252,7 +252,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, IAsyncResult)"/>
         /// </summary>
         /// <param name="segmentId"></param>
         /// <param name="sourceAddress"></param>
@@ -262,8 +262,6 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            /*
-
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
             long currentReadStart = (long)sourceAddress;
@@ -290,10 +288,6 @@ namespace FASTER.core
                                                             callback(aggregateErrorCode, n, o);
                                                             countdown.Dispose();
                                                         }
-                                                        else
-                                                        {
-                                                            Overlapped.Free(o);
-                                                        }
                                                     },
                                                     asyncResult);
 
@@ -303,12 +297,9 @@ namespace FASTER.core
             // TODO: Check handling of overlapped wrapper
             if (countdown.Signal())
             {
-                Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
-                callback(aggregateErrorCode, readLength, ovNative);
+                callback(aggregateErrorCode, readLength, asyncResult);
                 countdown.Dispose();
             }
-            */
         }
     }
 }

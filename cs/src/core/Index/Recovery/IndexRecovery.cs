@@ -114,10 +114,9 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
             }
             mainIndexRecoveryEvent.Signal();
-            // Overlapped.Free(overlap);
         }
 
         internal void DeleteTentativeEntries()

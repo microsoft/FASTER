@@ -188,10 +188,6 @@ namespace FASTER.core
         /// </summary>
         private bool disposed = false;
 
-        /// <summary>
-        /// Number of pending reads
-        /// </summary>
-        private int numPendingReads = 0;
         #endregion
 
         /// <summary>
@@ -1437,13 +1433,12 @@ namespace FASTER.core
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
-                while (numPendingReads > 180)
+                while (device.Throttle())
                 {
                     Thread.Yield();
                     epoch.ProtectAndDrain();
                 }
             }
-            Interlocked.Increment(ref numPendingReads);
 
             if (result == null)
                 AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context);
@@ -1455,10 +1450,10 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
             }
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)asyncResult; // Overlapped.Unpack(overlap).AsyncResult;
+            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)asyncResult;
 
             var ctx = result.context;
             try
@@ -1504,8 +1499,6 @@ namespace FASTER.core
                     ctx.record.Return();
                     AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
                 }
-
-                // Overlapped.Free(overlap);
             }
             catch (Exception e)
             {
@@ -1514,13 +1507,7 @@ namespace FASTER.core
                 else
                     throw;
             }
-            finally
-            {
-                Interlocked.Decrement(ref numPendingReads);
-            }
         }
-
-        // static DateTime last = DateTime.Now;
 
         /// <summary>
         /// IOCompletion callback for page flush
@@ -1534,7 +1521,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                    Trace.TraceError("AsyncFlushPageCallback error: {0}", errorCode);
                 }
 
                 // Set the page status to flushed
@@ -1576,7 +1563,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                    Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;

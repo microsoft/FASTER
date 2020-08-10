@@ -106,6 +106,13 @@ namespace FASTER.core
             }
         }
 
+
+        /// <summary>
+        /// Whether device should be throttled
+        /// </summary>
+        /// <returns></returns>
+        public virtual bool Throttle() => false;
+
         /// <summary>
         /// 
         /// </summary>

@@ -3,6 +3,7 @@
 
 using Microsoft.Win32.SafeHandles;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -11,16 +12,6 @@ using System.Threading;
 
 namespace FASTER.core
 {
-
-    [StructLayout(LayoutKind.Sequential)]
-    unsafe struct CacheAlignedOverlapped
-    {
-        public DeviceIOCompletionCallback iOCompletionCallbacks;
-        public IAsyncResult asyncResults;
-        public Overlapped overlappeds;
-        public NativeOverlapped* nativeOverlappeds;
-    }
-
     /// <summary>
     /// Local storage device
     /// </summary>
@@ -31,13 +22,14 @@ namespace FASTER.core
         private readonly bool disableFileBuffering;
         private readonly SafeConcurrentDictionary<int, SafeFileHandle> logHandles;
 
-        DeviceIOCompletionCallback[] iOCompletionCallbacks;
-        IAsyncResult[] asyncResults;
-        Overlapped[] overlappeds;
-        NativeOverlapped*[] nativeOverlappeds;
+        private readonly ConcurrentQueue<SimpleAsyncResult> results;
+        private static uint sectorSize = 0;
 
-        // Has to be power of 2
-        const int maxDepth = 1024;
+        /// <summary>
+        /// Number of pending reads on device
+        /// </summary>
+        private int numPendingReads = 0;
+
 
         /// <summary>
         /// Constructor
@@ -56,31 +48,19 @@ namespace FASTER.core
                                   bool recoverDevice = false)
             : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, initialLogFileHandles: null)
         {
-            Initialize();
         }
 
-
-        void Initialize()
+        void _callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
         {
-            iOCompletionCallbacks = new DeviceIOCompletionCallback[maxDepth];
-            asyncResults = new IAsyncResult[maxDepth];
-            overlappeds = new Overlapped[maxDepth];
-            nativeOverlappeds = new NativeOverlapped*[maxDepth];
-
-            for (int i=0; i< maxDepth; i++)
-            {
-                overlappeds[i] = new Overlapped(0, 0, IntPtr.Zero, new SimpleAsyncResult { i = i });
-                nativeOverlappeds[i] = overlappeds[i].UnsafePack(callback, IntPtr.Zero);
-            }
+            Interlocked.Decrement(ref numPendingReads);
+            var result = (SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult;
+            result.callback(errorCode, numBytes, result.result);
+            results.Enqueue(result);
         }
 
-        void callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
-        {
-            var result = ((SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult ).i % maxDepth;
-            iOCompletionCallbacks[result](errorCode, numBytes, asyncResults[result]);
-            asyncResults[result] = null;
-        }
-    
+        /// <inheritdoc />
+        public override bool Throttle() => numPendingReads > 120;
+
         /// <summary>
         /// Constructor with more options for derived classes
         /// </summary>
@@ -104,6 +84,8 @@ namespace FASTER.core
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
+            this.results = new ConcurrentQueue<SimpleAsyncResult>();
+
             logHandles = initialLogFileHandles != null
                 ? new SafeConcurrentDictionary<int, SafeFileHandle>(initialLogFileHandles)
                 : new SafeConcurrentDictionary<int, SafeFileHandle>();
@@ -151,27 +133,22 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, 
+        public override void ReadAsync(int segmentId, ulong sourceAddress, 
                                      IntPtr destinationAddress, 
                                      uint readLength, 
                                      DeviceIOCompletionCallback callback, 
                                      IAsyncResult asyncResult)
         {
-            NativeOverlapped* ovNative;
-            var o = LightEpoch.GetThreadIdHash() & (maxDepth - 1);
-            while (true)
+            if (!results.TryDequeue(out SimpleAsyncResult result))
             {
-                // if (o < 0) o = -o;
-                // var o = (Interlocked.Increment(ref offset) - 1) % maxDepth;
-
-                if (Interlocked.CompareExchange(ref asyncResults[o], asyncResult, null) == null)
-                {
-                    iOCompletionCallbacks[o] = callback;
-                    ovNative = nativeOverlappeds[o];
-                    break;
-                }
-                o = (o + 1) & (maxDepth - 1);
+                result = new SimpleAsyncResult();
+                result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
+                result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
             }
+
+            result.result = asyncResult;
+            result.callback = callback;
+            var ovNative = result.nativeOverlapped;
 
             ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
@@ -180,13 +157,15 @@ namespace FASTER.core
             {
                 var logHandle = GetOrAddHandle(segmentId);
 
-                bool result = Native32.ReadFile(logHandle,
+                Interlocked.Increment(ref numPendingReads);
+
+                bool _result = Native32.ReadFile(logHandle,
                                                 destinationAddress,
                                                 readLength,
                                                 out uint bytesRead,
                                                 ovNative);
 
-                if (!result)
+                if (!_result)
                 {
                     int error = Marshal.GetLastWin32Error();
                     if (error != Native32.ERROR_IO_PENDING)
@@ -197,13 +176,15 @@ namespace FASTER.core
             }
             catch (IOException e)
             {
-                asyncResults[o] = null;
+                Interlocked.Decrement(ref numPendingReads);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, asyncResult);
+                results.Enqueue(result);
             }
             catch
             {
-                asyncResults[o] = null;
+                Interlocked.Decrement(ref numPendingReads);
                 callback(uint.MaxValue, 0, asyncResult);
+                results.Enqueue(result);
             }
         }
 
@@ -282,10 +263,6 @@ namespace FASTER.core
             callback(result);
         }
 
-        // It may be somewhat inefficient to use the default async calls from the base class when the underlying
-        // method is inherently synchronous. But just for delete (which is called infrequently and off the 
-        // critical path) such inefficiency is probably negligible.
-
         /// <summary>
         /// Close device
         /// </summary>
@@ -294,11 +271,9 @@ namespace FASTER.core
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();
 
-            for (int i=0; i<maxDepth; i++)
+            while (results.TryDequeue(out var entry))
             {
-                Overlapped.Free(nativeOverlappeds[i]);
-                nativeOverlappeds[i] = null;
-                overlappeds[i] = null;
+                Overlapped.Free(entry.nativeOverlapped);
             }
         }
 
@@ -385,12 +360,13 @@ namespace FASTER.core
         private SafeFileHandle CreateHandle(int segmentId)
             => CreateHandle(segmentId, this.disableFileBuffering, this.deleteOnClose, this.preallocateFile, this.segmentSize, this.FileName);
 
-        static uint sectorSize = 0;
-
         private static uint GetSectorSize(string filename)
         {
             if (sectorSize > 0) return sectorSize;
 
+            /* Get true physical sector size if we want to use it - commented for now as we prefer to use logical sector size (smaller) */
+
+            /*
             SafeFileHandle safeFileHandle = CreateHandle(0, true, true, false, 0, filename + ".tmp");
             if (!safeFileHandle.IsInvalid)
             {
@@ -400,10 +376,9 @@ namespace FASTER.core
                 }
                 safeFileHandle.Dispose();
             }
-
             if (sectorSize > 0) return sectorSize;
-
             Debug.WriteLine($"Unable to retrieve sector size information for temporary handle {filename + ".tmp"}, trying disk level information");
+            */
 
             if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3), out _, out sectorSize, out _, out _))
             {
@@ -433,9 +408,12 @@ namespace FASTER.core
         }
     }
 
-    struct SimpleAsyncResult : IAsyncResult
+    unsafe sealed class SimpleAsyncResult : IAsyncResult
     {
-        public int i;
+        public DeviceIOCompletionCallback callback;
+        public IAsyncResult result;
+        public Overlapped overlapped;
+        public NativeOverlapped* nativeOverlapped;
 
         public object AsyncState => throw new NotImplementedException();
 
