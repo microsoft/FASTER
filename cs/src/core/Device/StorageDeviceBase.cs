@@ -141,7 +141,7 @@ namespace FASTER.core
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
             var segment = segmentSizeBits < 64 ? alignedSourceAddress >> segmentSizeBits : 0;
 
@@ -264,7 +264,7 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public abstract void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult);
+        public abstract void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
 
         /// <summary>
         /// 

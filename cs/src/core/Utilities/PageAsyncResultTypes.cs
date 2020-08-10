@@ -20,7 +20,7 @@ namespace FASTER.core
         internal CountdownEvent handle;
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
-        internal IOCompletionCallback callback;
+        internal DeviceIOCompletionCallback callback;
         internal IDevice objlogDevice;
         internal object frame;
         internal CancellationTokenSource cts;

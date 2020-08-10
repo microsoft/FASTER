@@ -451,7 +451,7 @@ namespace FASTER.core
                 alignedNumBytesToWrite, callback, asyncResult);
         }
 
-        private void AsyncReadPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private void AsyncReadPageCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             if (errorCode != 0)
             {
@@ -459,16 +459,16 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+            var result = (PageAsyncReadResult<Empty>)asyncResult; //  Overlapped.Unpack(overlap).AsyncResult;
 
             result.handle.Signal();
 
-            Overlapped.Free(overlap);
+            // Overlapped.Free(overlap);
         }
 
         protected override void ReadAsync<TContext>(
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
-            IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
             asyncResult.freeBuffer1 = bufferPool.Get((int)aligned_read_length);
             asyncResult.freeBuffer1.required_bytes = (int)aligned_read_length;
@@ -514,14 +514,15 @@ namespace FASTER.core
             Overlapped.Free(overlap);
         }
 
-        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, IAsyncResult asyncresult)
         {
             if (errorCode != 0)
             {
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
-            PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
+            PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)asyncresult;
+            // Overlapped.Unpack(overlap).AsyncResult;
 
             Record<Key, Value>[] src;
 
@@ -554,12 +555,12 @@ namespace FASTER.core
                 result.Free();
 
                 // Call the "real" page read callback
-                result.callback(errorCode, numBytes, overlap);
+                result.callback(errorCode, numBytes, asyncresult);
                 return;
             }
 
             // We will be re-issuing I/O, so free current overlap
-            Overlapped.Free(overlap);
+            // Overlapped.Free(overlap);
 
             // We will now be able to process all records until (but not including) untilPtr
             GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long size);
@@ -590,7 +591,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -634,7 +635,7 @@ namespace FASTER.core
                                         long readPageStart,
                                         int numPages,
                                         long untilAddress,
-                                        IOCompletionCallback callback,
+                                        DeviceIOCompletionCallback callback,
                                         TContext context,
                                         GenericFrame<Key, Value> frame,
                                         out CountdownEvent completed,

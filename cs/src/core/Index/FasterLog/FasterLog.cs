@@ -873,9 +873,9 @@ namespace FASTER.core
             return true;
         }
 
-        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
-            var ctx = (SimpleReadContext)Overlapped.Unpack(overlap).AsyncResult;
+            var ctx = (SimpleReadContext)asyncResult; // Overlapped.Unpack(overlap).AsyncResult;
 
             if (errorCode != 0)
             {
@@ -910,7 +910,7 @@ namespace FASTER.core
                     }
                 }
             }
-            Overlapped.Free(overlap);
+            // Overlapped.Free(overlap);
         }
 
         private (byte[], int) GetRecordAndFree(SectorAlignedMemory record)

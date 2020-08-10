@@ -367,11 +367,11 @@ namespace FASTER.core
             return true;
         }
 
-        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             try
             {
-                var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+                var result = (PageAsyncReadResult<Empty>)asyncResult; // Overlapped.Unpack(overlap).AsyncResult;
 
                 if (errorCode != 0)
                 {
@@ -395,7 +395,7 @@ namespace FASTER.core
             catch when (disposed) { }
             finally
             {
-                Overlapped.Free(overlap);
+                // Overlapped.Free(overlap);
             }
         }
 

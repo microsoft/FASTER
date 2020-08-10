@@ -574,7 +574,7 @@ namespace FASTER.core
         private unsafe void AsyncPageReadCallback(
                                     uint errorCode,
                                     uint numBytes,
-                                    NativeOverlapped* overlap)
+                                    IAsyncResult result)
         {
             try
             {
@@ -590,7 +590,7 @@ namespace FASTER.core
             finally
             {
                 Interlocked.Decrement(ref numLevelsToBeRecovered);
-                Overlapped.Free(overlap);
+                // Overlapped.Free(overlap);
             }
         }
         #endregion

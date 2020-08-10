@@ -338,7 +338,7 @@ namespace FASTER.core
 
         protected override void ReadAsync<TContext>(
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
-            IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
             device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex],
                 aligned_read_length, callback, asyncResult);
@@ -353,7 +353,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for BlittableAllocator");
         }
@@ -451,7 +451,7 @@ namespace FASTER.core
                                         long readPageStart,
                                         int numPages,
                                         long untilAddress,
-                                        IOCompletionCallback callback,
+                                        DeviceIOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
                                         out CountdownEvent completed,

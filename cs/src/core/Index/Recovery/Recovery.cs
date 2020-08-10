@@ -469,7 +469,7 @@ namespace FASTER.core
             RecoveryReset(untilAddress, headAddress, beginAddress);
         }
 
-        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             if (errorCode != 0)
             {
@@ -477,7 +477,7 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+            var result = (PageAsyncReadResult<RecoveryStatus>)asyncResult; //  Overlapped.Unpack(overlap).AsyncResult;
 
             if (result.freeBuffer1 != null)
             {
@@ -487,7 +487,7 @@ namespace FASTER.core
             int index = GetPageIndexForPage(result.page);
             result.context.readStatus[index] = ReadStatus.Done;
             Interlocked.MemoryBarrier();
-            Overlapped.Free(overlap);
+            //Overlapped.Free(overlap);
         }
     }
 }

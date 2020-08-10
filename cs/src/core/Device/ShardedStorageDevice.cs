@@ -260,8 +260,10 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
+            /*
+
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
             long currentReadStart = (long)sourceAddress;
@@ -306,6 +308,7 @@ namespace FASTER.core
                 callback(aggregateErrorCode, readLength, ovNative);
                 countdown.Dispose();
             }
+            */
         }
     }
 }

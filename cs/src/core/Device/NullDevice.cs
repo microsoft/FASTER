@@ -27,16 +27,16 @@ namespace FASTER.core
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void ReadAsync(int segmentId, ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            alignedSourceAddress = ((ulong)segmentId << 30) | alignedSourceAddress;
+            //alignedSourceAddress = ((ulong)segmentId << 30) | alignedSourceAddress;
 
-            Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-            NativeOverlapped* ov_native = ov.UnsafePack(callback, IntPtr.Zero);
-            ov_native->OffsetLow = unchecked((int)(alignedSourceAddress & 0xFFFFFFFF));
-            ov_native->OffsetHigh = unchecked((int)((alignedSourceAddress >> 32) & 0xFFFFFFFF));
+            //Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
+            //NativeOverlapped* ov_native = ov.UnsafePack(callback, IntPtr.Zero);
+            //ov_native->OffsetLow = unchecked((int)(alignedSourceAddress & 0xFFFFFFFF));
+            //ov_native->OffsetHigh = unchecked((int)((alignedSourceAddress >> 32) & 0xFFFFFFFF));
 
-            callback(0, aligned_read_length, ov_native);
+            callback(0, aligned_read_length, asyncResult);
         }
 
         /// <summary>

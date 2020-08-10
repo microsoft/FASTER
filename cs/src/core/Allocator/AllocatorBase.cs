@@ -375,7 +375,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default);
+        protected abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default);
         /// <summary>
         /// Read page (async)
         /// </summary>
@@ -387,7 +387,7 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         /// <param name="device"></param>
         /// <param name="objlogDevice"></param>
-        protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
+        protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
         /// <summary>
         /// Clear page
         /// </summary>
@@ -1147,7 +1147,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// 
-        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context)
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1177,7 +1177,7 @@ namespace FASTER.core
         /// <param name="numBytes"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, ref SimpleReadContext context)
+        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1213,7 +1213,7 @@ namespace FASTER.core
                                 long readPageStart,
                                 int numPages,
                                 long untilAddress,
-                                IOCompletionCallback callback,
+                                DeviceIOCompletionCallback callback,
                                 TContext context,
                                 long devicePageOffset = 0,
                                 IDevice logDevice = null, IDevice objectLogDevice = null)
@@ -1239,7 +1239,7 @@ namespace FASTER.core
                                         long readPageStart,
                                         int numPages,
                                         long untilAddress,
-                                        IOCompletionCallback callback,
+                                        DeviceIOCompletionCallback callback,
                                         TContext context,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
@@ -1437,7 +1437,7 @@ namespace FASTER.core
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
-                while (numPendingReads > 120)
+                while (numPendingReads > 180)
                 {
                     Thread.Yield();
                     epoch.ProtectAndDrain();
@@ -1451,15 +1451,14 @@ namespace FASTER.core
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
 
-        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             if (errorCode != 0)
             {
                 Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)Overlapped.Unpack(overlap).AsyncResult;
-            Interlocked.Decrement(ref numPendingReads);
+            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)asyncResult; // Overlapped.Unpack(overlap).AsyncResult;
 
             var ctx = result.context;
             try
@@ -1506,7 +1505,7 @@ namespace FASTER.core
                     AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
                 }
 
-                Overlapped.Free(overlap);
+                // Overlapped.Free(overlap);
             }
             catch (Exception e)
             {
@@ -1514,6 +1513,10 @@ namespace FASTER.core
                     ctx.asyncOperation.TrySetException(e);
                 else
                     throw;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref numPendingReads);
             }
         }
 

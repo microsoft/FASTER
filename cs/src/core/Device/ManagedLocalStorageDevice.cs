@@ -89,7 +89,7 @@ namespace FASTER.core
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
                                      IntPtr destinationAddress,
                                      uint readLength,
-                                     IOCompletionCallback callback,
+                                     DeviceIOCompletionCallback callback,
                                      IAsyncResult asyncResult)
         {
             SectorAlignedMemory memory = null;
@@ -126,8 +126,8 @@ namespace FASTER.core
                         }
                     }
                     memory.Return();
-                    Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                    callback(errorCode, (uint)t.Result, ov.UnsafePack(callback, IntPtr.Zero));
+                    // Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
+                    callback(errorCode, (uint)t.Result, asyncResult); // ov.UnsafePack(callback, IntPtr.Zero));
                 }
                 );
             if (offset >= 0)

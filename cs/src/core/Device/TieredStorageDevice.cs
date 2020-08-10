@@ -71,13 +71,15 @@ namespace FASTER.core
             }
         }
 
-        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
+            /*
             // This device is epoch-protected and cannot be stale while the operation is in flight
             IDevice closestDevice = devices[FindClosestDeviceContaining(segmentId)];
             // We can directly forward the address, because assuming an inclusive policy, all devices agree on the same address space. The only difference is that some segments may not
             // be present for certain devices. 
             closestDevice.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, asyncResult);
+            */
         }
 
         public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)

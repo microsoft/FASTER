@@ -127,14 +127,14 @@ namespace FASTER.devices
         /// <summary>
         /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // It is up to the allocator to make sure no reads are issued to segments before they are written
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry)) throw new InvalidOperationException("Attempting to read non-existent segments");
 
             // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
-            Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-            NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
+            //Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
+            //NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
 
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)destinationAddress, readLength, readLength, FileAccess.Write);
             CloudPageBlob pageBlob = blobEntry.GetPageBlob();
@@ -149,9 +149,9 @@ namespace FASTER.devices
                     Trace.TraceError(e.Message);
                     // Is there any documentation on the meaning of error codes here? The handler suggests that any non-zero value is an error
                     // but does not distinguish between them.
-                    callback(2, readLength, ovNative);
+                    callback(2, readLength, asyncResult);
                 }
-                callback(0, readLength, ovNative);
+                callback(0, readLength, asyncResult);
             }, asyncResult);
         }
 
