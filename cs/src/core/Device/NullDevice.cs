@@ -29,13 +29,6 @@ namespace FASTER.core
         /// <param name="asyncResult"></param>
         public override unsafe void ReadAsync(int segmentId, ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            //alignedSourceAddress = ((ulong)segmentId << 30) | alignedSourceAddress;
-
-            //Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-            //NativeOverlapped* ov_native = ov.UnsafePack(callback, IntPtr.Zero);
-            //ov_native->OffsetLow = unchecked((int)(alignedSourceAddress & 0xFFFFFFFF));
-            //ov_native->OffsetHigh = unchecked((int)((alignedSourceAddress >> 32) & 0xFFFFFFFF));
-
             callback(0, aligned_read_length, asyncResult);
         }
 
@@ -48,17 +41,9 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void WriteAsync(IntPtr alignedSourceAddress, int segmentId, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void WriteAsync(IntPtr alignedSourceAddress, int segmentId, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            alignedDestinationAddress = ((ulong)segmentId << 30) | alignedDestinationAddress;
-
-            Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-            NativeOverlapped* ov_native = ov.UnsafePack(callback, IntPtr.Zero);
-
-            ov_native->OffsetLow = unchecked((int)(alignedDestinationAddress & 0xFFFFFFFF));
-            ov_native->OffsetHigh = unchecked((int)((alignedDestinationAddress >> 32) & 0xFFFFFFFF));
-
-            callback(0, numBytesToWrite, ov_native);
+            callback(0, numBytesToWrite, asyncResult);
         }
 
         /// <summary>

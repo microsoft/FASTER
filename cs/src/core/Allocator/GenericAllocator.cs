@@ -235,7 +235,7 @@ namespace FASTER.core
             objectLogDevice.TruncateUntilAddress(toAddress);
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync(flushPage,
                     (ulong)(AlignedPageSizeBytes * flushPage),
@@ -245,7 +245,7 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, IOCompletionCallback callback, 
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, 
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             // We are writing to separate device, so use fresh segment offsets
@@ -273,7 +273,7 @@ namespace FASTER.core
         }
 
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
-                        IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
+                        DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
             // Short circuit if we are using a null device
@@ -497,8 +497,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
-        /// <param name="overlap"></param>
-        private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        /// <param name="asyncResult"></param>
+        private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             if (errorCode != 0)
             {
@@ -506,10 +506,8 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            PageAsyncFlushResult<TContext> result = (PageAsyncFlushResult<TContext>)Overlapped.Unpack(overlap).AsyncResult;
+            PageAsyncFlushResult<TContext> result = (PageAsyncFlushResult<TContext>)asyncResult;
             result.done.Set();
-
-            Overlapped.Free(overlap);
         }
 
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, IAsyncResult asyncresult)

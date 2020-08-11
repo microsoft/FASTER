@@ -82,7 +82,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult);
+        void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
 
         /// <summary>
         /// Read
@@ -105,7 +105,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult);
+        void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
 
         /// <summary>
         /// Read
@@ -170,7 +170,5 @@ namespace FASTER.core
         /// Close
         /// </summary>
         void Close();
-
-        // IDeviceReaderWriter GetDeviceReaderWriter(IOCompletionCallback callback);
     }
 }

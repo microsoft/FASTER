@@ -150,7 +150,7 @@ namespace FASTER.core
             return values[pageIndex] != null;
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
@@ -160,7 +160,7 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, IOCompletionCallback callback,
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
@@ -225,7 +225,7 @@ namespace FASTER.core
 
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
-                        IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
+                        DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device)
         {
             if (asyncResult.partial)

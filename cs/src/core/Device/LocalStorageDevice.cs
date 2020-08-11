@@ -201,11 +201,20 @@ namespace FASTER.core
                                       int segmentId,
                                       ulong destinationAddress, 
                                       uint numBytesToWrite, 
-                                      IOCompletionCallback callback, 
+                                      DeviceIOCompletionCallback callback, 
                                       IAsyncResult asyncResult)
         {
-            Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-            NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
+            if (!results.TryDequeue(out SimpleAsyncResult result))
+            {
+                result = new SimpleAsyncResult();
+                result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
+                result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
+            }
+
+            result.result = asyncResult;
+            result.callback = callback;
+            var ovNative = result.nativeOverlapped;
+
             ovNative->OffsetLow = unchecked((int)(destinationAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)((destinationAddress >> 32) & 0xFFFFFFFF));
 
@@ -213,13 +222,13 @@ namespace FASTER.core
             {
                 var logHandle = GetOrAddHandle(segmentId);
 
-                bool result = Native32.WriteFile(logHandle,
+                bool _result = Native32.WriteFile(logHandle,
                                         sourceAddress,
                                         numBytesToWrite,
                                         out uint bytesWritten,
                                         ovNative);
 
-                if (!result)
+                if (!_result)
                 {
                     int error = Marshal.GetLastWin32Error();
                     if (error != Native32.ERROR_IO_PENDING)
@@ -230,11 +239,13 @@ namespace FASTER.core
             }
             catch (IOException e)
             {
-                callback((uint)(e.HResult & 0x0000FFFF), 0, ovNative);
+                callback((uint)(e.HResult & 0x0000FFFF), 0, asyncResult);
+                results.Enqueue(result);
             }
             catch
             {
-                callback(uint.MaxValue, 0, ovNative);
+                callback(uint.MaxValue, 0, asyncResult);
+                results.Enqueue(result);
             }
         }
 

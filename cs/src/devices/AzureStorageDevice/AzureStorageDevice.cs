@@ -149,9 +149,9 @@ namespace FASTER.devices
         }
 
         /// <summary>
-        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)">Inherited</see>
+        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, IAsyncResult)">Inherited</see>
         /// </summary>
-        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
@@ -174,7 +174,7 @@ namespace FASTER.devices
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void TryWriteAsync(BlobEntry blobEntry, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        private void TryWriteAsync(BlobEntry blobEntry, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
             CloudPageBlob pageBlob = blobEntry.GetPageBlob();
             // If pageBlob is null, it is being created. Attempt to queue the write for the creator to complete after it is done
@@ -186,24 +186,21 @@ namespace FASTER.devices
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
-            // Even though Azure Page Blob does not make use of Overlapped, we populate one to conform to the callback API
-            Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-            NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)sourceAddress, numBytesToWrite);
             blob.BeginWritePages(stream, (long)destinationAddress, null, ar =>
             {
                 try
                 {
                     blob.EndWritePages(ar);
+                    callback(0, numBytesToWrite, asyncResult);
                 }
                 catch (Exception e)
                 {
                     Trace.TraceError(e.Message);
-                    callback(1, numBytesToWrite, ovNative);
+                    callback(1, numBytesToWrite, asyncResult);
                 }
-                callback(0, numBytesToWrite, ovNative);
             }, asyncResult);
         }
 

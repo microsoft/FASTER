@@ -361,7 +361,7 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="localSegmentOffsets"></param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, IOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
 
         /// <summary>
         /// Read objects to memory (async)
@@ -397,7 +397,7 @@ namespace FASTER.core
         /// <param name="flushPage"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        protected abstract void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
+        protected abstract void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
         /// <summary>
         /// Retrieve full record
         /// </summary>
@@ -1363,11 +1363,7 @@ namespace FASTER.core
         /// <param name="numPages"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public void AsyncFlushPages<TContext>(
-                                        long flushPageStart,
-                                        int numPages,
-                                        IOCompletionCallback callback,
-                                        TContext context)
+        public void AsyncFlushPages<TContext>(long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
         {
             for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
@@ -1514,8 +1510,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
-        /// <param name="overlap"></param>
-        private void AsyncFlushPageCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        /// <param name="asyncResult"></param>
+        private void AsyncFlushPageCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             try
             {
@@ -1525,7 +1521,7 @@ namespace FASTER.core
                 }
 
                 // Set the page status to flushed
-                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)asyncResult;
 
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
@@ -1545,10 +1541,6 @@ namespace FASTER.core
                 }
             }
             catch when (disposed) { }
-            finally
-            {
-                Overlapped.Free(overlap);
-            }
         }
 
         /// <summary>
@@ -1556,8 +1548,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
-        /// <param name="overlap"></param>
-        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        /// <param name="asyncResult"></param>
+        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             try
             {
@@ -1566,18 +1558,13 @@ namespace FASTER.core
                     Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
                 }
 
-                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
-
+                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)asyncResult;
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
                     result.Free();
                 }
             }
             catch when (disposed) { }
-            finally
-            {
-                Overlapped.Free(overlap);
-            }
         }
 
         /// <summary>

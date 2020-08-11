@@ -193,7 +193,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, IAsyncResult)"/>
         /// </summary>
         /// <param name="sourceAddress"></param>
         /// <param name="segmentId"></param>
@@ -201,7 +201,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public unsafe override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public unsafe override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
@@ -231,10 +231,6 @@ namespace FASTER.core
                                                              callback(aggregateErrorCode, n, o);
                                                              countdown.Dispose();
                                                          }
-                                                         else
-                                                         {
-                                                             Overlapped.Free(o);
-                                                         }
                                                      },
                                                      asyncResult);
 
@@ -244,9 +240,7 @@ namespace FASTER.core
             // TODO: Check if overlapped wrapper is handled correctly
             if (countdown.Signal())
             {
-                Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                NativeOverlapped* ovNative = ov.UnsafePack(callback, IntPtr.Zero);
-                callback(aggregateErrorCode, numBytesToWrite, ovNative);
+                callback(aggregateErrorCode, numBytesToWrite, asyncResult);
                 countdown.Dispose();
             }
         }

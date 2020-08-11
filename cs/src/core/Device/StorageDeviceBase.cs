@@ -121,7 +121,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
         {
             int segment = (int)(segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0);
 
@@ -260,7 +260,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public abstract void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult);
+        public abstract void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
 
         /// <summary>
         /// 

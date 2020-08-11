@@ -463,7 +463,7 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             if (errorCode != 0)
             {
@@ -474,7 +474,6 @@ namespace FASTER.core
             {
                 checkpointSemaphore.Release();
             }
-            Overlapped.Free(overlap);
         }
 
         /// <summary>

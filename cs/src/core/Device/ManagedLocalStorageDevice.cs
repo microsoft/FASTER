@@ -157,7 +157,7 @@ namespace FASTER.core
                                       int segmentId,
                                       ulong destinationAddress,
                                       uint numBytesToWrite,
-                                      IOCompletionCallback callback,
+                                      DeviceIOCompletionCallback callback,
                                       IAsyncResult asyncResult)
         {
             SectorAlignedMemory memory = null;
@@ -202,8 +202,7 @@ namespace FASTER.core
                     }
 #endif
 
-                    Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                    callback(errorCode, numBytesToWrite, ov.UnsafePack(callback, IntPtr.Zero));
+                    callback(errorCode, numBytesToWrite, asyncResult);
                 }
                 );
 

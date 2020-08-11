@@ -370,7 +370,7 @@ namespace FASTER.core
         }
 
 
-        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             if (errorCode != 0)
             {
@@ -378,7 +378,7 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncFlushResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+            var result = (PageAsyncFlushResult<RecoveryStatus>)asyncResult;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
@@ -401,7 +401,6 @@ namespace FASTER.core
                 }
                 result.Free();
             }
-            Overlapped.Free(overlap);
         }
     }
 

@@ -109,10 +109,10 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
         {
             // Set the page status to flushed
-            _ = (HashIndexPageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
+            _ = (HashIndexPageAsyncFlushResult)asyncResult;
 
             if (errorCode != 0)
             {
@@ -122,7 +122,6 @@ namespace FASTER.core
             {
                 mainIndexCheckpointSemaphore.Release();
             }
-            Overlapped.Free(overlap);
         }
     }
 }
