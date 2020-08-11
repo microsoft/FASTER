@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -11,8 +10,8 @@ namespace FASTER.core
     /// </summary>
     /// <param name="errorCode"></param>
     /// <param name="numBytes"></param>
-    /// <param name="result"></param>
-    public delegate void DeviceIOCompletionCallback(uint errorCode, uint numBytes, IAsyncResult result);
+    /// <param name="context"></param>
+    public delegate void DeviceIOCompletionCallback(uint errorCode, uint numBytes, object context);
 
     /// <summary>
     /// Interface for devices
@@ -81,8 +80,8 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
         /// Read
@@ -92,8 +91,8 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context);
 
         /* Direct addressing API */
 
@@ -104,8 +103,8 @@ namespace FASTER.core
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
         /// Read
@@ -114,8 +113,8 @@ namespace FASTER.core
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
         /// Truncates the log until the given address. The truncated portion should no longer be accessed as the device is no longer responsible for 

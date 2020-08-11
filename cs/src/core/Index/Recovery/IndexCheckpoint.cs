@@ -109,10 +109,10 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
         {
             // Set the page status to flushed
-            _ = (HashIndexPageAsyncFlushResult)asyncResult;
+            _ = (HashIndexPageAsyncFlushResult)context;
 
             if (errorCode != 0)
             {

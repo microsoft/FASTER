@@ -463,7 +463,7 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
@@ -561,7 +561,7 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, IAsyncResult result)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {

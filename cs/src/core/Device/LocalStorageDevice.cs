@@ -54,7 +54,7 @@ namespace FASTER.core
         {
             Interlocked.Decrement(ref numPendingReads);
             var result = (SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult;
-            result.callback(errorCode, numBytes, result.result);
+            result.callback(errorCode, numBytes, result.context);
             results.Enqueue(result);
         }
 
@@ -132,12 +132,12 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override void ReadAsync(int segmentId, ulong sourceAddress, 
                                      IntPtr destinationAddress, 
                                      uint readLength, 
                                      DeviceIOCompletionCallback callback, 
-                                     IAsyncResult asyncResult)
+                                     object context)
         {
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
@@ -146,7 +146,7 @@ namespace FASTER.core
                 result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
             }
 
-            result.result = asyncResult;
+            result.context = context;
             result.callback = callback;
             var ovNative = result.nativeOverlapped;
 
@@ -177,13 +177,13 @@ namespace FASTER.core
             catch (IOException e)
             {
                 Interlocked.Decrement(ref numPendingReads);
-                callback((uint)(e.HResult & 0x0000FFFF), 0, asyncResult);
+                callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 results.Enqueue(result);
             }
             catch
             {
                 Interlocked.Decrement(ref numPendingReads);
-                callback(uint.MaxValue, 0, asyncResult);
+                callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);
             }
         }
@@ -196,13 +196,13 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override unsafe void WriteAsync(IntPtr sourceAddress, 
                                       int segmentId,
                                       ulong destinationAddress, 
                                       uint numBytesToWrite, 
                                       DeviceIOCompletionCallback callback, 
-                                      IAsyncResult asyncResult)
+                                      object context)
         {
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
@@ -211,7 +211,7 @@ namespace FASTER.core
                 result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
             }
 
-            result.result = asyncResult;
+            result.context = context;
             result.callback = callback;
             var ovNative = result.nativeOverlapped;
 
@@ -239,12 +239,12 @@ namespace FASTER.core
             }
             catch (IOException e)
             {
-                callback((uint)(e.HResult & 0x0000FFFF), 0, asyncResult);
+                callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 results.Enqueue(result);
             }
             catch
             {
-                callback(uint.MaxValue, 0, asyncResult);
+                callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);
             }
         }
@@ -422,7 +422,7 @@ namespace FASTER.core
     unsafe sealed class SimpleAsyncResult : IAsyncResult
     {
         public DeviceIOCompletionCallback callback;
-        public IAsyncResult result;
+        public object context;
         public Overlapped overlapped;
         public NativeOverlapped* nativeOverlapped;
 

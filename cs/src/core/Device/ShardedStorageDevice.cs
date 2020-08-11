@@ -193,15 +193,15 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, IAsyncResult)"/>
+        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)"/>
         /// </summary>
         /// <param name="sourceAddress"></param>
         /// <param name="segmentId"></param>
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public unsafe override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public unsafe override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
@@ -232,7 +232,7 @@ namespace FASTER.core
                                                              countdown.Dispose();
                                                          }
                                                      },
-                                                     asyncResult);
+                                                     context);
 
                 currentWriteStart = newStart;
             }
@@ -240,21 +240,21 @@ namespace FASTER.core
             // TODO: Check if overlapped wrapper is handled correctly
             if (countdown.Signal())
             {
-                callback(aggregateErrorCode, numBytesToWrite, asyncResult);
+                callback(aggregateErrorCode, numBytesToWrite, context);
                 countdown.Dispose();
             }
         }
 
         /// <summary>
-        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, IAsyncResult)"/>
+        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, object)"/>
         /// </summary>
         /// <param name="segmentId"></param>
         /// <param name="sourceAddress"></param>
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public unsafe override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
             // Starts off in one, in order to prevent some issued writes calling the callback before all parallel writes are issued.
             var countdown = new CountdownEvent(1);
@@ -283,7 +283,7 @@ namespace FASTER.core
                                                             countdown.Dispose();
                                                         }
                                                     },
-                                                    asyncResult);
+                                                    context);
 
                 currentReadStart = newStart;
             }
@@ -291,7 +291,7 @@ namespace FASTER.core
             // TODO: Check handling of overlapped wrapper
             if (countdown.Signal())
             {
-                callback(aggregateErrorCode, readLength, asyncResult);
+                callback(aggregateErrorCode, readLength, context);
                 countdown.Dispose();
             }
         }

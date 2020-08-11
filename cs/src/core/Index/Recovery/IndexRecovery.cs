@@ -110,7 +110,7 @@ namespace FASTER.core
             return completed;
         }
 
-        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, IAsyncResult overlap)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object overlap)
         {
             if (errorCode != 0)
             {

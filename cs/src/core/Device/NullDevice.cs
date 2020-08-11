@@ -26,10 +26,10 @@ namespace FASTER.core
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public override unsafe void ReadAsync(int segmentId, ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, object context)
         {
-            callback(0, aligned_read_length, asyncResult);
+            callback(0, aligned_read_length, context);
         }
 
         /// <summary>
@@ -40,10 +40,10 @@ namespace FASTER.core
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public override unsafe void WriteAsync(IntPtr alignedSourceAddress, int segmentId, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public override unsafe void WriteAsync(IntPtr alignedSourceAddress, int segmentId, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
-            callback(0, numBytesToWrite, asyncResult);
+            callback(0, numBytesToWrite, context);
         }
 
         /// <summary>

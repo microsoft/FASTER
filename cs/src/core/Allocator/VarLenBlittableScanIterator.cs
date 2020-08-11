@@ -198,14 +198,14 @@ namespace FASTER.core
             loaded[currentFrame].Wait();
         }
 
-        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
                 Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
             }
 
-            var result = (PageAsyncReadResult<Empty>)asyncResult;
+            var result = (PageAsyncReadResult<Empty>)context;
 
             if (result.freeBuffer1 != null)
             {

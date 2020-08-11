@@ -92,12 +92,12 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
                                      IntPtr destinationAddress,
                                      uint readLength,
                                      DeviceIOCompletionCallback callback,
-                                     IAsyncResult asyncResult)
+                                     object context)
         {
             SectorAlignedMemory memory = null;
             Stream logReadHandle = null;
@@ -137,7 +137,7 @@ namespace FASTER.core
                     }
                     memory.Return();
 
-                    callback(errorCode, (uint)t.Result, asyncResult);
+                    callback(errorCode, (uint)t.Result, context);
                 }
                 );
             if (offset >= 0)
@@ -152,13 +152,13 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override unsafe void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
                                       ulong destinationAddress,
                                       uint numBytesToWrite,
                                       DeviceIOCompletionCallback callback,
-                                      IAsyncResult asyncResult)
+                                      object context)
         {
             SectorAlignedMemory memory = null;
             Stream logWriteHandle = null;
@@ -202,7 +202,7 @@ namespace FASTER.core
                     }
 #endif
 
-                    callback(errorCode, numBytesToWrite, asyncResult);
+                    callback(errorCode, numBytesToWrite, context);
                 }
                 );
 

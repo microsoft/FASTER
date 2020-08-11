@@ -1442,14 +1442,14 @@ namespace FASTER.core
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
 
-        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
                 Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
             }
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)asyncResult;
+            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
 
             var ctx = result.context;
             try
@@ -1510,8 +1510,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
-        /// <param name="asyncResult"></param>
-        private void AsyncFlushPageCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        private void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {
@@ -1521,7 +1521,7 @@ namespace FASTER.core
                 }
 
                 // Set the page status to flushed
-                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)asyncResult;
+                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;
 
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
@@ -1548,8 +1548,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
-        /// <param name="asyncResult"></param>
-        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {
@@ -1558,7 +1558,7 @@ namespace FASTER.core
                     Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
                 }
 
-                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)asyncResult;
+                PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
                     result.Free();

@@ -370,7 +370,7 @@ namespace FASTER.core
         }
 
 
-        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
@@ -378,7 +378,7 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncFlushResult<RecoveryStatus>)asyncResult;
+            var result = (PageAsyncFlushResult<RecoveryStatus>)context;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
@@ -468,7 +468,7 @@ namespace FASTER.core
             RecoveryReset(untilAddress, headAddress, beginAddress);
         }
 
-        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
@@ -476,7 +476,7 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncReadResult<RecoveryStatus>)asyncResult;
+            var result = (PageAsyncReadResult<RecoveryStatus>)context;
 
             if (result.freeBuffer1 != null)
             {

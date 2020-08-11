@@ -70,7 +70,7 @@ namespace FASTER.core
         }
     }
 
-    internal sealed class SimpleReadContext : IAsyncResult
+    internal sealed class SimpleReadContext : object
     {
         public long logicalAddress;
         public SectorAlignedMemory record;

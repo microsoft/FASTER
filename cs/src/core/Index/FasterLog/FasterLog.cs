@@ -873,9 +873,9 @@ namespace FASTER.core
             return true;
         }
 
-        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
-            var ctx = (SimpleReadContext)asyncResult;
+            var ctx = (SimpleReadContext)context;
 
             if (errorCode != 0)
             {

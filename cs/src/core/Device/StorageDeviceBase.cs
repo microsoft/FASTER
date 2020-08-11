@@ -120,8 +120,8 @@ namespace FASTER.core
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
             int segment = (int)(segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0);
 
@@ -137,7 +137,7 @@ namespace FASTER.core
                 alignedSourceAddress,
                 segment,
                 alignedDestinationAddress & segmentSizeMask,
-                numBytesToWrite, callback, asyncResult);
+                numBytesToWrite, callback, context);
         }
 
         /// <summary>
@@ -147,8 +147,8 @@ namespace FASTER.core
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, object context)
         {
             var segment = segmentSizeBits < 64 ? alignedSourceAddress >> segmentSizeBits : 0;
 
@@ -156,7 +156,7 @@ namespace FASTER.core
                 (int)segment,
                 alignedSourceAddress & segmentSizeMask,
                 alignedDestinationAddress,
-                aligned_read_length, callback, asyncResult);
+                aligned_read_length, callback, context);
         }
 
         /// <summary>
@@ -259,8 +259,8 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public abstract void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        public abstract void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
         /// 
@@ -270,8 +270,8 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public abstract void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        public abstract void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
         /// 

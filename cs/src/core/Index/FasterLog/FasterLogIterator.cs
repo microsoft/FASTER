@@ -367,11 +367,11 @@ namespace FASTER.core
             return true;
         }
 
-        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {
-                var result = (PageAsyncReadResult<Empty>)asyncResult;
+                var result = (PageAsyncReadResult<Empty>)context;
 
                 if (errorCode != 0)
                 {

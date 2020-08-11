@@ -125,9 +125,9 @@ namespace FASTER.devices
         }
 
         /// <summary>
-        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, IAsyncResult)">Inherited</see>
+        /// <see cref="IDevice.ReadAsync(int, ulong, IntPtr, uint, DeviceIOCompletionCallback, object)">Inherited</see>
         /// </summary>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
             // It is up to the allocator to make sure no reads are issued to segments before they are written
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry)) throw new InvalidOperationException("Attempting to read non-existent segments");
@@ -142,16 +142,16 @@ namespace FASTER.devices
                 catch (Exception e)
                 {
                     Trace.TraceError(e.Message);
-                    callback(2, readLength, asyncResult);
+                    callback(2, readLength, context);
                 }
-                callback(0, readLength, asyncResult);
-            }, asyncResult);
+                callback(0, readLength, context);
+            }, context);
         }
 
         /// <summary>
-        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, IAsyncResult)">Inherited</see>
+        /// <see cref="IDevice.WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)">Inherited</see>
         /// </summary>
-        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
@@ -170,23 +170,23 @@ namespace FASTER.devices
                 // Otherwise, some other thread beat us to it. Okay to use their blobs.
                 blobEntry = blobs[segmentId];
             }
-            TryWriteAsync(blobEntry, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+            TryWriteAsync(blobEntry, sourceAddress, destinationAddress, numBytesToWrite, callback, context);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void TryWriteAsync(BlobEntry blobEntry, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        private void TryWriteAsync(BlobEntry blobEntry, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
             CloudPageBlob pageBlob = blobEntry.GetPageBlob();
             // If pageBlob is null, it is being created. Attempt to queue the write for the creator to complete after it is done
             if (pageBlob == null
-                && blobEntry.TryQueueAction(p => WriteToBlobAsync(p, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult))) return;
+                && blobEntry.TryQueueAction(p => WriteToBlobAsync(p, sourceAddress, destinationAddress, numBytesToWrite, callback, context))) return;
 
             // Otherwise, invoke directly.
-            WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, asyncResult);
+            WriteToBlobAsync(pageBlob, sourceAddress, destinationAddress, numBytesToWrite, callback, context);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, IAsyncResult asyncResult)
+        private static unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
             UnmanagedMemoryStream stream = new UnmanagedMemoryStream((byte*)sourceAddress, numBytesToWrite);
             blob.BeginWritePages(stream, (long)destinationAddress, null, ar =>
@@ -194,14 +194,14 @@ namespace FASTER.devices
                 try
                 {
                     blob.EndWritePages(ar);
-                    callback(0, numBytesToWrite, asyncResult);
+                    callback(0, numBytesToWrite, context);
                 }
                 catch (Exception e)
                 {
                     Trace.TraceError(e.Message);
-                    callback(1, numBytesToWrite, asyncResult);
+                    callback(1, numBytesToWrite, context);
                 }
-            }, asyncResult);
+            }, context);
         }
 
         private string GetSegmentBlobName(int segmentId)

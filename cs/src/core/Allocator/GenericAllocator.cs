@@ -451,7 +451,7 @@ namespace FASTER.core
                 alignedNumBytesToWrite, callback, asyncResult);
         }
 
-        private void AsyncReadPageCallback(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
@@ -459,7 +459,7 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncReadResult<Empty>)asyncResult;
+            var result = (PageAsyncReadResult<Empty>)context;
 
             result.handle.Signal();
         }
@@ -497,8 +497,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
-        /// <param name="asyncResult"></param>
-        private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
@@ -506,18 +506,18 @@ namespace FASTER.core
             }
 
             // Set the page status to flushed
-            PageAsyncFlushResult<TContext> result = (PageAsyncFlushResult<TContext>)asyncResult;
+            PageAsyncFlushResult<TContext> result = (PageAsyncFlushResult<TContext>)context;
             result.done.Set();
         }
 
-        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, IAsyncResult asyncresult)
+        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
                 Trace.TraceError("AsyncReadPageWithObjectsCallback error: {0}", errorCode);
             }
 
-            PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)asyncresult;
+            PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)context;
 
             Record<Key, Value>[] src;
 
@@ -550,7 +550,7 @@ namespace FASTER.core
                 result.Free();
 
                 // Call the "real" page read callback
-                result.callback(errorCode, numBytes, asyncresult);
+                result.callback(errorCode, numBytes, context);
                 return;
             }
 
