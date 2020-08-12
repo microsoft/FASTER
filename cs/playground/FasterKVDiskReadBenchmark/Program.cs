@@ -15,10 +15,13 @@ namespace FasterKVDiskReadBenchmark
     {
         static FasterKV<Key, Value, Input, Output, Empty, MyFuncs> faster;
         static int numOps = 0;
+
         const int NumParallelSessions = 1;
         const int NumKeys = 20_000_000 / NumParallelSessions;
         const bool periodicCommit = false;
         const bool useAsync = true;
+        const bool readBatching = true;
+        const int readBatchSize = 100;
 
         /// <summary>
         /// Main program entry point
@@ -103,9 +106,6 @@ namespace FasterKVDiskReadBenchmark
         /// </summary>
         static async Task AsyncReadOperator(int id)
         {
-            const bool batching = true;
-            const int batchSize = 100;
-
             using var session = faster.NewSession(id.ToString() + "read");
             Random rand = new Random(id);
 
@@ -117,16 +117,16 @@ namespace FasterKVDiskReadBenchmark
                 Input input = default;
                 int i = 0;
 
-                var tasks = new (long, ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Empty, MyFuncs>>)[batchSize];
+                var tasks = new (long, ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Empty, MyFuncs>>)[readBatchSize];
                 while (true)
                 {
                     key = new Key(NumKeys * id + rand.Next(0, NumKeys));
 
                     if (useAsync)
                     {
-                        if (batching)
+                        if (readBatching)
                         {
-                            tasks[i % batchSize] = (key.key, session.ReadAsync(ref key, ref input));
+                            tasks[i % readBatchSize] = (key.key, session.ReadAsync(ref key, ref input));
                         }
                         else
                         {
@@ -141,7 +141,7 @@ namespace FasterKVDiskReadBenchmark
                     {
                         Output output = new Output();
                         var result = session.Read(ref key, ref input, ref output, Empty.Default, 0);
-                        if (batching)
+                        if (readBatching)
                         {
                             if (result != Status.PENDING)
                             {
@@ -167,11 +167,11 @@ namespace FasterKVDiskReadBenchmark
                     Interlocked.Increment(ref numOps);
                     i++;
 
-                    if (batching && (i % batchSize == 0))
+                    if (readBatching && (i % readBatchSize == 0))
                     {
                         if (useAsync)
                         {
-                            for (int j = 0; j < batchSize; j++)
+                            for (int j = 0; j < readBatchSize; j++)
                             {
                                 var result = (await tasks[j].Item2).CompleteRead();
                                 if (result.Item1 != Status.OK || result.Item2.value.vfield1 != tasks[j].Item1 || result.Item2.value.vfield2 != tasks[j].Item1)
