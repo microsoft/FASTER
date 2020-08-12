@@ -9,10 +9,12 @@ namespace FasterPSFSample
     {
         private static bool useObjectValue;
         private static bool useMultiGroups;
+        private static bool useAsync;
         private static bool verbose;
 
         const string ObjValuesArg = "--objValues";
         const string MultiGroupArg = "--multiGroup";
+        const string AsyncArg = "--async";
 
         static bool ParseArgs(string[] argv)
         {
@@ -23,6 +25,7 @@ namespace FasterPSFSample
                 Console.WriteLine();
                 Console.WriteLine($"    {ObjValuesArg}: Use objects instead of blittable Value; default is {useObjectValue}");
                 Console.WriteLine($"    {MultiGroupArg}: Put each PSF in a separate group; default is {useMultiGroups}");
+                Console.WriteLine($"    {AsyncArg}: Use Async operations on FasterKV; default is {useAsync}");
                 Console.WriteLine();
                 if (!string.IsNullOrEmpty(message))
                 {
@@ -45,6 +48,11 @@ namespace FasterPSFSample
                 if (string.Compare(arg, MultiGroupArg, ignoreCase: true) == 0)
                 {
                     useMultiGroups = true;
+                    continue;
+                }
+                if (string.Compare(arg, AsyncArg, ignoreCase: true) == 0)
+                {
+                    useAsync = true;
                     continue;
                 }
                 if (string.Compare(arg, "--help", ignoreCase: true) == 0 || arg == "/?" || arg == "-?")

@@ -41,5 +41,8 @@ namespace FASTER.core
         }
 
         internal bool CancelOnEOS(IPSF psf, (int, int) location) => !(this.OnStreamEnded is null) && !this.OnStreamEnded(psf, location);
+
+        // Default is to let all streams continue to completion.
+        internal static readonly PSFQuerySettings Default = new PSFQuerySettings { OnStreamEnded = (unusedPsf, unusedIndex) => true };
     }
 }

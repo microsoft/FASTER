@@ -53,6 +53,8 @@ namespace FASTER.core
         /// </summary>
         protected readonly IFasterEqualityComparer<Key> comparer;
 
+        internal IKeyAccessor<Key> PsfKeyAccessor;
+
         #region Protected size definitions
         /// <summary>
         /// Buffer size
@@ -1459,9 +1461,14 @@ namespace FASTER.core
                     // We have the complete record.
                     if (RetrievedFullRecord(record, ref ctx))
                     {
-                        if (comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
+                        // If the keys are same, then I/O is complete. For PSFs, we may be querying on an address instead of a key;
+                        // in this case, ctx.request_key is null for the primary FKV but we know the address is the one we want.
+                        var isEqualKey = ctx.request_key is null 
+                                        || (this.PsfKeyAccessor is null 
+                                            ? comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx))
+                                            : this.PsfKeyAccessor.EqualsAtRecordAddress(ref ctx.request_key.Get(), (long)record));
+                        if (isEqualKey)
                         {
-                            // The keys are same, so I/O is complete
                             // ctx.record = result.record;
                             if (ctx.callbackQueue != null)
                                 ctx.callbackQueue.Enqueue(ctx);

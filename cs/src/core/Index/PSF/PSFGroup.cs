@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core.Index.PSF;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -103,7 +104,8 @@ namespace FASTER.core
                     {
                         keyLength = new CompositeKey<TPSFKey>.VarLenLength(this.keyPointerSize, this.PSFCount)
                     }
-                ) { psfKeyAccessor = this.keyAccessor};
+                );
+            this.fht.hlog.PsfKeyAccessor = keyAccessor;
 
             this.bufferPool = this.fht.hlog.bufferPool;
         }
@@ -328,20 +330,20 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public unsafe IEnumerable<TRecordId> Query(int psfOrdinal, TPSFKey key)
+        public unsafe IEnumerable<TRecordId> Query(int psfOrdinal, TPSFKey key, PSFQuerySettings querySettings)
         {
             // Putting the query key in PSFInput is necessary because iterator functions cannot contain unsafe code or have
             // byref args, and bufferPool is needed here because the stack goes away as part of the iterator operation.
             // TODOperf: PSFInput* and PSFOutput* are classes because we communicate through interfaces to avoid
             // having to add additional generic args. Interfaces on structs incur boxing overhead (plus the complexity
             // of mutable structs). But check the performance here; if necessary perhaps I can figure out a way to
-            // pass a struct with no TPSFKey, TRecordId, etc. and use an FHT-level interface to manage it.
+            // pass a struct with no TPSFKey, TRecordId, etc. and use an FHT-level interface to manage it (async too).
             var psfInput = new PSFInputSecondary<TPSFKey>(psfOrdinal, this.keyAccessor, this.Id);
             psfInput.SetQueryKey(this.bufferPool, ref key);
-            return Query(psfInput);
+            return Query(psfInput, querySettings);
         }
 
-        private IEnumerable<TRecordId> Query(PSFInputSecondary<TPSFKey> input)
+        private IEnumerable<TRecordId> Query(PSFInputSecondary<TPSFKey> input, PSFQuerySettings querySettings)
         {
             // TODOperf: if there are multiple PSFs within this group we can step through in parallel and return them
             // as a single merged stream; will require multiple TPSFKeys and their indexes in queryKeyPtr. Also consider
@@ -350,26 +352,23 @@ namespace FASTER.core
             var readArgs = new PSFReadArgs<CompositeKey<TPSFKey>, TRecordId>(input, secondaryOutput);
 
             var session = this.GetSession();
-            HashSet<TRecordId> deadRecs = null;
+            var deadRecs = new DeadRecords<TRecordId>();
             try
             {
                 // Because we traverse the chain, we must wait for any pending read operations to complete.
                 // TODOperf: See if there is a better solution than spinWaiting in CompletePending.
                 Status status = session.PsfReadKey(ref input.QueryKeyRef, ref readArgs, session.ctx.serialNum + 1);
+                if (querySettings.IsCanceled)
+                    yield break;
                 if (status == Status.PENDING)
                     session.CompletePending(spinWait: true);
                 if (status != Status.OK)    // TODOerr: check other status
                     yield break;
 
                 if (secondaryOutput.Tombstone)
-                {
-                    deadRecs ??= new HashSet<TRecordId>();
                     deadRecs.Add(secondaryOutput.RecordId);
-                }
                 else
-                {
                     yield return secondaryOutput.RecordId;
-                }
 
                 do
                 {
@@ -377,22 +376,14 @@ namespace FASTER.core
                     status = session.PsfReadAddress(ref readArgs, session.ctx.serialNum + 1);
                     if (status == Status.PENDING)
                         session.CompletePending(spinWait: true);
+                    if (querySettings.IsCanceled)
+                        yield break;
                     if (status != Status.OK)    // TODOerr: check other status
                         yield break;
-                    
-                    if (secondaryOutput.Tombstone)
-                    {
-                        deadRecs ??= new HashSet<TRecordId>();
-                        deadRecs.Add(secondaryOutput.RecordId);
-                        continue;
-                    }
 
-                    if (!(deadRecs is null) && deadRecs.Contains(secondaryOutput.RecordId))
-                    {
-                        if (!secondaryOutput.Tombstone) // A live record will not be encountered again so remove it
-                            deadRecs.Remove(secondaryOutput.RecordId);
+                    if (deadRecs.IsDead(secondaryOutput.RecordId, secondaryOutput.Tombstone))
                         continue;
-                    }
+
                     yield return secondaryOutput.RecordId;
                 } while (secondaryOutput.PreviousLogicalAddress != Constants.kInvalidAddress);
             }
@@ -403,6 +394,68 @@ namespace FASTER.core
             }
         }
 
+#if DOTNETCORE
+        /// <inheritdoc/>
+        public unsafe IAsyncEnumerable<TRecordId> QueryAsync(int psfOrdinal, TPSFKey key, PSFQuerySettings querySettings)
+        {
+            // See comments on non-async version.
+            var psfInput = new PSFInputSecondary<TPSFKey>(psfOrdinal, this.keyAccessor, this.Id);
+            psfInput.SetQueryKey(this.bufferPool, ref key);
+            return QueryAsync(psfInput, querySettings);
+        }
+
+        private async IAsyncEnumerable<TRecordId> QueryAsync(PSFInputSecondary<TPSFKey> input, PSFQuerySettings querySettings)
+        {
+            // TODO: Improved enumerator in DurTask
+
+            // TODOperf: if there are multiple PSFs within this group we can step through in parallel and return them
+            // as a single merged stream; will require multiple TPSFKeys and their indexes in queryKeyPtr. Also consider
+            // having TPSFKeys[] for a single PSF walk through in parallel, so the FHT log memory access is sequential.
+            var secondaryOutput = new PSFOutputSecondary<TPSFKey, TRecordId>(this.keyAccessor);
+            var readArgs = new PSFReadArgs<CompositeKey<TPSFKey>, TRecordId>(input, secondaryOutput);
+
+            var session = this.GetSession();
+            var deadRecs = new DeadRecords<TRecordId>();
+            try
+            {
+                // Because we traverse the chain, we must wait for any pending read operations to complete.
+                var readAsyncResult = await session.PsfReadKeyAsync(ref input.QueryKeyRef, ref readArgs, session.ctx.serialNum + 1, querySettings);
+                if (querySettings.IsCanceled)
+                    yield break;
+                var (status, _) = readAsyncResult.CompleteRead();
+                if (status != Status.OK)    // TODOerr: check other status
+                    yield break;
+
+                if (secondaryOutput.Tombstone)
+                    deadRecs.Add(secondaryOutput.RecordId);
+                else
+                    yield return secondaryOutput.RecordId;
+
+                do
+                {
+                    readArgs.Input.ReadLogicalAddress = secondaryOutput.PreviousLogicalAddress;
+                    readAsyncResult = await session.PsfReadAddressAsync(ref readArgs, session.ctx.serialNum + 1, querySettings);
+                    if (querySettings.IsCanceled)
+                        yield break;
+                    (status, _) = readAsyncResult.CompleteRead();
+                    if (status != Status.OK)    // TODOerr: check other status
+                        yield break;
+
+                    if (deadRecs.IsDead(secondaryOutput.RecordId, secondaryOutput.Tombstone))
+                        continue;
+
+                    yield return secondaryOutput.RecordId;
+                } while (secondaryOutput.PreviousLogicalAddress != Constants.kInvalidAddress);
+            }
+            finally
+            {
+                this.ReleaseSession(session);
+                input.Dispose();
+            }
+        }
+#endif
+
+        #region Checkpoint Operations
         /// <inheritdoc/>
         public bool TakeFullCheckpoint() => this.fht.TakeFullCheckpoint(out _);
 
@@ -417,5 +470,17 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public void Recover() => this.fht.Recover();
+        #endregion Checkpoint Operations
+
+        #region Log Operations
+        /// <inheritdoc/>
+        public void FlushLog(bool wait) => this.fht.Log.Flush(wait);
+
+        /// <inheritdoc/>
+        public bool FlushAndEvictLog(bool wait) => this.fht.Log.FlushAndEvict(wait);
+
+        /// <inheritdoc/>
+        public void DisposeLogFromMemory() => this.fht.Log.DisposeFromMemory();
+        #endregion Log Operations
     }
 }

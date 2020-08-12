@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -27,8 +28,15 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfReadAddress(ref PSFReadArgs<Key, Value> psfArgs, long serialNo,
-                                         FasterExecutionContext sessionCtx)
+        internal ValueTask<ReadAsyncResult> ContextPsfReadKeyAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                                        ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo, FasterExecutionContext sessionCtx,
+                                        PSFQuerySettings querySettings)
+        {
+            return PsfReadAsync(clientSession, isKey: true, ref key, ref psfArgs, serialNo, sessionCtx, querySettings);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextPsfReadAddress(ref PSFReadArgs<Key, Value> psfArgs, long serialNo, FasterExecutionContext sessionCtx)
         {
             var pcontext = default(PendingContext);
             var internalStatus = this.PsfInternalReadAddress(ref psfArgs, ref pcontext, sessionCtx, serialNo);
@@ -38,6 +46,57 @@ namespace FASTER.core
 
             sessionCtx.serialNum = serialNo;
             return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ValueTask<ReadAsyncResult> ContextPsfReadAddressAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                                        ref PSFReadArgs<Key, Value> psfArgs, long serialNo, FasterExecutionContext sessionCtx,
+                                        PSFQuerySettings querySettings)
+        {
+            var key = default(Key);
+            return PsfReadAsync(clientSession, isKey: false, ref key, ref psfArgs, serialNo, sessionCtx, querySettings);
+        }
+
+        internal ValueTask<ReadAsyncResult> PsfReadAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool isKey,
+                                                         ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo, FasterExecutionContext sessionCtx,
+                                                         PSFQuerySettings querySettings)
+        {
+            var pcontext = default(PendingContext);
+            var output = default(Output);
+            var nextSerialNum = clientSession.ctx.serialNum + 1;
+
+            if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+            try
+            {
+            TryReadAgain:
+                var internalStatus = isKey
+                    ? this.PsfInternalReadKey(ref key, ref psfArgs, ref pcontext, sessionCtx, serialNo)
+                    : this.PsfInternalReadAddress(ref psfArgs, ref pcontext, sessionCtx, serialNo);
+                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+                {
+                    return new ValueTask<ReadAsyncResult>(new ReadAsyncResult((Status)internalStatus, output));
+                }
+
+                if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
+                {
+                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext);
+                    goto TryReadAgain;
+                }
+            }
+            finally
+            {
+                clientSession.ctx.serialNum = nextSerialNum;
+                if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+            }
+
+            try
+            { 
+                return SlowReadAsync(this, clientSession, pcontext, querySettings.CancellationToken);
+            }
+            catch (OperationCanceledException) when (!querySettings.ThrowOnCancellation)
+            {
+                return default;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -315,7 +315,7 @@ namespace FASTER.core
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
-                                        hlog.ReadOnlyAddress,
+                                        this.PSFManager.HasPSFs ? hlog.HeadAddress : hlog.ReadOnlyAddress,
                                         out logicalAddress,
                                         out physicalAddress);
                 }
@@ -458,28 +458,22 @@ namespace FASTER.core
                 if (this.PSFManager.HasPSFs)
                 {
                     psfArgs.LogicalAddress = newLogicalAddress;
-                    var isInsert = logicalAddress < hlog.BeginAddress ||
-                            (logicalAddress >= hlog.HeadAddress && hlog.GetInfo(physicalAddress).Tombstone);
-                    if (isInsert)
+
+                    if (logicalAddress < hlog.HeadAddress || hlog.GetInfo(physicalAddress).Tombstone)
                     {
-                        // Old logicalAddress is invalid (deos not exist) or was deleted, so this is an insert.
-                        // This goes through the fast Insert path which does not create a changeTracker.
+                        // Old logicalAddress is invalid (LA < BeginAddress, so the record does not exist), on disk (LA < HeadAddress; this
+                        // would require an IO to get it, so instead we defer to the liveness check in PsfInternalReadAddress), or was deleted,
+                        // so this is an insert. This goes through the fast Insert path which does not create a changeTracker.
                     }
-                    else if (logicalAddress >= hlog.HeadAddress)
+                    else
                     {
-                        // The old record was valid but not in mutable range (that's handled above), so this is an RCU
+                        // The old record was valid but not in the mutable range (that's handled above), but it's above HeadAddress, so we can
+                        // get the old value and make this an RCU.
+                        Debug.Assert(logicalAddress < hlog.ReadOnlyAddress);
                         psfArgs.ChangeTracker = this.PSFManager.CreateChangeTracker();
                         SetBeforeData(psfArgs.ChangeTracker, ref key, logicalAddress, physicalAddress, isIpu: false);
                         SetAfterData(psfArgs.ChangeTracker, ref key, newLogicalAddress, newPhysicalAddress);
                         psfArgs.ChangeTracker.UpdateOp = UpdateOperation.RCU;
-                    }
-                    else
-                    {
-                        // ah, old record slipped onto disk
-                        hlog.GetInfo(newPhysicalAddress).Invalid = true;
-                        psfArgs.ChangeTracker = null;
-                        status = OperationStatus.RETRY_NOW;
-                        goto LatchRelease;
                     }
                 }
 
@@ -1351,32 +1345,42 @@ namespace FASTER.core
             {
                 Debug.Assert(hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Version <= ctx.version);
 
-                if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
-                    return OperationStatus.NOTFOUND;
+                var tombstone = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone;
+
+                // For PSF_READ_ADDRESS on the Primary FKV, we have no key on the query, so we have to populate it here
+                // for the key-match traceback.
+                if (pendingContext.type == OperationType.PSF_READ_ADDRESS && pendingContext.key is null)
+                    pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
 
                 if (pendingContext.type == OperationType.READ)
                 {
-                    functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
-                                           ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
+                    if (!tombstone)
+                    {
+                        functions.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
+                                               ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
+                    }
                 }
                 else if (pendingContext.type == OperationType.PSF_READ_KEY)
                 {
                     pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
-                                            ref pendingContext.key.Get(),
+                                            ref hlog.GetContextRecordKey(ref request),
                                             ref hlog.GetContextRecordValue(ref request),
                                             tombstone: false, // checked above
                                             isConcurrent: false);
                 }
                 else if (pendingContext.type == OperationType.PSF_READ_ADDRESS)
                 {
-                    var key = default(Key); // Reading by address does not have a key
                     pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
-                                            ref key, ref hlog.GetContextRecordValue(ref request),
+                                            ref hlog.GetContextRecordKey(ref request),
+                                            ref hlog.GetContextRecordValue(ref request),
                                             tombstone: false, // checked above
                                             isConcurrent: false);
                 }
 
-                if (CopyReadsToTail || UseReadCache)
+                if (tombstone)
+                    return OperationStatus.NOTFOUND;
+
+                if (CopyReadsToTail || UseReadCache && !this.ImplmentsPSFs) // TODOdcr: Support ReadCache and CopyReadsToTail for PSFs
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, currentCtx);
                 }
@@ -1852,7 +1856,7 @@ namespace FASTER.core
                                     out long foundLogicalAddress,
                                     out long foundPhysicalAddress)
         {
-            Debug.Assert(this.psfKeyAccessor is null);
+            Debug.Assert(!this.ImplmentsPSFs);
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minOffset)
             {
@@ -2094,25 +2098,6 @@ namespace FASTER.core
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
                 // TODO: Update latestRecordVersion?
             }
-            physicalAddress = 0;
-            return false;
-        }
-
-        private bool ReadFromCache(ref long logicalAddress, ref long physicalAddress, ref int latestRecordVersion)
-        {
-            HashBucketEntry entry = default;
-            entry.word = logicalAddress;
-            if (!entry.ReadCache) return false;
-
-            physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
-            latestRecordVersion = readcache.GetInfo(physicalAddress).Version;
-
-            if (!readcache.GetInfo(physicalAddress).Invalid)
-            {
-                if ((logicalAddress & ~Constants.kReadCacheBitMask) >= readcache.SafeReadOnlyAddress)
-                    return true;
-            }
-
             physicalAddress = 0;
             return false;
         }

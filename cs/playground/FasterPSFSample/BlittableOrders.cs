@@ -29,10 +29,7 @@ namespace FasterPSFSample
                 => dst.Value = value;
 
             public void ReadCompletionCallback(ref Key key, ref Input<BlittableOrders> input, ref Output<BlittableOrders> output, Context<BlittableOrders> context, Status status)
-            {
-                if (((IOrders)output.Value).MemberTuple != key.MemberTuple)
-                    throw new Exception("Read mismatch error!");
-            }
+            { /* Output is not set by pending operations */ }
             #endregion Read
 
             #region Upsert
@@ -46,7 +43,7 @@ namespace FasterPSFSample
                 => dst = src;
 
             public void UpsertCompletionCallback(ref Key key, ref BlittableOrders value, Context<BlittableOrders> context)
-                => throw new NotImplementedException();
+            { }
             #endregion Upsert
 
             #region RMW
@@ -63,14 +60,14 @@ namespace FasterPSFSample
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input<BlittableOrders> input, Context<BlittableOrders> context, Status status)
-                => throw new NotImplementedException();
+            { }
             #endregion RMW
 
             public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-                => throw new NotImplementedException();
+            { }
 
             public void DeleteCompletionCallback(ref Key key, Context<BlittableOrders> context)
-                => throw new NotImplementedException();
+            { }
         }
     }
 }

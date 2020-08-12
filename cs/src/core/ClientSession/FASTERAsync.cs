@@ -229,39 +229,39 @@ namespace FASTER.core
             }
 
             return SlowReadAsync(this, clientSession, pcontext, token);
+        }
 
-            static async ValueTask<ReadAsyncResult> SlowReadAsync(
-                FasterKV<Key, Value, Input, Output, Context, Functions> @this,
-                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                PendingContext pendingContext, CancellationToken token = default)
+        private static async ValueTask<ReadAsyncResult> SlowReadAsync(
+            FasterKV<Key, Value, Input, Output, Context, Functions> @this,
+            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            PendingContext pendingContext, CancellationToken token = default)
+        {
+            var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
+            clientSession.ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
+            clientSession.ctx.asyncPendingCount++;
+            clientSession.ctx.pendingReads.Add();
+
+            try
             {
-                var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
-                clientSession.ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
-                clientSession.ctx.asyncPendingCount++;
-                clientSession.ctx.pendingReads.Add();
+                token.ThrowIfCancellationRequested();
 
-                try
-                {
-                    token.ThrowIfCancellationRequested();
+                if (@this.epoch.ThisInstanceProtected())
+                    throw new NotSupportedException("Async operations not supported over protected epoch");
 
-                    if (@this.epoch.ThisInstanceProtected())
-                        throw new NotSupportedException("Async operations not supported over protected epoch");
-
-                    diskRequest = await diskRequest.asyncOperation.ValueTaskOfT;
-                }
-                catch
-                {
-                    clientSession.ctx.ioPendingRequests.Remove(pendingContext.id);
-                    clientSession.ctx.asyncPendingCount--;
-                    throw;
-                }
-                finally 
-                {
-                    clientSession.ctx.pendingReads.Remove();
-                }
-
-                return new ReadAsyncResult(@this, clientSession, pendingContext, diskRequest);
+                diskRequest = await diskRequest.asyncOperation.ValueTaskOfT;
             }
+            catch
+            {
+                clientSession.ctx.ioPendingRequests.Remove(pendingContext.id);
+                clientSession.ctx.asyncPendingCount--;
+                throw;
+            }
+            finally 
+            {
+                clientSession.ctx.pendingReads.Remove();
+            }
+
+            return new ReadAsyncResult(@this, clientSession, pendingContext, diskRequest);
         }
 
         internal bool AtomicSwitch(FasterExecutionContext fromCtx, FasterExecutionContext toCtx, int version)

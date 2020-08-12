@@ -206,6 +206,30 @@ namespace FASTER.core
 
         #endregion PSF Registration
 
+        #region PSF Logs
+        // TODO: better interface to PSF logs
+
+        /// <summary>
+        /// Flush PSF logs until current tail (records are still retained in memory)
+        /// </summary>
+        /// <param name="wait">Synchronous wait for operation to complete</param>
+        void FlushPSFLogs(bool wait);
+
+        /// <summary>
+        /// Flush PSF logs and evict all records from memory
+        /// </summary>
+        /// <param name="wait">Synchronous wait for operation to complete</param>
+        /// <returns>When wait is false, this tells whether the full eviction was successfully registered with FASTER</returns>
+        public bool FlushAndEvictPSFLogs(bool wait);
+
+        /// <summary>
+        /// Delete PSF logs entirely from memory. Cannot allocate on the log
+        /// after this point. This is a synchronous operation.
+        /// </summary>
+        public void DisposePSFLogsFromMemory();
+
+        #endregion PSF Logs
+
         #region Growth and Recovery
 
         /// <summary>

@@ -228,12 +228,6 @@ namespace FASTER.core
                     internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, currentCtx,
                                                     pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
                     break;
-                case OperationType.PSF_READ_ADDRESS:
-                    // This is a special case for RECORD_ON_DISK in ContextPsfReadAddress during CPR;
-                    // it is the only Read operation that goes through Retry.
-                    internalStatus = this.PsfInternalReadAddress(ref pendingContext.psfReadArgs, ref pendingContext,
-                                                                 currentCtx, pendingContext.serialNum);
-                    break;
                 case OperationType.PSF_READ_KEY:
                 case OperationType.READ:
                     throw new FasterException("Reads go through the Pending route, not Retry, so this cannot happen!");
@@ -345,8 +339,6 @@ namespace FASTER.core
         {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out PendingContext pendingContext))
             {
-                ref Key key = ref pendingContext.key.Get();
-
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
 
@@ -366,16 +358,12 @@ namespace FASTER.core
 
                 request.Dispose();
 
-                Status status;
-                // Handle operation status
-                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                {
-                    status = (Status)internalStatus;
-                }
-                else
-                {
-                    status = HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
-                }
+                Status status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
+                    ? (Status)internalStatus
+                    : HandleOperationStatus(opCtx, currentCtx, pendingContext, internalStatus);
+
+                // This is set in InternalContinuePendingRead for PSF_READ_ADDRESS, so don't retrieve it until after that.
+                ref Key key = ref pendingContext.key.Get();
 
                 // If done, callback user code
                 if (status == Status.OK || status == Status.NOTFOUND)
@@ -391,7 +379,7 @@ namespace FASTER.core
                                                          pendingContext.userContext,
                                                          status);
                     }
-                    else
+                    else if (pendingContext.type == OperationType.RMW)
                     {
                         functions.RMWCompletionCallback(ref key,
                                                         ref pendingContext.input,
@@ -407,8 +395,7 @@ namespace FASTER.core
         {
             (Status, Output) s = default;
 
-            ref Key key = ref pendingContext.key.Get();
-
+            // PSFs may read by address rather than key, and for the Primary FKV will not have pendingContext.key; this call will fill it in.
             OperationStatus internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, currentCtx);
 
             request.Dispose();
@@ -423,6 +410,8 @@ namespace FASTER.core
             {
                 throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
             }
+
+            ref Key key = ref pendingContext.key.Get();
 
             if (pendingContext.heldLatch == LatchOperation.Shared)
                 ReleaseSharedLatch(key);

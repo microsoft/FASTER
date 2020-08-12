@@ -43,6 +43,15 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal IEnumerable<TRecordId> Query(TPSFKey key) => this.psfGroup.Query(this.PsfOrdinal, key);
+        internal IEnumerable<TRecordId> Query(TPSFKey key, PSFQuerySettings querySettings) => this.psfGroup.Query(this.PsfOrdinal, key, querySettings);
+
+#if DOTNETCORE
+        /// <summary>
+        /// Issues a query on this PSF to return <typeparamref name="TRecordId"/>s.
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal IAsyncEnumerable<TRecordId> QueryAsync(TPSFKey key, PSFQuerySettings querySettings) => this.psfGroup.QueryAsync(this.PsfOrdinal, key, querySettings);
+#endif
     }
 }

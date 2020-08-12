@@ -20,9 +20,6 @@ namespace FASTER.core
 
         private readonly ConcurrentDictionary<string, Guid> psfNames = new ConcurrentDictionary<string, Guid>();
 
-        // Default is to let all streams continue to completion.
-        private static readonly PSFQuerySettings DefaultQuerySettings = new PSFQuerySettings { OnStreamEnded = (unusedPsf, unusedIndex) => true };
-
         internal bool HasPSFs => this.psfGroups.Count > 0;
 
         internal Status Upsert(TProviderData data, TRecordId recordId, PSFChangeTracker<TProviderData, TRecordId> changeTracker)
@@ -129,12 +126,15 @@ namespace FASTER.core
             return psf;
         }
 
-        private void VerifyIsOurPSF<TPSFKey>(IPSF psf)
+        private void VerifyIsOurPSF(params IPSF[] psfs)
         {
-            if (psf is null)
-                throw new PSFArgumentException($"The PSF cannot be null.");
-            if (!this.psfNames.ContainsKey(psf.Name))
-                throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
+            foreach (var psf in psfs)
+            {
+                if (psf is null)
+                    throw new PSFArgumentException($"The PSF cannot be null.");
+                if (!this.psfNames.ContainsKey(psf.Name))
+                    throw new PSFArgumentException($"The PSF {psf.Name} is not registered with this FasterKV.");
+            }
         }
 
         private void VerifyIsOurPSF<TPSFKey>(IEnumerable<(IPSF, IEnumerable<TPSFKey>)> psfsAndKeys)
@@ -142,7 +142,23 @@ namespace FASTER.core
             if (psfsAndKeys is null)
                 throw new PSFArgumentException($"The PSF enumerable cannot be null.");
             foreach (var psfAndKeys in psfsAndKeys)
-                this.VerifyIsOurPSF<TPSFKey>(psfAndKeys.Item1);
+                this.VerifyIsOurPSF(psfAndKeys.Item1);
+        }
+
+        private void VerifyIsOurPSF<TPSFKey1, TPSFKey2>(IEnumerable<(IPSF, IEnumerable<TPSFKey1>)> psfsAndKeys1,
+                                                        IEnumerable<(IPSF, IEnumerable<TPSFKey2>)> psfsAndKeys2)
+        {
+            VerifyIsOurPSF(psfsAndKeys1);
+            VerifyIsOurPSF(psfsAndKeys2);
+        }
+
+        private void VerifyIsOurPSF<TPSFKey1, TPSFKey2, TPSFKey3>(IEnumerable<(IPSF, IEnumerable<TPSFKey1>)> psfsAndKeys1,
+                                                        IEnumerable<(IPSF, IEnumerable<TPSFKey2>)> psfsAndKeys2,
+                                                        IEnumerable<(IPSF, IEnumerable<TPSFKey3>)> psfsAndKeys3)
+        {
+            VerifyIsOurPSF(psfsAndKeys1);
+            VerifyIsOurPSF(psfsAndKeys2);
+            VerifyIsOurPSF(psfsAndKeys3);
         }
 
         private static void VerifyRegistrationSettings<TPSFKey>(PSFRegistrationSettings<TPSFKey> registrationSettings) where TPSFKey : struct
@@ -153,6 +169,10 @@ namespace FASTER.core
                 throw new PSFArgumentException("PSFRegistrationSettings.LogSettings is required");
             if (registrationSettings.CheckpointSettings is null)
                 throw new PSFArgumentException("PSFRegistrationSettings.CheckpointSettings is required");
+
+            // TODOdcr: Support ReadCache and CopyReadsToTail for PSFs
+            if (!(registrationSettings.LogSettings.ReadCacheSettings is null) || registrationSettings.LogSettings.CopyReadsToTail)
+                throw new PSFArgumentException("PSFs do not support ReadCache or CopyReadsToTail");
         }
 
         internal IPSF RegisterPSF<TPSFKey>(PSFRegistrationSettings<TPSFKey> registrationSettings, IPSFDefinition<TProviderData, TPSFKey> def)
@@ -213,8 +233,8 @@ namespace FASTER.core
             where TPSFKey : struct
         {
             var psfImpl = this.GetImplementingPSF<TPSFKey>(psf);
-            querySettings ??= DefaultQuerySettings;
-            foreach (var recordId in psfImpl.Query(key))
+            querySettings ??= PSFQuerySettings.Default;
+            foreach (var recordId in psfImpl.Query(key, querySettings))
             {
                 if (querySettings.IsCanceled)
                     yield break;
@@ -222,11 +242,27 @@ namespace FASTER.core
             }
         }
 
+#if DOTNETCORE
+        internal async IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey>(IPSF psf, TPSFKey key, PSFQuerySettings querySettings)
+            where TPSFKey : struct
+        {
+            var psfImpl = this.GetImplementingPSF<TPSFKey>(psf);
+            querySettings ??= PSFQuerySettings.Default;
+            await foreach (var recordId in psfImpl.QueryAsync(key, querySettings))
+            {
+                if (querySettings.IsCanceled)
+                    yield break;
+                yield return recordId;
+            }
+        }
+
+#endif // DOTNETCORE
+
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(IPSF psf, IEnumerable<TPSFKey> keys, PSFQuerySettings querySettings)
             where TPSFKey : struct
         {
-            this.VerifyIsOurPSF<TPSFKey>(psf);
-            querySettings ??= DefaultQuerySettings;
+            this.VerifyIsOurPSF(psf);
+            querySettings ??= PSFQuerySettings.Default;
 
             // The recordIds cannot overlap between keys (unless something's gone wrong), so return them all.
             // TODOperf: Consider a PQ ordered on secondary FKV LA so we can walk through in parallel (and in memory sequence) in one PsfRead(Key|Address) loop.
@@ -241,6 +277,28 @@ namespace FASTER.core
             }
         }
 
+#if DOTNETCORE
+        internal async IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey>(IPSF psf, IEnumerable<TPSFKey> keys, PSFQuerySettings querySettings)
+            where TPSFKey : struct
+        {
+            this.VerifyIsOurPSF(psf);
+            querySettings ??= PSFQuerySettings.Default;
+
+            // The recordIds cannot overlap between keys (unless something's gone wrong), so return them all.
+            // TODOperf: Consider a PQ ordered on secondary FKV LA so we can walk through in parallel (and in memory sequence) in one PsfRead(Key|Address) loop.
+            foreach (var key in keys)
+            {
+                await foreach (var recordId in QueryPSFAsync(psf, key, querySettings))
+                {
+                    if (querySettings.IsCanceled)
+                        yield break;
+                    yield return recordId;
+                }
+            }
+        }
+
+#endif // DOTNETCORE
+
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
                      IPSF psf1, TPSFKey1 key1,
                      IPSF psf2, TPSFKey2 key2,
@@ -249,13 +307,30 @@ namespace FASTER.core
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            this.VerifyIsOurPSF<TPSFKey1>(psf1);
-            this.VerifyIsOurPSF<TPSFKey2>(psf2);
-            querySettings ??= DefaultQuerySettings;
+            this.VerifyIsOurPSF(psf1, psf2);
+            querySettings ??= PSFQuerySettings.Default;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, key1, querySettings), psf2, this.QueryPSF(psf2, key2, querySettings),
                                                       matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0]), querySettings).Run();
         }
+
+#if DOTNETCORE
+        internal IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey1, TPSFKey2>(
+                     IPSF psf1, TPSFKey1 key1,
+                     IPSF psf2, TPSFKey2 key2,
+                    Func<bool, bool, bool> matchPredicate,
+                    PSFQuerySettings querySettings)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+        {
+            this.VerifyIsOurPSF(psf1, psf2);
+            querySettings ??= PSFQuerySettings.Default;
+
+            return new AsyncQueryRecordIterator<TRecordId>(psf1, this.QueryPSFAsync(psf1, key1, querySettings), psf2, this.QueryPSFAsync(psf2, key2, querySettings),
+                                                           matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0]), querySettings).Run();
+        }
+
+#endif // DOTNETCORE
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
                      IPSF psf1, IEnumerable<TPSFKey1> keys1,
@@ -265,13 +340,29 @@ namespace FASTER.core
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            this.VerifyIsOurPSF<TPSFKey1>(psf1);
-            this.VerifyIsOurPSF<TPSFKey2>(psf2);
-            querySettings ??= DefaultQuerySettings;
+            this.VerifyIsOurPSF(psf1, psf2);
+            querySettings ??= PSFQuerySettings.Default;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, keys1, querySettings), psf2, this.QueryPSF(psf2, keys2, querySettings),
                                                       matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0]), querySettings).Run();
         }
+
+#if DOTNETCORE
+        internal IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey1, TPSFKey2>(
+                     IPSF psf1, IEnumerable<TPSFKey1> keys1,
+                     IPSF psf2, IEnumerable<TPSFKey2> keys2,
+                    Func<bool, bool, bool> matchPredicate,
+                    PSFQuerySettings querySettings)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+        {
+            this.VerifyIsOurPSF(psf1, psf2);
+            querySettings ??= PSFQuerySettings.Default;
+
+            return new AsyncQueryRecordIterator<TRecordId>(psf1, this.QueryPSFAsync(psf1, keys1, querySettings), psf2, this.QueryPSFAsync(psf2, keys2, querySettings),
+                                                      matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0]), querySettings).Run();
+        }
+#endif // DOTNETCORE
 
         public IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
                      IPSF psf1, TPSFKey1 key1,
@@ -283,15 +374,33 @@ namespace FASTER.core
             where TPSFKey2 : struct
             where TPSFKey3 : struct
         {
-            this.VerifyIsOurPSF<TPSFKey1>(psf1);
-            this.VerifyIsOurPSF<TPSFKey2>(psf2);
-            this.VerifyIsOurPSF<TPSFKey3>(psf3);
-            querySettings ??= DefaultQuerySettings;
+            this.VerifyIsOurPSF(psf1, psf2, psf3);
+            querySettings ??= PSFQuerySettings.Default;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, key1, querySettings), psf2, this.QueryPSF(psf2, key2, querySettings),
                                                       psf3, this.QueryPSF(psf3, key3, querySettings),
                                                       matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0], matchIndicators[2][0]), querySettings).Run();
         }
+
+#if DOTNETCORE
+        public IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey1, TPSFKey2, TPSFKey3>(
+                     IPSF psf1, TPSFKey1 key1,
+                     IPSF psf2, TPSFKey2 key2,
+                     IPSF psf3, TPSFKey3 key3,
+                    Func<bool, bool, bool, bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+            where TPSFKey3 : struct
+        {
+            this.VerifyIsOurPSF(psf1, psf2, psf3);
+            querySettings ??= PSFQuerySettings.Default;
+
+            return new AsyncQueryRecordIterator<TRecordId>(psf1, this.QueryPSFAsync(psf1, key1, querySettings), psf2, this.QueryPSFAsync(psf2, key2, querySettings),
+                                                      psf3, this.QueryPSFAsync(psf3, key3, querySettings),
+                                                      matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0], matchIndicators[2][0]), querySettings).Run();
+        }
+#endif // DOTNETCORE
 
         public IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
                      IPSF psf1, IEnumerable<TPSFKey1> keys1,
@@ -303,17 +412,35 @@ namespace FASTER.core
             where TPSFKey2 : struct
             where TPSFKey3 : struct
         {
-            this.VerifyIsOurPSF<TPSFKey1>(psf1);
-            this.VerifyIsOurPSF<TPSFKey2>(psf2);
-            this.VerifyIsOurPSF<TPSFKey3>(psf3);
-            querySettings ??= DefaultQuerySettings;
+            this.VerifyIsOurPSF(psf1, psf2, psf3);
+            querySettings ??= PSFQuerySettings.Default;
 
             return new QueryRecordIterator<TRecordId>(psf1, this.QueryPSF(psf1, keys1, querySettings), psf2, this.QueryPSF(psf2, keys2, querySettings),
                                                       psf3, this.QueryPSF(psf3, keys3, querySettings),
                                                       matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0], matchIndicators[2][0]), querySettings).Run();
         }
 
-        // Power user versions. Anything more complicated than this the caller can post-process with LINQ.
+#if DOTNETCORE
+        public IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey1, TPSFKey2, TPSFKey3>(
+                     IPSF psf1, IEnumerable<TPSFKey1> keys1,
+                     IPSF psf2, IEnumerable<TPSFKey2> keys2,
+                     IPSF psf3, IEnumerable<TPSFKey3> keys3,
+                    Func<bool, bool, bool, bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+            where TPSFKey3 : struct
+        {
+            this.VerifyIsOurPSF(psf1, psf2, psf3);
+            querySettings ??= PSFQuerySettings.Default;
+
+            return new AsyncQueryRecordIterator<TRecordId>(psf1, this.QueryPSFAsync(psf1, keys1, querySettings), psf2, this.QueryPSFAsync(psf2, keys2, querySettings),
+                                                      psf3, this.QueryPSFAsync(psf3, keys3, querySettings),
+                                                      matchIndicators => matchPredicate(matchIndicators[0][0], matchIndicators[1][0], matchIndicators[2][0]), querySettings).Run();
+        }
+#endif // DOTNETCORE
+
+        // Power user versions. Anything more complicated than this can be post-processed with LINQ.
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey>(
                     IEnumerable<(IPSF psf, IEnumerable<TPSFKey> keys)> psfsAndKeys,
@@ -322,11 +449,26 @@ namespace FASTER.core
             where TPSFKey : struct
         {
             this.VerifyIsOurPSF(psfsAndKeys);
-            querySettings ??= DefaultQuerySettings;
+            querySettings ??= PSFQuerySettings.Default;
 
             return new QueryRecordIterator<TRecordId>(new[] { psfsAndKeys.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))) },
                                                       matchIndicators => matchPredicate(matchIndicators[0]), querySettings).Run();
         }
+
+#if DOTNETCORE
+        internal IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey>(
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey> keys)> psfsAndKeys,
+                    Func<bool[], bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey : struct
+        {
+            this.VerifyIsOurPSF(psfsAndKeys);
+            querySettings ??= PSFQuerySettings.Default;
+
+            return new AsyncQueryRecordIterator<TRecordId>(new[] { psfsAndKeys.Select(tup => ((IPSF)tup.psf, this.QueryPSFAsync(tup.psf, tup.keys, querySettings))) },
+                                                      matchIndicators => matchPredicate(matchIndicators[0]), querySettings).Run();
+        }
+#endif // DOTNETCORE
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2>(
                     IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
@@ -336,14 +478,31 @@ namespace FASTER.core
             where TPSFKey1 : struct
             where TPSFKey2 : struct
         {
-            this.VerifyIsOurPSF(psfsAndKeys1);
-            this.VerifyIsOurPSF(psfsAndKeys2);
-            querySettings ??= DefaultQuerySettings;
+            this.VerifyIsOurPSF(psfsAndKeys1, psfsAndKeys2);
+            querySettings ??= PSFQuerySettings.Default;
 
             return new QueryRecordIterator<TRecordId>(new[] {psfsAndKeys1.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))),
                                                              psfsAndKeys2.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings)))},
                                                       matchIndicators => matchPredicate(matchIndicators[0], matchIndicators[1]), querySettings).Run();
         }
+
+#if DOTNETCORE
+        internal IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey1, TPSFKey2>(
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
+                    Func<bool[], bool[], bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+        {
+            this.VerifyIsOurPSF(psfsAndKeys1, psfsAndKeys2);
+            querySettings ??= PSFQuerySettings.Default;
+
+            return new AsyncQueryRecordIterator<TRecordId>(new[] {psfsAndKeys1.Select(tup => ((IPSF)tup.psf, this.QueryPSFAsync(tup.psf, tup.keys, querySettings))),
+                                                             psfsAndKeys2.Select(tup => ((IPSF)tup.psf, this.QueryPSFAsync(tup.psf, tup.keys, querySettings)))},
+                                                      matchIndicators => matchPredicate(matchIndicators[0], matchIndicators[1]), querySettings).Run();
+        }
+#endif // DOTNETCORE
 
         internal IEnumerable<TRecordId> QueryPSF<TPSFKey1, TPSFKey2, TPSFKey3>(
                     IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
@@ -355,10 +514,8 @@ namespace FASTER.core
             where TPSFKey2 : struct
             where TPSFKey3 : struct
         {
-            this.VerifyIsOurPSF(psfsAndKeys1);
-            this.VerifyIsOurPSF(psfsAndKeys2);
-            this.VerifyIsOurPSF(psfsAndKeys3);
-            querySettings ??= DefaultQuerySettings;
+            this.VerifyIsOurPSF(psfsAndKeys1, psfsAndKeys2, psfsAndKeys3);
+            querySettings ??= PSFQuerySettings.Default;
 
             return new QueryRecordIterator<TRecordId>(new[] {psfsAndKeys1.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))),
                                                              psfsAndKeys2.Select(tup => ((IPSF)tup.psf, this.QueryPSF(tup.psf, tup.keys, querySettings))),
@@ -366,6 +523,28 @@ namespace FASTER.core
                                                       matchIndicators => matchPredicate(matchIndicators[0], matchIndicators[1], matchIndicators[2]), querySettings).Run();
         }
 
+#if DOTNETCORE
+        internal IAsyncEnumerable<TRecordId> QueryPSFAsync<TPSFKey1, TPSFKey2, TPSFKey3>(
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey1> keys)> psfsAndKeys1,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey2> keys)> psfsAndKeys2,
+                    IEnumerable<(IPSF psf, IEnumerable<TPSFKey3> keys)> psfsAndKeys3,
+                    Func<bool[], bool[], bool[], bool> matchPredicate,
+                    PSFQuerySettings querySettings = null)
+            where TPSFKey1 : struct
+            where TPSFKey2 : struct
+            where TPSFKey3 : struct
+        {
+            this.VerifyIsOurPSF(psfsAndKeys1, psfsAndKeys2, psfsAndKeys3);
+            querySettings ??= PSFQuerySettings.Default;
+
+            return new AsyncQueryRecordIterator<TRecordId>(new[] {psfsAndKeys1.Select(tup => ((IPSF)tup.psf, this.QueryPSFAsync(tup.psf, tup.keys, querySettings))),
+                                                             psfsAndKeys2.Select(tup => ((IPSF)tup.psf, this.QueryPSFAsync(tup.psf, tup.keys, querySettings))),
+                                                             psfsAndKeys3.Select(tup => ((IPSF)tup.psf, this.QueryPSFAsync(tup.psf, tup.keys, querySettings)))},
+                                                      matchIndicators => matchPredicate(matchIndicators[0], matchIndicators[1], matchIndicators[2]), querySettings).Run();
+        }
+#endif // DOTNETCORE
+
+        #region Checkpoint Operations
         // TODO Separate Tasks for each group's commit/restore operations?
         public bool TakeFullCheckpoint()
             => this.psfGroups.Values.Aggregate(true, (result, group) => group.TakeFullCheckpoint() && result);
@@ -387,5 +566,42 @@ namespace FASTER.core
             foreach (var group in this.psfGroups.Values)
                 group.Recover();
         }
+        #endregion Checkpoint Operations
+
+        #region Log Operations
+
+        public void FlushLogs(bool wait)
+        {
+            foreach (var group in this.psfGroups.Values)
+                group.FlushLog(wait);
+        }
+
+        /// <summary>
+        /// Flush log and evict all records from memory
+        /// </summary>
+        /// <param name="wait">Synchronous wait for operation to complete</param>
+        /// <returns>When wait is false, this tells whether the full eviction was successfully registered with FASTER</returns>
+        public bool FlushAndEvictLogs(bool wait)
+        {
+            foreach (var group in this.psfGroups.Values)
+            {
+                if (!group.FlushAndEvictLog(wait))
+                {
+                    // TODO handle error on FlushAndEvictLogs
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Delete log entirely from memory. Cannot allocate on the log
+        /// after this point. This is a synchronous operation.
+        /// </summary>
+        public void DisposeLogsFromMemory()
+        {
+            foreach (var group in this.psfGroups.Values)
+                group.DisposeLogFromMemory();
+        }
+        #endregion Log Operations
     }
 }

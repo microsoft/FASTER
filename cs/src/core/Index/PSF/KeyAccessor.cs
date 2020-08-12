@@ -22,11 +22,15 @@ namespace FASTER.core
 
         long GetRecordAddressFromKeyPhysicalAddress(long physicalAddress);
 
-        long GetRecordAddressFromKeyLogicalAddress(long logicalAddress, long psfOrdinal);
+        long GetRecordAddressFromKeyLogicalAddress(long logicalAddress, int psfOrdinal);
+
+        long GetKeyAddressFromRecordPhysicalAddress(long physicalAddress, int psfOrdinal);
 
         long GetHashCode64(ref TCompositeKey key, int psfOrdinal, bool isQuery);
 
-        bool Equals(ref TCompositeKey queryKey, long physicalAddress);
+        bool EqualsAtKeyAddress(ref TCompositeKey queryKey, long physicalAddress);
+
+        bool EqualsAtRecordAddress(ref TCompositeKey queryKey, long physicalAddress);
 
         string GetString(ref TCompositeKey key, int psfOrdinal = -1);
     }
@@ -62,25 +66,44 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetRecordAddressFromKeyPhysicalAddress(long physicalAddress)
-            => physicalAddress - this.GetKeyPointerRef(physicalAddress).PsfOrdinal * this.KeyPointerSize - RecordInfo.GetLength();
+            => physicalAddress - this.GetKeyPointerRef(physicalAddress).PsfOrdinal * this.KeyPointerSize - RecordInfo.GetLength(); // TODO: Assumes all PSFs are present
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetRecordAddressFromKeyLogicalAddress(long logicalAddress, long psfOrdinal)
-            => logicalAddress - psfOrdinal* this.KeyPointerSize - RecordInfo.GetLength(); // TODO: Assumes all PSFs are present
+        public long GetRecordAddressFromKeyLogicalAddress(long logicalAddress, int psfOrdinal)
+            => logicalAddress - psfOrdinal * this.KeyPointerSize - RecordInfo.GetLength(); // TODO: Assumes all PSFs are present
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetKeyAddressFromRecordPhysicalAddress(long physicalAddress, int psfOrdinal)
+            => physicalAddress + RecordInfo.GetLength() + psfOrdinal * this.KeyPointerSize; // TODO: Assumes all PSFs are present
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetHashCode64(ref CompositeKey<TPSFKey> key, int psfOrdinal, bool isQuery)
         {
-            ref KeyPointer<TPSFKey> queryKeyPointer = ref key.GetKeyPointerRef(isQuery ? 0 : psfOrdinal, this.KeyPointerSize);
-            return Utility.GetHashCode(this.userComparer.GetHashCode64(ref queryKeyPointer.Key)) ^ Utility.GetHashCode(psfOrdinal + 1);
+            ref KeyPointer<TPSFKey> keyPointer = ref key.GetKeyPointerRef(isQuery ? 0 : psfOrdinal, this.KeyPointerSize);
+            return Utility.GetHashCode(this.userComparer.GetHashCode64(ref keyPointer.Key)) ^ Utility.GetHashCode(keyPointer.PsfOrdinal + 1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(ref CompositeKey<TPSFKey> queryKey, long physicalAddress)
+        public bool EqualsAtKeyAddress(ref CompositeKey<TPSFKey> queryKey, long physicalAddress)
         {
             // The query key only has a single key in it--the one we're trying to match.
             ref KeyPointer<TPSFKey> queryKeyPointer = ref queryKey.GetKeyPointerRef(0, this.KeyPointerSize);
             ref KeyPointer<TPSFKey> storedKeyPointer = ref GetKeyPointerRef(physicalAddress);
+            return KeysEqual(ref queryKeyPointer, ref storedKeyPointer);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EqualsAtRecordAddress(ref CompositeKey<TPSFKey> queryKey, long physicalAddress)
+        {
+            // The query key only has a single key in it--the one we're trying to match.
+            ref KeyPointer<TPSFKey> queryKeyPointer = ref queryKey.GetKeyPointerRef(0, this.KeyPointerSize);
+            ref KeyPointer<TPSFKey> storedKeyPointer = ref GetKeyPointerRef(physicalAddress, queryKeyPointer.PsfOrdinal);
+            return KeysEqual(ref queryKeyPointer, ref storedKeyPointer);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool KeysEqual(ref KeyPointer<TPSFKey> queryKeyPointer, ref KeyPointer<TPSFKey> storedKeyPointer)
+        {
             return queryKeyPointer.PsfOrdinal == storedKeyPointer.PsfOrdinal &&
                     this.userComparer.Equals(ref queryKeyPointer.Key, ref storedKeyPointer.Key);
         }
@@ -92,6 +115,10 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe ref KeyPointer<TPSFKey> GetKeyPointerRef(long physicalAddress)
             => ref Unsafe.AsRef<KeyPointer<TPSFKey>>((byte*)physicalAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe ref KeyPointer<TPSFKey> GetKeyPointerRef(long physicalAddress, int psfOrdinal)
+            => ref Unsafe.AsRef<KeyPointer<TPSFKey>>((byte*)GetKeyAddressFromRecordPhysicalAddress(physicalAddress, psfOrdinal));
 
         public string GetString(ref CompositeKey<TPSFKey> key, int psfOrdinal = -1)
         {
