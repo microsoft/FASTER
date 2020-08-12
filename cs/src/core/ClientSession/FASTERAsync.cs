@@ -249,7 +249,7 @@ namespace FASTER.core
                 if (@this.epoch.ThisInstanceProtected())
                     throw new NotSupportedException("Async operations not supported over protected epoch");
 
-                diskRequest = await diskRequest.asyncOperation.ValueTaskOfT;
+                diskRequest = await diskRequest.asyncOperation.Task;
             }
             catch
             {

@@ -3,8 +3,7 @@
 
 using System;
 using System.Threading;
-
-using FASTER.core.Utilities;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -57,7 +56,7 @@ namespace FASTER.core
         /// <summary>
         /// Async Operation ValueTask backer
         /// </summary>
-        public FasterAsyncOperation<AsyncIOContext<Key, Value>> asyncOperation;
+        public TaskCompletionSource<AsyncIOContext<Key, Value>> asyncOperation;
 
         /// <summary>
         /// Dispose
