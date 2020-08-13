@@ -21,7 +21,7 @@ namespace FasterKVDiskReadBenchmark
         const bool periodicCommit = false;
         const bool useAsync = false;
         const bool readBatching = true;
-        const int readBatchSize = 100;
+        const int readBatchSize = 128;
 
         /// <summary>
         /// Main program entry point
@@ -30,8 +30,8 @@ namespace FasterKVDiskReadBenchmark
         {
             var path = "FasterKVDiskReadBenchmark";
 
-            var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
-            // var log = new LocalMemoryDevice(1L << 33, 1L << 30, int.MaxValue, 1);
+            // var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            var log = new LocalMemoryDevice(1L << 33, 1L << 30, 1);
 
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20 };
             var checkpointSettings = new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.FoldOver };

@@ -11,37 +11,26 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    class IORequestLocalMemory {
-        public readonly bool isRead;
-        public readonly int segmentId;
-        public readonly ulong deviceAddress;
-        public readonly IntPtr appAddress;
-        public readonly uint bytes;
-        public readonly DeviceIOCompletionCallback callback;
-        public readonly object asyncResult;
-
-        public IORequestLocalMemory(bool isRead_, int segmentId_, ulong deviceAddress_, IntPtr appAddress_, uint bytes_, DeviceIOCompletionCallback callback_, object asyncResult_)
-        {
-            isRead = isRead_;
-            segmentId = segmentId_;
-            deviceAddress = deviceAddress_;
-            appAddress = appAddress_;
-            bytes = bytes_;
-            callback = callback_;
-            asyncResult = asyncResult_;
-        }
+    unsafe struct IORequestLocalMemory {
+        public void* srcAddress;
+        public void* dstAddress;
+        public uint bytes;
+        public DeviceIOCompletionCallback callback;
+        public object asyncResult;
     }
 
     /// <summary>
     /// Local storage device
     /// </summary>
-    public sealed class LocalMemoryDevice : StorageDeviceBase
+    public unsafe sealed class LocalMemoryDevice : StorageDeviceBase
     {
-        private readonly List<byte[]> ram_segments = new List<byte[]>();
+        readonly byte*[] ram_segments;
+        readonly GCHandle[] ram_segment_handles;
+
         private readonly int num_segments;
         private readonly ConcurrentQueue<IORequestLocalMemory>[] ioQueue;
         private readonly Thread[] ioProcessors;
-        private readonly int queueDepth;
+        private readonly int parallelism;
         private bool terminated;
 
         /// <summary>
@@ -49,22 +38,28 @@ namespace FASTER.core
         /// </summary>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="sz_segment">The size of each segment</param>
-        /// <param name="queueDepth_">The depth of the IO queue</param>
         /// <param name="parallelism">Number of IO processing threads</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int queueDepth_, int parallelism)
+        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism)
             :base("/userspace/ram/storage", GetSectorSize("/userspace/ram/storage"), capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
             Console.WriteLine("LocalMemoryDevice: creating a " + capacity + " size local memory device.");
             num_segments = (int) (capacity / sz_segment);
             Console.WriteLine("LocalMemoryDevice: # of segments = " + num_segments);
+            
+            ram_segments = new byte*[num_segments];
+            ram_segment_handles = new GCHandle[num_segments];
+
             for (int i = 0; i < num_segments; i++)
             {
-                byte[] new_segment = new byte[sz_segment];
-                ram_segments.Add(new_segment);
+                var new_segment = new byte[sz_segment];
+                
+                ram_segment_handles[i] = GCHandle.Alloc(new_segment, GCHandleType.Pinned);
+                ram_segments[i] = (byte*)(long)ram_segment_handles[i].AddrOfPinnedObject();
             }
             terminated = false;
             ioQueue = new ConcurrentQueue<IORequestLocalMemory>[parallelism];
+            this.parallelism = parallelism;
             ioProcessors = new Thread[parallelism];
             for (int i = 0; i != parallelism; i++)
             {
@@ -74,36 +69,18 @@ namespace FASTER.core
                 ioProcessors[i].Start();
             }
 
-            queueDepth = queueDepth_;
-
-            Console.WriteLine("LocalMemoryDevice: " + ram_segments.Count + " in-memory segments are created, each with " + sz_segment);
+            Console.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " in-memory segments are created, each with " + sz_segment);
         }
 
         private unsafe void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)
         {
             while (terminated == false) {
-                if (q.TryDequeue(out IORequestLocalMemory req))
+                while (q.TryDequeue(out IORequestLocalMemory req))
                 {
-                    if (req.isRead)
-                    {
-                        fixed (void* src_addr = &ram_segments[req.segmentId % num_segments][req.deviceAddress])
-                        {
-                            Buffer.MemoryCopy(src_addr, req.appAddress.ToPointer(), req.bytes, req.bytes);
-                        }
-
-                        req.callback(0, req.bytes, req.asyncResult);
-                    }
-                    else
-                    {
-                        fixed (void* dst_addr = &(ram_segments[req.segmentId % num_segments][req.deviceAddress]))
-                        {
-                            Buffer.MemoryCopy(req.appAddress.ToPointer(), dst_addr, req.bytes, req.bytes);
-                        }
-                        req.callback(0, req.bytes, req.asyncResult);
-                    }
+                    Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
+                    req.callback(0, req.bytes, req.asyncResult);
                 }
-                else
-                    Thread.Yield();
+                Thread.Yield();
             }
         }
 
@@ -122,9 +99,15 @@ namespace FASTER.core
                                      DeviceIOCompletionCallback callback,
                                      object asyncResult)
         {
-            var q = ioQueue[segmentId % ioQueue.Length];
-            while (q.Count >= queueDepth) { }
-            IORequestLocalMemory req = new IORequestLocalMemory(true, segmentId, sourceAddress, destinationAddress, readLength, callback, asyncResult);
+            var q = ioQueue[segmentId % parallelism];
+            var req = new IORequestLocalMemory
+            {
+                srcAddress = (void*)(ram_segments[segmentId] + sourceAddress),
+                dstAddress = (void*)destinationAddress,
+                bytes = readLength,
+                callback = callback,
+                asyncResult = asyncResult
+            };
             q.Enqueue(req);
         }
 
@@ -145,8 +128,14 @@ namespace FASTER.core
                                       object asyncResult)
         {
             var q = ioQueue[segmentId % ioQueue.Length];
-            while (q.Count >= queueDepth) { }
-            IORequestLocalMemory req = new IORequestLocalMemory(false, segmentId, destinationAddress, sourceAddress, numBytesToWrite, callback, asyncResult);
+            var req = new IORequestLocalMemory
+            {
+                srcAddress = (void*)sourceAddress,
+                dstAddress = (void*)(ram_segments[segmentId] + destinationAddress),
+                bytes = numBytesToWrite,
+                callback = callback,
+                asyncResult = asyncResult
+            };
             q.Enqueue(req);
         }
 
@@ -156,7 +145,7 @@ namespace FASTER.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            Array.Clear(ram_segments[segment % num_segments], 0, ram_segments[segment % num_segments].Length);
+            // Array.Clear(ram_segments[segment % num_segments], 0, ram_segments[segment % num_segments].Length);
         }
 
         /// <summary>
@@ -187,7 +176,11 @@ namespace FASTER.core
             {
                 ioProcessors[i].Join();
             }
-            ram_segments.Clear();
+            for (int i = 0; i < ram_segment_handles.Length; i++)
+            {
+                ram_segment_handles[i].Free();
+                ram_segments[i] = null;
+            }
         }
 
 
