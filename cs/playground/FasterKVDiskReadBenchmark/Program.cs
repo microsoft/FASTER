@@ -29,7 +29,9 @@ namespace FasterKVDiskReadBenchmark
         static void Main()
         {
             var path = "FasterKVDiskReadBenchmark";
+
             var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            // var log = new LocalMemoryDevice(1L << 33, 1L << 30, int.MaxValue, 1);
 
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20 };
             var checkpointSettings = new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.FoldOver };
@@ -131,7 +133,7 @@ namespace FasterKVDiskReadBenchmark
                         else
                         {
                             var result = (await session.ReadAsync(ref key, ref input)).CompleteRead();
-                            if (result.Item1 != Status.OK || result.Item2.value.vfield1 != key.key || result.Item2.value.vfield2 != key.key)
+                            if (result.Item1 != Status.OK || result.Item2.value.vfield1 != key.key) // || result.Item2.value.vfield2 != key.key)
                             {
                                 throw new Exception("Wrong value found");
                             }
@@ -145,7 +147,7 @@ namespace FasterKVDiskReadBenchmark
                         {
                             if (result != Status.PENDING)
                             {
-                                if (output.value.vfield1 != key.key || output.value.vfield2 != key.key)
+                                if (output.value.vfield1 != key.key) // || output.value.vfield2 != key.key)
                                 {
                                     throw new Exception("Wrong value found");
                                 }
@@ -157,7 +159,7 @@ namespace FasterKVDiskReadBenchmark
                             {
                                 session.CompletePending(true);
                             }
-                            if (output.value.vfield1 != key.key || output.value.vfield2 != key.key)
+                            if (output.value.vfield1 != key.key) // || output.value.vfield2 != key.key)
                             {
                                 throw new Exception("Wrong value found");
                             }
@@ -174,7 +176,7 @@ namespace FasterKVDiskReadBenchmark
                             for (int j = 0; j < readBatchSize; j++)
                             {
                                 var result = (await tasks[j].Item2).CompleteRead();
-                                if (result.Item1 != Status.OK || result.Item2.value.vfield1 != tasks[j].Item1 || result.Item2.value.vfield2 != tasks[j].Item1)
+                                if (result.Item1 != Status.OK || result.Item2.value.vfield1 != tasks[j].Item1) // || result.Item2.value.vfield2 != tasks[j].Item1)
                                 {
                                     throw new Exception($"Wrong value found. Found: {result.Item2.value.vfield1}, Expected: {tasks[j].Item1}");
                                 }

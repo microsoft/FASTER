@@ -34,11 +34,11 @@ namespace FasterKVDiskReadBenchmark
         public Value(long f1, long f2)
         {
             vfield1 = f1;
-            vfield2 = f2;
+            //vfield2 = f2;
         }   
 
         public long vfield1;
-        public long vfield2;
+        //public long vfield2;
     }
 
     public struct Input
@@ -72,24 +72,24 @@ namespace FasterKVDiskReadBenchmark
         public void InitialUpdater(ref Key key, ref Input input, ref Value value)
         {
             value.vfield1 = input.ifield1;
-            value.vfield2 = input.ifield2;
+            //value.vfield2 = input.ifield2;
         }
         public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
-            newValue.vfield2 = oldValue.vfield2 + input.ifield2;
+            //newValue.vfield2 = oldValue.vfield2 + input.ifield2;
         }
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
         {
             value.vfield1 += input.ifield1;
-            value.vfield2 += input.ifield2;
+            //value.vfield2 += input.ifield2;
             return true;
         }
 
         // Completion callbacks
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
         {
-            if (status != Status.OK || output.value.vfield1 != key.key || output.value.vfield2 != key.key)
+            if (status != Status.OK || output.value.vfield1 != key.key) // || output.value.vfield2 != key.key)
             {
                 throw new Exception("Wrong value found");
             }
