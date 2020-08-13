@@ -19,7 +19,7 @@ namespace FASTER.devices
     /// </summary>
     public class AzureStorageDevice : StorageDeviceBase
     {
-        private CloudBlobContainer container;
+        private readonly CloudBlobContainer container;
         private readonly ConcurrentDictionary<int, BlobEntry> blobs;
         private readonly string blobName;
         private readonly bool deleteOnClose;
@@ -59,7 +59,7 @@ namespace FASTER.devices
             foreach (IListBlobItem item in container.ListBlobs(blobName))
             {
                 string[] parts = item.Uri.Segments;
-                int segmentId = Int32.Parse(parts[parts.Length - 1].Replace(blobName, ""));
+                int segmentId = int.Parse(parts[parts.Length - 1].Replace(blobName, ""));
                 if (segmentId != prevSegmentId + 1)
                 {
                     startSegment = segmentId;

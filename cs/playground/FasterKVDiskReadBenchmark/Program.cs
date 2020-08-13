@@ -19,7 +19,7 @@ namespace FasterKVDiskReadBenchmark
         const int NumParallelSessions = 1;
         const int NumKeys = 20_000_000 / NumParallelSessions;
         const bool periodicCommit = false;
-        const bool useAsync = true;
+        const bool useAsync = false;
         const bool readBatching = true;
         const int readBatchSize = 100;
 
