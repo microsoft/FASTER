@@ -39,13 +39,13 @@ namespace FASTER.core
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="sz_segment">The size of each segment</param>
         /// <param name="parallelism">Number of IO processing threads</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism)
-            :base("/userspace/ram/storage", GetSectorSize("/userspace/ram/storage"), capacity)
+        /// <param name="sector_size">Sector size for device (default 64)</param>
+        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, uint sector_size = 64)
+            :base("/userspace/ram/storage", sector_size, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
-            Console.WriteLine("LocalMemoryDevice: creating a " + capacity + " size local memory device.");
+            Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
             num_segments = (int) (capacity / sz_segment);
-            Console.WriteLine("LocalMemoryDevice: # of segments = " + num_segments);
             
             ram_segments = new byte*[num_segments];
             ram_segment_handles = new GCHandle[num_segments];
@@ -69,10 +69,10 @@ namespace FASTER.core
                 ioProcessors[i].Start();
             }
 
-            Console.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " in-memory segments are created, each with " + sz_segment);
+            Console.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
         }
 
-        private unsafe void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)
+        private void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)
         {
             while (terminated == false) {
                 while (q.TryDequeue(out IORequestLocalMemory req))
@@ -93,7 +93,7 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
+        public override void ReadAsync(int segmentId, ulong sourceAddress,
                                      IntPtr destinationAddress,
                                      uint readLength,
                                      DeviceIOCompletionCallback callback,
@@ -120,14 +120,14 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="asyncResult"></param>
-        public override unsafe void WriteAsync(IntPtr sourceAddress,
+        public override void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
                                       ulong destinationAddress,
                                       uint numBytesToWrite,
                                       DeviceIOCompletionCallback callback,
                                       object asyncResult)
         {
-            var q = ioQueue[segmentId % ioQueue.Length];
+            var q = ioQueue[segmentId % parallelism];
             var req = new IORequestLocalMemory
             {
                 srcAddress = (void*)sourceAddress,
@@ -145,7 +145,6 @@ namespace FASTER.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            // Array.Clear(ram_segments[segment % num_segments], 0, ram_segments[segment % num_segments].Length);
         }
 
         /// <summary>
@@ -181,12 +180,6 @@ namespace FASTER.core
                 ram_segment_handles[i].Free();
                 ram_segments[i] = null;
             }
-        }
-
-
-        private static uint GetSectorSize(string filename)
-        {
-            return 512;
         }
     }
 }

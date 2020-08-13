@@ -16,7 +16,7 @@ namespace FasterKVDiskReadBenchmark
         static FasterKV<Key, Value, Input, Output, Empty, MyFuncs> faster;
         static int numOps = 0;
 
-        const int NumParallelSessions = 1;
+        const int NumParallelSessions = 4;
         const int NumKeys = 20_000_000 / NumParallelSessions;
         const bool periodicCommit = false;
         const bool useAsync = false;
@@ -28,7 +28,7 @@ namespace FasterKVDiskReadBenchmark
         /// </summary>
         static void Main()
         {
-            var path = "FasterKVDiskReadBenchmark";
+            var path = "FasterKVDiskReadBenchmark\\";
 
             // var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
             var log = new LocalMemoryDevice(1L << 33, 1L << 30, 1);
