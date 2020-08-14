@@ -29,7 +29,7 @@ namespace FASTER.core
         /// <summary>
         /// Number of pending reads on device
         /// </summary>
-        private int numPendingReads = 0;
+        private int numPending = 0;
 
         /// <summary>
         /// 
@@ -52,7 +52,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override bool Throttle() => numPendingReads > 120;
+        public override bool Throttle() => numPending > 120;
 
         private void RecoverFiles()
         {
@@ -108,7 +108,7 @@ namespace FASTER.core
             (logReadHandle, offset) = streampool.Get();
 
             logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-            Interlocked.Increment(ref numPendingReads);
+            Interlocked.Increment(ref numPending);
 
 #if NETSTANDARD21
             var umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
@@ -119,7 +119,7 @@ namespace FASTER.core
 #endif
                 .ContinueWith(t =>
                 {
-                    Interlocked.Decrement(ref numPendingReads);
+                    Interlocked.Decrement(ref numPending);
 
                     uint errorCode = 0;
                     if (!t.IsFaulted)
@@ -179,6 +179,7 @@ namespace FASTER.core
             (logWriteHandle, offset) = streampool.Get();
 
             logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+            Interlocked.Increment(ref numPending);
 
 #if NETSTANDARD21
             var umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
@@ -193,6 +194,8 @@ namespace FASTER.core
 #endif
                 .ContinueWith(t =>
                 {
+                    Interlocked.Decrement(ref numPending);
+
                     uint errorCode = 0;
                     if (t.IsFaulted)
                     {
