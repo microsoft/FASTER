@@ -136,10 +136,15 @@ jobs:
       make -j
     displayName: 'Compile'
 
-#  - script: |
-#      CTEST_OUTPUT_ON_FAILURE=1 make test
-#    workingDirectory: 'cc/build/Debug'
-#    displayName: 'Run Tests'
+  - script: |
+      CTEST_OUTPUT_ON_FAILURE=1 make test
+    workingDirectory: 'cc/build/Debug'
+    displayName: 'Run Tests (Debug)'
+
+  #- script: |
+  #    CTEST_OUTPUT_ON_FAILURE=1 make test
+  #  workingDirectory: 'cc/build/Release'
+  #  displayName: 'Run Tests (Release)'
 
 - job: 'csharpLinux'
   pool:

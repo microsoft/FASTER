@@ -14,7 +14,7 @@ namespace FasterPSFSample
         where TFunctions : IFunctions<Key, TValue, TInput, TOutput, Context<TValue>>, new()
         where TSerializer : BinaryObjectSerializer<TValue>, new()
     {
-        internal IFasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions> FasterKV { get; set; }
+        internal IFasterKV<Key, TValue> FasterKV { get; set; }
 
         private LogFiles logFiles;
 
@@ -26,8 +26,8 @@ namespace FasterPSFSample
         {
             this.logFiles = new LogFiles(useObjectValues, useReadCache, useMultiGroup ? 3 : 1);
 
-            this.FasterKV = new FasterKV<Key, TValue, TInput, TOutput, Context<TValue>, TFunctions>(
-                                1L << 20, new TFunctions(), this.logFiles.LogSettings,
+            this.FasterKV = new FasterKV<Key, TValue>(
+                                1L << 20, this.logFiles.LogSettings,
                                 null, // TODO: add checkpoints
                                 useObjectValues ? new SerializerSettings<Key, TValue> { valueSerializer = () => new TSerializer() } : null);
 

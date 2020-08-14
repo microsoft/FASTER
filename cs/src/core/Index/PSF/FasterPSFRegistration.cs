@@ -9,11 +9,9 @@ using System.Linq;
 namespace FASTER.core
 {
     // PSF-related functions for FasterKV
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions>
-        : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         internal PSFManager<FasterKVProviderData<Key, Value>, long> PSFManager { get; private set; }
 

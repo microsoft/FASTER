@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -65,12 +66,11 @@ namespace FASTER.core
         }
     }
 
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        internal struct PendingContext
+        internal struct PendingContext<Input, Output, Context>
         {
             // User provided information
             internal OperationType type;
@@ -98,13 +98,13 @@ namespace FASTER.core
             }
         }
 
-        internal sealed class FasterExecutionContext : SerializedFasterExecutionContext
+        internal sealed class FasterExecutionContext<Input, Output, Context> : SerializedFasterExecutionContext
         {
             public Phase phase;
             public bool[] markers;
             public long totalPending;
-            public Queue<PendingContext> retryRequests;
-            public Dictionary<long, PendingContext> ioPendingRequests;
+            public Queue<PendingContext<Input, Output, Context>> retryRequests;
+            public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
@@ -121,7 +121,7 @@ namespace FASTER.core
                 }
             }
 
-            public FasterExecutionContext prevCtx;
+            public FasterExecutionContext<Input, Output, Context> prevCtx;
         }
     }
 
@@ -262,10 +262,10 @@ namespace FASTER.core
                     exclusions.Add(long.Parse(reader.ReadLine()));
 
                 continueTokens.TryAdd(guid, new CommitPoint
-                    {
-                        UntilSerialNo = serialno,
-                        ExcludedSerialNos = exclusions
-                    });
+                {
+                    UntilSerialNo = serialno,
+                    ExcludedSerialNos = exclusions
+                });
             }
 
             // Read object log segment offsets
@@ -294,16 +294,8 @@ namespace FASTER.core
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
 
-            using StreamReader s = new StreamReader(new MemoryStream(metadata));
-            Initialize(s);
-        }
-
-        /// <summary>
-        /// Reset
-        /// </summary>
-        public void Reset()
-        {
-            Initialize(default, -1);
+            using (StreamReader s = new StreamReader(new MemoryStream(metadata)))
+                Initialize(s);
         }
 
         /// <summary>
@@ -311,39 +303,41 @@ namespace FASTER.core
         /// </summary>
         public byte[] ToByteArray()
         {
-            using MemoryStream ms = new MemoryStream();
-            using (StreamWriter writer = new StreamWriter(ms))
+            using (MemoryStream ms = new MemoryStream())
             {
-                writer.WriteLine(guid);
-                writer.WriteLine(useSnapshotFile);
-                writer.WriteLine(version);
-                writer.WriteLine(flushedLogicalAddress);
-                writer.WriteLine(startLogicalAddress);
-                writer.WriteLine(finalLogicalAddress);
-                writer.WriteLine(headAddress);
-                writer.WriteLine(beginAddress);
-
-                writer.WriteLine(checkpointTokens.Count);
-                foreach (var kvp in checkpointTokens)
+                using (StreamWriter writer = new StreamWriter(ms))
                 {
-                    writer.WriteLine(kvp.Key);
-                    writer.WriteLine(kvp.Value.UntilSerialNo);
-                    writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
-                    foreach (long item in kvp.Value.ExcludedSerialNos)
-                        writer.WriteLine(item);
-                }
+                    writer.WriteLine(guid);
+                    writer.WriteLine(useSnapshotFile);
+                    writer.WriteLine(version);
+                    writer.WriteLine(flushedLogicalAddress);
+                    writer.WriteLine(startLogicalAddress);
+                    writer.WriteLine(finalLogicalAddress);
+                    writer.WriteLine(headAddress);
+                    writer.WriteLine(beginAddress);
 
-                // Write object log segment offsets
-                writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
-                if (objectLogSegmentOffsets != null)
-                {
-                    for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
+                    writer.WriteLine(checkpointTokens.Count);
+                    foreach (var kvp in checkpointTokens)
                     {
-                        writer.WriteLine(objectLogSegmentOffsets[i]);
+                        writer.WriteLine(kvp.Key);
+                        writer.WriteLine(kvp.Value.UntilSerialNo);
+                        writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
+                        foreach (long item in kvp.Value.ExcludedSerialNos)
+                            writer.WriteLine(item);
+                    }
+
+                    // Write object log segment offsets
+                    writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
+                    if (objectLogSegmentOffsets != null)
+                    {
+                        for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
+                        {
+                            writer.WriteLine(objectLogSegmentOffsets[i]);
+                        }
                     }
                 }
+                return ms.ToArray();
             }
-            return ms.ToArray();
         }
 
         /// <summary>
@@ -361,10 +355,13 @@ namespace FASTER.core
             Debug.WriteLine("Begin Address: {0}", beginAddress);
             Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
             Debug.WriteLine("Recovered sessions: ");
-            foreach (var sessionInfo in continueTokens)
+            foreach (var sessionInfo in continueTokens.Take(10))
             {
                 Debug.WriteLine("{0}: {1}", sessionInfo.Key, sessionInfo.Value);
             }
+
+            if (continueTokens.Count > 10)
+                Debug.WriteLine("... {0} skipped", continueTokens.Count - 10);
         }
     }
 
@@ -374,28 +371,29 @@ namespace FASTER.core
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
         public SemaphoreSlim flushedSemaphore;
-        public long started;
 
         public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _version);
-            started = 0;
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager)
         {
             info.Recover(token, checkpointManager);
-            started = 0;
         }
 
         public void Reset()
         {
-            started = 0;
             flushedSemaphore = null;
-            info.Reset();
+            info = default;
             if (snapshotFileDevice != null) snapshotFileDevice.Close();
             if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Close();
+        }
+
+        public bool IsDefault()
+        {
+            return info.guid == default;
         }
     }
 
@@ -449,25 +447,27 @@ namespace FASTER.core
             var metadata = checkpointManager.GetIndexCommitMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
-            using StreamReader s = new StreamReader(new MemoryStream(metadata));
-            Initialize(s);
+            using (StreamReader s = new StreamReader(new MemoryStream(metadata)))
+                Initialize(s);
         }
 
         public readonly byte[] ToByteArray()
         {
-            using MemoryStream ms = new MemoryStream();
-            using (var writer = new StreamWriter(ms))
+            using (MemoryStream ms = new MemoryStream())
             {
+                using (var writer = new StreamWriter(ms))
+                {
 
-                writer.WriteLine(token);
-                writer.WriteLine(table_size);
-                writer.WriteLine(num_ht_bytes);
-                writer.WriteLine(num_ofb_bytes);
-                writer.WriteLine(num_buckets);
-                writer.WriteLine(startLogicalAddress);
-                writer.WriteLine(finalLogicalAddress);
+                    writer.WriteLine(token);
+                    writer.WriteLine(table_size);
+                    writer.WriteLine(num_ht_bytes);
+                    writer.WriteLine(num_ofb_bytes);
+                    writer.WriteLine(num_buckets);
+                    writer.WriteLine(startLogicalAddress);
+                    writer.WriteLine(finalLogicalAddress);
+                }
+                return ms.ToArray();
             }
-            return ms.ToArray();
         }
 
         public readonly void DebugPrint()
@@ -512,8 +512,13 @@ namespace FASTER.core
 
         public void Reset()
         {
-            info.Reset();
+            info = default;
             main_ht_device.Close();
+        }
+
+        public bool IsDefault()
+        {
+            return info.token == default;
         }
     }
 }

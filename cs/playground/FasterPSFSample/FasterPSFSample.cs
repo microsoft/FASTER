@@ -93,7 +93,7 @@ namespace FasterPSFSample
             Console.WriteLine("Writing keys from 0 to {0} to FASTER", UpsertCount);
 
             var rng = new Random(13);
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
             var context = new Context<TValue>();
             var input = default(TInput);
 
@@ -204,7 +204,7 @@ namespace FasterPSFSample
 
             var keys = keyDict.Keys.ToArray();
 
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
             for (int i = 0; i < UpsertCount; i++)
             {
                 var key = keys[rng.Next(keys.Length)];
@@ -258,7 +258,7 @@ namespace FasterPSFSample
             Console.WriteLine();
             Console.WriteLine("Querying PSFs from FASTER with no boolean ops", UpsertCount);
 
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
             FasterKVProviderData<Key, TValue>[] providerDatas = null;
             var ok = true;
 
@@ -299,7 +299,7 @@ namespace FasterPSFSample
             Console.WriteLine();
             Console.WriteLine("Querying PSFs from FASTER with boolean ops", UpsertCount);
 
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
             FasterKVProviderData<Key, TValue>[] providerDatas = null;
             var ok = true;
 
@@ -456,7 +456,7 @@ namespace FasterPSFSample
             Console.WriteLine();
             Console.WriteLine("Updating Sizes via Upsert");
 
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
 
             FasterKVProviderData<Key, TValue>[] GetSizeDatas(Constants.Size size)
                 => useMultiGroups
@@ -513,7 +513,7 @@ namespace FasterPSFSample
             Console.WriteLine();
             Console.WriteLine("Updating Colors via RMW");
 
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
 
             FasterKVProviderData<Key, TValue>[] GetColorDatas(Color color)
                 => useMultiGroups
@@ -559,7 +559,7 @@ namespace FasterPSFSample
             Console.WriteLine();
             Console.WriteLine("Updating Counts via Upsert");
 
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
 
             var bin7 = 7;
             FasterKVProviderData<Key, TValue>[] GetCountDatas(int bin)
@@ -623,7 +623,7 @@ namespace FasterPSFSample
             Console.WriteLine();
             Console.WriteLine("Deleting Colors");
 
-            using var session = fpsf.FasterKV.NewSession();
+            using var session = fpsf.FasterKV.NewSession<TInput, TOutput, Context<TValue>, TFunctions>(new TFunctions());
 
             async Task<FasterKVProviderData<Key, TValue>[]> GetColorDatas(Color color)
                 => useMultiGroups

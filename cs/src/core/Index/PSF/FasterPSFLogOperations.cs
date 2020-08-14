@@ -7,11 +7,9 @@ using System.Text;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase,
-        IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         /// <inheritdoc/>
         public void FlushPSFLogs(bool wait) => this.PSFManager.FlushLogs(wait);

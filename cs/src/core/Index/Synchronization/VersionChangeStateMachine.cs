@@ -11,36 +11,34 @@ namespace FASTER.core
     internal sealed class VersionChangeTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalAfterEnteringState<Key, Value>(
             SystemState start,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current, SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
             bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where FasterSession : IFasterSession
         {
             switch (current.phase)
             {
@@ -85,7 +83,7 @@ namespace FASTER.core
                 case Phase.WAIT_PENDING:
                     if (ctx != null)
                     {
-                        if (!faster.RelaxedCPR &&!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
+                        if (!faster.RelaxedCPR && !ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
                         {
                             if (ctx.prevCtx.HasNoPendingRequests)
                                 ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
@@ -114,12 +112,11 @@ namespace FASTER.core
     internal sealed class FoldOverTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (next.phase == Phase.REST)
                 // Before leaving the checkpoint, make sure all previous versions are read-only.
@@ -127,24 +124,25 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context> { }
+        { }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(
+        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
+            bool async = true,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where FasterSession : IFasterSession
         {
             return default;
         }
@@ -156,7 +154,7 @@ namespace FASTER.core
     internal class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
         private readonly long targetVersion;
-        
+
         /// <summary>
         /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
         /// </summary>
@@ -185,7 +183,7 @@ namespace FASTER.core
                 case Phase.PREPARE:
                     nextState.phase = Phase.IN_PROGRESS;
                     // TODO: Move to long for system state as well. 
-                    nextState.version = (int) (targetVersion == -1 ? start.version + 1 : targetVersion + 1);
+                    nextState.version = (int)(targetVersion == -1 ? start.version + 1 : targetVersion + 1);
                     break;
                 case Phase.IN_PROGRESS:
                     // This phase has no effect if using relaxed CPR model

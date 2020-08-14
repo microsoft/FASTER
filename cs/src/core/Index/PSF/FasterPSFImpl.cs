@@ -14,11 +14,9 @@ namespace FASTER.core
 {
     // PSF-related internal function implementations for FasterKV; these correspond to the similarly-named
     // functions in FasterImpl.cs.
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions>
-        : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         internal IKeyAccessor<Key> PsfKeyAccessor => this.hlog.PsfKeyAccessor;
 
@@ -60,9 +58,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PsfInternalReadKey(
+        internal OperationStatus PsfInternalReadKey<Input, Output, Context, FasterSession>(
                                     ref Key queryKey, ref PSFReadArgs<Key, Value> psfArgs,
-                                    ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
+                                    ref PendingContext<Input, Output, Context> pendingContext,
+                                    FasterSession fasterSession,
+                                    FasterExecutionContext<Input, Output, Context> sessionCtx, long lsn)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // Note: This function is called only for the secondary FasterKV.
             var bucket = default(HashBucket*);
@@ -77,7 +78,7 @@ namespace FASTER.core
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hash, sessionCtx);
+                HeavyEnter(hash, sessionCtx, fasterSession);
 
             #region Trace back for record in in-memory HybridLog
             HashBucketEntry entry = default;
@@ -192,9 +193,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PsfInternalReadAddress(
+        internal OperationStatus PsfInternalReadAddress<Input, Output, Context, FasterSession>(
                                     ref PSFReadArgs<Key, Value> psfArgs,
-                                    ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
+                                    ref PendingContext<Input, Output, Context> pendingContext,
+                                    FasterSession fasterSession,
+                                    FasterExecutionContext<Input, Output, Context> sessionCtx, long lsn)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // Notes:
             //   - This function is called for both the primary and secondary FasterKV.
@@ -307,9 +311,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PsfInternalInsert(
+        internal OperationStatus PsfInternalInsert<Input, Output, Context, FasterSession>(
                         ref Key compositeKey, ref Value value, ref Input input,
-                        ref PendingContext pendingContext, FasterExecutionContext sessionCtx, long lsn)
+                        ref PendingContext<Input, Output, Context> pendingContext,
+                        FasterSession fasterSession,
+                        FasterExecutionContext<Input, Output, Context> sessionCtx, long lsn)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var status = default(OperationStatus);
             var latestRecordVersion = -1;
@@ -341,7 +348,7 @@ namespace FASTER.core
                 var tag = (ushort)((ulong)casHelper.hash >> Constants.kHashTagShift);
 
                 if (sessionCtx.phase != Phase.REST)
-                    HeavyEnter(casHelper.hash, sessionCtx);
+                    HeavyEnter(casHelper.hash, sessionCtx, fasterSession);
 
 #region Look up record in in-memory HybridLog
                 FindOrCreateTag(casHelper.hash, tag, ref casHelper.bucket, ref casHelper.slot, ref casHelper.entry, hlog.BeginAddress);
@@ -401,14 +408,14 @@ namespace FASTER.core
                 // Create the new record. Because we are updating multiple hash buckets, mark the record as invalid to start,
                 // so it is not visible until we have successfully updated all chains.
                 var recordSize = hlog.GetRecordSize(ref compositeKey, ref value);
-                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx);
+                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
                                      final:true, tombstone: psfInput.IsDelete, invalidBit:true,
                                      Constants.kInvalidAddress);  // We manage all prev addresses within CompositeKey
                 ref Key storedKey = ref hlog.GetKey(newPhysicalAddress);
                 hlog.ShallowCopy(ref compositeKey, ref storedKey);
-                functions.SingleWriter(ref compositeKey, ref value, ref hlog.GetValue(newPhysicalAddress));
+                fasterSession.SingleWriter(ref compositeKey, ref value, ref hlog.GetValue(newPhysicalAddress));
 
                 PsfTraceLine();
                 newLogicalAddress += RecordInfo.GetLength();
@@ -490,7 +497,7 @@ namespace FASTER.core
 #endregion
 
             return status == OperationStatus.RETRY_NOW
-                ? PsfInternalInsert(ref compositeKey, ref value, ref input, ref pendingContext, sessionCtx, lsn)
+                ? PsfInternalInsert(ref compositeKey, ref value, ref input, ref pendingContext, fasterSession, sessionCtx, lsn)
                 : status;
         }
    }

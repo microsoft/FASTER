@@ -18,5 +18,7 @@ namespace FasterPSFSample
         public bool Equals(ref Key k1, ref Key k2) => k1.Id == k2.Id;
 
         public (int, int, int, int) MemberTuple => FasterPSFSample.keyDict[this].MemberTuple;
+
+        public override string ToString() => $"({this.MemberTuple})";
     }
 }

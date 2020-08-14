@@ -42,7 +42,7 @@ namespace FASTER.core
 
         public long Size
         {
-            get
+            readonly get
             {
                 int multiplier = (int)((((long)word & kMultiplierMaskInWord) >> (kAddressBits + kSizeBits)) & kMultiplierMaskInInteger);
                 return (multiplier == 0 ? 512 : 1<<20)*((((long)word & kSizeMaskInWord) >> kAddressBits) & kSizeMaskInInteger);

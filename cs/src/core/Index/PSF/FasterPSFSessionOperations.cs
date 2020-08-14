@@ -8,8 +8,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public sealed partial class ClientSession<Key, Value, Input, Output, Context, Functions> :
-                                IDisposable
+    public sealed partial class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
         where Key : new()
         where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -21,7 +20,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfInsert(ref key, ref value, ref input, serialNo, ctx);
+                return fht.ContextPsfInsert(ref key, ref value, ref input, this.FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -35,7 +34,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfReadKey(ref key, ref psfArgs, serialNo, ctx);
+                return fht.ContextPsfReadKey(ref key, ref psfArgs, this.FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -43,7 +42,7 @@ namespace FASTER.core
             }
         }
 
-        internal ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> PsfReadKeyAsync(
+        internal ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> PsfReadKeyAsync(
                 ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo, PSFQuerySettings querySettings)
         {
             // Called on the secondary FasterKV
@@ -57,7 +56,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfReadAddress(ref psfArgs, serialNo, ctx);
+                return fht.ContextPsfReadAddress(ref psfArgs, this.FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -65,7 +64,7 @@ namespace FASTER.core
             }
         }
 
-        internal ValueTask<FasterKV<Key, Value, Input, Output, Context, Functions>.ReadAsyncResult> PsfReadAddressAsync(
+        internal ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> PsfReadAddressAsync(
                 ref PSFReadArgs<Key, Value> psfArgs, long serialNo, PSFQuerySettings querySettings)
         {
             // Called on the secondary FasterKV
@@ -79,7 +78,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfUpdate(ref groupKeysPair, ref value, ref input, serialNo, ctx, changeTracker);
+                return fht.ContextPsfUpdate(ref groupKeysPair, ref value, ref input, this.FasterSession, serialNo, ctx, changeTracker);
             }
             finally
             {
@@ -94,7 +93,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfDelete(ref key, ref value, ref input, serialNo, ctx, changeTracker);
+                return fht.ContextPsfDelete(ref key, ref value, ref input, this.FasterSession, serialNo, ctx, changeTracker);
             }
             finally
             {

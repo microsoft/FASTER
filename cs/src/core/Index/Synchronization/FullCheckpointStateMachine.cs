@@ -11,18 +11,17 @@ namespace FASTER.core
     internal sealed class FullCheckpointOrchestrationTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             switch (next.phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    Debug.Assert(faster._indexCheckpointToken == default &&
-                                 faster._hybridLogCheckpointToken == default);
+                    Debug.Assert(faster._indexCheckpoint.IsDefault() &&
+                                 faster._hybridLogCheckpoint.IsDefault());
                     var fullCheckpointToken = Guid.NewGuid();
                     faster._indexCheckpointToken = fullCheckpointToken;
                     faster._hybridLogCheckpointToken = fullCheckpointToken;
@@ -40,44 +39,45 @@ namespace FASTER.core
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     faster.WriteIndexMetaInfo();
-                    faster._indexCheckpointToken = default;
+                    faster._indexCheckpoint.Reset();
                     break;
             }
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, Input, Output, Context, Functions>(
+        public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster)
+            FasterKV<Key, Value> faster)
             where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, Functions>(SystemState current,
+        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+            SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, Input, Output, Context, Functions> faster,
-            FasterKV<Key, Value, Input, Output, Context, Functions>.FasterExecutionContext ctx,
-            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true,
+            FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
+            bool async = true,
             CancellationToken token = default) where Key : new()
             where Value : new()
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where FasterSession : IFasterSession
         {
             if (current.phase != Phase.WAIT_INDEX_CHECKPOINT) return;
 
             if (async && !faster.IsIndexFuzzyCheckpointCompleted())
             {
-                clientSession?.UnsafeSuspendThread();
+                fasterSession?.UnsafeSuspendThread();
                 await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
-                clientSession?.UnsafeResumeThread();
+                fasterSession?.UnsafeResumeThread();
             }
 
             faster.GlobalStateMachineStep(current);
         }
     }
-    
+
     /// <summary>
     /// The state machine orchestrates a full checkpoint
     /// </summary>
@@ -91,7 +91,8 @@ namespace FASTER.core
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         public FullCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1) : base(
             targetVersion, new VersionChangeTask(), new FullCheckpointOrchestrationTask(), checkpointBackend,
-            new IndexSnapshotTask()) {}
+            new IndexSnapshotTask())
+        { }
 
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)

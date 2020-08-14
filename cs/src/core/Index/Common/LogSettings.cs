@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -21,85 +22,6 @@ namespace FASTER.core
         /// Value serializer
         /// </summary>
         public Func<IObjectSerializer<Value>> valueSerializer;
-    }
-
-    /// <summary>
-    /// Interface for variable length in-place objects
-    /// modeled as structs, in FASTER
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    public interface IVariableLengthStruct<T>
-    {
-        /// <summary>
-        /// Actual length of object
-        /// </summary>
-        /// <param name="t"></param>
-        /// <returns></returns>
-        int GetLength(ref T t);
-
-        /// <summary>
-        /// Average length of objects, make sure this includes the object
-        /// header needed to compute the actual object length
-        /// </summary>
-        /// <returns></returns>
-        int GetAverageLength();
-
-        /// <summary>
-        /// Initial length, when populating for RMW from given input
-        /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        int GetInitialLength<Input>(ref Input input);
-    }
-
-
-    /// <summary>
-    /// Length specification for fixed size (normal) structs
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    public readonly struct FixedLengthStruct<T> : IVariableLengthStruct<T>
-    {
-        private static readonly int size = Utility.GetSize(default(T));
-
-        /// <summary>
-        /// Get average length
-        /// </summary>
-        /// <returns></returns>
-        public int GetAverageLength() => size;
-
-        /// <summary>
-        /// Get initial length
-        /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        public int GetInitialLength<Input>(ref Input input) => size;
-       
-        /// <summary>
-        /// Get length
-        /// </summary>
-        /// <param name="t"></param>
-        /// <returns></returns>
-        public int GetLength(ref T t) => size;
-    }
-
-    /// <summary>
-    /// Settings for variable length keys and values
-    /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public class VariableLengthStructSettings<Key, Value>
-    {
-        /// <summary>
-        /// Key length
-        /// </summary>
-        public IVariableLengthStruct<Key> keyLength;
-
-        /// <summary>
-        /// Value length
-        /// </summary>
-        public IVariableLengthStruct<Value> valueLength;
     }
 
     /// <summary>

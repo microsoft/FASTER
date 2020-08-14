@@ -25,8 +25,7 @@ namespace FASTER.core
         where TPSFKey : struct
         where TRecordId : struct
     {
-        internal FasterKV<CompositeKey<TPSFKey>, TRecordId, PSFInputSecondary<TPSFKey>,
-                          PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>> fht;
+        internal FasterKV<CompositeKey<TPSFKey>, TRecordId> fht;
         private readonly PSFFunctions<TPSFKey, TRecordId> functions;
         internal IPSFDefinition<TProviderData, TPSFKey>[] psfDefinitions;
         private readonly PSFRegistrationSettings<TPSFKey> regSettings;
@@ -95,10 +94,8 @@ namespace FASTER.core
 
             this.checkpointSettings = regSettings?.CheckpointSettings;
             this.functions = new PSFFunctions<TPSFKey, TRecordId>();
-            this.fht = new FasterKV<CompositeKey<TPSFKey>, TRecordId, PSFInputSecondary<TPSFKey>,
-                                    PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>>(
-                    regSettings.HashTableSize, new PSFFunctions<TPSFKey, TRecordId>(),
-                    regSettings.LogSettings, this.checkpointSettings, null /*SerializerSettings*/,
+            this.fht = new FasterKV<CompositeKey<TPSFKey>, TRecordId>(
+                    regSettings.HashTableSize, regSettings.LogSettings, this.checkpointSettings, null /*SerializerSettings*/,
                     new CompositeKey<TPSFKey>.UnusedKeyComparer(),
                     new VariableLengthStructSettings<CompositeKey<TPSFKey>, TRecordId>
                     {
@@ -118,7 +115,8 @@ namespace FASTER.core
             // Sessions are used only on post-RegisterPSF actions (Upsert, RMW, Query).
             if (this.freeSessions.TryPop(out var session))
                 return session;
-            session = this.fht.NewSession(threadAffinitized: this.regSettings.ThreadAffinitized);
+            session = this.fht.NewSession<PSFInputSecondary<TPSFKey>, PSFOutputSecondary<TPSFKey, TRecordId>, PSFContext, PSFFunctions<TPSFKey, TRecordId>>(
+                                        new PSFFunctions<TPSFKey, TRecordId>(), threadAffinitized: this.regSettings.ThreadAffinitized);
             this.allSessions.Add(session);
             return session;
         }

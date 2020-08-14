@@ -70,9 +70,14 @@ namespace FASTER.core
                                            IDevice device,
                                            out ulong numBytesWritten)
         {
-            int numChunks = 1;
             long totalSize = state[version].size * sizeof(HashBucket);
-            Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
+
+            int numChunks = 1;
+            if (totalSize > uint.MaxValue)
+            {
+                numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
+                numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
+            }
 
             uint chunkSize = (uint)(totalSize / numChunks);
             mainIndexCheckpointCallbackCount = numChunks;

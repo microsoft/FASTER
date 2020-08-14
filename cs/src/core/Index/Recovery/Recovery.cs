@@ -45,10 +45,9 @@ namespace FASTER.core
     }
 
 
-    public unsafe partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
+    public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
         where Key : new()
         where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
 
         private void InternalRecoverFromLatestCheckpoints()
@@ -90,8 +89,8 @@ namespace FASTER.core
 
             // Set new system state after recovery
             var v = recoveredHLCInfo.info.version;
-            _systemState.phase = Phase.REST;
-            _systemState.version = (v + 1);
+            systemState.phase = Phase.REST;
+            systemState.version = (v + 1);
 
             // Recover fuzzy index from checkpoint
             RecoverFuzzyIndex(recoveredICInfo);

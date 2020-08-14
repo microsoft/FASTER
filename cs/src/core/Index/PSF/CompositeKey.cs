@@ -41,9 +41,7 @@ namespace FASTER.core
 
             internal VarLenLength(int keyPointerSize, int psfCount) => this.size = keyPointerSize * psfCount;
 
-            public int GetAverageLength() => this.size;
-
-            public int GetInitialLength<Input>(ref Input _) => this.size;
+            public int GetInitialLength() => this.size;
 
             public int GetLength(ref CompositeKey<TPSFKey> _) => this.size;
         }

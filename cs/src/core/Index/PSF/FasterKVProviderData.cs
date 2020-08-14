@@ -40,5 +40,11 @@ namespace FASTER.core
             this.keyContainer.Dispose();
             this.valueContainer.Dispose();
         }
+
+        public override string ToString()
+        {
+            return $"Key = {(this.keyContainer is null ? "-0-" : this.keyContainer.Get().ToString())};" +
+                   $" Value = {(this.valueContainer is null ? "-0-" : this.valueContainer.Get().ToString())}";
+        }
     }
 }

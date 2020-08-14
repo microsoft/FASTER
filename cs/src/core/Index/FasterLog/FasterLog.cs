@@ -241,27 +241,28 @@ namespace FASTER.core
                 return new ValueTask<long>(logicalAddress);
 
             return SlowEnqueueAsync(this, entry, token);
-            static async ValueTask<long> SlowEnqueueAsync(FasterLog @this, byte[] entry, CancellationToken token)
-            {
-                long logicalAddress;
-                while (true)
-                {
-                    var task = @this.CommitTask;
-                    if (@this.TryEnqueue(entry, out logicalAddress))
-                        break;
-                    if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
-                    {
-                        // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                        try
-                        {
-                            await task.WithCancellationAsync(token);
-                        }
-                        catch when (!token.IsCancellationRequested) { }
-                    }
-                }
+        }
 
-                return logicalAddress;
+        private static async ValueTask<long> SlowEnqueueAsync(FasterLog @this, byte[] entry, CancellationToken token)
+        {
+            long logicalAddress;
+            while (true)
+            {
+                var task = @this.CommitTask;
+                if (@this.TryEnqueue(entry, out logicalAddress))
+                    break;
+                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+                {
+                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                    try
+                    {
+                        await task.WithCancellationAsync(token);
+                    }
+                    catch when (!token.IsCancellationRequested) { }
+                }
             }
+
+            return logicalAddress;
         }
 
         /// <summary>
@@ -278,27 +279,28 @@ namespace FASTER.core
                 return new ValueTask<long>(logicalAddress);
 
             return SlowEnqueueAsync(this, entry, token);
-            static async ValueTask<long> SlowEnqueueAsync(FasterLog @this, ReadOnlyMemory<byte> entry, CancellationToken token)
-            {
-                long logicalAddress;
-                while (true)
-                {
-                    var task = @this.CommitTask;
-                    if (@this.TryEnqueue(entry.Span, out logicalAddress))
-                        break;
-                    if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
-                    {
-                        // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                        try
-                        {
-                            await task.WithCancellationAsync(token);
-                        }
-                        catch when (!token.IsCancellationRequested) { }
-                    }
-                }
+        }
 
-                return logicalAddress;
+        private static async ValueTask<long> SlowEnqueueAsync(FasterLog @this, ReadOnlyMemory<byte> entry, CancellationToken token)
+        {
+            long logicalAddress;
+            while (true)
+            {
+                var task = @this.CommitTask;
+                if (@this.TryEnqueue(entry.Span, out logicalAddress))
+                    break;
+                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+                {
+                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                    try
+                    {
+                        await task.WithCancellationAsync(token);
+                    }
+                    catch when (!token.IsCancellationRequested) { }
+                }
             }
+
+            return logicalAddress;
         }
 
         /// <summary>
@@ -315,27 +317,28 @@ namespace FASTER.core
                 return new ValueTask<long>(address);
 
             return SlowEnqueueAsync(this, readOnlySpanBatch, token);
-            static async ValueTask<long> SlowEnqueueAsync(FasterLog @this, IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token)
-            {
-                long logicalAddress;
-                while (true)
-                {
-                    var task = @this.CommitTask;
-                    if (@this.TryEnqueue(readOnlySpanBatch, out logicalAddress))
-                        break;
-                    if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
-                    {
-                        // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                        try
-                        {
-                            await task.WithCancellationAsync(token);
-                        }
-                        catch when (!token.IsCancellationRequested) { }
-                    }
-                }
+        }
 
-                return logicalAddress;
+        private static async ValueTask<long> SlowEnqueueAsync(FasterLog @this, IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token)
+        {
+            long logicalAddress;
+            while (true)
+            {
+                var task = @this.CommitTask;
+                if (@this.TryEnqueue(readOnlySpanBatch, out logicalAddress))
+                    break;
+                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+                {
+                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                    try
+                    {
+                        await task.WithCancellationAsync(token);
+                    }
+                    catch when (!token.IsCancellationRequested) { }
+                }
             }
+
+            return logicalAddress;
         }
         #endregion
 
