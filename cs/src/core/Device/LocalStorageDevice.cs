@@ -28,7 +28,7 @@ namespace FASTER.core
         /// <summary>
         /// Number of pending reads on device
         /// </summary>
-        private int numPendingReads = 0;
+        private int numPending = 0;
 
 
         /// <summary>
@@ -52,14 +52,14 @@ namespace FASTER.core
 
         void _callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
         {
-            Interlocked.Decrement(ref numPendingReads);
+            Interlocked.Decrement(ref numPending);
             var result = (SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult;
             result.callback(errorCode, numBytes, result.context);
             results.Enqueue(result);
         }
 
         /// <inheritdoc />
-        public override bool Throttle() => numPendingReads > 120;
+        public override bool Throttle() => numPending > 120;
 
         /// <summary>
         /// Constructor with more options for derived classes
@@ -157,7 +157,7 @@ namespace FASTER.core
             {
                 var logHandle = GetOrAddHandle(segmentId);
 
-                Interlocked.Increment(ref numPendingReads);
+                Interlocked.Increment(ref numPending);
 
                 bool _result = Native32.ReadFile(logHandle,
                                                 destinationAddress,
@@ -176,13 +176,13 @@ namespace FASTER.core
             }
             catch (IOException e)
             {
-                Interlocked.Decrement(ref numPendingReads);
+                Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 results.Enqueue(result);
             }
             catch
             {
-                Interlocked.Decrement(ref numPendingReads);
+                Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);
             }
@@ -222,6 +222,8 @@ namespace FASTER.core
             {
                 var logHandle = GetOrAddHandle(segmentId);
 
+                Interlocked.Increment(ref numPending);
+
                 bool _result = Native32.WriteFile(logHandle,
                                         sourceAddress,
                                         numBytesToWrite,
@@ -239,11 +241,13 @@ namespace FASTER.core
             }
             catch (IOException e)
             {
+                Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 results.Enqueue(result);
             }
             catch
             {
+                Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);
             }
