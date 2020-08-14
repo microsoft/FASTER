@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,6 +33,7 @@ namespace FASTER.core
         internal CommitPoint LatestCommitPoint;
 
         internal readonly Functions functions;
+        internal readonly IVariableLengthStruct<Value, Input> variableLengthStruct;
 
         internal readonly AsyncFasterSession FasterSession;
 
@@ -39,7 +41,8 @@ namespace FASTER.core
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
-            bool supportAsync)
+            bool supportAsync,
+            IVariableLengthStruct<Value, Input> variableLengthStruct)
         {
             this.fht = fht;
             this.ctx = ctx;
@@ -47,7 +50,22 @@ namespace FASTER.core
             SupportAsync = supportAsync;
             LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
             FasterSession = new AsyncFasterSession(this);
-            
+
+            this.variableLengthStruct = variableLengthStruct;
+            if (this.variableLengthStruct == default)
+            {
+                if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator)
+                {
+                    Debug.WriteLine("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
+                    this.variableLengthStruct = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
+                }
+            }
+            else
+            {
+                if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+                    Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
+            }
+
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();
@@ -504,6 +522,16 @@ namespace FASTER.core
             public void DeleteCompletionCallback(ref Key key, Context ctx)
             {
                 _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
+            }
+
+            public int GetInitialLength(ref Input input)
+            {
+                return _clientSession.variableLengthStruct.GetInitialLength(ref input);
+            }
+
+            public int GetLength(ref Value t, ref Input input)
+            {
+                return _clientSession.variableLengthStruct.GetLength(ref t, ref input);
             }
 
             public void InitialUpdater(ref Key key, ref Input input, ref Value value)

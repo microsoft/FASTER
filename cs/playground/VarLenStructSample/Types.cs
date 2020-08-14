@@ -63,22 +63,12 @@ namespace VarLenStructSample
 
     public struct VarLenLength : IVariableLengthStruct<VarLenType>
     {
-        public int GetAverageLength()
-        {
-            return 2 * sizeof(int);
-        }
-
-        public int GetInitialLength<Input>(ref Input input)
+        public int GetInitialLength()
         {
             return 2 * sizeof(int);
         }
 
         public int GetLength(ref VarLenType t)
-        {
-            return sizeof(int) * t.length;
-        }
-
-        public int GetLength<Input>(ref VarLenType t, ref Input input)
         {
             return sizeof(int) * t.length;
         }

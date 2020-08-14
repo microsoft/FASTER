@@ -730,8 +730,8 @@ namespace FASTER.core
         CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
-                                hlog.GetInitialRecordSize(ref key, ref input) :
-                                hlog.GetRecordSize(physicalAddress, ref input);
+                                hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
+                                hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
                 BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
@@ -1442,12 +1442,12 @@ namespace FASTER.core
             #region Create record in mutable region
             if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
             {
-                recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input);
+                recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input, fasterSession);
             }
             else
             {
                 physicalAddress = (long)request.record.GetValidPointer();
-                recordSize = hlog.GetRecordSize(physicalAddress, ref pendingContext.input);
+                recordSize = hlog.GetRecordSize(physicalAddress, ref pendingContext.input, fasterSession);
             }
             BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
