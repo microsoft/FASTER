@@ -9,7 +9,7 @@ using System.Linq;
 namespace FASTER.core
 {
     /// <summary>
-    /// Implementation of checkpoint interface for local file storage
+    /// Older implementation of checkpoint interface for local file storage (left for backward compatibility)
     /// </summary>
     public sealed class LocalCheckpointManager : ICheckpointManager
     {
