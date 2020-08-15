@@ -69,18 +69,10 @@ namespace FASTER.core
         }
     }
 
-    internal sealed class SimpleReadContext : object
+    internal sealed class SimpleReadContext
     {
         public long logicalAddress;
         public SectorAlignedMemory record;
         public SemaphoreSlim completedRead;
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
-
-        public bool IsCompleted => throw new NotImplementedException();
     }
 }
