@@ -3,9 +3,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -16,7 +13,7 @@ namespace FASTER.core
         public void* dstAddress;
         public uint bytes;
         public DeviceIOCompletionCallback callback;
-        public object asyncResult;
+        public object context;
     }
 
     /// <summary>
@@ -78,7 +75,7 @@ namespace FASTER.core
                 while (q.TryDequeue(out IORequestLocalMemory req))
                 {
                     Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
-                    req.callback(0, req.bytes, req.asyncResult);
+                    req.callback(0, req.bytes, req.context);
                 }
                 Thread.Yield();
             }
@@ -92,21 +89,21 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override void ReadAsync(int segmentId, ulong sourceAddress,
                                      IntPtr destinationAddress,
                                      uint readLength,
                                      DeviceIOCompletionCallback callback,
-                                     object asyncResult)
+                                     object context)
         {
             var q = ioQueue[segmentId % parallelism];
             var req = new IORequestLocalMemory
             {
-                srcAddress = (void*)(ram_segments[segmentId] + sourceAddress),
+                srcAddress = ram_segments[segmentId] + sourceAddress,
                 dstAddress = (void*)destinationAddress,
                 bytes = readLength,
                 callback = callback,
-                asyncResult = asyncResult
+                context = context
             };
             q.Enqueue(req);
         }
@@ -119,22 +116,22 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
                                       ulong destinationAddress,
                                       uint numBytesToWrite,
                                       DeviceIOCompletionCallback callback,
-                                      object asyncResult)
+                                      object context)
         {
             var q = ioQueue[segmentId % parallelism];
             var req = new IORequestLocalMemory
             {
                 srcAddress = (void*)sourceAddress,
-                dstAddress = (void*)(ram_segments[segmentId] + destinationAddress),
+                dstAddress = ram_segments[segmentId] + destinationAddress,
                 bytes = numBytesToWrite,
                 callback = callback,
-                asyncResult = asyncResult
+                context = context
             };
             q.Enqueue(req);
         }
@@ -158,10 +155,6 @@ namespace FASTER.core
             RemoveSegment(segment);
             callback(result);
         }
-
-        // It may be somewhat inefficient to use the default async calls from the base class when the underlying
-        // method is inherently synchronous. But just for delete (which is called infrequently and off the 
-        // critical path) such inefficiency is probably negligible.
 
         /// <summary>
         /// Close device
