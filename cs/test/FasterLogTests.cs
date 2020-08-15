@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.AccessControl;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -19,12 +20,21 @@ namespace FASTER.test
         const int numEntries = 1000000;
         private FasterLog log;
         private IDevice device;
+        private string commitPath;
 
         [SetUp]
         public void Setup()
         {
+            commitPath = new DefaultCheckpointNamingScheme().FasterLogCommitBasePath();
+            if (commitPath == "")
+                throw new Exception("Write log commits to separate folder for testing");
+            commitPath = TestContext.CurrentContext.TestDirectory + "\\" + commitPath;
+
+            if (Directory.Exists(commitPath))
+                DeleteDirectory(commitPath);
             if (File.Exists(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit"))
                 File.Delete(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit");
+
             device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log", deleteOnClose: true);
         }
 
@@ -32,6 +42,8 @@ namespace FASTER.test
         public void TearDown()
         {
             device.Close();
+            if (Directory.Exists(commitPath))
+                DeleteDirectory(commitPath);
             if (File.Exists(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit"))
                 File.Delete(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit");
         }
@@ -243,5 +255,81 @@ namespace FASTER.test
                 }
             }
         }
+
+        [Test]
+        public async Task ResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool overwriteLogCommits, [Values] bool removeOutdated)
+        {
+            var input1 = new byte[] { 0, 1, 2, 3 };
+            var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
+            var input3 = new byte[] { 11, 12 };
+            string readerName = "abc";
+
+            var commitPath = TestContext.CurrentContext.TestDirectory + "\\ResumePersistedReader2";
+
+            if (Directory.Exists(commitPath))
+                DeleteDirectory(commitPath);
+
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), overwriteLogCommits, removeOutdated))
+            {
+
+                long originalCompleted;
+
+                using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                {
+                    await l.EnqueueAsync(input1);
+                    await l.CommitAsync();
+                    await l.EnqueueAsync(input2);
+                    await l.CommitAsync();
+                    await l.EnqueueAsync(input3);
+                    await l.CommitAsync();
+                    long recoveryAddress;
+
+                    using (var originalIterator = l.Scan(0, long.MaxValue, readerName))
+                    {
+                        originalIterator.GetNext(out _, out _, out _, out recoveryAddress);
+                        originalIterator.CompleteUntil(recoveryAddress);
+                        originalIterator.GetNext(out _, out _, out _, out _);  // move the reader ahead
+                        await l.CommitAsync();
+                        originalCompleted = originalIterator.CompletedUntilAddress;
+                    }
+                }
+
+                using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                {
+                    using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
+                    {
+                        recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _);
+
+                        // we should have read in input2, not input1 or input3
+                        Assert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");
+
+                        // TestContext.Progress.WriteLine($"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}"); 
+                    }
+                }
+            }
+            DeleteDirectory(commitPath);
+        }
+
+        private static void DeleteDirectory(string path)
+        {
+            foreach (string directory in Directory.GetDirectories(path))
+            {
+                DeleteDirectory(directory);
+            }
+
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException)
+            {
+                Directory.Delete(path, true);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Directory.Delete(path, true);
+            }
+        }
+
     }
 }

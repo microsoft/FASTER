@@ -20,6 +20,7 @@ namespace FASTER.core
     public unsafe partial class FasterBase
     {
         internal ICheckpointManager checkpointManager;
+        internal bool disposeCheckpointManager;
 
         // Derived class exposed API
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
