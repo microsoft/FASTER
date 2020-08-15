@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -98,8 +99,24 @@ namespace FASTER.core
                 throw new FasterException(
                     "Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
 
-            checkpointManager = checkpointSettings.CheckpointManager ??
+            bool oldCheckpointManager = false;
+
+            if (oldCheckpointManager)
+            {
+                checkpointManager = checkpointSettings.CheckpointManager ??
                                 new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
+            }
+            else
+            {
+                checkpointManager = checkpointSettings.CheckpointManager ??
+                    new DeviceLogCommitCheckpointManager
+                    (new LocalStorageNamedDeviceFactory(),
+                        new DefaultCheckpointNamingScheme(
+                          new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName));
+            }
+
+            if (checkpointSettings.CheckpointManager == null)
+                disposeCheckpointManager = true;
 
             FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
@@ -440,6 +457,8 @@ namespace FASTER.core
             Free();
             hlog.Dispose();
             readcache?.Dispose();
+            if (disposeCheckpointManager)
+                checkpointManager?.Dispose();
         }
     }
 }

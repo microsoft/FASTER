@@ -22,6 +22,7 @@ namespace FASTER.core
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
         private readonly ILogCommitManager logCommitManager;
+        private readonly bool disposeLogCommitManager;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
@@ -81,9 +82,25 @@ namespace FASTER.core
         /// <param name="logSettings"></param>
         public FasterLog(FasterLogSettings logSettings)
         {
-            logCommitManager = logSettings.LogCommitManager ??
-                new LocalLogCommitManager(logSettings.LogCommitFile ??
-                logSettings.LogDevice.FileName + ".commit");
+            bool oldCommitManager = false;
+
+            if (oldCommitManager)
+            {
+                logCommitManager = logSettings.LogCommitManager ??
+                    new LocalLogCommitManager(logSettings.LogCommitFile ??
+                    logSettings.LogDevice.FileName + ".commit");
+            }
+            else
+            {
+                logCommitManager = logSettings.LogCommitManager ??
+                    new DeviceLogCommitCheckpointManager
+                    (new LocalStorageNamedDeviceFactory(),
+                        new DefaultCheckpointNamingScheme(
+                          new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
+            }
+
+            if (logSettings.LogCommitManager == null)
+                disposeLogCommitManager = true;
 
             // Reserve 8 byte checksum in header if requested
             logChecksum = logSettings.LogChecksum;
@@ -114,6 +131,8 @@ namespace FASTER.core
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
             epoch.Dispose();
+            if (disposeLogCommitManager)
+                logCommitManager.Dispose();
         }
 
         #region Enqueue
@@ -806,28 +825,40 @@ namespace FASTER.core
         /// </summary>
         private void Restore(out Dictionary<string, long> recoveredIterators)
         {
+
             recoveredIterators = null;
-            FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
-            var commitInfo = logCommitManager.GetCommitMetadata();
 
-            if (commitInfo == null) return;
-
-            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+            foreach (var commitNum in logCommitManager.ListCommits())
             {
-                info.Initialize(r);
+                try
+                {
+                    var commitInfo = logCommitManager.GetCommitMetadata(commitNum);
+
+                    FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
+
+                    if (commitInfo == null) return;
+
+                    using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+                    {
+                        info.Initialize(r);
+                    }
+
+                    var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
+                    if (info.BeginAddress > headAddress)
+                        headAddress = info.BeginAddress;
+
+                    if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
+
+                    recoveredIterators = info.Iterators;
+
+                    allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
+                    CommittedUntilAddress = info.FlushedUntilAddress;
+                    CommittedBeginAddress = info.BeginAddress;
+                    return;
+                }
+                catch { }
             }
-
-            var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
-            if (info.BeginAddress > headAddress)
-                headAddress = info.BeginAddress;
-
-            if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
-
-            recoveredIterators = info.Iterators;
-
-            allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
-            CommittedUntilAddress = info.FlushedUntilAddress;
-            CommittedBeginAddress = info.BeginAddress;
+            Debug.WriteLine("Unable to recover using any available commit");
         }
 
         /// <summary>

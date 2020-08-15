@@ -60,6 +60,9 @@ namespace FASTER.core
             : base(filename, GetSectorSize(filename), capacity)
         {
             Native32.EnableProcessPrivileges();
+            string path = new FileInfo(filename).Directory.FullName;
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
@@ -79,9 +82,9 @@ namespace FASTER.core
             string bareName = fi.Name;
 
             List<int> segids = new List<int>();
-            foreach (FileInfo item in di.GetFiles(bareName + "*"))
+            foreach (System.IO.FileInfo item in di.GetFiles(bareName + "*"))
             {
-                segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
+                segids.Add(int.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
             }
             segids.Sort();
 
