@@ -238,7 +238,6 @@ namespace FASTER.test
             using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
             {
                 byte[] entry;
-                // Should read the "hole" and return false
                 while (iter.GetNext(out entry, out _, out _))
                 {
                     log.TruncateUntil(iter.NextAddress);

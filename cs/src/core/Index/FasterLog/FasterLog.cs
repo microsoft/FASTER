@@ -481,12 +481,30 @@ namespace FASTER.core
         /// Trigger a refresh of information about uncommitted part of log (tail address) to ensure visibility 
         /// to uncommitted scan iterators. Will cause SafeTailAddress to reflect the current tail address.
         /// </summary>
-        public void RefreshUncommitted()
+        public void RefreshUncommitted(bool spinWait = false)
         {
-            var localTail = allocator.GetTailAddress();
-            if (SafeTailAddress < localTail)
-                epoch.BumpCurrentEpoch(() => UpdateTailCallback(localTail));
+            RefreshUncommittedInternal(spinWait);
         }
+
+        /// <summary>
+        /// Trigger a refresh of information about uncommitted part of log (tail address) to ensure visibility 
+        /// to uncommitted scan iterators. Will cause SafeTailAddress to reflect the current tail address.
+        /// Async method completes only when we complete the refresh.
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask RefreshUncommittedAsync(CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            var task = RefreshUncommittedTask;
+            var tailAddress = RefreshUncommittedInternal();
+
+            while (SafeTailAddress < tailAddress)
+            {
+                await task.WithCancellationAsync(token);
+                task = RefreshUncommittedTask;
+            }
+        }
+
         #endregion
 
         #region EnqueueAndWaitForCommit
@@ -1035,6 +1053,24 @@ namespace FASTER.core
             }
 
             return tailAddress;
+        }
+
+        private long RefreshUncommittedInternal(bool spinWait = false)
+        {
+            epoch.Resume();
+            var localTail = allocator.GetTailAddress();
+            if (SafeTailAddress < localTail)
+                epoch.BumpCurrentEpoch(() => UpdateTailCallback(localTail));
+            if (spinWait)
+            {
+                while (SafeTailAddress < localTail)
+                {
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
+                }
+            }
+            epoch.Suspend();
+            return localTail;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
