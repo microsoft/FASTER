@@ -29,6 +29,7 @@ namespace FASTER.core
         private readonly LightEpoch epoch;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
+        private readonly bool scanUncommitted;
         private bool disposed = false;
         internal long requestedCompletedUntilAddress;
 
@@ -54,13 +55,15 @@ namespace FASTER.core
         /// <param name="headerSize"></param>
         /// <param name="name"></param>
         /// <param name="getMemory"></param>
-        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name)
+        /// <param name="scanUncommitted"></param>
+        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false)
         {
             this.fasterLog = fasterLog;
             this.allocator = hlog;
             this.getMemory = getMemory;
             this.epoch = epoch;
             this.headerSize = headerSize;
+            this.scanUncommitted = scanUncommitted;
 
             if (beginAddress == 0)
                 beginAddress = hlog.GetFirstValidLogicalAddress(0);
@@ -146,13 +149,20 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
 
-            // if (nextAddress >= this.endAddress)
-            //    return new ValueTask<bool>(false);
+            if (scanUncommitted)
+            {
+                if (NextAddress < fasterLog.CommittedUntilAddress)
+                    return new ValueTask<bool>(true);
 
-            if (NextAddress < fasterLog.CommittedUntilAddress)
-                return new ValueTask<bool>(true);
+                return SlowWaitAsync(this, token);
+            }
+            else
+            {
+                if (NextAddress < fasterLog.SafeTailAddress)
+                    return new ValueTask<bool>(true);
 
-            return SlowWaitAsync(this, token);
+                return SlowWaitUncommittedAsync(this, token);
+            }
         }
 
         private static async ValueTask<bool> SlowWaitAsync(FasterLogScanIterator @this, CancellationToken token)
@@ -168,6 +178,26 @@ namespace FASTER.core
                 try
                 {
                     await commitTask.WithCancellationAsync(token);
+                }
+                catch (ObjectDisposedException) { return false; }
+                catch when (!token.IsCancellationRequested) { }
+            }
+        }
+
+        private static async ValueTask<bool> SlowWaitUncommittedAsync(FasterLogScanIterator @this, CancellationToken token)
+        {
+            while (true)
+            {
+                if (@this.disposed)
+                    return false;
+                var refreshUncommittedTask = @this.fasterLog.RefreshUncommittedTask;
+                if (@this.NextAddress < @this.fasterLog.SafeTailAddress)
+                    return true;
+
+                // Ignore refresh-uncommitted exceptions, except when the token is signaled
+                try
+                {
+                    await refreshUncommittedTask.WithCancellationAsync(token);
                 }
                 catch (ObjectDisposedException) { return false; }
                 catch when (!token.IsCancellationRequested) { }
@@ -438,7 +468,7 @@ namespace FASTER.core
                     return false;
 
 
-                if ((currentAddress >= endAddress) || (currentAddress >= fasterLog.CommittedUntilAddress))
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? fasterLog.SafeTailAddress : fasterLog.CommittedUntilAddress)))
                 {
                     return false;
                 }

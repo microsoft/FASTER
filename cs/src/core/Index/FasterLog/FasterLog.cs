@@ -28,6 +28,8 @@ namespace FASTER.core
         private readonly LogChecksumType logChecksum;
         private TaskCompletionSource<LinkedCommitInfo> commitTcs
             = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<Empty> refreshUncommittedTcs
+            = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>
         /// Beginning address of log
@@ -43,6 +45,11 @@ namespace FASTER.core
         /// Log flushed until address
         /// </summary>
         public long FlushedUntilAddress => allocator.FlushedUntilAddress;
+
+        /// <summary>
+        /// Log safe read-only address
+        /// </summary>
+        internal long SafeTailAddress;
 
         /// <summary>
         /// Dictionary of recovered iterators and their committed until addresses
@@ -63,6 +70,11 @@ namespace FASTER.core
         /// Task notifying commit completions
         /// </summary>
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
+
+        /// <summary>
+        /// Task notifying refresh uncommitted
+        /// </summary>
+        internal Task<Empty> RefreshUncommittedTask => refreshUncommittedTcs.Task;
 
         /// <summary>
         /// Table of persisted iterators
@@ -465,6 +477,16 @@ namespace FASTER.core
             return prevCommitTask;
         }
 
+        /// <summary>
+        /// Trigger a refresh of information about uncommitted part of log (tail address) to ensure visibility 
+        /// to uncommitted scan iterators. Will cause SafeTailAddress to reflect the current tail address.
+        /// </summary>
+        public void RefreshUncommitted()
+        {
+            var localTail = allocator.GetTailAddress();
+            if (SafeTailAddress < localTail)
+                epoch.BumpCurrentEpoch(() => UpdateTailCallback(localTail));
+        }
         #endregion
 
         #region EnqueueAndWaitForCommit
@@ -708,14 +730,15 @@ namespace FASTER.core
         /// <param name="name">Name of iterator, if we need to persist/recover it (default null - do not persist).</param>
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
+        /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <returns></returns>
-        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false)
         {
             FasterLogScanIterator iter;
             if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
-                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name);
+                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
             else
-                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name);
+                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
 
             if (name != null)
             {
@@ -818,6 +841,18 @@ namespace FASTER.core
                 _commitTcs?.TrySetResult(lci);
             else
                 _commitTcs.TrySetException(new CommitFailureException(lci, $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}"));
+        }
+
+        /// <summary>
+        /// Read-only callback
+        /// </summary>
+        private void UpdateTailCallback(long tailAddress)
+        {
+            SafeTailAddress = tailAddress;
+
+            var _refreshUncommittedTcs = refreshUncommittedTcs;
+            refreshUncommittedTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _refreshUncommittedTcs.SetResult(Empty.Default);
         }
 
         /// <summary>
