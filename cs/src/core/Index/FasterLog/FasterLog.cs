@@ -8,6 +8,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -121,6 +122,7 @@ namespace FASTER.core
             epoch = new LightEpoch();
             CommittedUntilAddress = Constants.kFirstValidAddress;
             CommittedBeginAddress = Constants.kFirstValidAddress;
+            SafeTailAddress = Constants.kFirstValidAddress;
 
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null,
@@ -907,6 +909,16 @@ namespace FASTER.core
                     allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
                     CommittedUntilAddress = info.FlushedUntilAddress;
                     CommittedBeginAddress = info.BeginAddress;
+                    SafeTailAddress = info.FlushedUntilAddress;
+
+                    // Fix uncommitted addresses in iterators
+                    if (recoveredIterators != null)
+                    {
+                        List<string> keys = recoveredIterators.Keys.ToList();
+                        foreach (var key in keys)
+                            if (recoveredIterators[key] > SafeTailAddress)
+                                recoveredIterators[key] = SafeTailAddress;
+                    }
                     return;
                 }
                 catch { }
@@ -1046,8 +1058,8 @@ namespace FASTER.core
                     CommitCallback(new CommitInfo
                     {
                         BeginAddress = beginAddress,
-                        FromAddress = CommittedUntilAddress,
-                        UntilAddress = CommittedUntilAddress,
+                        FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
+                        UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         ErrorCode = 0
                     });
             }
