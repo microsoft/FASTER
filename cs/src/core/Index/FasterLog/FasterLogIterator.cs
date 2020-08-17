@@ -149,7 +149,7 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (scanUncommitted)
+            if (!scanUncommitted)
             {
                 if (NextAddress < fasterLog.CommittedUntilAddress)
                     return new ValueTask<bool>(true);
