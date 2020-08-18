@@ -42,7 +42,7 @@ namespace FasterLogPubSub
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(1000), cancellationToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(5000), cancellationToken);
 
                 Console.WriteLine("Committing...");
 
@@ -70,11 +70,17 @@ namespace FasterLogPubSub
         {
             using var iter = log.Scan(log.BeginAddress, long.MaxValue, "foo", true, ScanBufferingMode.DoublePageBuffering, scanUncommitted: true);
 
+            int count = 0;
             await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
             {
                 Console.WriteLine($"Consuming {Encoding.UTF8.GetString(result)}");
                 iter.CompleteUntil(nextAddress);
                 log.TruncateUntil(nextAddress);
+
+                // We simulate temporary slow down of data consumption
+                // This will cause transient log spill to disk (observe folder on storage)
+                if (count++ > 1000 && count < 1200)
+                    Thread.Sleep(100);
             }
         }
 
