@@ -833,21 +833,34 @@ namespace FASTER.core
             if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
                 return;
 
-            // Then the head address
-            Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
+            var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
 
-            // Finally the read-only address
-            Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
-
+            // Shift read-only address
             epoch.Resume();
-            epoch.BumpCurrentEpoch(() =>
-            {
-                OnPagesMarkedReadOnly(newBeginAddress);
-                OnPagesClosed(newBeginAddress);
-                if (oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits)
-                    TruncateUntilAddress(newBeginAddress);
-            });
+            ShiftReadOnlyAddress(newBeginAddress);
             epoch.Suspend();
+
+            // Wait for flush to complete
+            while (FlushedUntilAddress < newBeginAddress) ;
+
+            // Then shift head address
+            var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
+
+            // Ensure no read cache
+            Debug.Assert(!ReadCache);
+
+            if (h || b)
+            {
+                epoch.Resume();
+                epoch.BumpCurrentEpoch(() =>
+                {
+                    if (h)
+                        OnPagesClosed(newBeginAddress);
+                    if (b)
+                        TruncateUntilAddress(newBeginAddress);
+                });
+                epoch.Suspend();
+            }
         }
 
         /// <summary>
