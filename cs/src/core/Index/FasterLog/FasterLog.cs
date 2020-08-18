@@ -839,7 +839,7 @@ namespace FASTER.core
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
                 CommittedBeginAddress = info.BeginAddress;
                 CommittedUntilAddress = info.FlushedUntilAddress;
-                
+
                 // Update completed address for persisted iterators
                 info.CommitIterators(PersistedIterators);
 
@@ -868,11 +868,17 @@ namespace FASTER.core
         /// </summary>
         private void UpdateTailCallback(long tailAddress)
         {
-            SafeTailAddress = tailAddress;
+            lock (this)
+            {
+                if (tailAddress > SafeTailAddress)
+                {
+                    SafeTailAddress = tailAddress;
 
-            var _refreshUncommittedTcs = refreshUncommittedTcs;
-            refreshUncommittedTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _refreshUncommittedTcs.SetResult(Empty.Default);
+                    var _refreshUncommittedTcs = refreshUncommittedTcs;
+                    refreshUncommittedTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _refreshUncommittedTcs.SetResult(Empty.Default);
+                }
+            }
         }
 
         /// <summary>

@@ -74,7 +74,8 @@ namespace FASTER.core
         public bool ShiftHeadAddress(long newHeadAddress, bool wait)
         {
             // First shift read-only
-            ShiftReadOnlyAddress(newHeadAddress, wait);
+            // Force wait so that we do not close unflushed page
+            ShiftReadOnlyAddress(newHeadAddress, true);
 
             // Then shift head address
             fht.epoch.Resume();
