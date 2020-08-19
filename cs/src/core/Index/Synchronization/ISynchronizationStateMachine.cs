@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -192,7 +193,15 @@ namespace FASTER.core
             where FasterSession: IFasterSession
         {
             foreach (var task in tasks)
-                await task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            {
+                if (async)
+                    await task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+                else
+                {
+                    var t = task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+                    Debug.Assert(t.IsCompleted);
+                }
+            }
         }
     }
 }

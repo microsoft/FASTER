@@ -139,7 +139,13 @@ namespace FASTER.core
             bool async = true,
             CancellationToken token = default)
         {
-            await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            if (async)
+                await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            else
+            {
+                var t = base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+                Debug.Assert(t.IsCompleted);
+            }
             if (current.phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
@@ -228,7 +234,15 @@ namespace FASTER.core
             bool async = true,
             CancellationToken token = default)
         {
-            await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            if (async)
+            {
+                await base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            }
+            else
+            {
+                var t = base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+                Debug.Assert(t.IsCompleted);
+            }
             if (current.phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])

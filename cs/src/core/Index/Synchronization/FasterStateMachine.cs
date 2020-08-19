@@ -20,6 +20,8 @@ namespace FASTER.core
         // if no state machine is active at this time.
         private ISynchronizationStateMachine currentSyncStateMachine;
 
+        //Stopwatch sw = new Stopwatch();
+        //string str = "";
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
         /// </summary>
@@ -29,7 +31,7 @@ namespace FASTER.core
         {
             // return immediately if there is a state machine under way.
             if (Interlocked.CompareExchange(ref stateMachineActive, 1, 0) != 0) return false;
-
+            //sw.Restart();
             currentSyncStateMachine = stateMachine;
             // No latch required because the taskMutex guards against other tasks starting, and only a new task
             // is allowed to change faster global state from REST
@@ -44,6 +46,12 @@ namespace FASTER.core
             if (Interlocked.CompareExchange(ref systemState.word, nextState.word, expectedState.word) !=
                 expectedState.word) return false;
             Debug.WriteLine("Moved to {0}, {1}", nextState.phase, nextState.version);
+            //str += $"{sw.ElapsedMilliseconds}:";
+            //if (nextState.phase == Phase.REST)
+            //{
+            //    Console.WriteLine(str);
+            //    str = "";
+            //}
             return true;
         }
 
@@ -107,10 +115,19 @@ namespace FASTER.core
             {
                 var task = currentSyncStateMachine;
                 var targetState = SystemState.Copy(ref systemState);
+
+                while (targetState.phase == Phase.INTERMEDIATE)
+                {
+                    Thread.Yield();
+                    task = currentSyncStateMachine;
+                    targetState = SystemState.Copy(ref systemState);
+                }
+
                 // We have to make sure that we are not looking at a state resulted from a different 
                 // task. It's ok to be behind when the thread steps through the state machine, but not
                 // ok if we are using the wrong task.
-                if (targetState.phase != Phase.INTERMEDIATE && currentSyncStateMachine == task)
+                // if (targetState.phase != Phase.INTERMEDIATE && currentSyncStateMachine == task)
+                if (currentSyncStateMachine == task)
                     return ValueTuple.Create(task, targetState);
             }
         }
@@ -146,6 +163,8 @@ namespace FASTER.core
                     ctx.phase = targetState.phase;
                     ctx.version = targetState.version;
                 }
+                if (async)
+                    fasterSession.UnsafeSuspendThread();
                 return;
             }
 
@@ -160,7 +179,16 @@ namespace FASTER.core
             var previousState = threadState;
             do
             {
-                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
+                if (async)
+                {
+                    await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
+                }
+                else
+                {
+                    var task = currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
+                    Debug.Assert(task.IsCompleted);
+                }
+
                 if (ctx != null)
                 {
                     ctx.phase = threadState.phase;
@@ -170,6 +198,10 @@ namespace FASTER.core
                 previousState.word = threadState.word;
                 threadState = currentTask.NextState(threadState);
             } while (previousState.word != targetState.word);
+
+            if (async)
+                fasterSession.UnsafeSuspendThread();
+
         }
     }
 }

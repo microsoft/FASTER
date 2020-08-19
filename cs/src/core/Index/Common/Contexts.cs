@@ -206,7 +206,6 @@ namespace FASTER.core
             finalLogicalAddress = 0;
             headAddress = 0;
 
-            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
             checkpointTokens = new ConcurrentDictionary<string, CommitPoint>();
 
             objectLogSegmentOffsets = null;

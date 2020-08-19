@@ -15,7 +15,7 @@ using System.Threading;
 
 namespace FASTER.benchmark
 {
-    public class FASTER_YcsbBenchmark
+    public class FASTER_AsyncYcsbBenchmark
     {
         public enum Op : ulong
         {
@@ -61,7 +61,7 @@ namespace FASTER.benchmark
 
         volatile bool done = false;
 
-        public FASTER_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_)
+        public FASTER_AsyncYcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_)
         {
             threadCount = threadCount_;
             numaStyle = numaStyle_;
@@ -85,7 +85,7 @@ namespace FASTER.benchmark
             device = Devices.CreateLogDevice("D:\\data\\hlog", deleteOnClose: true);
 
             store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
-                (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = "D:\\data\\hlog" });
+                (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = "D:\\data\\hlog" });
         }
 
         private void RunYcsb(int thread_idx)
@@ -115,7 +115,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession(null, true);
+            var session = store.NewSession();
 
             while (!done)
             {
@@ -138,16 +138,6 @@ namespace FASTER.benchmark
                     else
                         op = Op.ReadModifyWrite;
 
-                    if (idx % 256 == 0)
-                    {
-                        session.Refresh();
-
-                        // if (idx % 65536 == 0)
-                        {
-                            session.CompletePending(false);
-                        }
-                    }
-
                     switch (op)
                     {
                         case Op.Upsert:
@@ -159,7 +149,7 @@ namespace FASTER.benchmark
                         case Op.Read:
                             {
                                 Status result = session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
-                                // if (result == Status.OK)
+                                if (result == Status.OK)
                                 {
                                     ++reads_done;
                                 }
@@ -250,6 +240,7 @@ namespace FASTER.benchmark
 
             long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
+            
             store.TakeHybridLogCheckpoint(out _);
             store.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
@@ -287,8 +278,11 @@ namespace FASTER.benchmark
                     {
                         if (store.TakeHybridLogCheckpoint(out _))
                         {
+                            // store.CompleteCheckpointAsync();
                             checkpointTaken++;
                         }
+
+                        Thread.Yield();
                     }
                 }
                 Console.WriteLine($"Checkpoint taken {checkpointTaken}");
@@ -315,7 +309,6 @@ namespace FASTER.benchmark
             Console.WriteLine("##, " + distribution + ", " + numaStyle + ", " + readPercent + ", "
                 + threadCount + ", " + total_ops_done / seconds + ", "
                 + (endTailAddress - startTailAddress));
-            device.Close();
         }
 
         private void SetupYcsb(int thread_idx)
