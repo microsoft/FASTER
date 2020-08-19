@@ -32,6 +32,7 @@ namespace FASTER.benchmark
         const bool kCheckpointStoreContents = false;
         const bool kRecoverStoreContents = false;
         const bool kSmallMemoryLog = false;
+        const bool kAffinitizedSession = true;
 #else
         const bool kDumpDistribution = false;
         const bool kUseSmallData = false;
@@ -40,6 +41,7 @@ namespace FASTER.benchmark
         const bool kCheckpointStoreContents = false;
         const bool kRecoverStoreContents = false;
         const bool kSmallMemoryLog = false;
+        const bool kAffinitizedSession = false;
 #endif
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
@@ -92,8 +94,8 @@ namespace FASTER.benchmark
             freq = Stopwatch.Frequency;
 #endif
 
-            var path = "D:\\data\\hlog";
-            device = Devices.CreateLogDevice(path);
+            var path = "D:\\data\\FasterYcsbBenchmark\\";
+            device = Devices.CreateLogDevice(path + "hlog");
 
             if (kSmallMemoryLog)
                 store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
@@ -130,7 +132,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession(null, true);
+            var session = store.NewSession(null, kAffinitizedSession);
 
             while (!done)
             {
@@ -155,12 +157,9 @@ namespace FASTER.benchmark
 
                     if (idx % 256 == 0)
                     {
-                        session.Refresh();
-
-                        if (idx % 256 == 0)
-                        {
-                            session.CompletePending(false);
-                        }
+                        if (kAffinitizedSession)
+                            session.Refresh();
+                        session.CompletePending(false);
                     }
 
                     switch (op)
@@ -173,20 +172,14 @@ namespace FASTER.benchmark
                             }
                         case Op.Read:
                             {
-                                Status result = session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
-                                //if (result == Status.OK)
-                                {
-                                    ++reads_done;
-                                }
+                                session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                                ++reads_done;
                                 break;
                             }
                         case Op.ReadModifyWrite:
                             {
-                                Status result = session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
-                                if (result == Status.OK)
-                                {
-                                    ++writes_done;
-                                }
+                                session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                                ++writes_done;
                                 break;
                             }
                         default:
@@ -367,7 +360,7 @@ namespace FASTER.benchmark
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            var session = store.NewSession(null, true);
+            var session = store.NewSession(null, kAffinitizedSession);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
