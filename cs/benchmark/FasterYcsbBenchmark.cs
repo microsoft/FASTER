@@ -25,11 +25,21 @@ namespace FASTER.benchmark
         }
 
 #if DEBUG
-        const bool kUseSmallData = true;
-        const bool kUseSyntheticData = true;
-#else
+        const bool kDumpDistribution = false;
         const bool kUseSmallData = false;
         const bool kUseSyntheticData = false;
+
+        const bool kCheckpointStoreContents = false;
+        const bool kRecoverStoreContents = false;
+        const bool kSmallMemoryLog = false;
+#else
+        const bool kDumpDistribution = false;
+        const bool kUseSmallData = false;
+        const bool kUseSyntheticData = false;
+
+        const bool kCheckpointStoreContents = false;
+        const bool kRecoverStoreContents = false;
+        const bool kSmallMemoryLog = false;
 #endif
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
@@ -82,10 +92,15 @@ namespace FASTER.benchmark
             freq = Stopwatch.Frequency;
 #endif
 
-            device = Devices.CreateLogDevice("D:\\data\\hlog", deleteOnClose: true);
+            var path = "D:\\data\\hlog";
+            device = Devices.CreateLogDevice(path);
 
-            store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
-                (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = "D:\\data\\hlog" });
+            if (kSmallMemoryLog)
+                store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
+                    (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
+            else
+                store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
+                    (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
         }
 
         private void RunYcsb(int thread_idx)
@@ -142,7 +157,7 @@ namespace FASTER.benchmark
                     {
                         session.Refresh();
 
-                        // if (idx % 65536 == 0)
+                        if (idx % 256 == 0)
                         {
                             session.CompletePending(false);
                         }
@@ -159,7 +174,7 @@ namespace FASTER.benchmark
                         case Op.Read:
                             {
                                 Status result = session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
-                                // if (result == Status.OK)
+                                //if (result == Status.OK)
                                 {
                                     ++reads_done;
                                 }
@@ -227,35 +242,62 @@ namespace FASTER.benchmark
 
             Console.WriteLine("Executing setup.");
 
-            // Setup the store for the YCSB benchmark.
-            for (int idx = 0; idx < threadCount; ++idx)
-            {
-                int x = idx;
-                workers[idx] = new Thread(() => SetupYcsb(x));
-            }
-
             Stopwatch sw = new Stopwatch();
-            sw.Start();
-            // Start threads.
-            foreach (Thread worker in workers)
+            if (!kRecoverStoreContents)
             {
-                worker.Start();
+                // Setup the store for the YCSB benchmark.
+                for (int idx = 0; idx < threadCount; ++idx)
+                {
+                    int x = idx;
+                    workers[idx] = new Thread(() => SetupYcsb(x));
+                }
+
+                sw.Start();
+                // Start threads.
+                foreach (Thread worker in workers)
+                {
+                    worker.Start();
+                }
+                foreach (Thread worker in workers)
+                {
+                    worker.Join();
+                }
+                sw.Stop();
             }
-            foreach (Thread worker in workers)
+            else
             {
-                worker.Join();
+                sw.Start();
+                store.Recover();
+                sw.Stop();
             }
-            sw.Stop();
             Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
+
+
 
             long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
-            store.TakeHybridLogCheckpoint(out _);
-            store.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
+            if (kCheckpointStoreContents)
+            {
+                store.TakeFullCheckpoint(out _);
+                store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                Console.WriteLine("Completed checkpoint");
+            }
+
+            // Uncomment below to dispose log from memory, use for 100% read workloads only
+            // store.Log.DisposeFromMemory();
 
             idx_ = 0;
-            Console.WriteLine(store.DumpDistribution());
+
+            if (kDumpDistribution)
+                Console.WriteLine(store.DumpDistribution());
+
+            if (kCheckpointMilliseconds > 0)
+            {
+                // Take initial checkpoint
+                store.TakeHybridLogCheckpoint(out _);
+                store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            }
 
             Console.WriteLine("Executing experiment.");
 
