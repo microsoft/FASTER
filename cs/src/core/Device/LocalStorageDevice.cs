@@ -207,6 +207,8 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback, 
                                       object context)
         {
+            HandleCapacity(segmentId);
+
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
                 result = new SimpleAsyncResult();

@@ -124,6 +124,10 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
+            // We ensure capability of writing to next segment, because there is no
+            // extra buffer space allocated in this device
+            HandleCapacity(segmentId + 1);
+
             var q = ioQueue[segmentId % parallelism];
             var req = new IORequestLocalMemory
             {
