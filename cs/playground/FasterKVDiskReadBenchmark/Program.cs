@@ -15,18 +15,23 @@ namespace FasterKVDiskReadBenchmark
     {
         static FasterKV<Key, Value, Input, Output, Empty, MyFuncs> faster;
         static int numOps = 0;
-        const int NumParallelSessions = 1;
+
+        const int NumParallelSessions = 4;
         const int NumKeys = 20_000_000 / NumParallelSessions;
         const bool periodicCommit = false;
-        const bool useAsync = true;
+        const bool useAsync = false;
+        const bool readBatching = true;
+        const int readBatchSize = 128;
 
         /// <summary>
         /// Main program entry point
         /// </summary>
         static void Main()
         {
-            var path = "FasterKVDiskReadBenchmark";
-            var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            var path = "FasterKVDiskReadBenchmark\\";
+
+            // var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            var log = new LocalMemoryDevice(1L << 33, 1L << 30, 1);
 
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20 };
             var checkpointSettings = new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.FoldOver };
@@ -103,9 +108,6 @@ namespace FasterKVDiskReadBenchmark
         /// </summary>
         static async Task AsyncReadOperator(int id)
         {
-            const bool batching = true;
-            const int batchSize = 100;
-
             using var session = faster.NewSession(id.ToString() + "read");
             Random rand = new Random(id);
 
@@ -117,21 +119,21 @@ namespace FasterKVDiskReadBenchmark
                 Input input = default;
                 int i = 0;
 
-                var tasks = new (long, ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Empty, MyFuncs>>)[batchSize];
+                var tasks = new (long, ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Empty, MyFuncs>>)[readBatchSize];
                 while (true)
                 {
                     key = new Key(NumKeys * id + rand.Next(0, NumKeys));
 
                     if (useAsync)
                     {
-                        if (batching)
+                        if (readBatching)
                         {
-                            tasks[i % batchSize] = (key.key, session.ReadAsync(ref key, ref input));
+                            tasks[i % readBatchSize] = (key.key, session.ReadAsync(ref key, ref input));
                         }
                         else
                         {
                             var result = (await session.ReadAsync(ref key, ref input)).CompleteRead();
-                            if (result.Item1 != Status.OK || result.Item2.value.vfield1 != key.key || result.Item2.value.vfield2 != key.key)
+                            if (result.Item1 != Status.OK || result.Item2.value.vfield1 != key.key) // || result.Item2.value.vfield2 != key.key)
                             {
                                 throw new Exception("Wrong value found");
                             }
@@ -141,11 +143,11 @@ namespace FasterKVDiskReadBenchmark
                     {
                         Output output = new Output();
                         var result = session.Read(ref key, ref input, ref output, Empty.Default, 0);
-                        if (batching)
+                        if (readBatching)
                         {
                             if (result != Status.PENDING)
                             {
-                                if (output.value.vfield1 != key.key || output.value.vfield2 != key.key)
+                                if (output.value.vfield1 != key.key) // || output.value.vfield2 != key.key)
                                 {
                                     throw new Exception("Wrong value found");
                                 }
@@ -157,7 +159,7 @@ namespace FasterKVDiskReadBenchmark
                             {
                                 session.CompletePending(true);
                             }
-                            if (output.value.vfield1 != key.key || output.value.vfield2 != key.key)
+                            if (output.value.vfield1 != key.key) // || output.value.vfield2 != key.key)
                             {
                                 throw new Exception("Wrong value found");
                             }
@@ -167,14 +169,14 @@ namespace FasterKVDiskReadBenchmark
                     Interlocked.Increment(ref numOps);
                     i++;
 
-                    if (batching && (i % batchSize == 0))
+                    if (readBatching && (i % readBatchSize == 0))
                     {
                         if (useAsync)
                         {
-                            for (int j = 0; j < batchSize; j++)
+                            for (int j = 0; j < readBatchSize; j++)
                             {
                                 var result = (await tasks[j].Item2).CompleteRead();
-                                if (result.Item1 != Status.OK || result.Item2.value.vfield1 != tasks[j].Item1 || result.Item2.value.vfield2 != tasks[j].Item1)
+                                if (result.Item1 != Status.OK || result.Item2.value.vfield1 != tasks[j].Item1) // || result.Item2.value.vfield2 != tasks[j].Item1)
                                 {
                                     throw new Exception($"Wrong value found. Found: {result.Item2.value.vfield1}, Expected: {tasks[j].Item1}");
                                 }

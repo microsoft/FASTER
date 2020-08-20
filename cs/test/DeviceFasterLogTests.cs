@@ -23,9 +23,6 @@ namespace FASTER.test
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "test";
 
-        private IDevice device;
-        private string commitPath;
-
         [Test]
         public void PageBlobFasterLogTest1([Values] LogChecksumType logChecksum)
         {

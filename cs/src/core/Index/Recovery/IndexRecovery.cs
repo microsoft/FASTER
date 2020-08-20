@@ -111,14 +111,13 @@ namespace FASTER.core
             return completed;
         }
 
-        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object overlap)
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
             }
             mainIndexRecoveryEvent.Signal();
-            Overlapped.Free(overlap);
         }
 
         internal void DeleteTentativeEntries()

@@ -106,42 +106,39 @@ namespace FASTER.core
             }
         }
 
+
         /// <summary>
-        /// 
+        /// Whether device should be throttled
+        /// </summary>
+        /// <returns></returns>
+        public virtual bool Throttle() => false;
+
+        /// <summary>
+        /// Write operation
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
-            int segment = (int)(segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0);
-
-            // If the device has bounded space, and we are writing a new segment, need to check whether an existing segment needs to be evicted. 
-            if (Capacity != Devices.CAPACITY_UNSPECIFIED && Utility.MonotonicUpdate(ref endSegment, segment, out int oldEnd))
-            {
-                // Attempt to update the stored range until there are enough space on the tier to accomodate the current logTail
-                int newStartSegment = endSegment - (int)(Capacity >> segmentSizeBits);
-                // Assuming that we still have enough physical capacity to write another segment, even if delete does not immediately free up space.
-                TruncateUntilSegmentAsync(newStartSegment, r => { }, null);
-            }
             WriteAsync(
                 alignedSourceAddress,
-                segment,
+                (int)(segmentSizeBits < 64 ? alignedDestinationAddress >> segmentSizeBits : 0),
                 alignedDestinationAddress & segmentSizeMask,
-                numBytesToWrite, callback, asyncResult);
+                numBytesToWrite, callback, context);
         }
 
         /// <summary>
-        /// 
+        /// Read operation
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="aligned_read_length"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, IOCompletionCallback callback, IAsyncResult asyncResult)
+        /// <param name="context"></param>
+        public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint aligned_read_length, DeviceIOCompletionCallback callback, object context)
         {
             var segment = segmentSizeBits < 64 ? alignedSourceAddress >> segmentSizeBits : 0;
 
@@ -149,7 +146,7 @@ namespace FASTER.core
                 (int)segment,
                 alignedSourceAddress & segmentSizeMask,
                 alignedDestinationAddress,
-                aligned_read_length, callback, asyncResult);
+                aligned_read_length, callback, context);
         }
 
         /// <summary>
@@ -252,8 +249,8 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public abstract void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        public abstract void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
         /// 
@@ -263,12 +260,28 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
-        public abstract void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult);
+        /// <param name="context"></param>
+        public abstract void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
         /// 
         /// </summary>
         public abstract void Close();
+
+        /// <summary>
+        /// Handle space utilization of limited capacity devices by invoking segment truncation if necessary
+        /// </summary>
+        /// <param name="segment">Segment being written to</param>
+        protected void HandleCapacity(int segment)
+        {
+            // If the device has bounded space, and we are writing a new segment, need to check whether an existing segment needs to be evicted. 
+            if (Capacity != Devices.CAPACITY_UNSPECIFIED && Utility.MonotonicUpdate(ref endSegment, segment, out int oldEnd))
+            {
+                // Attempt to update the stored range until there is enough space on the tier to accomodate the current segment
+                int newStartSegment = endSegment - (int)(Capacity >> segmentSizeBits);
+                // Assuming that we still have enough physical capacity to write another segment, even if delete does not immediately free up space.
+                TruncateUntilSegmentAsync(newStartSegment, r => { }, null);
+            }
+        }
     }
 }

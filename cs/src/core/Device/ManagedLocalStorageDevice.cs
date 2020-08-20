@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -22,8 +23,13 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
-        private readonly ConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)> logHandles;
+        private readonly SafeConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
+
+        /// <summary>
+        /// Number of pending reads on device
+        /// </summary>
+        private int numPending = 0;
 
         /// <summary>
         /// 
@@ -40,11 +46,13 @@ namespace FASTER.core
 
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
-            logHandles = new ConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)>();
+            logHandles = new SafeConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)>();
             if (recoverDevice)
                 RecoverFiles();
         }
 
+        /// <inheritdoc />
+        public override bool Throttle() => numPending > 120;
 
         private void RecoverFiles()
         {
@@ -85,33 +93,43 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
                                      IntPtr destinationAddress,
                                      uint readLength,
-                                     IOCompletionCallback callback,
-                                     IAsyncResult asyncResult)
+                                     DeviceIOCompletionCallback callback,
+                                     object context)
         {
-            SectorAlignedMemory memory = null;
             Stream logReadHandle = null;
             int offset = -1;
             FixedPool<Stream> streampool = null;
 
-            memory = pool.Get((int)readLength);
             streampool = GetOrAddHandle(segmentId).Item1;
             (logReadHandle, offset) = streampool.Get();
 
             logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+            Interlocked.Increment(ref numPending);
+
+#if NETSTANDARD21
+            var umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
+            logReadHandle.ReadAsync(umm.Memory).AsTask()
+#else
+            SectorAlignedMemory memory = pool.Get((int)readLength);
             logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength)
+#endif
                 .ContinueWith(t =>
                 {
+                    Interlocked.Decrement(ref numPending);
+
                     uint errorCode = 0;
                     if (!t.IsFaulted)
                     {
+#if !NETSTANDARD21
                         fixed (void* source = memory.buffer)
                         {
                             Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
                         }
+#endif
                     }
                     else
                     {
@@ -125,11 +143,14 @@ namespace FASTER.core
                             errorCode = uint.MaxValue;
                         }
                     }
+#if !NETSTANDARD21
                     memory.Return();
-                    Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                    callback(errorCode, (uint)t.Result, ov.UnsafePack(callback, IntPtr.Zero));
+#endif
+
+                    callback(errorCode, (uint)t.Result, context);
                 }
                 );
+            
             if (offset >= 0)
                 streampool?.Return(offset);
         }
@@ -142,32 +163,41 @@ namespace FASTER.core
         /// <param name="destinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
-        /// <param name="asyncResult"></param>
+        /// <param name="context"></param>
         public override unsafe void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
                                       ulong destinationAddress,
                                       uint numBytesToWrite,
-                                      IOCompletionCallback callback,
-                                      IAsyncResult asyncResult)
+                                      DeviceIOCompletionCallback callback,
+                                      object context)
         {
-            SectorAlignedMemory memory = null;
+            HandleCapacity(segmentId);
+
             Stream logWriteHandle = null;
             int offset = -1;
             FixedPool<Stream> streampool = null;
 
-            memory = pool.Get((int)numBytesToWrite);
             streampool = GetOrAddHandle(segmentId).Item2;
             (logWriteHandle, offset) = streampool.Get();
 
+            logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+            Interlocked.Increment(ref numPending);
+
+#if NETSTANDARD21
+            var umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
+            logWriteHandle.WriteAsync(umm.Memory).AsTask()
+#else
+            SectorAlignedMemory memory = pool.Get((int)numBytesToWrite);
             fixed (void* destination = memory.buffer)
             {
                 Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
             }
-
-            logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
             logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite)
+#endif
                 .ContinueWith(t =>
                 {
+                    Interlocked.Decrement(ref numPending);
+
                     uint errorCode = 0;
                     if (t.IsFaulted)
                     {
@@ -181,7 +211,9 @@ namespace FASTER.core
                             errorCode = uint.MaxValue;
                         }
                     }
+#if !NETSTANDARD21
                     memory.Return();
+#endif
 
                     // Sequentialize all writes on non-windows
 #if DOTNETCORE
@@ -192,8 +224,7 @@ namespace FASTER.core
                     }
 #endif
 
-                    Overlapped ov = new Overlapped(0, 0, IntPtr.Zero, asyncResult);
-                    callback(errorCode, numBytesToWrite, ov.UnsafePack(callback, IntPtr.Zero));
+                    callback(errorCode, numBytesToWrite, context);
                 }
                 );
 
@@ -236,10 +267,12 @@ namespace FASTER.core
         /// </summary>
         public override void Close()
         {
-            foreach (var logHandle in logHandles.Values)
+            foreach (var entry in logHandles)
             {
-                logHandle.Item1.Dispose();
-                logHandle.Item2.Dispose();
+                entry.Value.Item1.Dispose();
+                entry.Value.Item2.Dispose();
+                if (deleteOnClose)
+                    File.Delete(GetSegmentName(entry.Key));
             }
             pool.Free();
         }
@@ -279,8 +312,6 @@ namespace FASTER.core
                 FileOptions.WriteThrough | 
                 FileOptions.Asynchronous |
                 FileOptions.None;
-            if (deleteOnClose)
-                fo |= FileOptions.DeleteOnClose;
 
             var logReadHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
@@ -304,8 +335,6 @@ namespace FASTER.core
                 FileOptions.WriteThrough | 
                 FileOptions.Asynchronous |
                 FileOptions.None;
-            if (deleteOnClose)
-                fo |= FileOptions.DeleteOnClose;
 
             var logWriteHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
@@ -324,13 +353,14 @@ namespace FASTER.core
             return logWriteHandle;
         }
 
+        private (FixedPool<Stream>, FixedPool<Stream>) AddHandle(int _segmentId)
+        {
+            return (new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)), new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId)));
+        }
+
         private (FixedPool<Stream>, FixedPool<Stream>) GetOrAddHandle(int _segmentId)
         {
-#pragma warning disable IDE0067 // Dispose objects before losing scope
-            return logHandles.GetOrAdd(_segmentId,
-            (new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)),
-             new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId))));
-#pragma warning restore IDE0067 // Dispose objects before losing scope
+            return logHandles.GetOrAdd(_segmentId, e => AddHandle(e));
         }
 
         /// <summary>
@@ -346,4 +376,64 @@ namespace FASTER.core
             return true;
         }
     }
+
+
+#if NETSTANDARD21
+    /// <summary>
+    /// A MemoryManager over a raw pointer
+    /// </summary>
+    /// <remarks>The pointer is assumed to be fully unmanaged, or externally pinned - no attempt will be made to pin this data</remarks>
+    internal sealed unsafe class UnmanagedMemoryManager<T> : MemoryManager<T>
+        where T : unmanaged
+    {
+        private readonly T* _pointer;
+        private readonly int _length;
+
+        /// <summary>
+        /// Create a new UnmanagedMemoryManager instance at the given pointer and size
+        /// </summary>
+        /// <remarks>It is assumed that the span provided is already unmanaged or externally pinned</remarks>
+        public UnmanagedMemoryManager(Span<T> span)
+        {
+            fixed (T* ptr = &MemoryMarshal.GetReference(span))
+            {
+                _pointer = ptr;
+                _length = span.Length;
+            }
+        }
+        /// <summary>
+        /// Create a new UnmanagedMemoryManager instance at the given pointer and size
+        /// </summary>
+        public UnmanagedMemoryManager(T* pointer, int length)
+        {
+            if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
+            _pointer = pointer;
+            _length = length;
+        }
+        /// <summary>
+        /// Obtains a span that represents the region
+        /// </summary>
+        public override Span<T> GetSpan() => new Span<T>(_pointer, _length);
+
+        /// <summary>
+        /// Provides access to a pointer that represents the data (note: no actual pin occurs)
+        /// </summary>
+        public override MemoryHandle Pin(int elementIndex = 0)
+        {
+            if (elementIndex < 0 || elementIndex >= _length)
+                throw new ArgumentOutOfRangeException(nameof(elementIndex));
+            return new MemoryHandle(_pointer + elementIndex);
+        }
+        /// <summary>
+        /// Has no effect
+        /// </summary>
+        public override void Unpin() { }
+
+        /// <summary>
+        /// Releases all resources associated with this object
+        /// </summary>
+        protected override void Dispose(bool disposing) { }
+    }
+#endif
+
 }

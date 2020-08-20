@@ -8,65 +8,26 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    internal struct AsyncGetFromDiskResult<TContext> : IAsyncResult
+    internal struct AsyncGetFromDiskResult<TContext>
     {
         public TContext context;
-
-        public bool IsCompleted => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    internal unsafe struct HashIndexPageAsyncFlushResult : IAsyncResult
+    internal unsafe struct HashIndexPageAsyncFlushResult
     {
         public int chunkIndex;
-
-        public bool IsCompleted => throw new NotImplementedException();
-
-		public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-		public object AsyncState => throw new NotImplementedException();
-
-		public bool CompletedSynchronously => throw new NotImplementedException();
 	}
 
-    internal unsafe struct HashIndexPageAsyncReadResult : IAsyncResult
+    internal unsafe struct HashIndexPageAsyncReadResult
     {
         public int chunkIndex;
-
-        public bool IsCompleted => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    internal struct OverflowPagesFlushAsyncResult : IAsyncResult
+    internal struct OverflowPagesFlushAsyncResult
     {
-        public bool IsCompleted => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
     }
 
-    internal struct OverflowPagesReadAsyncResult : IAsyncResult
+    internal struct OverflowPagesReadAsyncResult
     {
-
-        public bool IsCompleted => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
     }
 }
