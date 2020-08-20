@@ -11,19 +11,36 @@ namespace FASTER.core
     /// </summary>
     public class FasterException : Exception
     {
-        internal FasterException()
+        /// <summary>
+        /// Throw FASTER exception
+        /// </summary>
+        public FasterException()
         {
         }
 
-        internal FasterException(string message) : base(message)
+        /// <summary>
+        /// Throw FASTER exception
+        /// </summary>
+        /// <param name="message"></param>
+        public FasterException(string message) : base(message)
         {
         }
 
-        internal FasterException(string message, Exception innerException) : base(message, innerException)
+        /// <summary>
+        /// Throw FASTER exception
+        /// </summary>
+        /// <param name="message"></param>
+        /// <param name="innerException"></param>
+        public FasterException(string message, Exception innerException) : base(message, innerException)
         {
         }
 
-        internal FasterException(SerializationInfo info, StreamingContext context) : base(info, context)
+        /// <summary>
+        /// Throw FASTER exception
+        /// </summary>
+        /// <param name="info"></param>
+        /// <param name="context"></param>
+        public FasterException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }

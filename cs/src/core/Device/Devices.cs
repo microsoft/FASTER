@@ -14,8 +14,6 @@ namespace FASTER.core
         /// This value is supplied for capacity when the device does not have a specified limit.
         /// </summary>
         public const long CAPACITY_UNSPECIFIED = -1;
-        private const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        private const string TEST_CONTAINER = "test";
 
         /// <summary>
         /// Create a storage device for the log

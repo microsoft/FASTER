@@ -7,6 +7,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -1640,7 +1641,7 @@ namespace FASTER.core
             request.logicalAddress = pendingContext.logicalAddress;
             request.record = default;
 
-            request.asyncOperation = new Utilities.FasterAsyncOperation<AsyncIOContext<Key, Value>>(runContinuationsAsynchronously: true);
+            request.asyncOperation = new TaskCompletionSource<AsyncIOContext<Key, Value>>();
 
             hlog.AsyncGetFromDisk(pendingContext.logicalAddress,
                              hlog.GetAverageRecordSize(),

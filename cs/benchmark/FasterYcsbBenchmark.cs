@@ -25,12 +25,21 @@ namespace FASTER.benchmark
         }
 
 #if DEBUG
+        const bool kDumpDistribution = false;
         const bool kUseSmallData = true;
         const bool kUseSyntheticData = true;
+
+        const bool kCheckpointStoreContents = false;
+        const bool kRecoverStoreContents = false;
 #else
+        const bool kDumpDistribution = false;
         const bool kUseSmallData = false;
         const bool kUseSyntheticData = false;
+
+        const bool kCheckpointStoreContents = false;
+        const bool kRecoverStoreContents = false;
 #endif
+
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
@@ -82,10 +91,11 @@ namespace FASTER.benchmark
             freq = Stopwatch.Frequency;
 #endif
 
-            device = Devices.CreateLogDevice("C:\\data\\hlog");
+            var path = "D:\\data\\22_26\\hlog";
+            device = Devices.CreateLogDevice(path);
 
             store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
-                (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device });
+                (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 }, new CheckpointSettings { CheckpointDir = path });
         }
 
         private void RunYcsb(int thread_idx)
@@ -138,11 +148,11 @@ namespace FASTER.benchmark
                     else
                         op = Op.ReadModifyWrite;
 
-                    if (idx % 256 == 0)
+                    if (idx % 1024 == 0)
                     {
                         session.Refresh();
 
-                        if (idx % 65536 == 0)
+                        if (idx % 1024 == 0)
                         {
                             session.CompletePending(false);
                         }
@@ -159,7 +169,7 @@ namespace FASTER.benchmark
                         case Op.Read:
                             {
                                 Status result = session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
-                                if (result == Status.OK)
+                                //if (result == Status.OK)
                                 {
                                     ++reads_done;
                                 }
@@ -227,33 +237,54 @@ namespace FASTER.benchmark
 
             Console.WriteLine("Executing setup.");
 
-            // Setup the store for the YCSB benchmark.
-            for (int idx = 0; idx < threadCount; ++idx)
-            {
-                int x = idx;
-                workers[idx] = new Thread(() => SetupYcsb(x));
-            }
-
             Stopwatch sw = new Stopwatch();
-            sw.Start();
-            // Start threads.
-            foreach (Thread worker in workers)
+            if (!kRecoverStoreContents)
             {
-                worker.Start();
+                // Setup the store for the YCSB benchmark.
+                for (int idx = 0; idx < threadCount; ++idx)
+                {
+                    int x = idx;
+                    workers[idx] = new Thread(() => SetupYcsb(x));
+                }
+
+                sw.Start();
+                // Start threads.
+                foreach (Thread worker in workers)
+                {
+                    worker.Start();
+                }
+                foreach (Thread worker in workers)
+                {
+                    worker.Join();
+                }
+                sw.Stop();
             }
-            foreach (Thread worker in workers)
+            else
             {
-                worker.Join();
+                sw.Start();
+                store.Recover();
+                sw.Stop();
             }
-            sw.Stop();
             Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
+
+            
 
             long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
 
+            if (kCheckpointStoreContents)
+            {
+                store.TakeFullCheckpoint(out _);
+                store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                Console.WriteLine("Completed checkpoint");
+            }
+
+            store.Log.DisposeFromMemory();
 
             idx_ = 0;
-            Console.WriteLine(store.DumpDistribution());
+
+            if (kDumpDistribution)
+                Console.WriteLine(store.DumpDistribution());
 
             Console.WriteLine("Executing experiment.");
 
@@ -308,6 +339,7 @@ namespace FASTER.benchmark
             Console.WriteLine("##, " + distribution + ", " + numaStyle + ", " + readPercent + ", "
                 + threadCount + ", " + total_ops_done / seconds + ", "
                 + (endTailAddress - startTailAddress));
+            device.Close();
         }
 
         private void SetupYcsb(int thread_idx)

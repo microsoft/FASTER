@@ -70,9 +70,14 @@ namespace FASTER.core
                                            IDevice device,
                                            out ulong numBytesWritten)
         {
-            int numChunks = 1;
             long totalSize = state[version].size * sizeof(HashBucket);
-            Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
+
+            int numChunks = 1;
+            if (totalSize > uint.MaxValue)
+            {
+                numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
+                numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
+            }
 
             uint chunkSize = (uint)(totalSize / numChunks);
             mainIndexCheckpointCallbackCount = numChunks;
@@ -104,32 +109,18 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncPageFlushCallback(
-                                            uint errorCode,
-                                            uint numBytes,
-                                            NativeOverlapped* overlap)
+        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
         {
-            //Set the page status to flushed
-            _ = (HashIndexPageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
+            // Set the page status to flushed
+            _ = (HashIndexPageAsyncFlushResult)context;
 
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
+                Trace.TraceError("AsyncPageFlushCallback error: {0}", errorCode);
             }
-            catch (Exception ex)
+            if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
             {
-                Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
-                {
-                    mainIndexCheckpointSemaphore.Release();
-                }
-                Overlapped.Free(overlap);
+                mainIndexCheckpointSemaphore.Release();
             }
         }
     }

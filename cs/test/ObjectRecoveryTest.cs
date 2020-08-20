@@ -180,7 +180,11 @@ namespace FASTER.test.recovery.objectstore
 
             // Test outputs
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion, new LocalCheckpointManager(test_path));
+            checkpointInfo.Recover(cprVersion,
+                new DeviceLogCommitCheckpointManager(
+                    new LocalStorageNamedDeviceFactory(),
+                        new DefaultCheckpointNamingScheme(
+                          new DirectoryInfo(test_path).FullName)));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

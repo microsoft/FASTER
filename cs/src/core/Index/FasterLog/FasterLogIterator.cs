@@ -367,15 +367,15 @@ namespace FASTER.core
             return true;
         }
 
-        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {
-                var result = (PageAsyncReadResult<Empty>)Overlapped.Unpack(overlap).AsyncResult;
+                var result = (PageAsyncReadResult<Empty>)context;
 
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                    Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
                     result.cts?.Cancel();
                 }
 
@@ -393,10 +393,6 @@ namespace FASTER.core
                 Interlocked.MemoryBarrier();
             }
             catch when (disposed) { }
-            finally
-            {
-                Overlapped.Free(overlap);
-            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

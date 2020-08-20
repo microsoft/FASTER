@@ -8,7 +8,7 @@ namespace FASTER.core
 {
     class DirectoryConfiguration
     {
-        private readonly string checkpointDir;
+        internal readonly string checkpointDir;
 
         public DirectoryConfiguration(string checkpointDir)
         {
