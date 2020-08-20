@@ -432,15 +432,15 @@ namespace FASTER.core
         }
 
 
-        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncFlushPageCallbackForRecovery error: {0}", errorCode);
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncFlushResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+            var result = (PageAsyncFlushResult<RecoveryStatus>)context;
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
@@ -463,7 +463,6 @@ namespace FASTER.core
                 }
                 result.Free();
             }
-            Overlapped.Free(overlap);
         }
     }
 
@@ -531,15 +530,15 @@ namespace FASTER.core
             RecoveryReset(untilAddress, headAddress, beginAddress);
         }
 
-        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Trace.TraceError("AsyncReadPagesCallbackForRecovery error: {0}", errorCode);
             }
 
             // Set the page status to flushed
-            var result = (PageAsyncReadResult<RecoveryStatus>)Overlapped.Unpack(overlap).AsyncResult;
+            var result = (PageAsyncReadResult<RecoveryStatus>)context;
 
             if (result.freeBuffer1 != null)
             {
@@ -549,7 +548,6 @@ namespace FASTER.core
             int index = GetPageIndexForPage(result.page);
             result.context.readStatus[index] = ReadStatus.Done;
             Interlocked.MemoryBarrier();
-            Overlapped.Free(overlap);
         }
     }
 }

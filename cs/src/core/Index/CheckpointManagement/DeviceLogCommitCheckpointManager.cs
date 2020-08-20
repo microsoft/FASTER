@@ -279,20 +279,13 @@ namespace FASTER.core
         }
         #endregion
 
-        private unsafe void IOCallback(uint errorCode, uint numBytes, NativeOverlapped* overlapped)
+        private unsafe void IOCallback(uint errorCode, uint numBytes, object context)
         {
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
-                semaphore.Release();
+                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
-            finally
-            {
-                Overlapped.Free(overlapped);
-            }
+            semaphore.Release();
         }
 
         /// <summary>

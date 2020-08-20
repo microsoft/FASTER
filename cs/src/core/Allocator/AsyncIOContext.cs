@@ -3,8 +3,7 @@
 
 using System;
 using System.Threading;
-
-using FASTER.core.Utilities;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -57,7 +56,7 @@ namespace FASTER.core
         /// <summary>
         /// Async Operation ValueTask backer
         /// </summary>
-        public FasterAsyncOperation<AsyncIOContext<Key, Value>> asyncOperation;
+        public TaskCompletionSource<AsyncIOContext<Key, Value>> asyncOperation;
 
         /// <summary>
         /// Dispose
@@ -70,18 +69,10 @@ namespace FASTER.core
         }
     }
 
-    internal sealed class SimpleReadContext : IAsyncResult
+    internal sealed class SimpleReadContext
     {
         public long logicalAddress;
         public SectorAlignedMemory record;
         public SemaphoreSlim completedRead;
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
-
-        public bool IsCompleted => throw new NotImplementedException();
     }
 }
