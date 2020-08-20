@@ -43,6 +43,7 @@ namespace FASTER.benchmark
         const bool kSmallMemoryLog = false;
         const bool kAffinitizedSession = false;
 #endif
+
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
@@ -155,7 +156,7 @@ namespace FASTER.benchmark
                     else
                         op = Op.ReadModifyWrite;
 
-                    if (idx % 256 == 0)
+                    if (idx % 1024 == 0)
                     {
                         if (kAffinitizedSession)
                             session.Refresh();

@@ -171,6 +171,8 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
+            HandleCapacity(segmentId);
+
             Stream logWriteHandle = null;
             int offset = -1;
             FixedPool<Stream> streampool = null;
