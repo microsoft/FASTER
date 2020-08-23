@@ -66,7 +66,9 @@ namespace FASTER.test.statemachine
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
 
+            // Take index checkpoint for recovery purposes
             fht1.TakeIndexCheckpoint(out _);
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             inputArray = new AdId[numOps];
             for (int i = 0; i < numOps; i++)
