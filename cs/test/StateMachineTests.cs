@@ -19,34 +19,9 @@ namespace FASTER.test.statemachine
     public class StateMachineTests
     {
         FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht1;
-        AutoResetEvent ev = new AutoResetEvent(false);
         int numOps = 5000;
         AdId[] inputArray;
-        AsyncQueue<string> q = new AsyncQueue<string>();
 
-        private void SecondSession()
-        {
-            var s2 = fht1.NewSession(null, true);
-            ev.Set();
-
-            while (true)
-            {
-                var cmd = q.DequeueAsync().Result;
-                switch (cmd)
-                {
-                    case "refresh":
-                        s2.Refresh();
-                        ev.Set();
-                        break;
-                    case "dispose":
-                        s2.Dispose();
-                        ev.Set();
-                        return;
-                    default:
-                        throw new Exception("Unsupported command");
-                }
-            }
-        }
 
         [TestCase]
         public void StateMachineTest1()
@@ -66,9 +41,16 @@ namespace FASTER.test.statemachine
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
 
+            // We should be in REST, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
+
             // Take index checkpoint for recovery purposes
             fht1.TakeIndexCheckpoint(out _);
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+
+            // Index checkpoint does not update version, so
+            // we should still be in REST, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
             inputArray = new AdId[numOps];
             for (int i = 0; i < numOps; i++)
@@ -90,9 +72,8 @@ namespace FASTER.test.statemachine
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
             fht1.Log.ShiftReadOnlyAddress(fht1.Log.TailAddress, true);
 
-            var ss = new Thread(() => SecondSession());
-            ss.Start();
-            ev.WaitOne();
+            // Start affinitized session s2 on another thread for testing
+            var s2 = fht1.CreateThreadSession(threadAffinized: true);
 
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
@@ -103,7 +84,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // Refresh session s2
-            OtherSession("refresh");
+            s2.Refresh();
 
             // s1 has not refreshed, so we should still be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -115,7 +96,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
 
             // Dispose session s2; does not move state machine forward
-            OtherSession("dispose");
+            s2.Dispose();
 
             // We should still be in IN_PROGRESS, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
@@ -133,12 +114,6 @@ namespace FASTER.test.statemachine
             RecoverAndTest(log);
             log.Close();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
-        }
-
-        private void OtherSession(string command)
-        {
-            q.Enqueue(command);
-            ev.WaitOne();
         }
 
         void RecoverAndTest(IDevice log)
