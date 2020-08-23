@@ -171,7 +171,6 @@ namespace FASTER.core
 
                 InternalCompletePendingRequests(ctx, ctx, fasterSession);
                 InternalCompleteRetryRequests(ctx, ctx, fasterSession);
-                InternalRefresh(ctx, fasterSession);
 
                 done &= (ctx.HasNoPendingRequests);
 
@@ -179,6 +178,8 @@ namespace FASTER.core
                 {
                     return true;
                 }
+
+                InternalRefresh(ctx, fasterSession);
 
                 if (wait)
                 {

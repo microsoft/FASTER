@@ -27,11 +27,12 @@ namespace FASTER.core
                     }
 
                     faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.startLogicalAddress);
-                    break;
-                case Phase.INDEX_CHECKPOINT:
                     if (faster.UseReadCache && faster.ReadCache.BeginAddress != faster.ReadCache.TailAddress)
                         throw new FasterException("Index checkpoint with read cache is not supported");
                     faster.TakeIndexFuzzyCheckpoint();
+                    break;
+
+                case Phase.WAIT_INDEX_CHECKPOINT:
                     break;
                     
                 case Phase.REST:
@@ -75,30 +76,20 @@ namespace FASTER.core
             switch (current.phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    if (ctx != null)
-                    {
-                        if (!ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
-                            ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
-                        faster.epoch.Mark(EpochPhaseIdx.PrepareForIndexCheckpt, current.version);
-                    }
-
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, current.version))
-                        faster.GlobalStateMachineStep(current);
+                    faster.GlobalStateMachineStep(current);
                     break;
-                case Phase.INDEX_CHECKPOINT:
-                    if (ctx != null)
-                    {
-                        // Resetting the marker for a potential FULL or INDEX_ONLY checkpoint in the future
-                        ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = false;
-                    }
+                case Phase.WAIT_INDEX_CHECKPOINT:
+                    var notify = faster.IsIndexFuzzyCheckpointCompleted();
 
-                    if (async && !faster.IsIndexFuzzyCheckpointCompleted())
+                    if (async && !notify)
                     {
                         fasterSession?.UnsafeSuspendThread();
                         await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
                         fasterSession?.UnsafeResumeThread();
+                        notify = true;
                     }
 
+                    if (!notify) return;
                     faster.GlobalStateMachineStep(current);
                     break;
             }
@@ -127,11 +118,10 @@ namespace FASTER.core
                     result.phase = Phase.PREP_INDEX_CHECKPOINT;
                     break;
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    result.phase = Phase.INDEX_CHECKPOINT;
+                    result.phase = Phase.WAIT_INDEX_CHECKPOINT;
                     break;
-                case Phase.INDEX_CHECKPOINT:
+                case Phase.WAIT_INDEX_CHECKPOINT:
                     result.phase = Phase.REST;
-                    result.version++;
                     break;
                 default:
                     throw new FasterException("Invalid Enum Argument");

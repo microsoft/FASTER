@@ -29,7 +29,6 @@ namespace FASTER.core
         WAIT_INDEX_CHECKPOINT,
         REST,
         PREP_INDEX_CHECKPOINT, 
-        INDEX_CHECKPOINT, 
         PREPARE,
         PREPARE_GROW, 
         IN_PROGRESS_GROW, 
@@ -63,6 +62,16 @@ namespace FASTER.core
             info.phase = status;
             info.version = version;
             return info;
+        }
+
+        public static bool Equal(SystemState s1, SystemState s2)
+        {
+            return s1.word == s2.word;
+        }
+
+        public override string ToString()
+        {
+            return $"[{phase},{version}]";
         }
     }
 }

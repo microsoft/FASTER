@@ -96,6 +96,9 @@ namespace FASTER.core
 
                         // Thread local action
                         fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+
+                        // Set to null to indicate already called (for re-entering sessions)
+                        ctx.prevCtx.excludedSerialNos = null;
                     }
 
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
