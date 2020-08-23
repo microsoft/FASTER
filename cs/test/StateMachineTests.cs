@@ -18,29 +18,35 @@ namespace FASTER.test.statemachine
     [TestFixture]
     public class StateMachineTests
     {
-        FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht1;
-        int numOps = 5000;
+        IDevice log;
+        FasterKV<AdId, NumClicks> fht1;
+        const int numOps = 5000;
         AdId[] inputArray;
+
+        [SetUp]
+        public void Setup()
+        {
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\StateMachineTest1.log", deleteOnClose: true);
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
+            fht1 = new FasterKV<AdId, NumClicks>
+                (128,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.FoldOver }
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            fht1.Dispose();
+            log.Close();
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
+        }
 
 
         [TestCase]
         public void StateMachineTest1()
         {
-            IDevice log;
-
-            var checkpointType = CheckpointType.FoldOver;
-
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\StateMachineTest1.log", deleteOnClose: true);
-
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
-
-            fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
-                );
-
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
@@ -61,7 +67,7 @@ namespace FASTER.test.statemachine
             NumClicks value;
 
 
-            var s1 = fht1.NewSession("foo", threadAffinitized: true);
+            var s1 = fht1.For<NumClicks, NumClicks, Empty>().NewSession(new SimpleFunctions(), "foo", threadAffinitized: true);
 
             for (int key = 0; key < numOps; key++)
             {
@@ -73,7 +79,7 @@ namespace FASTER.test.statemachine
             fht1.Log.ShiftReadOnlyAddress(fht1.Log.TailAddress, true);
 
             // Start affinitized session s2 on another thread for testing
-            var s2 = fht1.CreateThreadSession(threadAffinized: true);
+            var s2 = fht1.For<NumClicks, NumClicks, Empty>().CreateThreadSession(new SimpleFunctions(), threadAffinized: true);
 
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
@@ -109,20 +115,17 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
 
             s1.Dispose();
-            fht1.Dispose();
 
             RecoverAndTest(log);
-            log.Close();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
 
         void RecoverAndTest(IDevice log)
         {
-            AdInput inputArg = default;
-            Output output = default;
+            NumClicks inputArg = default;
+            NumClicks output = default;
 
             var fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
+                <AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions>
                 (128, new SimpleFunctions(),
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.FoldOver }
@@ -142,7 +145,7 @@ namespace FASTER.test.statemachine
                         s3.CompletePending(true);
                     else
                     {
-                        Assert.IsTrue(output.value.numClicks == key);
+                        Assert.IsTrue(output.numClicks == key);
                     }
                 }
             }
@@ -151,69 +154,12 @@ namespace FASTER.test.statemachine
         }
     }
 
-    public class SimpleFunctions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
+    public class SimpleFunctions : SimpleFunctions<AdId, NumClicks, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
-        }
-
-        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
-        }
-
-        // Read functions
-        public void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
-        {
-            dst.value = value;
-        }
-
-        public void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
-        {
-            dst.value = value;
-        }
-
-        // Upsert functions
-        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-        }
-
-        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-            return true;
-        }
-
-        // RMW functions
-        public void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
-        {
-            value = input.numClicks;
-        }
-
-        public bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
-        {
-            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
-            return true;
-        }
-
-        public void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
-        {
-            newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
+            Assert.IsTrue(output.numClicks == key.adId);
         }
     }
 }
