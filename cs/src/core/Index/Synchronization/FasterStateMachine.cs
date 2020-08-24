@@ -89,15 +89,15 @@ namespace FASTER.core
         // Given the current thread state and global state, fast forward the thread state to the
         // current state machine cycle if needed
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private SystemState FastForwardToCurrentCycle(SystemState currentThreadState, SystemState currentGlobalStartState)
+        private SystemState FastForwardToCurrentCycle(SystemState threadState, SystemState targetStartState)
         {
-            if (currentThreadState.version < currentGlobalStartState.version ||
-                currentThreadState.version == currentGlobalStartState.version && currentThreadState.phase < currentGlobalStartState.phase)
+            if (threadState.version < targetStartState.version ||
+                threadState.version == targetStartState.version && threadState.phase < targetStartState.phase)
             {
-                return currentGlobalStartState;
+                return targetStartState;
             }
 
-            return currentThreadState;
+            return threadState;
         }
 
         /// <summary>
@@ -116,6 +116,8 @@ namespace FASTER.core
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
+
+            #region Capture current (non-intermediate) system state
             var currentTask = currentSyncStateMachine;
             var targetState = SystemState.Copy(ref systemState);
             targetState.phase &= ~Phase.INTERMEDIATE;
@@ -126,12 +128,12 @@ namespace FASTER.core
                 targetState = SystemState.Copy(ref systemState);
                 targetState.phase &= ~Phase.INTERMEDIATE;
             }
+            #endregion
 
             var currentState = ctx == null ? targetState : SystemState.Make(ctx.phase, ctx.version);
-
             var targetStartState = StartOfCurrentCycle(targetState);
-            
-            // Handle thread from previous state machine
+
+            #region Get returning thread to start of current cycle, issuing completion callbacks if needed
             if (ctx != null)
             {
                 if (ctx.version < targetStartState.version)
@@ -181,7 +183,8 @@ namespace FASTER.core
                     }
                 }
             }
-            
+            #endregion 
+
             // No state machine associated with target, or target is in REST phase:
             // we can directly fast forward session to target state
             if (currentTask == null || targetState.phase == Phase.REST)
@@ -194,8 +197,8 @@ namespace FASTER.core
                 return;
             }
 
-            // Finally, we jump on to the current state machine at either the start point
-            // or our previous position in the state machine.
+            #region Jump on and execute current state machine
+            // We start at either the start point or our previous position in the state machine.
             // If we are calling from somewhere other than an execution thread (e.g. waiting on
             // a checkpoint to complete on a client app thread), we start at current system state
             var threadState = 
@@ -230,6 +233,7 @@ namespace FASTER.core
                     }
                 }
             } while (previousState.word != targetState.word);
+            #endregion
 
             return;
         }
