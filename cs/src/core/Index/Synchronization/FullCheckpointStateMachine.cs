@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,7 +61,7 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default) where Key : new()
             where Value : new()
             where FasterSession : IFasterSession

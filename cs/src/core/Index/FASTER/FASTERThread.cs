@@ -77,11 +77,8 @@ namespace FASTER.core
                 return;
             }
 
-            // await is never invoked when calling the function with async = false
-#pragma warning disable 4014
-            ThreadStateMachineStep(ctx, fasterSession, false);
-            // Debug.Assert(task.IsCompleted);
-#pragma warning restore 4014
+            List<ValueTask> valueTasks = default;
+            ThreadStateMachineStep(ctx, fasterSession, ref valueTasks);
         }
 
         internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, string token, long lsn = -1)
@@ -204,13 +201,11 @@ namespace FASTER.core
 
             if (count == 0) return;
 
-            fasterSession.UnsafeResumeThread();
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = opCtx.retryRequests.Dequeue();
                 InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext, fasterSession);
             }
-            fasterSession.UnsafeSuspendThread();
         }
 
         internal void InternalCompleteRetryRequest<Input, Output, Context, FasterSession>(

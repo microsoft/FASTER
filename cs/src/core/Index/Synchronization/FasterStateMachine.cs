@@ -106,18 +106,16 @@ namespace FASTER.core
         /// </summary>
         /// <param name="ctx">null if calling without a context (e.g. waiting on a checkpoint)</param>
         /// <param name="fasterSession">Faster session.</param>
-        /// <param name="async"></param>
-        /// <param name="token"></param>
+        /// <param name="valueTasks">Return list of tasks that caller needs to await, to continue checkpointing</param>
+        /// <param name="token">Cancellation token</param>
         /// <returns></returns>
         private void ThreadStateMachineStep<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
-            var currentState = SystemState.Make(ctx.phase, ctx.version);
-
             var currentTask = currentSyncStateMachine;
             var targetState = SystemState.Copy(ref systemState);
             targetState.phase &= ~Phase.INTERMEDIATE;
@@ -129,8 +127,7 @@ namespace FASTER.core
                 targetState.phase &= ~Phase.INTERMEDIATE;
             }
 
-            if (currentState.word == targetState.word)
-                return;
+            var currentState = ctx == null ? targetState : SystemState.Make(ctx.phase, ctx.version);
 
             var targetStartState = StartOfCurrentCycle(targetState);
             
@@ -213,7 +210,7 @@ namespace FASTER.core
                     (threadState.version == targetState.version && threadState.phase <= targetState.phase)
                     );
 
-                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
+                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, ref valueTasks, token);
 
                 if (ctx != null)
                 {

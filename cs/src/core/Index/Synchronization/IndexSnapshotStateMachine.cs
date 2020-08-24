@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -67,7 +68,7 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
@@ -81,12 +82,9 @@ namespace FASTER.core
                 case Phase.WAIT_INDEX_CHECKPOINT:
                     var notify = faster.IsIndexFuzzyCheckpointCompleted();
 
-                    if (async && !notify)
+                    if (valueTasks != null && !notify)
                     {
-                        fasterSession?.UnsafeSuspendThread();
-                        // await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
-                        fasterSession?.UnsafeResumeThread();
-                        notify = true;
+                        valueTasks.Add(faster.IsIndexFuzzyCheckpointCompletedAsync(token));
                     }
 
                     if (!notify) return;

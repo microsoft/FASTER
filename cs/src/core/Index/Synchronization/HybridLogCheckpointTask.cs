@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,7 +75,7 @@ namespace FASTER.core
             SystemState prev, FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
@@ -138,10 +139,10 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            base.OnThreadState(current, prev, faster, ctx, fasterSession, ref valueTasks, token);
 
             if (current.phase != Phase.WAIT_FLUSH) return;
 
@@ -150,14 +151,13 @@ namespace FASTER.core
                 var notify = faster.hlog.FlushedUntilAddress >=
                              faster._hybridLogCheckpoint.info.finalLogicalAddress;
 
-                if (async && !notify)
+                if (valueTasks != null && !notify)
                 {
                     Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
-                    fasterSession?.UnsafeSuspendThread();
-                    // await faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
-                    fasterSession?.UnsafeResumeThread();
-                    faster._hybridLogCheckpoint.flushedSemaphore.Release();
-                    notify = true;
+                    valueTasks.Add(new ValueTask(
+                        faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token)
+                        .ContinueWith(t => faster._hybridLogCheckpoint.flushedSemaphore.Release())
+                        ));
                 }
 
                 if (!notify) return;
@@ -228,10 +228,10 @@ namespace FASTER.core
             SystemState prev, FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            base.OnThreadState(current, prev, faster, ctx, fasterSession, ref valueTasks, token);
 
             if (current.phase != Phase.WAIT_FLUSH) return;
 
@@ -240,14 +240,12 @@ namespace FASTER.core
                 var notify = faster._hybridLogCheckpoint.flushedSemaphore != null &&
                              faster._hybridLogCheckpoint.flushedSemaphore.CurrentCount > 0;
 
-                if (async && !notify)
+                if (valueTasks != null && !notify)
                 {
                     Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
-                    fasterSession?.UnsafeSuspendThread();
-                    // await faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
-                    fasterSession?.UnsafeResumeThread();
-                    faster._hybridLogCheckpoint.flushedSemaphore.Release();
-                    notify = true;
+                    valueTasks.Add(new ValueTask(
+                        faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token)
+                        .ContinueWith(t => faster._hybridLogCheckpoint.flushedSemaphore.Release())));
                 }
 
                 if (!notify) return;

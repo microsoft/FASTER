@@ -1,6 +1,5 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Globalization;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -54,7 +53,7 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
         /// <param name="fasterSession"></param>
-        /// <param name="async"></param>
+        /// <param name="valueTasks"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
@@ -68,7 +67,7 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
@@ -119,7 +118,7 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
         /// <param name="fasterSession"></param>
-        /// <param name="async"></param>
+        /// <param name="valueTasks"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
@@ -134,7 +133,7 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
@@ -187,14 +186,14 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            ref List<ValueTask> valueTasks,
             CancellationToken token = default) where Key : new()
             where Value : new()
             where FasterSession: IFasterSession
         {
             foreach (var task in tasks)
             {
-                task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+                task.OnThreadState(current, prev, faster, ctx, fasterSession, ref valueTasks, token);
             }
         }
     }
