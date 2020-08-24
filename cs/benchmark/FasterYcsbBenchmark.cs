@@ -70,7 +70,7 @@ namespace FASTER.benchmark
         readonly int readPercent;
 
         const int kRunSeconds = 30;
-        const int kCheckpointMilliseconds = 25;
+        const int kCheckpointMilliseconds = 5;
 
         volatile bool done = false;
 
@@ -156,7 +156,7 @@ namespace FASTER.benchmark
                     else
                         op = Op.ReadModifyWrite;
 
-                    if (idx % 1024 == 0)
+                    if (idx % 256 == 0)
                     {
                         if (kAffinitizedSession)
                             session.Refresh();
@@ -286,12 +286,9 @@ namespace FASTER.benchmark
             if (kDumpDistribution)
                 Console.WriteLine(store.DumpDistribution());
 
+            // Ensure first checkpoint is fast
             if (kCheckpointMilliseconds > 0)
-            {
-                // Take initial checkpoint
-                store.TakeHybridLogCheckpoint(out _);
-                store.CompleteCheckpointAsync().GetAwaiter().GetResult();
-            }
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, true);
 
             Console.WriteLine("Executing experiment.");
 

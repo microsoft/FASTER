@@ -223,6 +223,11 @@ namespace FASTER.core
             var previousState = threadState;
             do
             {
+                Debug.Assert(
+                    (threadState.version < targetState.version) ||
+                    (threadState.version == targetState.version && threadState.phase <= targetState.phase)
+                    );
+
                 if (async)
                 {
                     await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
@@ -242,7 +247,12 @@ namespace FASTER.core
                 previousState.word = threadState.word;
                 threadState = currentTask.NextState(threadState);
                 if (!async)
-                    targetState = SystemState.Copy(ref systemState);
+                {
+                    do
+                    {
+                        targetState = SystemState.Copy(ref systemState);
+                    } while (targetState.phase == Phase.INTERMEDIATE);
+                }
             } while (previousState.word != targetState.word);
 
             if (async)
