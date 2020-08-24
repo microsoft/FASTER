@@ -61,7 +61,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev, 
             FasterKV<Key, Value> faster,
@@ -84,7 +84,7 @@ namespace FASTER.core
                     if (async && !notify)
                     {
                         fasterSession?.UnsafeSuspendThread();
-                        await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
+                        // await faster.IsIndexFuzzyCheckpointCompletedAsync(token);
                         fasterSession?.UnsafeResumeThread();
                         notify = true;
                     }

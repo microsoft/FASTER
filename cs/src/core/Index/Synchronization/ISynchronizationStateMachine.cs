@@ -63,7 +63,7 @@ namespace FASTER.core
         /// <typeparam name="Context"></typeparam>
         /// <typeparam name="FasterSession"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(SystemState current,
+        void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
@@ -128,7 +128,7 @@ namespace FASTER.core
         /// <typeparam name="Context"></typeparam>
         /// <typeparam name="FasterSession"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
@@ -181,7 +181,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
@@ -194,13 +194,7 @@ namespace FASTER.core
         {
             foreach (var task in tasks)
             {
-                if (async)
-                    await task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
-                else
-                {
-                    var t = task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
-                    Debug.Assert(t.IsCompleted);
-                }
+                task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
             }
         }
     }

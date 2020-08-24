@@ -347,7 +347,7 @@ namespace FASTER.core
 
                 // TODO: Do we need access to functions here?
                 // If yes then move this to either faster legacy or client session.
-                await ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, true, token);
+                // await ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, true, token);
             }
         }
 

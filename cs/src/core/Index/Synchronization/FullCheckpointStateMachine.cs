@@ -54,7 +54,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
@@ -65,7 +65,6 @@ namespace FASTER.core
             where Value : new()
             where FasterSession : IFasterSession
         {
-            return default;
         }
     }
 

@@ -32,7 +32,7 @@ namespace FASTER.core
         PREPARE,
         PREPARE_GROW, 
         IN_PROGRESS_GROW, 
-        INTERMEDIATE,
+        INTERMEDIATE = 16,
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]

@@ -29,7 +29,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current, SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
@@ -100,8 +100,6 @@ namespace FASTER.core
                 case Phase.REST:
                     break;
             }
-
-            return default;
         }
     }
 
@@ -132,7 +130,7 @@ namespace FASTER.core
         { }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
@@ -144,7 +142,6 @@ namespace FASTER.core
             where Value : new()
             where FasterSession : IFasterSession
         {
-            return default;
         }
     }
 

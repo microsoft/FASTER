@@ -27,7 +27,7 @@ namespace FASTER.core
                     var currentState = SystemState.Copy(ref systemState);
                     if (currentState.phase == Phase.REST)
                     {
-                        var intermediateState = SystemState.Make(Phase.INTERMEDIATE, currentState.version);
+                        var intermediateState = SystemState.Make(currentState.phase | Phase.INTERMEDIATE, currentState.version);
                         if (MakeTransition(currentState, intermediateState))
                         {
                             // No one can change from REST phase
@@ -79,8 +79,8 @@ namespace FASTER.core
 
             // await is never invoked when calling the function with async = false
 #pragma warning disable 4014
-            var task = ThreadStateMachineStep(ctx, fasterSession, false);
-            Debug.Assert(task.IsCompleted);
+            ThreadStateMachineStep(ctx, fasterSession, false);
+            // Debug.Assert(task.IsCompleted);
 #pragma warning restore 4014
         }
 

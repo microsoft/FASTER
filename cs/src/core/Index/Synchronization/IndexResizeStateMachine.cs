@@ -62,7 +62,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
@@ -79,7 +79,7 @@ namespace FASTER.core
                 case Phase.PREPARE_GROW:
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:
-                    return default;
+                    return;
                 default:
                     throw new FasterException("Invalid Enum Argument");
             }

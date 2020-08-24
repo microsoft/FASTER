@@ -41,7 +41,7 @@ namespace FASTER.benchmark
         const bool kCheckpointStoreContents = false;
         const bool kRecoverStoreContents = false;
         const bool kSmallMemoryLog = false;
-        const bool kAffinitizedSession = false;
+        const bool kAffinitizedSession = true;
 #endif
 
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
@@ -70,7 +70,7 @@ namespace FASTER.benchmark
         readonly int readPercent;
 
         const int kRunSeconds = 30;
-        const int kCheckpointMilliseconds = 5;
+        const int kCheckpointMilliseconds = 25;
 
         volatile bool done = false;
 
