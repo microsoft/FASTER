@@ -199,10 +199,9 @@ namespace FASTER.core
             var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
             token = _hybridLogCheckpointToken;
 
-            // Do not return the PSF token here. TODO Separate Tasks?
+            // Do not return the PSF token here. TODO: Handle failure of PSFManager.TakeFullCheckpoint
             if (result && this.PSFManager.HasPSFs)
                 result &= this.PSFManager.TakeFullCheckpoint();
-
             return result;
         }
 
@@ -242,7 +241,7 @@ namespace FASTER.core
             var result = StartStateMachine(new IndexSnapshotStateMachine());
             token = _indexCheckpointToken;
 
-            // Do not return the PSF token here. TODO Separate Tasks?
+            // Do not return the PSF token here. TODO: Handle failure of PSFManager.TakeIndexCheckpoint
             if (result && this.PSFManager.HasPSFs)
                 result &= this.PSFManager.TakeIndexCheckpoint();
             return result;
@@ -261,7 +260,7 @@ namespace FASTER.core
             var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
             token = _hybridLogCheckpointToken;
 
-            // Do not return the PSF token here. TODO Separate Tasks?
+            // Do not return the PSF token here. TODO: Handle failure of PSFManager.TakeHybridLogCheckpoint
             if (result && this.PSFManager.HasPSFs)
                 result &= this.PSFManager.TakeHybridLogCheckpoint();
             return result;
@@ -296,7 +295,7 @@ namespace FASTER.core
         {
             InternalRecoverFromLatestCheckpoints();
 
-            if (this.PSFManager.HasPSFs)    // TODO Separate Tasks?
+            if (this.PSFManager.HasPSFs)    // TODO: Handle failure of PSFManager.Recovery
                 this.PSFManager.Recover();
         }
 
@@ -342,7 +341,7 @@ namespace FASTER.core
                 await ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, true, token);
             }
 
-            if (this.PSFManager.HasPSFs)    // TODO Separate Task?
+            if (this.PSFManager.HasPSFs)    // TODO: Do in parallel and handle failure of PSFManager.CompleteCheckpointAsync
                 await this.PSFManager.CompleteCheckpointAsync();
         }
 

@@ -53,7 +53,7 @@ namespace FASTER.core
         /// </summary>
         protected readonly IFasterEqualityComparer<Key> comparer;
 
-        internal IKeyAccessor<Key> PsfKeyAccessor;
+        internal KeyAccessor<Key> PsfKeyAccessor;
 
         #region Protected size definitions
         /// <summary>
@@ -1478,7 +1478,7 @@ namespace FASTER.core
                         var isEqualKey = ctx.request_key is null 
                                         || (this.PsfKeyAccessor is null 
                                             ? comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx))
-                                            : this.PsfKeyAccessor.EqualsAtRecordAddress(ref ctx.request_key.Get(), (long)record));
+                                            : this.PsfKeyAccessor.EqualsAtRecordAddress(ref KeyPointer<Key>.CastFromKeyRef(ref ctx.request_key.Get()), (long)record));
                         if (isEqualKey)
                         {
                             // ctx.record = result.record;

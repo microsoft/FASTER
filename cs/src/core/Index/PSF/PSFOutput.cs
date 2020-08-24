@@ -14,7 +14,7 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="TKey">The type of the Key, either a <see cref="CompositeKey{TPSFKey}"/> for the 
     ///     secondary FasterKV instances, or the user's TKVKey for the primary FasterKV instance.</typeparam>
-    /// <typeparam name="TValue">The type of the Key, either a TRecordId for the 
+    /// <typeparam name="TValue">The type of the Value, either a TRecordId for the 
     ///     secondary FasterKV instances, or the user's TKVValue for the primary FasterKV instance.</typeparam>
     public interface IPSFOutput<TKey, TValue>
     {
@@ -61,11 +61,11 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="TPSFKey">The type of the key returned from a <see cref="PSF{TPSFKey, TRecordId}"/></typeparam>
     /// <typeparam name="TRecordId">The type of the provider's record identifier</typeparam>
-    public unsafe class PSFOutputSecondary<TPSFKey, TRecordId> : IPSFOutput<CompositeKey<TPSFKey>, TRecordId>
+    public unsafe class PSFOutputSecondary<TPSFKey, TRecordId> : IPSFOutput<TPSFKey, TRecordId>
         where TPSFKey : struct
         where TRecordId : struct
     {
-        private KeyAccessor<TPSFKey> keyAccessor;
+        private readonly KeyAccessor<TPSFKey> keyAccessor;
 
         internal TRecordId RecordId { get; private set; }
 
@@ -81,13 +81,14 @@ namespace FASTER.core
             this.PreviousLogicalAddress = Constants.kInvalidAddress;
         }
 
-        public PSFOperationStatus Visit(int psfOrdinal, ref CompositeKey<TPSFKey> key,
+        public PSFOperationStatus Visit(int psfOrdinal, ref TPSFKey key,
                                         ref TRecordId value, bool tombstone, bool isConcurrent)
         {
             // This is the secondary FKV; we hold onto the RecordId and create the provider data when QueryPSF returns.
             this.RecordId = value;
             this.Tombstone = tombstone;
-            ref KeyPointer<TPSFKey> keyPointer = ref this.keyAccessor.GetKeyPointerRef(ref key, psfOrdinal);
+            ref CompositeKey<TPSFKey> compositeKey = ref CompositeKey<TPSFKey>.CastFromFirstKeyPointerRefAsKeyRef(ref key);
+            ref KeyPointer<TPSFKey> keyPointer = ref this.keyAccessor.GetKeyPointerRef(ref compositeKey, psfOrdinal);
             Debug.Assert(keyPointer.PsfOrdinal == (ushort)psfOrdinal, "Visit found mismatched PSF ordinal");
             this.PreviousLogicalAddress = keyPointer.PrevAddress;
             return new PSFOperationStatus(OperationStatus.SUCCESS);

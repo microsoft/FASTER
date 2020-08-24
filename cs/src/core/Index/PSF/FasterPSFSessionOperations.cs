@@ -129,7 +129,10 @@ namespace FASTER.core
                     // TODOerr: Handle error status from PsfReadAddress 
                 }
                 while (providerDatas.TryDequeue(out var providerData))
+                {
+                    // TODO: Liveness check via Read
                     yield return providerData;
+                }
             }
 
             this.CompletePending(spinWait: true);
@@ -161,8 +164,11 @@ namespace FASTER.core
             await foreach (var logicalAddress in logicalAddresses)
             {
                 var providerData = await this.CreateProviderDataAsync(logicalAddress, providerDatas, querySettings);
-                if (!(providerData is null))
+                {
+                    // TODO: No Async query ops if threadaffinitized
+                    // TODO: Liveness check via ReadAsync
                     yield return providerData;
+                }
             }
         }
 #endif

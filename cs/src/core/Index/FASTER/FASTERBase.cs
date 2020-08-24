@@ -76,7 +76,7 @@ namespace FASTER.core
         public const int kFirstValidAddress = 64;
 
         public const long kInvalidPsfGroupId = -1;
-        public const int kInvalidPsfOrdinal = -1;
+        public const int kInvalidPsfOrdinal = 255; // 0-based ordinals; this is also the max count
     }
 
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]

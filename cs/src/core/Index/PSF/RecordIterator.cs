@@ -174,7 +174,7 @@ namespace FASTER.core.Index.PSF
         #endregion Sync methods
     }
 
-#if DOTNETCORE  // TODO: Refactor some of this cut and paste to a KeyTypeRecordIteratorBase templated on the record enumerable type
+#if DOTNETCORE
     /// <summary>
     /// A single TPSFKey type's vector of its PSFs' async streams of recordIds (each TPSFKey type may have multiple PSFs being queried).
     /// </summary>

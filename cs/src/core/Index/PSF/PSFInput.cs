@@ -48,8 +48,6 @@ namespace FASTER.core
         ref TKey QueryKeyRef { get; }
     }
 
-    // TODO: Trim IPSFInput to only what PSFInputPrimaryReadAddress needs
-
     /// <summary>
     /// Input to PsfInternalReadAddress on the primary (stores user values) FasterKV to retrieve the Key and Value
     /// for a logicalAddress returned from the secondary FasterKV instances.  This class is FasterKV-provider-specific.
@@ -92,26 +90,24 @@ namespace FASTER.core
     /// Input to operations on the secondary FasterKV instance (stores PSF chains) for everything
     /// except reading based on a LogicalAddress.
     /// </summary>
-    public unsafe class PSFInputSecondary<TPSFKey> : IPSFInput<CompositeKey<TPSFKey>>, IDisposable
+    public unsafe class PSFInputSecondary<TPSFKey> : IPSFInput<TPSFKey>, IDisposable
         where TPSFKey : struct
     {
-        internal readonly KeyAccessor<TPSFKey> keyAccessor;
-        internal PSFResultFlags* resultFlags;
+        internal PSFResultFlags* resultFlags;   // TODO: Replace with KeyPointer.Flags; remember to clear update bits
         private SectorAlignedMemory keyPointerMem;
 
-        internal PSFInputSecondary(int psfOrdinal, KeyAccessor<TPSFKey> keyAcc, long groupId, PSFResultFlags* flags = null)
+        internal PSFInputSecondary(int psfOrdinal, long groupId, PSFResultFlags* flags = null)
         {
             this.PsfOrdinal = psfOrdinal;
-            this.keyAccessor = keyAcc;
             this.GroupId = groupId;
             this.resultFlags = flags;
             this.ReadLogicalAddress = Constants.kInvalidAddress;
         }
 
-        internal void SetQueryKey(SectorAlignedBufferPool pool, ref TPSFKey key)
+        internal void SetQueryKey(SectorAlignedBufferPool pool, KeyAccessor<TPSFKey> keyAccessor, ref TPSFKey key)
         {
             // Create a varlen CompositeKey with just one item. This is ONLY used as the query key to QueryPSF.
-            this.keyPointerMem = pool.Get(this.keyAccessor.KeyPointerSize);
+            this.keyPointerMem = pool.Get(keyAccessor.KeyPointerSize);
             ref KeyPointer<TPSFKey> keyPointer = ref Unsafe.AsRef<KeyPointer<TPSFKey>>(keyPointerMem.GetValidPointer());
             keyPointer.PrevAddress = Constants.kInvalidAddress;
             keyPointer.PsfOrdinal = (ushort)this.PsfOrdinal;
@@ -130,8 +126,8 @@ namespace FASTER.core
 
         public long ReadLogicalAddress { get; set; }
 
-        public ref CompositeKey<TPSFKey> QueryKeyRef
-            => ref Unsafe.AsRef<CompositeKey<TPSFKey>>(this.keyPointerMem.GetValidPointer());
+        public ref TPSFKey QueryKeyRef
+            => ref Unsafe.AsRef<TPSFKey>(this.keyPointerMem.GetValidPointer());
 
         public void Dispose()
         {

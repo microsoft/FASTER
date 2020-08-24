@@ -12,7 +12,7 @@ namespace FASTER.core
     public enum PSFResultFlags
     {
         /// <summary>
-        /// For initialization only
+        /// No flags set
         /// </summary>
         None = 0,
 

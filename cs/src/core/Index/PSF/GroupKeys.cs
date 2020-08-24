@@ -18,14 +18,15 @@ namespace FASTER.core
             this.flagsMem = flagsMem;
         }
 
-        internal unsafe ref TCompositeKey GetCompositeKeyRef<TCompositeKey>()
-            => ref Unsafe.AsRef<TCompositeKey>(this.compositeKeyMem.GetValidPointer());
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe ref TCompositeOrIndividualKey CastToKeyRef<TCompositeOrIndividualKey>()
+            => ref Unsafe.AsRef<TCompositeOrIndividualKey>(this.compositeKeyMem.GetValidPointer());
 
         internal unsafe PSFResultFlags* ResultFlags => (PSFResultFlags*)this.flagsMem.GetValidPointer();
 
-        internal unsafe bool IsNullAt(int ordinal) => (this.ResultFlags + ordinal)->HasFlag(PSFResultFlags.IsNull);
-        public unsafe bool IsUnlinkOldAt(int ordinal) => (this.ResultFlags + ordinal)->HasFlag(PSFResultFlags.UnlinkOld);
-        public unsafe bool IsLinkNewAt(int ordinal) => (this.ResultFlags + ordinal)->HasFlag(PSFResultFlags.LinkNew);
+        internal unsafe bool IsNullAt(int psfOrdinal) => (this.ResultFlags + psfOrdinal)->HasFlag(PSFResultFlags.IsNull);
+        public unsafe bool IsUnlinkOldAt(int psfOrdinal) => (this.ResultFlags + psfOrdinal)->HasFlag(PSFResultFlags.UnlinkOld);
+        public unsafe bool IsLinkNewAt(int psfOrdinal) => (this.ResultFlags + psfOrdinal)->HasFlag(PSFResultFlags.LinkNew);
 
         public unsafe bool HasChanges => this.ResultFlags->HasFlag(PSFResultFlags.UnlinkOld) || this.ResultFlags->HasFlag(PSFResultFlags.LinkNew);
 
@@ -56,11 +57,9 @@ namespace FASTER.core
 
         internal bool HasAddress => this.LogicalAddress != Constants.kInvalidAddress;
 
-        internal ref TCompositeKey GetBeforeKey<TCompositeKey>()
-            => ref this.Before.GetCompositeKeyRef<TCompositeKey>();
+        internal ref TCompositeKey GetBeforeKey<TCompositeKey>() => ref this.Before.CastToKeyRef<TCompositeKey>();
 
-        internal ref TCompositeKey GetAfterKey<TCompositeKey>()
-            => ref this.After.GetCompositeKeyRef<TCompositeKey>();
+        internal ref TCompositeKey GetAfterKey<TCompositeKey>() => ref this.After.CastToKeyRef<TCompositeKey>();
 
         internal bool HasChanges => this.After.HasChanges;
 

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -29,13 +28,32 @@ namespace FASTER.core
         /// Get a reference to the key for the PSF identified by psfOrdinal.
         /// </summary>
         /// <param name="psfOrdinal">The ordinal of the PSF in its parent PSFGroup</param>
-        /// <param name="keyPointerSize">Size of the KeyPointer{TPSFKey} struct</param>
+        /// <param name="keyPointerSize">Size of the <see cref="KeyPointer{TPSFKey}"/> struct</param>
         /// <returns>A reference to the key for the PSF identified by psfOrdinal.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ref TPSFKey GetKeyRef(int psfOrdinal, int keyPointerSize)
             => ref GetKeyPointerRef(psfOrdinal, keyPointerSize).Key;
 
-        internal class VarLenLength : IVariableLengthStruct<CompositeKey<TPSFKey>>
+        /// <summary>
+        /// Returns a reference to the CompositeKey from a reference to the first <see cref="KeyPointer{TPSFKey}"/>
+        /// </summary>
+        /// <param name="firstKeyPointerRef">A reference to the first <see cref="KeyPointer{TPSFKey}"/>, typed as TPSFKey</param>
+        /// <remarks>Used when converting the CompositeKey to/from the TPSFKey type for secondary FKV operations</remarks>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ref CompositeKey<TPSFKey> CastFromFirstKeyPointerRefAsKeyRef(ref TPSFKey firstKeyPointerRef)
+            => ref Unsafe.AsRef<CompositeKey<TPSFKey>>((byte*)Unsafe.AsPointer(ref firstKeyPointerRef));
+
+        /// <summary>
+        /// Converts this CompositeKey reference to a reference to the first <see cref="KeyPointer{TPSFKey}"/>, typed as TPSFKey.
+        /// </summary>
+        /// <remarks>Used when converting the CompositeKey to/from the TPSFKey type for secondary FKV operations</remarks>
+        /// <returns>A reference to the first <see cref="KeyPointer{TPSFKey}"/>, typed as TPSFKey</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ref TPSFKey CastToFirstKeyPointerRefAsKeyRef()
+            => ref Unsafe.AsRef<TPSFKey>((byte*)Unsafe.AsPointer(ref this));
+
+        internal class VarLenLength : IVariableLengthStruct<TPSFKey>
         {
             private readonly int size;
 
@@ -43,19 +61,19 @@ namespace FASTER.core
 
             public int GetInitialLength() => this.size;
 
-            public int GetLength(ref CompositeKey<TPSFKey> _) => this.size;
+            public int GetLength(ref TPSFKey _) => this.size;
         }
 
         /// <summary>
         /// This is the unused key comparer passed to the secondary FasterKV
         /// </summary>
-        internal class UnusedKeyComparer : IFasterEqualityComparer<CompositeKey<TPSFKey>>
+        internal class UnusedKeyComparer : IFasterEqualityComparer<TPSFKey>
         {
-            public long GetHashCode64(ref CompositeKey<TPSFKey> cKey)
-                => throw new PSFInternalErrorException("Must use KeyAccessor instead");
+            public long GetHashCode64(ref TPSFKey cKey)
+                => throw new PSFInternalErrorException("Must use KeyAccessor instead (psfOrdinal is required)");
 
-            public bool Equals(ref CompositeKey<TPSFKey> cKey1, ref CompositeKey<TPSFKey> cKey2)
-                => throw new PSFInternalErrorException("Must use KeyAccessor instead");
+            public bool Equals(ref TPSFKey cKey1, ref TPSFKey cKey2)
+                => throw new PSFInternalErrorException("Must use KeyAccessor instead (psfOrdinal is required)");
         }
     }
 }

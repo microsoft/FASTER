@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 // TODO: Remove PackageId and PackageOutputPath from csproj when this is folded into master
+// TODO: Make a new FASTER.PSF.dll
 
 namespace FASTER.core
 {
@@ -204,6 +205,13 @@ namespace FASTER.core
             VerifyRegistrationSettings(registrationSettings);
             if (defs is null || defs.Length == 0 || defs.Any(def => def is null) || defs.Length == 0)
                 throw new PSFArgumentException("PSF definitions cannot be null or empty");
+
+            // We use stackalloc for speed and can recurse in pending operations, so make sure we don't blow the stack.
+            if (defs.Length > Constants.kInvalidPsfOrdinal)
+                throw new PSFArgumentException($"There can be no more than {Constants.kInvalidPsfOrdinal} PSFs in a single Group");
+            const int maxKeySize = 256;
+            if (Utility.GetSize(default(KeyPointer<TPSFKey>)) > maxKeySize)
+                throw new PSFArgumentException($"The size of the PSF key can be no more than {maxKeySize} bytes");
 
             // This is a very rare operation and unlikely to have any contention, and locking the dictionary
             // makes it much easier to recover from duplicates if needed.

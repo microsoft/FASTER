@@ -137,7 +137,7 @@ namespace FASTER.core
             unsafe { psfInput.SetFlags(groupKeys.ResultFlags); }
             psfInput.IsDelete = true;
 
-            var internalStatus = this.PsfInternalInsert(ref groupKeys.GetCompositeKeyRef<Key>(), ref value, ref input,
+            var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input,
                                                         ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
@@ -161,7 +161,7 @@ namespace FASTER.core
             var psfInput = (IPSFInput<Key>)input;
             unsafe { psfInput.SetFlags(groupKeys.ResultFlags); }
             psfInput.IsDelete = false;
-            var internalStatus = this.PsfInternalInsert(ref groupKeys.GetCompositeKeyRef<Key>(), ref value, ref input,
+            var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input,
                                                         ref pcontext, fasterSession, sessionCtx, serialNo);
             return internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus

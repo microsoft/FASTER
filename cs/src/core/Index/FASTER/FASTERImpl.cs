@@ -2149,7 +2149,6 @@ namespace FASTER.core
                 entry.word = logicalAddress;
                 if (!entry.ReadCache) break;
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
-                // TODO: Update latestRecordVersion?
             }
             physicalAddress = 0;
             return false;
