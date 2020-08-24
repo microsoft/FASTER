@@ -81,7 +81,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState StartOfCurrentCycle(SystemState currentGlobalState)
         {
-            return currentGlobalState.phase <= Phase.REST
+            return currentGlobalState.phase < Phase.REST
                 ? SystemState.Make(Phase.REST, currentGlobalState.version - 1)
                 : SystemState.Make(Phase.REST, currentGlobalState.version);
         }
@@ -175,7 +175,7 @@ namespace FASTER.core
                         fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
                     }
                 }
-                else if (ctx.phase < Phase.REST)
+                if ((ctx.version == targetStartState.version) && (ctx.phase < Phase.REST))
                 {
                     // Ensure atomic switch took place. Would not have happened
                     // for index-only checkpoints.
