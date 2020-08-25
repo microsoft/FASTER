@@ -270,7 +270,7 @@ namespace FASTER.core
                             // RCU Insert of a tombstoned old record is followed by Insert of the new record.
                             if (pendingContext.psfUpdateArgs.ChangeTracker.FindGroup(psfInput.GroupId, out var ordinal))
                             {
-                                ref GroupKeysPair groupKeysPair = ref pendingContext.psfUpdateArgs.ChangeTracker.GetGroupRef(ordinal);
+                                ref GroupCompositeKeyPair groupKeysPair = ref pendingContext.psfUpdateArgs.ChangeTracker.GetGroupRef(ordinal);
                                 GetAfterRecordId(pendingContext.psfUpdateArgs.ChangeTracker, ref value);
                                 var pcontext = default(PendingContext<Input, Output, Context>);
                                 PsfRcuInsert(groupKeysPair.After, ref value, ref pendingContext.input,

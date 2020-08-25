@@ -27,25 +27,27 @@ namespace FASTER.core
 
         public int KeyPointerSize { get; }
 
+        #region KeyPointer accessors
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetPrevAddress(long physicalAddress)
-            => GetKeyPointerRef(physicalAddress).PrevAddress;
+        public long GetPreviousAddress(long physicalAddress)
+            => this.GetKeyPointerRef(physicalAddress).PreviousAddress;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetPrevAddress(ref CompositeKey<TPSFKey> key, int psfOrdinal, long prevAddress)
-            => this.GetKeyPointerRef(ref key, psfOrdinal).PrevAddress = prevAddress;
+        public void SetPreviousAddress(ref CompositeKey<TPSFKey> key, int psfOrdinal, long prevAddress)
+            => this.GetKeyPointerRef(ref key, psfOrdinal).PreviousAddress = prevAddress;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetRecordAddressFromKeyPhysicalAddress(long physicalAddress)
-            => physicalAddress - this.GetKeyPointerRef(physicalAddress).PsfOrdinal * this.KeyPointerSize - RecordInfo.GetLength(); // Note: Assumes all PSFs are present
+        public void SetOffsetToStartOfKeys(ref CompositeKey<TPSFKey> key, int psfOrdinal, int offset)
+            => this.GetKeyPointerRef(ref key, psfOrdinal).OffsetToStartOfKeys = offset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetRecordAddressFromKeyLogicalAddress(long logicalAddress, int psfOrdinal)
-            => logicalAddress - psfOrdinal * this.KeyPointerSize - RecordInfo.GetLength(); // Note: Assumes all PSFs are present
+        public bool IsNullAt(ref CompositeKey<TPSFKey> key, int psfOrdinal) => this.GetKeyPointerRef(ref key, psfOrdinal).IsNull;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetKeyAddressFromRecordPhysicalAddress(long physicalAddress, int psfOrdinal)
-            => physicalAddress + RecordInfo.GetLength() + psfOrdinal * this.KeyPointerSize; // Note: Assumes all PSFs are present
+        public bool IsUnlinkOldAt(ref CompositeKey<TPSFKey> key, int psfOrdinal) => this.GetKeyPointerRef(ref key, psfOrdinal).IsUnlinkOld;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsLinkNewAt(ref CompositeKey<TPSFKey> key, int psfOrdinal) => this.GetKeyPointerRef(ref key, psfOrdinal).IsLinkNew;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetHashCode64(ref KeyPointer<TPSFKey> keyPointer)
@@ -81,7 +83,21 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe ref KeyPointer<TPSFKey> GetKeyPointerRef(long physicalAddress, int psfOrdinal)
             => ref Unsafe.AsRef<KeyPointer<TPSFKey>>((byte*)GetKeyAddressFromRecordPhysicalAddress(physicalAddress, psfOrdinal));
+        #endregion KeyPointer accessors
 
+        #region Address manipulation
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetRecordAddressFromKeyPhysicalAddress(long physicalAddress)
+            => physicalAddress - this.GetKeyPointerRef(physicalAddress).OffsetToStartOfKeys - RecordInfo.GetLength();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetKeyAddressFromRecordPhysicalAddress(long physicalAddress, int psfOrdinal)
+            // TODOperf: if we omit IsNull keys, then this will have to walk to the key with psfOrdinal. Fortunately it is only 
+            // called during AsyncGetFromDiskCallback.
+            => physicalAddress + RecordInfo.GetLength() + psfOrdinal * this.KeyPointerSize;
+        #endregion Address manipulation
+
+#if DEBUG
         public string GetString(ref CompositeKey<TPSFKey> compositeKey, int psfOrdinal = -1)
         {
             if (psfOrdinal == -1)
@@ -101,8 +117,7 @@ namespace FASTER.core
         }
 
         public string GetString(ref KeyPointer<TPSFKey> keyPointer)
-        {
-            return $"{{{(keyPointer.IsNull ? "null" : keyPointer.Key.ToString())}}}";
-        }
+            => $"{{{(keyPointer.IsNull ? "null" : keyPointer.Key.ToString())}}}";
+#endif
     }
 }

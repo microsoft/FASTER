@@ -150,33 +150,41 @@ namespace FASTER.core
             => Array.Find(this.PSFs, psf => psf.Name.Equals(name, StringComparison.CurrentCultureIgnoreCase))
                 ?? throw new PSFArgumentException("PSF not found");
 
-        private unsafe void StoreKeys(ref GroupKeys keys, byte* kPtr, int kLen, PSFResultFlags* flagsPtr, int flagsLen)
+        private unsafe void StoreKeys(ref GroupCompositeKey keys, byte* keysPtr, int keysLen)
         {
-            var poolKeyMem = this.bufferPool.Get(kLen);
-            Buffer.MemoryCopy(kPtr, poolKeyMem.GetValidPointer(), kLen, kLen);
-            var flagsMem = this.bufferPool.Get(flagsLen);
-            Buffer.MemoryCopy(flagsPtr, flagsMem.GetValidPointer(), flagsLen, flagsLen);
-            keys.Set(poolKeyMem, flagsMem);
+            var poolKeyMem = this.bufferPool.Get(keysLen);
+            Buffer.MemoryCopy(keysPtr, poolKeyMem.GetValidPointer(), keysLen, keysLen);
+            keys.Set(poolKeyMem);
         }
 
-        internal unsafe void MarkChanges(ref GroupKeysPair keysPair)
+        internal unsafe void MarkChanges(ref GroupCompositeKeyPair keysPair)
         {
-            ref GroupKeys before = ref keysPair.Before;
-            ref GroupKeys after = ref keysPair.After;
-            ref CompositeKey<TPSFKey> beforeCompKey = ref before.CastToKeyRef<CompositeKey<TPSFKey>>();
-            ref CompositeKey<TPSFKey> afterCompKey = ref after.CastToKeyRef<CompositeKey<TPSFKey>>();
+            ref GroupCompositeKey before = ref keysPair.Before;
+            ref GroupCompositeKey after = ref keysPair.After;
+            ref CompositeKey<TPSFKey> beforeCompositeKey = ref before.CastToKeyRef<CompositeKey<TPSFKey>>();
+            ref CompositeKey<TPSFKey> afterCompositeKey = ref after.CastToKeyRef<CompositeKey<TPSFKey>>();
             for (var ii = 0; ii < this.PSFCount; ++ii)
             {
-                var beforeIsNull = before.IsNullAt(ii);
-                var afterIsNull = after.IsNullAt(ii);
-                var keysEqual = !beforeIsNull && !afterIsNull
-                    && beforeCompKey.GetKeyRef(ii, this.keyPointerSize).Equals(afterCompKey.GetKeyRef(ii, this.keyPointerSize));
+                ref KeyPointer<TPSFKey> beforeKeyPointer = ref beforeCompositeKey.GetKeyPointerRef(ii, this.keyPointerSize);
+                ref KeyPointer<TPSFKey> afterKeyPointer = ref afterCompositeKey.GetKeyPointerRef(ii, this.keyPointerSize);
+
+                var beforeIsNull = beforeKeyPointer.IsNull;
+                var afterIsNull = afterKeyPointer.IsNull;
+                var keysEqual = !beforeIsNull && !afterIsNull && beforeKeyPointer.Key.Equals(afterKeyPointer.Key);
 
                 // IsNull is already set in PSFGroup.ExecuteAndStore.
-                if (!before.IsNullAt(ii) && (after.IsNullAt(ii) || !keysEqual))
-                    *after.ResultFlags |= PSFResultFlags.UnlinkOld;
-                if (!after.IsNullAt(ii) && (before.IsNullAt(ii) || !keysEqual))
-                    *after.ResultFlags |= PSFResultFlags.LinkNew;
+                if ((beforeIsNull != afterIsNull) || !keysEqual)
+                    keysPair.HasChanges = true;
+                if (!beforeIsNull && (afterIsNull || !keysEqual))
+                {
+                    afterKeyPointer.IsUnlinkOld = true;
+                    keysPair.HasChanges = true;
+                }
+                if (!afterIsNull && (beforeIsNull || !keysEqual))
+                {
+                    afterKeyPointer.IsLinkNew = true;
+                    keysPair.HasChanges = true;
+                }
             }
         }
 
@@ -188,20 +196,16 @@ namespace FASTER.core
             // if needed. On the Insert fast path, we don't want any allocations otherwise; changeTracker is null.
             var keyMemLen = this.keyPointerSize * this.PSFCount;
             var keyBytes = stackalloc byte[keyMemLen];
-
-            var flagsMemLen = this.PSFCount * sizeof(PSFResultFlags);
-            PSFResultFlags* flags = stackalloc PSFResultFlags[this.PSFCount];
             var anyMatch = false;
 
             for (var ii = 0; ii < this.PSFCount; ++ii)
             {
                 ref KeyPointer<TPSFKey> keyPointer = ref Unsafe.AsRef<KeyPointer<TPSFKey>>(keyBytes + ii * this.keyPointerSize);
-                keyPointer.PrevAddress = Constants.kInvalidAddress;
+                keyPointer.PreviousAddress = Constants.kInvalidAddress;
                 keyPointer.PsfOrdinal = (byte)ii;
 
                 var key = this.psfDefinitions[ii].Execute(providerData);
                 keyPointer.IsNull = !key.HasValue;
-                *(flags + ii) = key.HasValue ? PSFResultFlags.None : PSFResultFlags.IsNull;
                 if (key.HasValue)
                 {
                     keyPointer.Key = key.Value;
@@ -213,7 +217,7 @@ namespace FASTER.core
                 return Status.OK;
 
             ref CompositeKey<TPSFKey> compositeKey = ref Unsafe.AsRef<CompositeKey<TPSFKey>>(keyBytes);
-            var input = new PSFInputSecondary<TPSFKey>(0, this.Id, flags);
+            var input = new PSFInputSecondary<TPSFKey>(0, this.Id);
             var value = recordId;
 
             int groupOrdinal = -1;
@@ -223,8 +227,8 @@ namespace FASTER.core
                 if (phase == PSFExecutePhase.PreUpdate)
                 {
                     // Get a free group ref and store the "before" values.
-                    ref GroupKeysPair groupKeysPair = ref changeTracker.FindGroupRef(this.Id);
-                    StoreKeys(ref groupKeysPair.Before, keyBytes, keyMemLen, flags, flagsMemLen);
+                    ref GroupCompositeKeyPair groupKeysPair = ref changeTracker.FindGroupRef(this.Id);
+                    StoreKeys(ref groupKeysPair.Before, keyBytes, keyMemLen);
                     return Status.OK;
                 }
 
@@ -237,8 +241,8 @@ namespace FASTER.core
                     }
                     else
                     {
-                        ref GroupKeysPair groupKeysPair = ref changeTracker.GetGroupRef(groupOrdinal);
-                        StoreKeys(ref groupKeysPair.After, keyBytes, keyMemLen, flags, flagsMemLen);
+                        ref GroupCompositeKeyPair groupKeysPair = ref changeTracker.GetGroupRef(groupOrdinal);
+                        StoreKeys(ref groupKeysPair.After, keyBytes, keyMemLen);
                         this.MarkChanges(ref groupKeysPair);
                         // TODOtest: In debug, for initial dev, follow chains to assert the values match what is in the record's compositeKey
                         if (!groupKeysPair.HasChanges)

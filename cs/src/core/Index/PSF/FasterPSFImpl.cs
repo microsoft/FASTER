@@ -36,7 +36,7 @@ namespace FASTER.core
                     PsfTrace($" / {logicalAddress}");
                     return true;
                 }
-                logicalAddress = this.PsfKeyAccessor.GetPrevAddress(physicalAddress);
+                logicalAddress = this.PsfKeyAccessor.GetPreviousAddress(physicalAddress);
                 if (logicalAddress < hlog.HeadAddress)
                     break;    // RECORD_ON_DISK or not found
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
@@ -200,7 +200,7 @@ namespace FASTER.core
                 pendingContext.output = default;
                 pendingContext.userContext = default;
                 pendingContext.entry.word = entry.word;
-                pendingContext.logicalAddress = this.PsfKeyAccessor.GetRecordAddressFromKeyLogicalAddress(logicalAddress, psfInput.PsfOrdinal);
+                pendingContext.logicalAddress = this.PsfKeyAccessor.GetRecordAddressFromKeyPhysicalAddress(hlog.GetPhysicalAddress(logicalAddress));
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
@@ -311,7 +311,7 @@ namespace FASTER.core
                 pendingContext.userContext = default;
                 pendingContext.entry.word = default;
                 pendingContext.logicalAddress = this.ImplmentsPSFs
-                                                ? this.PsfKeyAccessor.GetRecordAddressFromKeyLogicalAddress(logicalAddress, psfInput.PsfOrdinal)
+                                                ? this.PsfKeyAccessor.GetRecordAddressFromKeyPhysicalAddress(hlog.GetPhysicalAddress(logicalAddress))
                                                 : logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
@@ -329,6 +329,7 @@ namespace FASTER.core
             internal HashBucketEntry entry;
             internal long hash;
             internal int slot;
+            internal bool isNull;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -351,20 +352,25 @@ namespace FASTER.core
             // we are doing insert only here; the update part of upsert is done in PsfInternalUpdate.
             var psfCount = this.PsfKeyAccessor.KeyCount;
             CASHelper* casHelpers = stackalloc CASHelper[psfCount];
+            int startOfKeysOffset = 0;
             PsfTrace($"Insert: {this.PsfKeyAccessor.GetString(ref compositeKey)} | rId {value} |");
             for (psfInput.PsfOrdinal = 0; psfInput.PsfOrdinal < psfCount; ++psfInput.PsfOrdinal)
             {
                 // For RCU, or in case we had to retry due to CPR_SHIFT and somehow managed to delete
                 // the previously found record, clear out the chain link pointer.
-                this.PsfKeyAccessor.SetPrevAddress(ref compositeKey, psfInput.PsfOrdinal, Constants.kInvalidAddress);
+                this.PsfKeyAccessor.SetPreviousAddress(ref compositeKey, psfInput.PsfOrdinal, Constants.kInvalidAddress);
 
-                if (psfInput.IsNullAt)
+                this.PsfKeyAccessor.SetOffsetToStartOfKeys(ref compositeKey, psfInput.PsfOrdinal, startOfKeysOffset);
+                startOfKeysOffset += this.PsfKeyAccessor.KeyPointerSize;
+
+                ref CASHelper casHelper = ref casHelpers[psfInput.PsfOrdinal];
+                if (this.PsfKeyAccessor.IsNullAt(ref compositeKey, psfInput.PsfOrdinal))
                 {
+                    casHelper.isNull = true;
                     PsfTrace($" null");
                     continue;
                 }
 
-                ref CASHelper casHelper = ref casHelpers[psfInput.PsfOrdinal];
                 casHelper.hash = this.PsfKeyAccessor.GetHashCode64(ref compositeKey, psfInput.PsfOrdinal);
                 var tag = (ushort)((ulong)casHelper.hash >> Constants.kHashTagShift);
 
@@ -393,14 +399,14 @@ namespace FASTER.core
                         {
                             // The chain might extend past a tombstoned record so we must include it in the chain
                             // unless its prevLink at psfOrdinal is invalid.
-                            var prevAddress = this.PsfKeyAccessor.GetPrevAddress(physicalAddress);
+                            var prevAddress = this.PsfKeyAccessor.GetPreviousAddress(physicalAddress);
                             if (prevAddress < hlog.BeginAddress)
                                 continue;
                         }
                         latestRecordVersion = Math.Max(latestRecordVersion, hlog.GetInfo(recordAddress).Version);
                     }
 
-                    this.PsfKeyAccessor.SetPrevAddress(ref compositeKey, psfInput.PsfOrdinal, logicalAddress);
+                    this.PsfKeyAccessor.SetPreviousAddress(ref compositeKey, psfInput.PsfOrdinal, logicalAddress);
                 }
                 else
                 {
@@ -448,7 +454,7 @@ namespace FASTER.core
                     var tag = (ushort)((ulong)casHelper.hash >> Constants.kHashTagShift);
 
                     PsfTrace($"    ({psfInput.PsfOrdinal}): {casHelper.hash} {tag} | newLA {newLogicalAddress} | prev {casHelper.entry.word}");
-                    if (psfInput.IsNullAt)
+                    if (casHelper.isNull)
                     {
                         PsfTraceLine(" null");
                         continue;
@@ -475,7 +481,7 @@ namespace FASTER.core
                         {
                             PsfTrace($" / {foundEntry.Address}");
                             casHelper.entry.word = foundEntry.word;
-                            this.PsfKeyAccessor.SetPrevAddress(ref storedKey, psfInput.PsfOrdinal, foundEntry.Address);
+                            this.PsfKeyAccessor.SetPreviousAddress(ref storedKey, psfInput.PsfOrdinal, foundEntry.Address);
                             continue;
                         }
 
@@ -486,11 +492,12 @@ namespace FASTER.core
                         goto LatchRelease;
                     }
 
-                    // Success
+                    // Success for this PSF.
                     PsfTraceLine(" ins");
                     hlog.GetInfo(newPhysicalAddress).Invalid = false;
                 }
 
+                storedKey.ClearUpdateFlags(this.PsfKeyAccessor.KeyCount, this.PsfKeyAccessor.KeyPointerSize);
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease;
             }

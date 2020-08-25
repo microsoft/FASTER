@@ -124,7 +124,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfUpdate<Input, Output, Context, FasterSession, TProviderData>(ref GroupKeysPair groupKeysPair, ref Value value, ref Input input, 
+        internal Status ContextPsfUpdate<Input, Output, Context, FasterSession, TProviderData>(ref GroupCompositeKeyPair groupKeysPair, ref Value value, ref Input input, 
                                                                    FasterSession fasterSession, long serialNo,
                                                                    FasterExecutionContext<Input, Output, Context> sessionCtx,
                                                                    PSFChangeTracker<TProviderData, Value> changeTracker)
@@ -134,7 +134,6 @@ namespace FASTER.core
             var psfInput = (IPSFInput<Key>)input;
 
             var groupKeys = groupKeysPair.Before;
-            unsafe { psfInput.SetFlags(groupKeys.ResultFlags); }
             psfInput.IsDelete = true;
 
             var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input,
@@ -153,13 +152,12 @@ namespace FASTER.core
             return status;
         }
 
-        private Status PsfRcuInsert<Input, Output, Context, FasterSession>(GroupKeys groupKeys, ref Value value, ref Input input,
+        private Status PsfRcuInsert<Input, Output, Context, FasterSession>(GroupCompositeKey groupKeys, ref Value value, ref Input input,
                                     ref PendingContext<Input, Output, Context> pcontext, FasterSession fasterSession, 
                                     FasterExecutionContext<Input, Output, Context> sessionCtx, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var psfInput = (IPSFInput<Key>)input;
-            unsafe { psfInput.SetFlags(groupKeys.ResultFlags); }
             psfInput.IsDelete = false;
             var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input,
                                                         ref pcontext, fasterSession, sessionCtx, serialNo);

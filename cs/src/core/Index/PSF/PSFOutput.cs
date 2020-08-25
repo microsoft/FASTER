@@ -90,7 +90,7 @@ namespace FASTER.core
             ref CompositeKey<TPSFKey> compositeKey = ref CompositeKey<TPSFKey>.CastFromFirstKeyPointerRefAsKeyRef(ref key);
             ref KeyPointer<TPSFKey> keyPointer = ref this.keyAccessor.GetKeyPointerRef(ref compositeKey, psfOrdinal);
             Debug.Assert(keyPointer.PsfOrdinal == (ushort)psfOrdinal, "Visit found mismatched PSF ordinal");
-            this.PreviousLogicalAddress = keyPointer.PrevAddress;
+            this.PreviousLogicalAddress = keyPointer.PreviousAddress;
             return new PSFOperationStatus(OperationStatus.SUCCESS);
         }
 
@@ -103,7 +103,7 @@ namespace FASTER.core
             this.Tombstone = tombstone;
             ref KeyPointer<TPSFKey> keyPointer = ref this.keyAccessor.GetKeyPointerRef(physicalAddress);
             Debug.Assert(keyPointer.PsfOrdinal == (ushort)psfOrdinal, "Visit found mismatched PSF ordinal");
-            this.PreviousLogicalAddress = keyPointer.PrevAddress;
+            this.PreviousLogicalAddress = keyPointer.PreviousAddress;
             return new PSFOperationStatus(OperationStatus.SUCCESS);
         }
     }

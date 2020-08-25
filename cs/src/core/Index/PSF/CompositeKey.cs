@@ -53,6 +53,13 @@ namespace FASTER.core
         internal ref TPSFKey CastToFirstKeyPointerRefAsKeyRef()
             => ref Unsafe.AsRef<TPSFKey>((byte*)Unsafe.AsPointer(ref this));
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ClearUpdateFlags(int psfCount, int keyPointerSize)
+        {
+            for (var ii = 0; ii < psfCount; ++ii)
+                this.GetKeyPointerRef(0, keyPointerSize).ClearUpdateFlags();
+        }
+
         internal class VarLenLength : IVariableLengthStruct<TPSFKey>
         {
             private readonly int size;

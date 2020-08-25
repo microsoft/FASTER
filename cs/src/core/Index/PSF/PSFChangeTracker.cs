@@ -43,14 +43,14 @@ namespace FASTER.core
         public UpdateOperation UpdateOp { get; set; }
         #endregion Data API
 
-        private GroupKeysPair[] groups;
+        private GroupCompositeKeyPair[] groups;
         internal bool HasBeforeKeys { get; set; }
 
         internal long CachedBeforeLA = Constants.kInvalidAddress;
 
         internal PSFChangeTracker(IEnumerable<long> groupIds)
         {
-            this.groups = groupIds.Select(id => new GroupKeysPair(id)).ToArray();
+            this.groups = groupIds.Select(id => new GroupCompositeKeyPair(id)).ToArray();
         }
 
         internal bool FindGroup(long groupId, out int ordinal)
@@ -69,19 +69,19 @@ namespace FASTER.core
             return false;
         }
 
-        internal ref GroupKeysPair GetGroupRef(int ordinal) => ref groups[ordinal];
+        internal ref GroupCompositeKeyPair GetGroupRef(int ordinal) => ref groups[ordinal];
 
-        internal ref GroupKeysPair FindGroupRef(long groupId, long logAddr = Constants.kInvalidAddress)
+        internal ref GroupCompositeKeyPair FindGroupRef(long groupId, long logAddr = Constants.kInvalidAddress)
         {
             if (!this.FindGroup(groupId, out var ordinal))
             {
                 // A new group was added while we were populating this changeTracker; should be quite rare. // TODOtest: this case
-                var groups = new GroupKeysPair[this.groups.Length + 1];
+                var groups = new GroupCompositeKeyPair[this.groups.Length + 1];
                 Array.Copy(this.groups, groups, this.groups.Length);
                 this.groups = groups;
                 ordinal = this.groups.Length - 1;
             }
-            ref GroupKeysPair ret = ref this.groups[ordinal];
+            ref GroupCompositeKeyPair ret = ref this.groups[ordinal];
             ret.GroupId = groupId;
             ret.LogicalAddress = logAddr;
             return ref ret;

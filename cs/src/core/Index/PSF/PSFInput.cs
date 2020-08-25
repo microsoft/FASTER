@@ -17,8 +17,6 @@ namespace FASTER.core
     ///     constraint in PSFInputSecondary</remarks>
     public interface IPSFInput<TKey>
     {
-        unsafe void SetFlags(PSFResultFlags* resultFlags);
-
         /// <summary>
         /// The ID of the <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/> for this operation.
         /// </summary>
@@ -28,12 +26,6 @@ namespace FASTER.core
         /// The ordinal of the <see cref="PSF{TPSFKey, TRecordId}"/> being queried; writable only for Insert.
         /// </summary>
         int PsfOrdinal { get; set; }
-
-        /// <summary>
-        /// For Insert(), determine if the result of the <see cref="PSF{TPSFKey, TRecordId}"/> at <see cref="PsfOrdinal"/> 
-        /// was null; if so the value did not match and should not be stored in the key's chain.
-        /// </summary>
-        bool IsNullAt { get; }
 
         /// <summary>
         /// For Delete() or Insert() done as part of RCU, this indicates if it the tombstone should be set for this record.
@@ -70,11 +62,6 @@ namespace FASTER.core
             set => throw new PSFInvalidOperationException("Not valid for Primary FasterFKV");
         }
 
-        public void SetFlags(PSFResultFlags* resultFlags)
-            => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
-
-        public bool IsNullAt => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
-
         public bool IsDelete
         {
             get => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
@@ -93,14 +80,12 @@ namespace FASTER.core
     public unsafe class PSFInputSecondary<TPSFKey> : IPSFInput<TPSFKey>, IDisposable
         where TPSFKey : struct
     {
-        internal PSFResultFlags* resultFlags;   // TODO: Replace with KeyPointer.Flags; remember to clear update bits
         private SectorAlignedMemory keyPointerMem;
 
-        internal PSFInputSecondary(int psfOrdinal, long groupId, PSFResultFlags* flags = null)
+        internal PSFInputSecondary(int psfOrdinal, long groupId)
         {
             this.PsfOrdinal = psfOrdinal;
             this.GroupId = groupId;
-            this.resultFlags = flags;
             this.ReadLogicalAddress = Constants.kInvalidAddress;
         }
 
@@ -109,25 +94,18 @@ namespace FASTER.core
             // Create a varlen CompositeKey with just one item. This is ONLY used as the query key to QueryPSF.
             this.keyPointerMem = pool.Get(keyAccessor.KeyPointerSize);
             ref KeyPointer<TPSFKey> keyPointer = ref Unsafe.AsRef<KeyPointer<TPSFKey>>(keyPointerMem.GetValidPointer());
-            keyPointer.PrevAddress = Constants.kInvalidAddress;
-            keyPointer.PsfOrdinal = (ushort)this.PsfOrdinal;
-            keyPointer.Key = key;
+            keyPointer.Initialize(this.PsfOrdinal, ref key);
         }
 
         public long GroupId { get; }
 
         public int PsfOrdinal { get; set; }
 
-        public void SetFlags(PSFResultFlags* resultFlags) => this.resultFlags = resultFlags;
-
-        public bool IsNullAt => this.resultFlags[this.PsfOrdinal].HasFlag(PSFResultFlags.IsNull);
-
         public bool IsDelete { get; set; }
 
         public long ReadLogicalAddress { get; set; }
 
-        public ref TPSFKey QueryKeyRef
-            => ref Unsafe.AsRef<TPSFKey>(this.keyPointerMem.GetValidPointer());
+        public ref TPSFKey QueryKeyRef => ref Unsafe.AsRef<TPSFKey>(this.keyPointerMem.GetValidPointer());
 
         public void Dispose()
         {

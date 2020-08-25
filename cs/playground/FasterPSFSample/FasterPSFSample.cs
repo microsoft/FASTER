@@ -68,13 +68,12 @@ namespace FasterPSFSample
                 Console.WriteLine($"Completed run: UseObjects {useObjectValue}, MultiGroup {useMultiGroups}, Async {useAsync}");
                 Console.WriteLine();
                 Console.Write("===>>> ");
-                Console.WriteLine(ok ? "Passed! All operations succeeded" 
-                                     : "*** Failed! *** One or more operations did not succeed");
+                Console.WriteLine(ok ? "Passed! All operations succeeded" : "*** Failed! *** One or more operations failed");
                 Console.WriteLine();
                 if (Debugger.IsAttached)
                 {
                     Console.Write("Press ENTER to close this window . . .");
-                    Console.ReadKey();
+                    Console.ReadLine();
                 }
             }
             finally

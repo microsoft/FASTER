@@ -71,7 +71,7 @@ namespace FASTER.core
             return fht.ContextPsfReadAddressAsync(this, ref psfArgs, serialNo, ctx, querySettings);
         }
 
-        internal Status PsfUpdate<TProviderData>(ref GroupKeysPair groupKeysPair, ref Value value, ref Input input, long serialNo,
+        internal Status PsfUpdate<TProviderData>(ref GroupCompositeKeyPair groupKeysPair, ref Value value, ref Input input, long serialNo,
                                                  PSFChangeTracker<TProviderData, Value> changeTracker)
         {
             // Called on the secondary FasterKV
