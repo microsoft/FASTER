@@ -99,8 +99,8 @@ namespace FASTER.core
         /// <summary>
         /// Async enumerable for iterator
         /// </summary>
-        /// <returns>Entry, entry length, entry address</returns>
-        public async IAsyncEnumerable<(byte[], int, long, long)> GetAsyncEnumerable([EnumeratorCancellation] CancellationToken token = default)
+        /// <returns>Entry, actual entry length, logical address of entry, logical address of next entry</returns>
+        public async IAsyncEnumerable<(byte[] entry, int entryLength, long currentAddress, long nextAddress)> GetAsyncEnumerable([EnumeratorCancellation] CancellationToken token = default)
         {
             while (!disposed)
             {
@@ -122,8 +122,8 @@ namespace FASTER.core
         /// <summary>
         /// Async enumerable for iterator (memory pool based version)
         /// </summary>
-        /// <returns>Entry, entry length, entry address</returns>
-        public async IAsyncEnumerable<(IMemoryOwner<byte>, int, long, long)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
+        /// <returns>Entry, actual entry length, logical address of entry, logical address of next entry</returns>
+        public async IAsyncEnumerable<(IMemoryOwner<byte>, int entryLength, long currentAddress, long nextAddress)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
         {
             while (!disposed)
             {

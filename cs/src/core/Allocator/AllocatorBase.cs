@@ -842,9 +842,6 @@ namespace FASTER.core
             // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
 
-            // Ensure no read cache
-            Debug.Assert(!ReadCache);
-
             if (h || b)
             {
                 epoch.Resume();
