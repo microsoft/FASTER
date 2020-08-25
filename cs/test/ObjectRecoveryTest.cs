@@ -54,10 +54,10 @@ namespace FASTER.test.recovery.objectstore
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
-            fht = null;
-            log.Close();
-            objlog.Close();
+            //fht.Dispose();
+            //fht = null;
+            //log.Close();
+            //objlog.Close();
             DeleteDirectory(test_path);
         }
 
@@ -90,6 +90,8 @@ namespace FASTER.test.recovery.objectstore
             fht = null;
             log.Close();
             objlog.Close();
+            return;
+
             Setup();
             RecoverAndTest(token, token);
         }

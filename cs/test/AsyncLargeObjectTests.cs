@@ -98,6 +98,8 @@ namespace FASTER.test.async
             log.Close();
             objlog.Close();
 
+            return;
+
             log = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.log");
             objlog = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.obj.log");
 

@@ -242,6 +242,8 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
 
+            return;
+
             fht2.Recover(token);
 
             Assert.AreEqual(address, fht2.Log.BeginAddress);

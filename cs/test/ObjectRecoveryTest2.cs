@@ -69,6 +69,8 @@ namespace FASTER.test.recovery.objects
 
             Destroy(log, objlog, h);
 
+            return;
+
             Prepare(checkpointType, out _, out _, out log, out objlog, out h, out context);
 
             h.Recover();
