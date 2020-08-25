@@ -435,8 +435,9 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask IsCheckpointCompletedAsync(CancellationToken token = default)
         {
-            await checkpointSemaphore.WaitAsync(token);
-            checkpointSemaphore.Release();
+            var s = checkpointSemaphore;
+            await s.WaitAsync(token);
+            s.Release();
         }
 
         internal unsafe void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)

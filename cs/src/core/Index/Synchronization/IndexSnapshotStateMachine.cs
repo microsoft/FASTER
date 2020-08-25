@@ -84,7 +84,8 @@ namespace FASTER.core
 
                     if (valueTasks != null && !notify)
                     {
-                        valueTasks.Add(faster.IsIndexFuzzyCheckpointCompletedAsync(token));
+                        valueTasks.Add(faster.IsMainIndexCheckpointCompletedAsync(token));
+                        valueTasks.Add(faster.overflowBucketsAllocator.IsCheckpointCompletedAsync(token));
                     }
 
                     if (!notify) return;

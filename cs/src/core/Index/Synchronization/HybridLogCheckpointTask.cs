@@ -153,10 +153,11 @@ namespace FASTER.core
 
                 if (valueTasks != null && !notify)
                 {
-                    Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
+                    var s = faster._hybridLogCheckpoint.flushedSemaphore;
+                    Debug.Assert(s != null);
                     valueTasks.Add(new ValueTask(
-                        faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token)
-                        .ContinueWith(t => faster._hybridLogCheckpoint.flushedSemaphore.Release())
+                        s.WaitAsync(token)
+                        .ContinueWith(t => s.Release())
                         ));
                 }
 
@@ -237,15 +238,16 @@ namespace FASTER.core
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
-                var notify = faster._hybridLogCheckpoint.flushedSemaphore != null &&
-                             faster._hybridLogCheckpoint.flushedSemaphore.CurrentCount > 0;
+                var s = faster._hybridLogCheckpoint.flushedSemaphore;
+
+                var notify = s != null && s.CurrentCount > 0;
 
                 if (valueTasks != null && !notify)
                 {
-                    Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
+                    Debug.Assert(s != null);
                     valueTasks.Add(new ValueTask(
-                        faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token)
-                        .ContinueWith(t => faster._hybridLogCheckpoint.flushedSemaphore.Release())));
+                        s.WaitAsync(token)
+                        .ContinueWith(t => s.Release())));
                 }
 
                 if (!notify) return;

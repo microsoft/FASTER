@@ -100,12 +100,13 @@ namespace FASTER.core
             return mainIndexCheckpointCallbackCount == 0;
         }
 
-        private async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
+        internal async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
         {
             if (mainIndexCheckpointCallbackCount > 0)
             {
-                await mainIndexCheckpointSemaphore.WaitAsync(token);
-                mainIndexCheckpointSemaphore.Release();
+                var s = mainIndexCheckpointSemaphore;
+                await s.WaitAsync(token);
+                s.Release();
             }
         }
 
