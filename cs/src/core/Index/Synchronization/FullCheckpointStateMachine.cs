@@ -56,7 +56,7 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            ref List<ValueTask> valueTasks,
+            List<ValueTask> valueTasks,
             CancellationToken token = default) where Key : new()
             where Value : new()
             where FasterSession : IFasterSession

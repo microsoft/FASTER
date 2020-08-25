@@ -348,7 +348,7 @@ namespace FASTER.core
 
                 List<ValueTask> valueTasks = new List<ValueTask>();
                 
-                ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, ref valueTasks, token);
+                ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
 
                 if (valueTasks.Count == 0)
                     break;

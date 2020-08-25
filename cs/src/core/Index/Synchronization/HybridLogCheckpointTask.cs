@@ -75,7 +75,7 @@ namespace FASTER.core
             SystemState prev, FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            ref List<ValueTask> valueTasks,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
@@ -139,10 +139,10 @@ namespace FASTER.core
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            ref List<ValueTask> valueTasks,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, faster, ctx, fasterSession, ref valueTasks, token);
+            base.OnThreadState(current, prev, faster, ctx, fasterSession, valueTasks, token);
 
             if (current.phase != Phase.WAIT_FLUSH) return;
 
@@ -228,10 +228,10 @@ namespace FASTER.core
             SystemState prev, FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            ref List<ValueTask> valueTasks,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, faster, ctx, fasterSession, ref valueTasks, token);
+            base.OnThreadState(current, prev, faster, ctx, fasterSession, valueTasks, token);
 
             if (current.phase != Phase.WAIT_FLUSH) return;
 

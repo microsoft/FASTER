@@ -27,7 +27,7 @@ namespace FASTER.core
                     var currentState = SystemState.Copy(ref systemState);
                     if (currentState.phase == Phase.REST)
                     {
-                        var intermediateState = SystemState.Make(currentState.phase | Phase.INTERMEDIATE, currentState.version);
+                        var intermediateState = SystemState.MakeIntermediate(currentState);
                         if (MakeTransition(currentState, intermediateState))
                         {
                             // No one can change from REST phase
@@ -77,8 +77,7 @@ namespace FASTER.core
                 return;
             }
 
-            List<ValueTask> valueTasks = default;
-            ThreadStateMachineStep(ctx, fasterSession, ref valueTasks);
+            ThreadStateMachineStep(ctx, fasterSession, default);
         }
 
         internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, string token, long lsn = -1)

@@ -57,10 +57,9 @@ namespace FASTER.core
         /// <param name="expectedState">expected current global state</param>
         internal void GlobalStateMachineStep(SystemState expectedState)
         {
-            // Between state transition, temporarily block any concurrent execution thread from progressing to prevent
-            // perceived inconsistencies
-            // Debug.Assert(expectedState.phase != Phase.INTERMEDIATE, "Cannot step from intermediate");
-            var intermediate = SystemState.Make(expectedState.phase | Phase.INTERMEDIATE, expectedState.version);
+            // Between state transition, temporarily block any concurrent execution thread 
+            // from progressing to prevent perceived inconsistencies
+            var intermediate = SystemState.MakeIntermediate(expectedState);
             if (!MakeTransition(expectedState, intermediate)) return;
 
             var nextState = currentSyncStateMachine.NextState(expectedState);
@@ -112,7 +111,7 @@ namespace FASTER.core
         private void ThreadStateMachineStep<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            ref List<ValueTask> valueTasks,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
@@ -120,13 +119,13 @@ namespace FASTER.core
             #region Capture current (non-intermediate) system state
             var currentTask = currentSyncStateMachine;
             var targetState = SystemState.Copy(ref systemState);
-            targetState.phase &= ~Phase.INTERMEDIATE;
+            SystemState.RemoveIntermediate(ref targetState);
 
             while (currentSyncStateMachine != currentTask)
             {
                 currentTask = currentSyncStateMachine;
                 targetState = SystemState.Copy(ref systemState);
-                targetState.phase &= ~Phase.INTERMEDIATE;
+                SystemState.RemoveIntermediate(ref targetState);
             }
             #endregion
 
@@ -213,7 +212,7 @@ namespace FASTER.core
                     (threadState.version == targetState.version && threadState.phase <= targetState.phase)
                     );
 
-                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, ref valueTasks, token);
+                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, valueTasks, token);
 
                 if (ctx != null)
                 {
@@ -229,7 +228,7 @@ namespace FASTER.core
                     if (currentSyncStateMachine == currentTask)
                     {
                         targetState = tmp;
-                        targetState.phase &= ~Phase.INTERMEDIATE;
+                        SystemState.RemoveIntermediate(ref targetState);
                     }
                 }
             } while (previousState.word != targetState.word);

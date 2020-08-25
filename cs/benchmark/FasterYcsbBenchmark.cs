@@ -96,7 +96,7 @@ namespace FASTER.benchmark
 #endif
 
             var path = "D:\\data\\FasterYcsbBenchmark\\";
-            device = Devices.CreateLogDevice(path + "hlog");
+            device = Devices.CreateLogDevice(path + "hlog", preallocateFile: true);
 
             if (kSmallMemoryLog)
                 store = new FasterKV<Key, Value, Input, Output, Empty, Functions>

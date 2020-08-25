@@ -64,6 +64,16 @@ namespace FASTER.core
             return info;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static SystemState MakeIntermediate(SystemState state) 
+            => Make(state.phase | Phase.INTERMEDIATE, state.version);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void RemoveIntermediate(ref SystemState state)
+        {
+            state.phase &= ~Phase.INTERMEDIATE;
+        }
+
         public static bool Equal(SystemState s1, SystemState s2)
         {
             return s1.word == s2.word;
