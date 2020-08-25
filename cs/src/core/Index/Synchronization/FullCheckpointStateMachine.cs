@@ -29,11 +29,6 @@ namespace FASTER.core
                     faster.InitializeIndexCheckpoint(faster._indexCheckpointToken);
                     faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
                     break;
-                case Phase.PREPARE:
-                    if (faster.UseReadCache && faster.ReadCache.BeginAddress != faster.ReadCache.TailAddress)
-                        throw new FasterException("Index checkpoint with read cache is not supported");
-                    faster.TakeIndexFuzzyCheckpoint();
-                    break;
                 case Phase.WAIT_FLUSH:
                     faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
                     faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress);
@@ -81,8 +76,8 @@ namespace FASTER.core
         /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         public FullCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1) : base(
-            targetVersion, new VersionChangeTask(), new FullCheckpointOrchestrationTask(), checkpointBackend,
-            new IndexSnapshotTask())
+            targetVersion, new VersionChangeTask(), new FullCheckpointOrchestrationTask(), 
+            new IndexSnapshotTask(), checkpointBackend)
         { }
 
         /// <inheritdoc />
@@ -97,11 +92,11 @@ namespace FASTER.core
                 case Phase.PREP_INDEX_CHECKPOINT:
                     result.phase = Phase.PREPARE;
                     break;
-                case Phase.WAIT_FLUSH:
+                case Phase.WAIT_PENDING:
                     result.phase = Phase.WAIT_INDEX_CHECKPOINT;
                     break;
                 case Phase.WAIT_INDEX_CHECKPOINT:
-                    result.phase = Phase.PERSISTENCE_CALLBACK;
+                    result.phase = Phase.WAIT_FLUSH;
                     break;
                 default:
                     result = base.NextState(start);
