@@ -186,7 +186,7 @@ namespace FasterLogSample
 
         static async Task AsyncScan()
         {
-            await foreach ((byte[] result, int length, long currentAddress) in iter.GetAsyncEnumerable())
+            await foreach ((byte[] result, int length, long currentAddress, long nextAddress) in iter.GetAsyncEnumerable())
             {
                 if (Different(result, staticEntry))
                     throw new Exception("Invalid entry found");
