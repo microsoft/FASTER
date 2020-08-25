@@ -148,16 +148,14 @@ namespace FASTER.core
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
-                var notify = faster.hlog.FlushedUntilAddress >=
-                             faster._hybridLogCheckpoint.info.finalLogicalAddress;
+                var s = faster._hybridLogCheckpoint.flushedSemaphore;
+
+                var notify = faster.hlog.FlushedUntilAddress >= faster._hybridLogCheckpoint.info.finalLogicalAddress;
 
                 if (valueTasks != null && !notify)
                 {
-                    Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
-                    valueTasks.Add(new ValueTask(
-                        faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token)
-                        .ContinueWith(t => faster._hybridLogCheckpoint.flushedSemaphore.Release())
-                        ));
+                    Debug.Assert(s != null);
+                    valueTasks.Add(new ValueTask(s.WaitAsync(token).ContinueWith(t => s.Release())));
                 }
 
                 if (!notify) return;
@@ -237,15 +235,14 @@ namespace FASTER.core
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
-                var notify = faster._hybridLogCheckpoint.flushedSemaphore != null &&
-                             faster._hybridLogCheckpoint.flushedSemaphore.CurrentCount > 0;
+                var s = faster._hybridLogCheckpoint.flushedSemaphore;
+
+                var notify = s != null && s.CurrentCount > 0;
 
                 if (valueTasks != null && !notify)
                 {
-                    Debug.Assert(faster._hybridLogCheckpoint.flushedSemaphore != null);
-                    valueTasks.Add(new ValueTask(
-                        faster._hybridLogCheckpoint.flushedSemaphore.WaitAsync(token)
-                        .ContinueWith(t => faster._hybridLogCheckpoint.flushedSemaphore.Release())));
+                    Debug.Assert(s != null);
+                    valueTasks.Add(new ValueTask(s.WaitAsync(token).ContinueWith(t => s.Release())));
                 }
 
                 if (!notify) return;

@@ -102,11 +102,9 @@ namespace FASTER.core
 
         private async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
         {
-            if (mainIndexCheckpointCallbackCount > 0)
-            {
-                await mainIndexCheckpointSemaphore.WaitAsync(token);
-                mainIndexCheckpointSemaphore.Release();
-            }
+            var s = mainIndexCheckpointSemaphore;
+            await s.WaitAsync(token);
+            s.Release();
         }
 
         private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
