@@ -91,7 +91,7 @@ namespace FASTER.core
 
                 if (UseReadCache && ReadFromCache(ref key, ref logicalAddress, ref physicalAddress))
                 {
-                    if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry) > sessionCtx.version)
+                    if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
                     {
                         status = OperationStatus.CPR_SHIFT_DETECTED;
                         goto CreatePendingContext; // Pivot thread
@@ -122,7 +122,7 @@ namespace FASTER.core
             }
             #endregion
 
-            if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry) > sessionCtx.version)
+            if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
             {
                 status = OperationStatus.CPR_SHIFT_DETECTED;
                 goto CreatePendingContext; // Pivot thread
@@ -306,7 +306,7 @@ namespace FASTER.core
                             {
                                 // Set to release shared latch (default)
                                 latchOperation = LatchOperation.Shared;
-                                if (GetLatestRecordVersion(ref entry) > sessionCtx.version)
+                                if (GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
                                 {
                                     status = OperationStatus.CPR_SHIFT_DETECTED;
                                     goto CreatePendingContext; // Pivot Thread
@@ -321,7 +321,7 @@ namespace FASTER.core
                         }
                     case Phase.IN_PROGRESS:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 if (HashBucket.TryAcquireExclusiveLatch(bucket))
                                 {
@@ -339,7 +339,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 if (HashBucket.NoSharedLatches(bucket))
                                 {
@@ -355,7 +355,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_FLUSH:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 goto CreateNewRecord; // Create a (v+1) record
                             }
@@ -367,7 +367,7 @@ namespace FASTER.core
             }
             #endregion
 
-            Debug.Assert(GetLatestRecordVersion(ref entry) <= sessionCtx.version);
+            Debug.Assert(GetLatestRecordVersion(ref entry, sessionCtx.version) <= sessionCtx.version);
 
             #region Normal processing
 
@@ -576,7 +576,7 @@ namespace FASTER.core
                             {
                                 // Set to release shared latch (default)
                                 latchOperation = LatchOperation.Shared;
-                                if (GetLatestRecordVersion(ref entry) > sessionCtx.version)
+                                if (GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
                                 {
                                     status = OperationStatus.CPR_SHIFT_DETECTED;
                                     goto CreateFailureContext; // Pivot Thread
@@ -591,7 +591,7 @@ namespace FASTER.core
                         }
                     case Phase.IN_PROGRESS:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 Debug.Assert(pendingContext.heldLatch != LatchOperation.Shared);
                                 if (pendingContext.heldLatch == LatchOperation.Exclusive || HashBucket.TryAcquireExclusiveLatch(bucket))
@@ -610,7 +610,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 if (HashBucket.NoSharedLatches(bucket))
                                 {
@@ -626,7 +626,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_FLUSH:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 goto CreateNewRecord; // Create a (v+1) record
                             }
@@ -638,7 +638,7 @@ namespace FASTER.core
             }
             #endregion
 
-            Debug.Assert(GetLatestRecordVersion(ref entry) <= sessionCtx.version);
+            Debug.Assert(GetLatestRecordVersion(ref entry, sessionCtx.version) <= sessionCtx.version);
 
             #region Normal processing
 
@@ -907,7 +907,7 @@ namespace FASTER.core
                             {
                                 // Set to release shared latch (default)
                                 latchOperation = LatchOperation.Shared;
-                                if (GetLatestRecordVersion(ref entry) > sessionCtx.version)
+                                if (GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
                                 {
                                     status = OperationStatus.CPR_SHIFT_DETECTED;
                                     goto CreatePendingContext; // Pivot Thread
@@ -922,7 +922,7 @@ namespace FASTER.core
                         }
                     case Phase.IN_PROGRESS:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 if (HashBucket.TryAcquireExclusiveLatch(bucket))
                                 {
@@ -940,7 +940,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 if (HashBucket.NoSharedLatches(bucket))
                                 {
@@ -956,7 +956,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_FLUSH:
                         {
-                            if (GetLatestRecordVersion(ref entry) < sessionCtx.version)
+                            if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
                                 goto CreateNewRecord; // Create a (v+1) record
                             }
@@ -968,7 +968,7 @@ namespace FASTER.core
             }
             #endregion
 
-            Debug.Assert(GetLatestRecordVersion(ref entry) <= sessionCtx.version);
+            Debug.Assert(GetLatestRecordVersion(ref entry, sessionCtx.version) <= sessionCtx.version);
 
             #region Normal processing
 
@@ -2033,20 +2033,24 @@ namespace FASTER.core
             }
         }
 
-        private long GetLatestRecordVersion(ref HashBucketEntry entry)
+        private long GetLatestRecordVersion(ref HashBucketEntry entry, long defaultVersion)
         {
-            long latestRecordVersion;
             if (UseReadCache && entry.ReadCache)
             {
                 var _addr = readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
-                latestRecordVersion = readcache.GetInfo(_addr).Version;
+                if (entry.Address >= readcache.HeadAddress)
+                    return readcache.GetInfo(_addr).Version;
+                else
+                    return defaultVersion;
             }
             else
             {
                 var _addr = hlog.GetPhysicalAddress(entry.Address);
-                latestRecordVersion = hlog.GetInfo(_addr).Version;
+                if (entry.Address >= hlog.HeadAddress)
+                    return hlog.GetInfo(_addr).Version;
+                else
+                    return defaultVersion;
             }
-            return latestRecordVersion;
         }
         #endregion
     }
