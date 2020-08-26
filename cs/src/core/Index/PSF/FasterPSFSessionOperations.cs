@@ -14,13 +14,32 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         #region PSF calls for Secondary FasterKV
-        internal Status PsfInsert(ref Key key, ref Value value, ref Input input, long serialNo)
+
+        // This value is created within the Primary FKV session.
+        Lazy<ClientSession<Key, Value, PSFInputPrimaryReadAddress<Key>, PSFOutputPrimaryReadAddress<Key, Value>, PSFContext, PSFPrimaryFunctions<Key, Value>>> psfLookupRecordIdSession;
+
+        internal void CreateLazyPsfSessionWrapper() {
+            this.psfLookupRecordIdSession = new Lazy<ClientSession<Key, Value, PSFInputPrimaryReadAddress<Key>, PSFOutputPrimaryReadAddress<Key, Value>, PSFContext, PSFPrimaryFunctions<Key, Value>>>(
+                () => this.fht.NewSession<PSFInputPrimaryReadAddress<Key>, PSFOutputPrimaryReadAddress<Key, Value>, PSFContext, PSFPrimaryFunctions<Key, Value>>(
+                                                                new PSFPrimaryFunctions<Key, Value>()));
+        }
+
+        internal void DisposeLazyPsfSessionWrapper()
+        {
+            if (!(this.psfLookupRecordIdSession is null) && this.psfLookupRecordIdSession.IsValueCreated)
+                this.psfLookupRecordIdSession.Value.Dispose();
+        }
+
+        private ClientSession<Key, Value, PSFInputPrimaryReadAddress<Key>, PSFOutputPrimaryReadAddress<Key, Value>, PSFContext, PSFPrimaryFunctions<Key, Value>> GetPsfLookupRecordSession() 
+            => this.psfLookupRecordIdSession.Value;
+
+        internal Status PsfInsert(ref Key key, ref Value value, ref Input input, ref Context context, long serialNo)
         {
             // Called on the secondary FasterKV
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfInsert(ref key, ref value, ref input, this.FasterSession, serialNo, ctx);
+                return fht.ContextPsfInsert(ref key, ref value, ref input, ref context, this.FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -28,13 +47,13 @@ namespace FASTER.core
             }
         }
 
-        internal Status PsfReadKey(ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo)
+        internal Status PsfReadKey(ref Key key, ref Input input, ref Output output, ref Context context, long serialNo)
         {
             // Called on the secondary FasterKV
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfReadKey(ref key, ref psfArgs, this.FasterSession, serialNo, ctx);
+                return fht.ContextPsfReadKey(ref key, ref input, ref output, ref context, this.FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -43,20 +62,19 @@ namespace FASTER.core
         }
 
         internal ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> PsfReadKeyAsync(
-                ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo, PSFQuerySettings querySettings)
+                ref Key key, ref Input input, ref Output output, ref Context context, long serialNo, PSFQuerySettings querySettings)
         {
             // Called on the secondary FasterKV
-            return fht.ContextPsfReadKeyAsync(this, ref key, ref psfArgs, serialNo, ctx, querySettings);
+            return fht.ContextPsfReadKeyAsync(this, ref key, ref input, ref output, ref context, serialNo, ctx, querySettings);
         }
 
-
-        internal Status PsfReadAddress(ref PSFReadArgs<Key, Value> psfArgs, long serialNo)
+        internal Status PsfReadAddress(ref Input input, ref Output output, ref Context context, long serialNo)
         {
             // Called on the secondary FasterKV
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfReadAddress(ref psfArgs, this.FasterSession, serialNo, ctx);
+                return fht.ContextPsfReadAddress(ref input, ref output, ref context, this.FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -65,20 +83,21 @@ namespace FASTER.core
         }
 
         internal ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> PsfReadAddressAsync(
-                ref PSFReadArgs<Key, Value> psfArgs, long serialNo, PSFQuerySettings querySettings)
+                ref Input input, ref Output output, ref Context context, long serialNo, PSFQuerySettings querySettings)
         {
             // Called on the secondary FasterKV
-            return fht.ContextPsfReadAddressAsync(this, ref psfArgs, serialNo, ctx, querySettings);
+            return fht.ContextPsfReadAddressAsync(this, ref input, ref output, ref context, serialNo, ctx, querySettings);
         }
 
-        internal Status PsfUpdate<TProviderData>(ref GroupCompositeKeyPair groupKeysPair, ref Value value, ref Input input, long serialNo,
+        internal Status PsfUpdate<TProviderData>(ref GroupCompositeKeyPair groupKeysPair, ref Value value, ref Input input, 
+                                                 ref Context context, long serialNo,
                                                  PSFChangeTracker<TProviderData, Value> changeTracker)
         {
             // Called on the secondary FasterKV
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfUpdate(ref groupKeysPair, ref value, ref input, this.FasterSession, serialNo, ctx, changeTracker);
+                return fht.ContextPsfUpdate(ref groupKeysPair, ref value, ref input, ref context, this.FasterSession, serialNo, ctx, changeTracker);
             }
             finally
             {
@@ -86,14 +105,14 @@ namespace FASTER.core
             }
         }
 
-        internal Status PsfDelete<TProviderData>(ref Key key, ref Value value, ref Input input, long serialNo,
+        internal Status PsfDelete<TProviderData>(ref Key key, ref Value value, ref Input input, ref Context context, long serialNo,
                                                  PSFChangeTracker<TProviderData, Value> changeTracker)
         {
             // Called on the secondary FasterKV
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextPsfDelete(ref key, ref value, ref input, this.FasterSession, serialNo, ctx, changeTracker);
+                return fht.ContextPsfDelete(ref key, ref value, ref input, ref context, this.FasterSession, serialNo, ctx, changeTracker);
             }
             finally
             {
@@ -108,9 +127,11 @@ namespace FASTER.core
         internal Status CreateProviderData(long logicalAddress, ConcurrentQueue<FasterKVProviderData<Key, Value>> providerDatas)
         {
             // Looks up logicalAddress in the primary FasterKV
-            var primaryOutput = new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog, providerDatas);
-            var psfArgs = new PSFReadArgs<Key, Value>(new PSFInputPrimaryReadAddress<Key>(logicalAddress), primaryOutput);
-            return this.PsfReadAddress(ref psfArgs, this.ctx.serialNum + 1);
+            var output = new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog, providerDatas);
+            var input = new PSFInputPrimaryReadAddress<Key>(logicalAddress);
+            var session = this.GetPsfLookupRecordSession();
+            var context = new PSFContext { Functions = session.functions };
+            return session.PsfReadAddress(ref input, ref output, ref context, this.ctx.serialNum + 1);
         }
 
         internal IEnumerable<FasterKVProviderData<Key, Value>> ReturnProviderDatas(IEnumerable<long> logicalAddresses)
@@ -144,9 +165,11 @@ namespace FASTER.core
         internal async ValueTask<FasterKVProviderData<Key, Value>> CreateProviderDataAsync(long logicalAddress, ConcurrentQueue<FasterKVProviderData<Key, Value>> providerDatas, PSFQuerySettings querySettings)
         {
             // Looks up logicalAddress in the primary FasterKV
-            var primaryOutput = new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog, providerDatas);
-            var psfArgs = new PSFReadArgs<Key, Value>(new PSFInputPrimaryReadAddress<Key>(logicalAddress), primaryOutput);
-            var readAsyncResult = await this.PsfReadAddressAsync(ref psfArgs, this.ctx.serialNum + 1, querySettings);
+            var output = new PSFOutputPrimaryReadAddress<Key, Value>(this.fht.hlog, providerDatas);
+            var input = new PSFInputPrimaryReadAddress<Key>(logicalAddress);
+            var session = this.GetPsfLookupRecordSession();
+            var context = new PSFContext { Functions = session.functions };
+            var readAsyncResult = await session.PsfReadAddressAsync(ref input, ref output, ref context, this.ctx.serialNum + 1, querySettings);
             if (querySettings.IsCanceled)
                 return null;
             var (status, _) = readAsyncResult.CompleteRead();

@@ -75,9 +75,12 @@ namespace FASTER.core
             public void Dispose() => this.mem.Return();
         }
 
+        private IPSFFunctions<Key, Value, Input, Output> GetFunctions<Input, Output, Context>(ref Context context)
+            => (context as PSFContext).Functions as IPSFFunctions<Key, Value, Input, Output>;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PsfInternalReadKey<Input, Output, Context, FasterSession>(
-                                    ref Key queryKeyPointerRefAsKeyRef, ref PSFReadArgs<Key, Value> psfArgs,
+                                    ref Key queryKeyPointerRefAsKeyRef, ref Input input, ref Output output, ref Context context,
                                     ref PendingContext<Input, Output, Context> pendingContext,
                                     FasterSession fasterSession,
                                     FasterExecutionContext<Input, Output, Context> sessionCtx, long lsn)
@@ -89,8 +92,7 @@ namespace FASTER.core
             var latestRecordVersion = -1;
             var heldOperation = LatchOperation.None;
 
-            var psfInput = psfArgs.Input;
-            var psfOutput = psfArgs.Output;
+            var functions = GetFunctions<Input, Output, Context>(ref context);
             ref KeyPointer<Key> queryKeyPointer = ref KeyPointer<Key>.CastFromKeyRef(ref queryKeyPointerRefAsKeyRef);
 
             var hash = this.PsfKeyAccessor.GetHashCode64(ref queryKeyPointer);
@@ -120,9 +122,9 @@ namespace FASTER.core
                         status = OperationStatus.CPR_SHIFT_DETECTED;
                         goto CreatePendingContext; // Pivot thread
                     }
-                    return psfOutput.Visit(psfInput.PsfOrdinal, ref hlog.GetKey(physicalAddress),
-                                           ref readcache.GetValue(physicalAddress),
-                                           hlog.GetInfo(physicalAddress).Tombstone, isConcurrent: false).Status;
+                    return functions.VisitReadCache(input, ref hlog.GetKey(physicalAddress),
+                                                    ref readcache.GetValue(physicalAddress),
+                                                    hlog.GetInfo(physicalAddress).Tombstone, isConcurrent: false).Status;
                 }
 #endif
 
@@ -156,10 +158,9 @@ namespace FASTER.core
                 // is concurrent; Immutable region will not be changed.
                 long physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 long recordAddress = this.PsfKeyAccessor.GetRecordAddressFromKeyPhysicalAddress(physicalAddress);
-                return psfOutput.Visit(psfInput.PsfOrdinal, physicalAddress,
-                                      ref hlog.GetValue(recordAddress),
-                                      hlog.GetInfo(recordAddress).Tombstone,
-                                      isConcurrent: logicalAddress >= hlog.SafeReadOnlyAddress).Status;
+                return functions.VisitSecondaryRead(ref hlog.GetValue(recordAddress), ref input, ref output, physicalAddress,
+                                                    hlog.GetInfo(recordAddress).Tombstone,
+                                                    isConcurrent: logicalAddress >= hlog.SafeReadOnlyAddress).Status;
             }
 
             // On-Disk Region
@@ -196,15 +197,14 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.PSF_READ_KEY;
                 pendingContext.key = new PsfQueryKeyContainer(ref queryKeyPointerRefAsKeyRef, this.PsfKeyAccessor, this.hlog.bufferPool);
-                pendingContext.input = default;
-                pendingContext.output = default;
+                pendingContext.input = input;
+                pendingContext.output = output;
                 pendingContext.userContext = default;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = this.PsfKeyAccessor.GetRecordAddressFromKeyPhysicalAddress(hlog.GetPhysicalAddress(logicalAddress));
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
-                pendingContext.psfReadArgs = psfArgs;
             }
 #endregion
 
@@ -213,7 +213,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PsfInternalReadAddress<Input, Output, Context, FasterSession>(
-                                    ref PSFReadArgs<Key, Value> psfArgs,
+                                    ref Input input, ref Output output, ref Context context,
                                     ref PendingContext<Input, Output, Context> pendingContext,
                                     FasterSession fasterSession,
                                     FasterExecutionContext<Input, Output, Context> sessionCtx, long lsn)
@@ -226,18 +226,16 @@ namespace FASTER.core
             //     is used only as a target for ScanQueryChain.
             // TODO: Support a variation of this that allows traversing from a start address -or- the hash table, and returns next start address.
             var latestRecordVersion = -1;
-
-            var psfInput = psfArgs.Input;
-            var psfOutput = psfArgs.Output;
-
             OperationStatus status;
+            var functions = GetFunctions<Input, Output, Context>(ref context);
 
-#region Look up record in in-memory HybridLog
+            #region Look up record in in-memory HybridLog
             // For PSFs, the addresses stored in the hash table point to KeyPointer entries, not the record header.
-            long logicalAddress = psfInput.ReadLogicalAddress;
+            long logicalAddress = functions.ReadLogicalAddress(ref input);
             PsfTrace($"  ReadAddr:        | {logicalAddress}");
 
 #if false // TODOdcr: Support ReadCache in PSFs (must call this.PsfKeyAccessor.GetRecordAddressFromKeyLogicalAddress) 
+          // TODO: PsfInternalReadAddress should handle ReadCache for primary FKV
             if (UseReadCache && ReadFromCache(ref logicalAddress, ref physicalAddress, ref latestRecordVersion))
             {
                 if (sessionCtx.phase == Phase.PREPARE && latestRecordVersion != -1 && latestRecordVersion > sessionCtx.version)
@@ -253,7 +251,7 @@ namespace FASTER.core
 
             if (logicalAddress >= hlog.HeadAddress)
             {
-                if (this.ImplmentsPSFs && !ScanQueryChain(ref logicalAddress, ref KeyPointer<Key>.CastFromKeyRef(ref psfInput.QueryKeyRef), ref latestRecordVersion))
+                if (this.ImplmentsPSFs && !ScanQueryChain(ref logicalAddress, ref KeyPointer<Key>.CastFromKeyRef(ref functions.QueryKeyRef(ref input)), ref latestRecordVersion))
                 { 
                     goto ProcessAddress;    // RECORD_ON_DISK or not found
                 }
@@ -269,19 +267,15 @@ namespace FASTER.core
                 // Mutable region (even fuzzy region is included here) is above SafeReadOnlyAddress and 
                 // is concurrent; Immutable region will not be changed.
                 long physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!this.ImplmentsPSFs)
+                if (this.ImplmentsPSFs)
                 {
-                    return psfOutput.Visit(psfInput.PsfOrdinal, ref hlog.GetKey(physicalAddress),
-                                      ref hlog.GetValue(physicalAddress),
-                                      hlog.GetInfo(physicalAddress).Tombstone,
-                                      isConcurrent: logicalAddress >= hlog.SafeReadOnlyAddress).Status;
+                    long recordAddress = this.PsfKeyAccessor.GetRecordAddressFromKeyPhysicalAddress(physicalAddress);
+                    return functions.VisitSecondaryRead(ref hlog.GetValue(recordAddress), ref input, ref output, physicalAddress,
+                                                        hlog.GetInfo(recordAddress).Tombstone,
+                                                        isConcurrent: logicalAddress >= hlog.SafeReadOnlyAddress).Status;
                 }
-
-                long recordAddress = this.PsfKeyAccessor.GetRecordAddressFromKeyPhysicalAddress(physicalAddress);
-                return psfOutput.Visit(psfInput.PsfOrdinal, physicalAddress,
-                                      ref hlog.GetValue(recordAddress),
-                                      hlog.GetInfo(recordAddress).Tombstone,
-                                      isConcurrent: logicalAddress >= hlog.SafeReadOnlyAddress).Status;
+                return functions.VisitPrimaryReadAddress(ref hlog.GetKey(physicalAddress), ref hlog.GetValue(physicalAddress),
+                                                         ref output, isConcurrent: logicalAddress >= hlog.SafeReadOnlyAddress).Status;
             }
 
             // On-Disk Region
@@ -293,7 +287,7 @@ namespace FASTER.core
             }
             else
             {
-                // No record found. TODOerr: we should always find the LogicalAddress
+                // No record found. TODOerr: we should not have called this function in this case.
                 return OperationStatus.NOTFOUND;
             }
 
@@ -304,10 +298,10 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.PSF_READ_ADDRESS;
                 pendingContext.key = this.ImplmentsPSFs 
-                                        ? new PsfQueryKeyContainer(ref psfInput.QueryKeyRef, this.PsfKeyAccessor, this.hlog.bufferPool)
+                                        ? new PsfQueryKeyContainer(ref functions.QueryKeyRef(ref input), this.PsfKeyAccessor, this.hlog.bufferPool)
                                         : default;
-                pendingContext.input = default;
-                pendingContext.output = default;
+                pendingContext.input = input;
+                pendingContext.output = output;
                 pendingContext.userContext = default;
                 pendingContext.entry.word = default;
                 pendingContext.logicalAddress = this.ImplmentsPSFs
@@ -316,7 +310,6 @@ namespace FASTER.core
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = LatchOperation.None;
-                pendingContext.psfReadArgs = psfArgs;
             }
 #endregion
 
@@ -334,7 +327,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PsfInternalInsert<Input, Output, Context, FasterSession>(
-                        ref Key firstKeyPointerRefAsKeyRef, ref Value value, ref Input input,
+                        ref Key firstKeyPointerRefAsKeyRef, ref Value value, ref Input input, ref Context context,
                         ref PendingContext<Input, Output, Context> pendingContext,
                         FasterSession fasterSession,
                         FasterExecutionContext<Input, Output, Context> sessionCtx, long lsn)
@@ -343,7 +336,7 @@ namespace FASTER.core
             var status = default(OperationStatus);
             var latestRecordVersion = -1;
 
-            var psfInput = input as IPSFInput<Key>;
+            var functions = GetFunctions<Input, Output, Context>(ref context);
             ref CompositeKey<Key> compositeKey = ref CompositeKey<Key>.CastFromFirstKeyPointerRefAsKeyRef(ref firstKeyPointerRefAsKeyRef);
 
             // Update the KeyPointer links for chains with IsNullAt false (indicating a match with the
@@ -354,24 +347,24 @@ namespace FASTER.core
             CASHelper* casHelpers = stackalloc CASHelper[psfCount];
             int startOfKeysOffset = 0;
             PsfTrace($"Insert: {this.PsfKeyAccessor.GetString(ref compositeKey)} | rId {value} |");
-            for (psfInput.PsfOrdinal = 0; psfInput.PsfOrdinal < psfCount; ++psfInput.PsfOrdinal)
+            for (var psfOrdinal = 0; psfOrdinal < psfCount; ++psfOrdinal)
             {
                 // For RCU, or in case we had to retry due to CPR_SHIFT and somehow managed to delete
                 // the previously found record, clear out the chain link pointer.
-                this.PsfKeyAccessor.SetPreviousAddress(ref compositeKey, psfInput.PsfOrdinal, Constants.kInvalidAddress);
+                this.PsfKeyAccessor.SetPreviousAddress(ref compositeKey, psfOrdinal, Constants.kInvalidAddress);
 
-                this.PsfKeyAccessor.SetOffsetToStartOfKeys(ref compositeKey, psfInput.PsfOrdinal, startOfKeysOffset);
+                this.PsfKeyAccessor.SetOffsetToStartOfKeys(ref compositeKey, psfOrdinal, startOfKeysOffset);
                 startOfKeysOffset += this.PsfKeyAccessor.KeyPointerSize;
 
-                ref CASHelper casHelper = ref casHelpers[psfInput.PsfOrdinal];
-                if (this.PsfKeyAccessor.IsNullAt(ref compositeKey, psfInput.PsfOrdinal))
+                ref CASHelper casHelper = ref casHelpers[psfOrdinal];
+                if (this.PsfKeyAccessor.IsNullAt(ref compositeKey, psfOrdinal))
                 {
                     casHelper.isNull = true;
                     PsfTrace($" null");
                     continue;
                 }
 
-                casHelper.hash = this.PsfKeyAccessor.GetHashCode64(ref compositeKey, psfInput.PsfOrdinal);
+                casHelper.hash = this.PsfKeyAccessor.GetHashCode64(ref compositeKey, psfOrdinal);
                 var tag = (ushort)((ulong)casHelper.hash >> Constants.kHashTagShift);
 
                 if (sessionCtx.phase != Phase.REST)
@@ -406,7 +399,7 @@ namespace FASTER.core
                         latestRecordVersion = Math.Max(latestRecordVersion, hlog.GetInfo(recordAddress).Version);
                     }
 
-                    this.PsfKeyAccessor.SetPreviousAddress(ref compositeKey, psfInput.PsfOrdinal, logicalAddress);
+                    this.PsfKeyAccessor.SetPreviousAddress(ref compositeKey, psfOrdinal, logicalAddress);
                 }
                 else
                 {
@@ -438,7 +431,7 @@ namespace FASTER.core
                 BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
-                                     final:true, tombstone: psfInput.IsDelete, invalidBit:true,
+                                     final:true, tombstone: functions.IsDelete(ref input), invalidBit:true,
                                      Constants.kInvalidAddress);  // We manage all prev addresses within CompositeKey
                 ref Key storedFirstKeyPointerRefAsKeyRef = ref hlog.GetKey(newPhysicalAddress);
                 ref CompositeKey<Key> storedKey = ref CompositeKey<Key>.CastFromFirstKeyPointerRefAsKeyRef(ref storedFirstKeyPointerRefAsKeyRef);
@@ -447,13 +440,12 @@ namespace FASTER.core
 
                 PsfTraceLine();
                 newLogicalAddress += RecordInfo.GetLength();
-                for (psfInput.PsfOrdinal = 0; psfInput.PsfOrdinal < psfCount; 
-                    ++psfInput.PsfOrdinal, newLogicalAddress += this.PsfKeyAccessor.KeyPointerSize)
+                for (var psfOrdinal = 0; psfOrdinal < psfCount; ++psfOrdinal, newLogicalAddress += this.PsfKeyAccessor.KeyPointerSize)
                 {
-                    var casHelper = casHelpers[psfInput.PsfOrdinal];
+                    var casHelper = casHelpers[psfOrdinal];
                     var tag = (ushort)((ulong)casHelper.hash >> Constants.kHashTagShift);
 
-                    PsfTrace($"    ({psfInput.PsfOrdinal}): {casHelper.hash} {tag} | newLA {newLogicalAddress} | prev {casHelper.entry.word}");
+                    PsfTrace($"    ({psfOrdinal}): {casHelper.hash} {tag} | newLA {newLogicalAddress} | prev {casHelper.entry.word}");
                     if (casHelper.isNull)
                     {
                         PsfTraceLine(" null");
@@ -481,7 +473,7 @@ namespace FASTER.core
                         {
                             PsfTrace($" / {foundEntry.Address}");
                             casHelper.entry.word = foundEntry.word;
-                            this.PsfKeyAccessor.SetPreviousAddress(ref storedKey, psfInput.PsfOrdinal, foundEntry.Address);
+                            this.PsfKeyAccessor.SetPreviousAddress(ref storedKey, psfOrdinal, foundEntry.Address);
                             continue;
                         }
 
@@ -506,8 +498,6 @@ namespace FASTER.core
 #region Create pending context
             CreatePendingContext:
             {
-                psfInput.PsfOrdinal = Constants.kInvalidPsfOrdinal;
-
                 pendingContext.type = OperationType.PSF_INSERT;
                 pendingContext.key = hlog.GetKeyContainer(ref firstKeyPointerRefAsKeyRef);  // The Insert key has the full PsfCount of KeyPointers
                 pendingContext.value = hlog.GetValueContainer(ref value);
@@ -526,7 +516,7 @@ namespace FASTER.core
 #endregion
 
             return status == OperationStatus.RETRY_NOW
-                ? PsfInternalInsert(ref firstKeyPointerRefAsKeyRef, ref value, ref input, ref pendingContext, fasterSession, sessionCtx, lsn)
+                ? PsfInternalInsert(ref firstKeyPointerRefAsKeyRef, ref value, ref input, ref context, ref pendingContext, fasterSession, sessionCtx, lsn)
                 : status;
         }
    }

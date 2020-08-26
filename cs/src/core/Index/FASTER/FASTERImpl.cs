@@ -1387,17 +1387,19 @@ namespace FASTER.core
                 }
                 else if (pendingContext.type == OperationType.PSF_READ_KEY)
                 {
-                    pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
-                                            ref hlog.GetContextRecordKey(ref request),
+                    var functions = fasterSession as IPSFFunctions<Key, Value, Input, Output>;
+                    functions.VisitSecondaryRead(ref hlog.GetContextRecordKey(ref request),
                                             ref hlog.GetContextRecordValue(ref request),
+                                            ref pendingContext.input, ref pendingContext.output,
                                             tombstone: false, // checked above
                                             isConcurrent: false);
                 }
                 else if (pendingContext.type == OperationType.PSF_READ_ADDRESS)
                 {
-                    pendingContext.psfReadArgs.Output.Visit(pendingContext.psfReadArgs.Input.PsfOrdinal,
-                                            ref hlog.GetContextRecordKey(ref request),
+                    var functions = fasterSession as IPSFFunctions<Key, Value, Input, Output>;
+                    functions.VisitSecondaryRead(ref hlog.GetContextRecordKey(ref request),
                                             ref hlog.GetContextRecordValue(ref request),
+                                            ref pendingContext.input, ref pendingContext.output,
                                             tombstone: false, // checked above
                                             isConcurrent: false);
                 }
@@ -1718,11 +1720,15 @@ namespace FASTER.core
                         break;
                     case OperationType.PSF_READ_KEY:
                         internalStatus = PsfInternalReadKey(ref pendingContext.key.Get(),
-                                                      ref pendingContext.psfReadArgs,
+                                                      ref pendingContext.input,
+                                                      ref pendingContext.output,
+                                                      ref pendingContext.userContext,
                                                       ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.PSF_READ_ADDRESS:
-                        internalStatus = PsfInternalReadAddress(ref pendingContext.psfReadArgs,
+                        internalStatus = PsfInternalReadAddress(ref pendingContext.input,
+                                                      ref pendingContext.output,
+                                                      ref pendingContext.userContext,
                                                       ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
@@ -1736,6 +1742,7 @@ namespace FASTER.core
                         internalStatus = PsfInternalInsert(ref pendingContext.key.Get(),
                                                         ref pendingContext.value.Get(),
                                                         ref pendingContext.input,
+                                                        ref pendingContext.userContext,
                                                         ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.DELETE:

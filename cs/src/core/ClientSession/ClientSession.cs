@@ -66,6 +66,8 @@ namespace FASTER.core
                     Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
+            this.CreateLazyPsfSessionWrapper();
+
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();
@@ -87,6 +89,8 @@ namespace FASTER.core
             // Session runs on a single thread
             if (!SupportAsync)
                 UnsafeSuspendThread();
+
+            DisposeLazyPsfSessionWrapper();
         }
 
         /// <summary>

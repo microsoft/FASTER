@@ -12,12 +12,12 @@ namespace FASTER.core
         where Value : new()
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfReadKey<Input, Output, Context, FasterSession>(ref Key key, ref PSFReadArgs<Key, Value> psfArgs, FasterSession fasterSession,
-                                        long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextPsfReadKey<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref Context context,
+                                        FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            var internalStatus = this.PsfInternalReadKey(ref key, ref psfArgs, ref pcontext, fasterSession, sessionCtx, serialNo);
+            var internalStatus = this.PsfInternalReadKey(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
                 : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
@@ -29,20 +29,20 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ContextPsfReadKeyAsync<Input, Output, Context, Functions>(
                                         ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                                        ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx,
-                                        PSFQuerySettings querySettings)
+                                        ref Key key, ref Input input, ref Output output, ref Context context, long serialNo, 
+                                        FasterExecutionContext<Input, Output, Context> sessionCtx, PSFQuerySettings querySettings)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            return ContextPsfReadAsync(clientSession, isKey: true, ref key, ref psfArgs, serialNo, sessionCtx, querySettings);
+            return ContextPsfReadAsync(clientSession, isKey: true, ref key, ref input, ref output, ref context, serialNo, sessionCtx, querySettings);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfReadAddress<Input, Output, Context, FasterSession>(ref PSFReadArgs<Key, Value> psfArgs, FasterSession fasterSession,
-                                        long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextPsfReadAddress<Input, Output, Context, FasterSession>(ref Input input, ref Output output, ref Context context,
+                                        FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            var internalStatus = this.PsfInternalReadAddress(ref psfArgs, ref pcontext, fasterSession, sessionCtx, serialNo);
+            var internalStatus = this.PsfInternalReadAddress(ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
                 : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
@@ -54,22 +54,21 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ContextPsfReadAddressAsync<Input, Output, Context, Functions>(
                                         ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                                        ref PSFReadArgs<Key, Value> psfArgs, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx,
-                                        PSFQuerySettings querySettings)
+                                        ref Input input, ref Output output, ref Context context, long serialNo,
+                                        FasterExecutionContext<Input, Output, Context> sessionCtx, PSFQuerySettings querySettings)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var key = default(Key);
-            return ContextPsfReadAsync(clientSession, isKey: false, ref key, ref psfArgs, serialNo, sessionCtx, querySettings);
+            return ContextPsfReadAsync(clientSession, isKey: false, ref key, ref input, ref output, ref context, serialNo, sessionCtx, querySettings);
         }
 
         internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ContextPsfReadAsync<Input, Output, Context, Functions>(
                                         ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool isKey,
-                                        ref Key key, ref PSFReadArgs<Key, Value> psfArgs, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx,
-                                        PSFQuerySettings querySettings)
+                                        ref Key key, ref Input input, ref Output output, ref Context context, long serialNo, 
+                                        FasterExecutionContext<Input, Output, Context> sessionCtx, PSFQuerySettings querySettings)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            var output = default(Output);
             var nextSerialNum = clientSession.ctx.serialNum + 1;
 
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
@@ -77,8 +76,8 @@ namespace FASTER.core
             {
             TryReadAgain:
                 var internalStatus = isKey
-                    ? this.PsfInternalReadKey(ref key, ref psfArgs, ref pcontext, clientSession.FasterSession, sessionCtx, serialNo)
-                    : this.PsfInternalReadAddress(ref psfArgs, ref pcontext, clientSession.FasterSession, sessionCtx, serialNo);
+                    ? this.PsfInternalReadKey(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, sessionCtx, serialNo)
+                    : this.PsfInternalReadAddress(ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, sessionCtx, serialNo);
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
                     return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output));
@@ -107,13 +106,14 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfInsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, ref Input input, 
+        internal Status ContextPsfInsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, 
+                                         ref Input input, ref Context context,
                                          FasterSession fasterSession, long serialNo,
                                          FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            var internalStatus = this.PsfInternalInsert(ref key, ref value, ref input,
+            var internalStatus = this.PsfInternalInsert(ref key, ref value, ref input, ref context,
                                                       ref pcontext, fasterSession, sessionCtx, serialNo);
             var status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
@@ -124,19 +124,20 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextPsfUpdate<Input, Output, Context, FasterSession, TProviderData>(ref GroupCompositeKeyPair groupKeysPair, ref Value value, ref Input input, 
+        internal Status ContextPsfUpdate<Input, Output, Context, FasterSession, TProviderData>(ref GroupCompositeKeyPair groupKeysPair, ref Value value, 
+                                                                   ref Input input, ref Context context,
                                                                    FasterSession fasterSession, long serialNo,
                                                                    FasterExecutionContext<Input, Output, Context> sessionCtx,
                                                                    PSFChangeTracker<TProviderData, Value> changeTracker)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            var psfInput = (IPSFInput<Key>)input;
-
             var groupKeys = groupKeysPair.Before;
-            psfInput.IsDelete = true;
 
-            var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input,
+            var functions = GetFunctions<Input, Output, Context>(ref context);
+            functions.SetDelete(ref input, true);
+
+            var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input, ref context,
                                                         ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
@@ -147,19 +148,19 @@ namespace FASTER.core
             if (status == Status.OK)
             {
                 value = changeTracker.AfterRecordId;
-                return PsfRcuInsert(groupKeysPair.After, ref value, ref input, ref pcontext, fasterSession, sessionCtx, serialNo + 1);
+                return PsfRcuInsert(groupKeysPair.After, ref value, ref input, ref context, ref pcontext, fasterSession, sessionCtx, serialNo + 1);
             }
             return status;
         }
 
         private Status PsfRcuInsert<Input, Output, Context, FasterSession>(GroupCompositeKey groupKeys, ref Value value, ref Input input,
-                                    ref PendingContext<Input, Output, Context> pcontext, FasterSession fasterSession, 
+                                    ref Context context, ref PendingContext<Input, Output, Context> pcontext, FasterSession fasterSession, 
                                     FasterExecutionContext<Input, Output, Context> sessionCtx, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var psfInput = (IPSFInput<Key>)input;
-            psfInput.IsDelete = false;
-            var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input,
+            var functions = GetFunctions<Input, Output, Context>(ref context);
+            functions.SetDelete(ref input, false);
+            var internalStatus = this.PsfInternalInsert(ref groupKeys.CastToKeyRef<Key>(), ref value, ref input, ref context,
                                                         ref pcontext, fasterSession, sessionCtx, serialNo);
             return internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
@@ -168,16 +169,17 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextPsfDelete<Input, Output, Context, FasterSession, TProviderData>(ref Key key, ref Value value, ref Input input, 
-                                                                   FasterSession fasterSession, long serialNo,
+                                                                   ref Context context, FasterSession fasterSession, long serialNo,
                                                                    FasterExecutionContext<Input, Output, Context> sessionCtx,
                                                                    PSFChangeTracker<TProviderData, Value> changeTracker)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
 
-            var psfInput = (IPSFInput<Key>)input;
-            psfInput.IsDelete = true;
-            var internalStatus = this.PsfInternalInsert(ref key, ref value, ref input, ref pcontext, fasterSession, sessionCtx, serialNo);
+            var functions = GetFunctions<Input, Output, Context>(ref context);
+            functions.SetDelete(ref input, true);
+
+            var internalStatus = this.PsfInternalInsert(ref key, ref value, ref input, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Status status = internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND
                 ? (Status)internalStatus
                 : HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);

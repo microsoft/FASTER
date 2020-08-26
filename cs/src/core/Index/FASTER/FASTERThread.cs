@@ -236,7 +236,7 @@ namespace FASTER.core
                                                     currentCtx, pendingContext.serialNum, ref pendingContext.psfUpdateArgs);
                     break;
                 case OperationType.PSF_INSERT:
-                    internalStatus = PsfInternalInsert(ref key, ref value, ref pendingContext.input,
+                    internalStatus = PsfInternalInsert(ref key, ref value, ref pendingContext.input, ref pendingContext.userContext,
                                                        ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                     break;
                 case OperationType.DELETE:
@@ -263,17 +263,17 @@ namespace FASTER.core
                                                        pendingContext.psfUpdateArgs.ChangeTracker);
                         break;
                     case OperationType.PSF_INSERT:
-                        var psfInput = (IPSFInput<Key>)pendingContext.input;
+                        var functions = fasterSession as IPSFFunctions<Key, Value, Input, Output>;
                         var updateOp = pendingContext.psfUpdateArgs.ChangeTracker.UpdateOp;
-                        if (psfInput.IsDelete && (updateOp == UpdateOperation.IPU || updateOp == UpdateOperation.RCU))
+                        if (functions.IsDelete(ref pendingContext.input) && (updateOp == UpdateOperation.IPU || updateOp == UpdateOperation.RCU))
                         {
                             // RCU Insert of a tombstoned old record is followed by Insert of the new record.
-                            if (pendingContext.psfUpdateArgs.ChangeTracker.FindGroup(psfInput.GroupId, out var ordinal))
+                            if (pendingContext.psfUpdateArgs.ChangeTracker.FindGroup(functions.GroupId(ref pendingContext.input), out var ordinal))
                             {
                                 ref GroupCompositeKeyPair groupKeysPair = ref pendingContext.psfUpdateArgs.ChangeTracker.GetGroupRef(ordinal);
                                 GetAfterRecordId(pendingContext.psfUpdateArgs.ChangeTracker, ref value);
                                 var pcontext = default(PendingContext<Input, Output, Context>);
-                                PsfRcuInsert(groupKeysPair.After, ref value, ref pendingContext.input,
+                                PsfRcuInsert(groupKeysPair.After, ref value, ref pendingContext.input, ref pendingContext.userContext,
                                              ref pcontext, fasterSession, currentCtx, pendingContext.serialNum + 1);
                             }
                         }

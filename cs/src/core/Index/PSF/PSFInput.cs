@@ -9,83 +9,36 @@ using System.Runtime.CompilerServices;
 namespace FASTER.core
 {
     /// <summary>
-    /// The additional input interface passed to the PSF functions for internal Insert, Read, etc. operations.
-    /// </summary>
-    /// <typeparam name="TKey">The type of the Key, either a <see cref="CompositeKey{TPSFKey}"/> for the 
-    ///     secondary FasterKV instances, or the user's TKVKey for the primary FasterKV instance.</typeparam>
-    /// <remarks>The interface separation is needed for the PendingContext, and for the "TPSFKey : struct"
-    ///     constraint in PSFInputSecondary</remarks>
-    public interface IPSFInput<TKey>
-    {
-        /// <summary>
-        /// The ID of the <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/> for this operation.
-        /// </summary>
-        long GroupId { get; }
-
-        /// <summary>
-        /// The ordinal of the <see cref="PSF{TPSFKey, TRecordId}"/> being queried; writable only for Insert.
-        /// </summary>
-        int PsfOrdinal { get; set; }
-
-        /// <summary>
-        /// For Delete() or Insert() done as part of RCU, this indicates if it the tombstone should be set for this record.
-        /// </summary>
-        bool IsDelete { get; set; }
-
-        /// <summary>
-        /// For tracing back the chain, this is the next logicalAddress to get.
-        /// </summary>
-        long ReadLogicalAddress { get; set; }
-
-        ref TKey QueryKeyRef { get; }
-    }
-
-    /// <summary>
     /// Input to PsfInternalReadAddress on the primary (stores user values) FasterKV to retrieve the Key and Value
     /// for a logicalAddress returned from the secondary FasterKV instances.  This class is FasterKV-provider-specific.
     /// </summary>
     /// <typeparam name="TKey">The type of the key for user values</typeparam>
-    public unsafe class PSFInputPrimaryReadAddress<TKey> : IPSFInput<TKey>
+    public unsafe struct PSFInputPrimaryReadAddress<TKey>
+        where TKey : new()
     {
         internal PSFInputPrimaryReadAddress(long readLA)
         {
             this.ReadLogicalAddress = readLA;
         }
 
-        /// <inheritdoc/>
-        public long GroupId => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
-
-        /// <inheritdoc/>
-        public int PsfOrdinal
-        { 
-            get => Constants.kInvalidPsfOrdinal;
-            set => throw new PSFInvalidOperationException("Not valid for Primary FasterFKV");
-        }
-
-        public bool IsDelete
-        {
-            get => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
-            set => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
-        }
-
         public long ReadLogicalAddress { get; set; }
-
-        public ref TKey QueryKeyRef => throw new PSFInvalidOperationException("Not valid for Primary FasterKV");
     }
 
     /// <summary>
     /// Input to operations on the secondary FasterKV instance (stores PSF chains) for everything
     /// except reading based on a LogicalAddress.
     /// </summary>
-    public unsafe class PSFInputSecondary<TPSFKey> : IPSFInput<TPSFKey>, IDisposable
-        where TPSFKey : struct
+    public unsafe struct PSFInputSecondary<TPSFKey> : IDisposable
+        where TPSFKey : new()
     {
         private SectorAlignedMemory keyPointerMem;
 
-        internal PSFInputSecondary(int psfOrdinal, long groupId)
+        internal PSFInputSecondary(long groupId, int psfOrdinal)
         {
-            this.PsfOrdinal = psfOrdinal;
+            this.keyPointerMem = null;
             this.GroupId = groupId;
+            this.PsfOrdinal = psfOrdinal;
+            this.IsDelete = false;
             this.ReadLogicalAddress = Constants.kInvalidAddress;
         }
 
@@ -97,14 +50,29 @@ namespace FASTER.core
             keyPointer.Initialize(this.PsfOrdinal, ref key);
         }
 
+        /// <summary>
+        /// The ID of the <see cref="PSFGroup{TProviderData, TPSFKey, TRecordId}"/> for this operation.
+        /// </summary>
         public long GroupId { get; }
 
+        /// <summary>
+        /// The ordinal of the <see cref="PSF{TPSFKey, TRecordId}"/> in the group <see cref="GroupId"/>for this operation.
+        /// </summary>
         public int PsfOrdinal { get; set; }
 
+        /// <summary>
+        /// Whether this is a Delete (or the Delete part of an RCU)
+        /// </summary>
         public bool IsDelete { get; set; }
 
+        /// <summary>
+        /// The logical address to read in one of the PsfRead*Address methods
+        /// </summary>
         public long ReadLogicalAddress { get; set; }
 
+        /// <summary>
+        /// The query key for a QueryPSF method
+        /// </summary>
         public ref TPSFKey QueryKeyRef => ref Unsafe.AsRef<TPSFKey>(this.keyPointerMem.GetValidPointer());
 
         public void Dispose()

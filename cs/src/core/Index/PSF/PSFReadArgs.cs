@@ -3,15 +3,14 @@
 
 namespace FASTER.core
 {
+    // TODO: Move out of PSFs and include the new chained-LA Read function.
     internal struct PSFReadArgs<TKey, TValue>
     {
-        internal readonly IPSFInput<TKey> Input;
-        internal readonly IPSFOutput<TKey, TValue> Output;
+        internal readonly long LivenessCheckLogicalAddress;
 
-        internal PSFReadArgs(IPSFInput<TKey> input, IPSFOutput<TKey, TValue> output)
+        internal PSFReadArgs(long livenessCheckAddress)
         {
-            this.Input = input;
-            this.Output = output;
+            this.LivenessCheckLogicalAddress = livenessCheckAddress;
         }
     }
 }
