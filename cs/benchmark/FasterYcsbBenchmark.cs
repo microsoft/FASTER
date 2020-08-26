@@ -3,7 +3,8 @@
 
 #pragma warning disable 0162
 
-//#define DASHBOARD
+// Define below to enable continuous performance report for dashboard
+// #define DASHBOARD
 
 using FASTER.core;
 using System;
@@ -26,8 +27,8 @@ namespace FASTER.benchmark
 
 #if DEBUG
         const bool kDumpDistribution = false;
-        const bool kUseSmallData = false;
-        const bool kUseSyntheticData = false;
+        const bool kUseSmallData = true;
+        const bool kUseSyntheticData = true;
 
         const bool kCheckpointStoreContents = false;
         const bool kRecoverStoreContents = false;
@@ -70,7 +71,7 @@ namespace FASTER.benchmark
         readonly int readPercent;
 
         const int kRunSeconds = 30;
-        const int kCheckpointMilliseconds = 25;
+        const int kCheckpointMilliseconds = 0;
 
         volatile bool done = false;
 
@@ -156,7 +157,7 @@ namespace FASTER.benchmark
                     else
                         op = Op.ReadModifyWrite;
 
-                    if (idx % 256 == 0)
+                    if (idx % 512 == 0)
                     {
                         if (kAffinitizedSession)
                             session.Refresh();
@@ -209,6 +210,10 @@ namespace FASTER.benchmark
             session.Dispose();
 
             sw.Stop();
+
+#if DASHBOARD
+            statsWritten[thread_idx].Set();
+#endif
 
             Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
                 writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
@@ -337,7 +342,7 @@ namespace FASTER.benchmark
             }
 
 #if DASHBOARD
-            dash.Abort();
+            dash.Join();
 #endif
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
@@ -409,7 +414,6 @@ namespace FASTER.benchmark
 
 #if DASHBOARD
         int measurementInterval = 2000;
-        bool allDone;
         bool measureLatency;
         bool[] writeStats;
         private EventWaitHandle[] statsWritten;
@@ -421,19 +425,13 @@ namespace FASTER.benchmark
 
         void DoContinuousMeasurements()
         {
-
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)threadCount + 1);
-            else
-                Native32.AffinitizeThreadShardedTwoNuma((uint)threadCount + 1);
-
             double totalThroughput, totalLatency, maximumLatency;
             double totalProgress;
             int ver = 0;
 
             using (var client = new WebClient())
             {
-                while (!allDone)
+                while (!done)
                 {
                     ver++;
 
@@ -467,11 +465,11 @@ namespace FASTER.benchmark
 
                     if (measureLatency)
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.LogTailAddress, totalProgress);
+                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.Log.TailAddress, totalProgress);
                     }
                     else
                     {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.LogTailAddress, totalProgress);
+                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.Log.TailAddress, totalProgress);
                     }
                 }
             }
