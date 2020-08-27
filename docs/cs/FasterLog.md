@@ -161,7 +161,7 @@ case of `GetNext`) if we have returned the last committed entry. You can instead
 uncommitted data as follows:
 
 ```cs
-log.Scan(log.BeginAddress, 100_000_000, scanUncommitted: true)
+log.Scan(0, long.MaxValue, scanUncommitted: true)
 ```
 
 This option allows readers to read beyond the committed address in the log. As long as readers keep up with writers, the
