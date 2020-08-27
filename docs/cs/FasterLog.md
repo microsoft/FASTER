@@ -166,7 +166,8 @@ log.Scan(log.BeginAddress, 100_000_000, scanUncommitted: true)
 
 This option allows readers to read beyond the committed address in the log. As long as readers keep up with writers, the
 log can stay entirely in memory and avoid being written out to disk. During transient overload, when readers are unable to
-keep up with writers, the logs will start getting written to disk.
+keep up with writers, the logs will start getting written to disk. In effect, FasterLog in this setting behaves like an 
+unbounded channel with bounded memory usage.
 
 <img src="https://raw.githubusercontent.com/microsoft/FASTER/master/img/scan-uncommitted.png" width="400" />
 
