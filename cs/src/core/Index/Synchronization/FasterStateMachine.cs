@@ -100,6 +100,18 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Check whether threadState is in same cycle compared to current systemState
+        /// </summary>
+        /// <param name="threadState"></param>
+        /// <returns></returns>
+        internal bool SameCycle(SystemState threadState)
+        {
+            var _systemState = SystemState.Copy(ref systemState);
+            SystemState.RemoveIntermediate(ref _systemState);
+            return StartOfCurrentCycle(threadState).version == StartOfCurrentCycle(_systemState).version;
+        }
+
+        /// <summary>
         /// Steps the thread's local state machine. Threads catch up to the current global state and performs
         /// necessary actions associated with the state as defined by the current state machine
         /// </summary>

@@ -81,10 +81,15 @@ namespace FASTER.core
                     break;
                 case Phase.WAIT_INDEX_CHECKPOINT:
                     var notify = faster.IsIndexFuzzyCheckpointCompleted();
+                    notify = notify || !faster.SameCycle(current);
 
                     if (valueTasks != null && !notify)
                     {
-                        valueTasks.Add(faster.IsIndexFuzzyCheckpointCompletedAsync(token));
+                        var t = faster.IsIndexFuzzyCheckpointCompletedAsync(token);
+                        if (!faster.SameCycle(current))
+                            notify = true;
+                        else
+                            valueTasks.Add(t);
                     }
 
                     if (!notify) return;

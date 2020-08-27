@@ -48,8 +48,11 @@ namespace FASTER.core
 
         internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)
         {
-            await IsMainIndexCheckpointCompletedAsync(token);
-            await overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
+            // Get tasks first to ensure we have captured the semaphore instances synchronously
+            var t1 = IsMainIndexCheckpointCompletedAsync(token);
+            var t2 = overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
+            await t1;
+            await t2;
         }
 
 
