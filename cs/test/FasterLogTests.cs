@@ -95,6 +95,15 @@ namespace FASTER.test
                     Assert.IsTrue(!waitingReader.IsCompleted);
 
                     while (!log.TryEnqueue(data1, out _)) ;
+
+                    // We might have auto-committed at page boundary
+                    // Ensure we don't find new entry in iterator
+                    while (waitingReader.IsCompleted)
+                    {
+                        var _next = iter.GetNext(out _, out _, out _);
+                        Assert.IsFalse(_next);
+                        waitingReader = iter.WaitAsync();
+                    }
                     Assert.IsFalse(waitingReader.IsCompleted);
 
                     await log.CommitAsync();
