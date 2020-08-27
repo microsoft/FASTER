@@ -168,7 +168,7 @@ This option allows readers to read beyond the committed address in the log. As l
 log can stay entirely in memory and avoid being written out to disk. During transient overload, when readers are unable to
 keep up with writers, the logs will start getting written to disk.
 
-<img src="/img/scan-uncommitted.png" width="400" />
+<img src="https://raw.githubusercontent.com/microsoft/FASTER/master/img/scan-uncommitted.png" width="400" />
 
 With uncommitted scan, the tail of the log is generally not safe to consume: multiple threads inserting into the tail at
 the same time means that there may be holes in the log until the threads complete their respective enqueues. To handle 
