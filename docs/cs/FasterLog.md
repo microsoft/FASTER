@@ -98,15 +98,15 @@ operation from enqueues, so that they can benefit from the performance boost of 
 
 ### Iteration
 
-FasterLog supports scan (iteration) over the log. You can have multiple simultaneous iterators active
-over the log at the same time. You specify a begin and end address for the scan. An example of
-scanning a fixed region (first 100MB) of the log follows:
+FasterLog supports scan (iteration) over the log. You can have multiple simultaneous iterators active 
+over the log at the same time. You specify a begin and end address for the scan. An example of scanning
+a fixed region (first 100MB) of the log follows:
 
 Scan using `IAsyncEnumerable`:
 
 ```cs
 using (iter = log.Scan(log.BeginAddress, 100_000_000))
-    await foreach ((byte[] result, int length, long currentAddress) in iter.GetAsyncEnumerable())
+    await foreach ((byte[] result, int length, long currentAddress, long nextAddress) in iter.GetAsyncEnumerable())
     {
        // Process record
     }
@@ -119,7 +119,7 @@ end of iteration, or because we are waiting for a page read or commit to complet
   using (var iter = log.Scan(0, 100_000_000))
     while (true)
     {
-       while (!iter.GetNext(out byte[] result, out int entryLength, out long currentAddress))
+       while (!iter.GetNext(out byte[] result, out int entryLength, out long currentAddress, out long nextAddress))
        {
           if (currentAddress >= 100_000_000) return;
           await iter.WaitAsyc();
@@ -153,6 +153,33 @@ You may also force an iterator to start at the specified begin address, i.e., wi
 ```cs
 using (var iter = log.Scan(0, long.MaxValue, name: "foo", recover: false))
 ```
+
+### Iteration for Uncommitted Data
+
+By default, scan iterates over committted data only, awaiting (in case of `IAsyncEnumerable`) or returning `false` (in 
+case of `GetNext`) if we have returned the last committed entry. You can instead allow scans to proceed and read
+uncommitted data as follows:
+
+```cs
+log.Scan(log.BeginAddress, 100_000_000, scanUncommitted: true)
+```
+
+This option allows readers to read beyond the committed address in the log. As long as readers keep up with writers, the
+log can stay entirely in memory and avoid being written out to disk. During transient overload, when readers are unable to
+keep up with writers, the logs will start getting written to disk.
+
+With uncommitted scan, the tail of the log is generally not safe to consume: multiple threads inserting into the tail at
+the same time means that there may be holes in the log until the threads complete their respective enqueues. To handle 
+this, we add a method called `RefreshUncommitted` (with async variants). Similar to `Commit`, this call exposes the tail of
+the log to consumers in a safe way. Since it is slightly more expensive, we do not automatically perform this operation after
+every enqueue, and instead expose to users to call on demand. You use `RefreshUncommitted` similarly to `Commit`, either call
+it from the enqueue thread (e.g., after a batch of enqueues) or have a separate thread/task that periodically calls it.
+
+For optimal performance, we suggest using more than one page in memory for FasterLog used with uncommitted scans (e.g., 2 or 4 pages), 
+and set mutable fraction (`MutableFraction` in log settings) to say 0.5. This will ensure that pages get auto-committed only when the
+in-memory log of 2 of 4 pages is 50% full. This will allow pages sufficient time for records to be consumed by readers before the 
+auto-commit tries to push them to disk. You may also commit manually as usual. The example [here](https://github.com/microsoft/FASTER/tree/master/cs/playground/FasterLogPubSub) 
+shows how to use this feature.
 
 
 ### Log Head Truncation
@@ -229,6 +256,9 @@ return a larger byte array to enable pooling.
 * `LogChecksum`: Specifies whether we store a per-entry checksum in the log. This takes up an additional 8 bytes
 of space per entry, in addition to the 4 byte header storing entry length.
 
+* `MutableFraction`: Fraction of pages in memory that are left uncommitted by default (when explicit commits are
+not called). If set to 0 (the default), a page commits as soon as it is filled up.
+
 
 # Full API Reference
 
@@ -280,18 +310,19 @@ void TruncateUntil(long untilAddress)
 
 // Scan interface
 
-FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true)
+FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, 
+   ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false)
 
 // FasterLogScanIterator interface
 
 void CompleteUntil(long address)
-bool GetNext(out byte[] entry, out int entryLength, out long currentAddress)
-bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress)
+bool GetNext(out byte[] entry, out int entryLength, out long currentAddress, out long nextAddress)
+bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress, out long nextAddress)
 async ValueTask WaitAsync()
 
 // IAsyncEnumerable interface to FasterLogScanIterator
-async IAsyncEnumerable<(byte[], int, long)> GetAsyncEnumerable()
-async IAsyncEnumerable<(IMemoryOwner<byte>, int, long)> GetAsyncEnumerable(MemoryPool<byte> pool)
+async IAsyncEnumerable<(byte[] entry, int entryLength, long currentAddress, long nextAddress)> GetAsyncEnumerable()
+async IAsyncEnumerable<(IMemoryOwner<byte>, int entryLength, long currentAddress, long nextAddress)> GetAsyncEnumerable(MemoryPool<byte> pool)
 
 // Random read
 
