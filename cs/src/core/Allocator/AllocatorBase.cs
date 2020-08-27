@@ -826,29 +826,31 @@ namespace FASTER.core
         public void ShiftBeginAddress(long newBeginAddress)
         {
             // First update the begin address
-            var b = Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
-            b = b && (oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits);
+            if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
+                return;
 
-            // Then the head address
+            var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
+
+            // Shift read-only address
+            epoch.Resume();
+            ShiftReadOnlyAddress(newBeginAddress);
+            epoch.Suspend();
+
+            // Wait for flush to complete
+            while (FlushedUntilAddress < newBeginAddress) ;
+
+            // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
 
-            // Finally the read-only address
-            var r = Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
-
-            if (h || r || b)
+            if (h || b)
             {
                 epoch.Resume();
-                // Clean up until begin address
                 epoch.BumpCurrentEpoch(() =>
                 {
-                    if (r)
-                    {
-                        Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
-                        Utility.MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
-                    }
-                    if (h) OnPagesClosed(newBeginAddress);
-
-                    if (b) TruncateUntilAddress(newBeginAddress);
+                    if (h)
+                        OnPagesClosed(newBeginAddress);
+                    if (b)
+                        TruncateUntilAddress(newBeginAddress);
                 });
                 epoch.Suspend();
             }
@@ -1336,6 +1338,14 @@ namespace FASTER.core
 
                     if (fromAddress > pageStartAddress)
                         asyncResult.fromAddress = fromAddress;
+                }
+
+                if (asyncResult.untilAddress <= BeginAddress)
+                {
+                    // Short circuit as no flush needed
+                    Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, BeginAddress, out _);
+                    ShiftFlushedUntilAddress();
+                    continue;
                 }
 
                 // Partial page starting point, need to wait until the
