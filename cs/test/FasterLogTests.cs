@@ -229,6 +229,39 @@ namespace FASTER.test
         }
 
         [Test]
+        public async Task FasterLogTest6([Values] LogChecksumType logChecksum)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum });
+            byte[] data1 = new byte[1000];
+            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
+
+            for (int i = 0; i < 100; i++)
+            {
+                log.Enqueue(data1);
+            }
+            log.RefreshUncommitted();
+            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
+
+            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+
+            using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
+            {
+                byte[] entry;
+                while (iter.GetNext(out entry, out _, out _))
+                {
+                    log.TruncateUntil(iter.NextAddress);
+                }
+                Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                log.Enqueue(data1);
+                Assert.IsFalse(iter.GetNext(out entry, out _, out _));
+                log.RefreshUncommitted();
+                Assert.IsTrue(iter.GetNext(out entry, out _, out _));
+            }
+            log.Dispose();
+        }
+
+
+        [Test]
         public async Task ResumePersistedReaderSpec([Values]LogChecksumType logChecksum)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };
