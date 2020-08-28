@@ -1627,6 +1627,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     // The record we read from disk.
     const record_t* disk_record = reinterpret_cast<const record_t*>(
                                     io_context.record.GetValidPointer());
+    bool is_tombstone = disk_record->header.tombstone;
     uint32_t record_size = record_t::size(pending_context->key_size(), pending_context->value_size(disk_record));
     new_address = BlockAllocate(record_size);
     new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
@@ -1637,7 +1638,11 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
         expected_entry.address() },
     };
     pending_context->write_deep_key_at(const_cast<key_t*>(&new_record->key()));
-    pending_context->RmwCopy(disk_record, new_record);
+    if (!is_tombstone) {
+      pending_context->RmwCopy(disk_record, new_record);
+    } else {
+      pending_context->RmwInitial(new_record);
+    }
   }
 
   HashBucketEntry updated_entry{ new_address, hash.tag(), false };

@@ -95,6 +95,15 @@ namespace FASTER.test
                     Assert.IsTrue(!waitingReader.IsCompleted);
 
                     while (!log.TryEnqueue(data1, out _)) ;
+
+                    // We might have auto-committed at page boundary
+                    // Ensure we don't find new entry in iterator
+                    while (waitingReader.IsCompleted)
+                    {
+                        var _next = iter.GetNext(out _, out _, out _);
+                        Assert.IsFalse(_next);
+                        waitingReader = iter.WaitAsync();
+                    }
                     Assert.IsFalse(waitingReader.IsCompleted);
 
                     await log.CommitAsync();
@@ -218,6 +227,39 @@ namespace FASTER.test
             commit.Join();
             log.Dispose();
         }
+
+        [Test]
+        public async Task FasterLogTest6([Values] LogChecksumType logChecksum)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum });
+            byte[] data1 = new byte[1000];
+            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
+
+            for (int i = 0; i < 100; i++)
+            {
+                log.Enqueue(data1);
+            }
+            log.RefreshUncommitted();
+            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
+
+            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+
+            using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
+            {
+                byte[] entry;
+                while (iter.GetNext(out entry, out _, out _))
+                {
+                    log.TruncateUntil(iter.NextAddress);
+                }
+                Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                log.Enqueue(data1);
+                Assert.IsFalse(iter.GetNext(out entry, out _, out _));
+                log.RefreshUncommitted();
+                Assert.IsTrue(iter.GetNext(out entry, out _, out _));
+            }
+            log.Dispose();
+        }
+
 
         [Test]
         public async Task ResumePersistedReaderSpec([Values]LogChecksumType logChecksum)
