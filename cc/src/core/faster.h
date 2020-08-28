@@ -2942,6 +2942,10 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
     auto r = iter.GetNext();
     if (r == nullptr) break;
 
+    if (r->header.invalid) {
+     continue;
+    }
+   
     if (!r->header.tombstone) {
       CompactionUpsert<K, V> ctxt(r);
       auto cb = [](IAsyncContext* ctxt, Status result) {
