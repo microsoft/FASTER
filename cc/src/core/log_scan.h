@@ -66,6 +66,7 @@ class ScanIterator {
    , currentFrame(0)
    , completedIOs(0)
    , disk(disk)
+   , isFirst(true)
   {
     // Allocate one extra frame than what was requested so that we can
     // hold the page that we're currently scanning.
@@ -128,7 +129,8 @@ class ScanIterator {
   record_t* blockAndLoad() {
     // We are at the first address of the first frame in the buffer. Issue
     // an IO to the persistent layer and then wait for it to complete.
-    if (currentFrame == 0 && current.offset() == 0) {
+    if (currentFrame == 0 && (current.offset() == 0 || isFirst)) {
+      isFirst = false;
       auto cb = [](IAsyncContext* ctxt, Status result, size_t bytes) {
         assert(result == Status::Ok);
         assert(bytes == hlog_t::kPageSize);
@@ -140,7 +142,7 @@ class ScanIterator {
       // Issue reads to fill up the buffer and wait for them to complete.
       for (auto i = 0; i < numFrames; i++) {
         auto ctxt = Context(&completedIOs);
-        auto addr = current.control() + (i * hlog_t::kPageSize);
+        auto addr = current.control() - current.offset()  + (i * hlog_t::kPageSize);
         hLog->file->ReadAsync(addr,
                               reinterpret_cast<void*>(frames[i]),
                               hlog_t::kPageSize, cb, ctxt);
@@ -216,6 +218,10 @@ class ScanIterator {
   /// Pointer to the disk hLog was allocated under. Required so that we
   /// can make sure that reads issued to the persistent layer complete.
   disk_t* disk;
+  
+  /// Whether this is the first request to on-disk pages.
+  /// 'current' may not be page-aligned in this case
+  bool isFirst;
 };
 
 } // namespace core
