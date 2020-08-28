@@ -112,7 +112,7 @@ struct Record {
   }
   /// Size of the existing record, in memory. (Includes padding, if any, after the value.)
   inline constexpr uint32_t size() const {
-    return size(key().size(), value().size());
+    return header.IsNull() ? sizeof(header) : size(key().size(), value().size());
   }
 
   /// Minimum size of a read from disk that is guaranteed to include the record's header + whatever
