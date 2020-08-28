@@ -2947,7 +2947,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
     auto r = iter.GetNext();
     if (r == nullptr) break;
 
-    if (r->header.invalid) {
+    if (r->header.IsNull() || r->header.invalid) {
      continue;
     }
    
