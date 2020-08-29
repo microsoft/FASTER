@@ -49,7 +49,7 @@ namespace FASTER.core
                 Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
                 if (SerializerSettings == null)
                     SerializerSettings = new SerializerSettings<Key, Value>();
-                SerializerSettings.keySerializer = () => new DefaultObjectSerializer<Key>();
+                SerializerSettings.keySerializer = () => new DataContractObjectSerializer<Key>();
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
@@ -57,7 +57,7 @@ namespace FASTER.core
                 Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
                 if (SerializerSettings == null)
                     SerializerSettings = new SerializerSettings<Key, Value>();
-                SerializerSettings.valueSerializer = () => new DefaultObjectSerializer<Value>();
+                SerializerSettings.valueSerializer = () => new DataContractObjectSerializer<Value>();
             }
 
             values = new Record<Key, Value>[BufferSize][];

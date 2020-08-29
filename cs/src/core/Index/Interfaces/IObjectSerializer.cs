@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Runtime.Serialization;
+using System.Text;
 using System.Xml;
 
 namespace FASTER.core
@@ -71,7 +72,7 @@ namespace FASTER.core
         /// <param name="stream"></param>
         public void BeginDeserialize(Stream stream)
         {
-            reader = new BinaryReader(stream);
+            reader = new BinaryReader(stream, new UTF8Encoding(), true);
         }
 
         /// <summary>
@@ -85,6 +86,7 @@ namespace FASTER.core
         /// </summary>
         public void EndDeserialize()
         {
+            reader.Dispose();
         }
 
         /// <summary>
@@ -93,7 +95,7 @@ namespace FASTER.core
         /// <param name="stream"></param>
         public void BeginSerialize(Stream stream)
         {
-            writer = new BinaryWriter(stream);
+            writer = new BinaryWriter(stream, new UTF8Encoding(), true);
         }
 
         /// <summary>
@@ -101,49 +103,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="obj"></param>
         public abstract void Serialize(ref T obj);
-
-        /// <summary>
-        /// End serialize
-        /// </summary>
-        public void EndSerialize()
-        {
-            writer.Dispose();
-        }
-    }
-
-    /// <summary>
-    /// Low-performance FASTER equality comparer wrapper around EqualityComparer.Default
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    internal sealed class DefaultObjectSerializer<T> : BinaryObjectSerializer<T>
-    {
-        private DataContractSerializer serializer = new DataContractSerializer(typeof(T));
-
-        /// <summary>
-        /// Deserialize
-        /// </summary>
-        /// <param name="obj"></param>
-        public override void Deserialize(ref T obj)
-        {
-            int count = reader.ReadInt32();
-            var byteArray = reader.ReadBytes(count);
-            using var ms = new MemoryStream(byteArray);
-            using (var _reader = XmlDictionaryReader.CreateBinaryReader(ms, XmlDictionaryReaderQuotas.Max))
-                obj = (T)serializer.ReadObject(_reader);
-        }
-
-        /// <summary>
-        /// Serialize
-        /// </summary>
-        /// <param name="obj"></param>
-        public override void Serialize(ref T obj)
-        {
-            using var ms = new MemoryStream();
-            using (var _writer = XmlDictionaryWriter.CreateBinaryWriter(ms, null, null, false))
-                serializer.WriteObject(_writer, obj);
-            writer.Write((int)ms.Position);
-            writer.Write(ms.ToArray());
-        }
 
         /// <summary>
         /// End serialize
