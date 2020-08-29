@@ -10,8 +10,6 @@ using System.Threading;
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         internal Dictionary<string, IClientSession> _activeSessions = new Dictionary<string, IClientSession>();
 

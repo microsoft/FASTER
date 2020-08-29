@@ -11,8 +11,6 @@ using System.Threading.Tasks;
 namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         internal CommitPoint InternalContinue<Input, Output, Context>(string guid, out FasterExecutionContext<Input, Output, Context> ctx)
         {

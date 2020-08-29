@@ -38,6 +38,7 @@ namespace ClassRecoveryDurablity
         {
             public override void Deserialize(ref StoreKey obj)
             {
+                obj = new StoreKey();
                 var bytesr = new byte[4];
                 reader.Read(bytesr, 0, 4);
                 var sizet = BitConverter.ToInt32(bytesr);
@@ -77,6 +78,7 @@ namespace ClassRecoveryDurablity
         {
             public override void Deserialize(ref StoreValue obj)
             {
+                obj = new StoreValue();
                 var bytesr = new byte[4];
                 reader.Read(bytesr, 0, 4);
                 int size = BitConverter.ToInt32(bytesr);

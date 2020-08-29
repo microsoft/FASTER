@@ -14,8 +14,6 @@ namespace FASTER.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     public sealed class LogAccessor<Key, Value> : IObservable<IFasterScanIterator<Key, Value>>
-        where Key : new()
-        where Value : new()
     {
         private readonly FasterKV<Key, Value> fht;
         private readonly AllocatorBase<Key, Value> allocator;

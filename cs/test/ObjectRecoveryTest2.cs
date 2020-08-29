@@ -181,6 +181,7 @@ namespace FASTER.test.recovery.objects
 
         public override void Deserialize(ref MyKey key)
         {
+            key = new MyKey();
             var size = reader.ReadInt32();
             key.key = reader.ReadInt32();
             var bytes = new byte[size - 4];
@@ -201,6 +202,7 @@ namespace FASTER.test.recovery.objects
 
         public override void Deserialize(ref MyValue value)
         {
+            value = new MyValue();
             var size = reader.ReadInt32();
             var bytes = new byte[size];
             reader.Read(bytes, 0, size);

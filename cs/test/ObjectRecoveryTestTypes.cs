@@ -34,6 +34,7 @@ namespace FASTER.test.recovery.objectstore
     {
         public override void Deserialize(ref AdId obj)
         {
+            obj = new AdId();
             obj.adId = reader.ReadInt64();
         }
 
@@ -59,6 +60,7 @@ namespace FASTER.test.recovery.objectstore
     {
         public override void Deserialize(ref NumClicks obj)
         {
+            obj = new NumClicks();
             obj.numClicks = reader.ReadInt64();
         }
 

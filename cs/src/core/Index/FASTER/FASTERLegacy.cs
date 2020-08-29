@@ -21,8 +21,6 @@ namespace FASTER.core
     /// <typeparam name="Functions">Functions</typeparam>
     //[Obsolete("Use FasteKV that provides functions with sessions")]
     public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : IDisposable, IFasterKV<Key, Value, Input, Output, Context, Functions>
-        where Key : new()
-        where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private FastThreadLocal<FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context>> _threadCtx;

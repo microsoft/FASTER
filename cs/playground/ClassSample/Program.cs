@@ -35,6 +35,7 @@ namespace ClassSample
 
         public override void Deserialize(ref MyKey key)
         {
+            key = new MyKey();
             key.key = reader.ReadInt32();
         }
     }
@@ -54,6 +55,7 @@ namespace ClassSample
 
         public override void Deserialize(ref MyValue value)
         {
+            value = new MyValue();
             value.value = reader.ReadInt32();
         }
     }

@@ -47,8 +47,6 @@ namespace FASTER.core
 
 
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
 
         private void InternalRecoverFromLatestCheckpoints()
@@ -467,8 +465,6 @@ namespace FASTER.core
     }
 
     public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
-        where Key : new()
-        where Value : new()
     {
         /// <summary>
         /// Restore log

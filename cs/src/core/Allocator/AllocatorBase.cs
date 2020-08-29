@@ -39,8 +39,6 @@ namespace FASTER.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
-        where Key : new()
-        where Value : new()
     {
         /// <summary>
         /// Epoch information

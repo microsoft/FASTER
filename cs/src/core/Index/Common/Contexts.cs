@@ -64,8 +64,6 @@ namespace FASTER.core
     }
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         internal struct PendingContext<Input, Output, Context>
         {

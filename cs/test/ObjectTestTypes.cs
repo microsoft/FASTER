@@ -36,6 +36,7 @@ namespace FASTER.test
     {
         public override void Deserialize(ref MyKey obj)
         {
+            obj = new MyKey();
             obj.key = reader.ReadInt32();
         }
 
@@ -54,6 +55,7 @@ namespace FASTER.test
     {
         public override void Deserialize(ref MyValue obj)
         {
+            obj = new MyValue();
             obj.value = reader.ReadInt32();
         }
 
@@ -303,6 +305,7 @@ namespace FASTER.test
     {
         public override void Deserialize(ref MyLargeValue obj)
         {
+            obj = new MyLargeValue();
             int size = reader.ReadInt32();
             obj.value = reader.ReadBytes(size);
         }

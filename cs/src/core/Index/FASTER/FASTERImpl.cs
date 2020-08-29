@@ -12,8 +12,6 @@ using System.Threading.Tasks;
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         internal enum LatchOperation : byte
         {

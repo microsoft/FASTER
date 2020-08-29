@@ -36,7 +36,7 @@ namespace ClassCache
     {
         public override void Deserialize(ref CacheKey obj)
         {
-            obj.key = reader.ReadInt64();
+            obj = new CacheKey(reader.ReadInt64());
         }
 
         public override void Serialize(ref CacheKey obj)
@@ -61,7 +61,7 @@ namespace ClassCache
     {
         public override void Deserialize(ref CacheValue obj)
         {
-            obj.value = reader.ReadInt64();
+            obj = new CacheValue(reader.ReadInt64());
         }
 
         public override void Serialize(ref CacheValue obj)

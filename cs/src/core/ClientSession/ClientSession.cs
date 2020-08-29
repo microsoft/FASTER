@@ -22,8 +22,6 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
     public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
-        where Key : new()
-        where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly FasterKV<Key, Value> fht;

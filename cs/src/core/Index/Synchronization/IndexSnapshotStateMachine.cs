@@ -15,8 +15,6 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
             switch (next.phase)
             {
@@ -56,8 +54,6 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
         }
 
@@ -70,8 +66,6 @@ namespace FASTER.core
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession : IFasterSession
         {
             switch (current.phase)
