@@ -211,6 +211,11 @@ namespace FASTER.core
         protected readonly Action<CommitInfo> FlushCallback = null;
 
         /// <summary>
+        /// Whether to preallocate log on initialization
+        /// </summary>
+        private readonly bool PreallocateLog = false;
+
+        /// <summary>
         /// Error handling
         /// </summary>
         private readonly ErrorList errorList = new ErrorList();
@@ -487,6 +492,7 @@ namespace FASTER.core
                 EvictCallback = evictCallback;
             }
             FlushCallback = flushCallback;
+            PreallocateLog = settings.PreallocateLog;
 
             this.comparer = comparer;
             if (epoch == null)
@@ -563,6 +569,17 @@ namespace FASTER.core
             if ((!IsAllocated(nextPageIndex)))
             {
                 AllocatePage(nextPageIndex);
+            }
+
+            if (PreallocateLog)
+            {
+                for (int i = 0; i < BufferSize; i++)
+                {
+                    if ((!IsAllocated(i)))
+                    {
+                        AllocatePage(i);
+                    }
+                }
             }
 
             SafeReadOnlyAddress = firstValidAddress;

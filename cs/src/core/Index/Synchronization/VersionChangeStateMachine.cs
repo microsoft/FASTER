@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
@@ -29,12 +30,12 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current, SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
@@ -100,8 +101,6 @@ namespace FASTER.core
                 case Phase.REST:
                     break;
             }
-
-            return default;
         }
     }
 
@@ -132,19 +131,18 @@ namespace FASTER.core
         { }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
             where Key : new()
             where Value : new()
             where FasterSession : IFasterSession
         {
-            return default;
         }
     }
 

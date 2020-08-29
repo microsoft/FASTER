@@ -313,6 +313,9 @@ namespace FASTER.core
         /// <inheritdoc />
         public string DumpDistribution() => _fasterKV.DumpDistribution();
 
+        internal SystemState SystemState => _fasterKV.SystemState;
+
+
         // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
         private struct LegacyFasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {

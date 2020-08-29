@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -345,9 +346,18 @@ namespace FASTER.core
                     systemState.phase == Phase.IN_PROGRESS_GROW)
                     return;
 
-                // TODO: Do we need access to functions here?
-                // If yes then move this to either faster legacy or client session.
-                await ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, true, token);
+                List<ValueTask> valueTasks = new List<ValueTask>();
+                
+                ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
+
+                if (valueTasks.Count == 0)
+                    break;
+
+                foreach (var task in valueTasks)
+                {
+                    if (!task.IsCompleted)
+                        await task;
+                }
             }
         }
 

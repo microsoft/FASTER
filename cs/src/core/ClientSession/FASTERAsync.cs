@@ -71,7 +71,9 @@ namespace FASTER.core
 
                     if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
                     {
+                        clientSession.FasterSession.UnsafeResumeThread();
                         InternalCompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession.FasterSession);
+                        clientSession.FasterSession.UnsafeSuspendThread();
                     }
 
                     done &= (clientSession.ctx.prevCtx.HasNoPendingRequests);
@@ -80,7 +82,10 @@ namespace FASTER.core
             #endregion
 
             await InternalCompletePendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession.FasterSession, token);
+
+            clientSession.FasterSession.UnsafeResumeThread();
             InternalCompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession.FasterSession);
+            clientSession.FasterSession.UnsafeSuspendThread();
 
             Debug.Assert(clientSession.ctx.HasNoPendingRequests);
 

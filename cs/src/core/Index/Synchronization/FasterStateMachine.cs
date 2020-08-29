@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -20,6 +21,8 @@ namespace FASTER.core
         // if no state machine is active at this time.
         private ISynchronizationStateMachine currentSyncStateMachine;
 
+        internal SystemState SystemState => systemState;
+
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
         /// </summary>
@@ -29,7 +32,6 @@ namespace FASTER.core
         {
             // return immediately if there is a state machine under way.
             if (Interlocked.CompareExchange(ref stateMachineActive, 1, 0) != 0) return false;
-
             currentSyncStateMachine = stateMachine;
             // No latch required because the taskMutex guards against other tasks starting, and only a new task
             // is allowed to change faster global state from REST
@@ -55,10 +57,9 @@ namespace FASTER.core
         /// <param name="expectedState">expected current global state</param>
         internal void GlobalStateMachineStep(SystemState expectedState)
         {
-            // Between state transition, temporarily block any concurrent execution thread from progressing to prevent
-            // perceived inconsistencies
-            Debug.Assert(expectedState.phase != Phase.INTERMEDIATE, "Cannot step from intermediate");
-            var intermediate = SystemState.Make(Phase.INTERMEDIATE, expectedState.version);
+            // Between state transition, temporarily block any concurrent execution thread 
+            // from progressing to prevent perceived inconsistencies
+            var intermediate = SystemState.MakeIntermediate(expectedState);
             if (!MakeTransition(expectedState, intermediate)) return;
 
             var nextState = currentSyncStateMachine.NextState(expectedState);
@@ -79,7 +80,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState StartOfCurrentCycle(SystemState currentGlobalState)
         {
-            return currentGlobalState.phase <= Phase.REST
+            return currentGlobalState.phase < Phase.REST
                 ? SystemState.Make(Phase.REST, currentGlobalState.version - 1)
                 : SystemState.Make(Phase.REST, currentGlobalState.version);
         }
@@ -87,32 +88,27 @@ namespace FASTER.core
         // Given the current thread state and global state, fast forward the thread state to the
         // current state machine cycle if needed
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private SystemState FastForwardToCurrentCycle(SystemState currentThreadState, SystemState currentGlobalState)
+        private SystemState FastForwardToCurrentCycle(SystemState threadState, SystemState targetStartState)
         {
-            var startState = StartOfCurrentCycle(currentGlobalState);
-            if (currentThreadState.version < startState.version ||
-                currentThreadState.version == startState.version && currentThreadState.phase < startState.phase)
+            if (threadState.version < targetStartState.version ||
+                threadState.version == targetStartState.version && threadState.phase < targetStartState.phase)
             {
-                return startState;
+                return targetStartState;
             }
 
-            return currentThreadState;
+            return threadState;
         }
 
-        // Return the pair of current state machine and global state, guaranteed to be captured atomicaly.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (ISynchronizationStateMachine, SystemState) CaptureTaskAndTargetState()
+        /// <summary>
+        /// Check whether threadState is in same cycle compared to current systemState
+        /// </summary>
+        /// <param name="threadState"></param>
+        /// <returns></returns>
+        internal bool SameCycle(SystemState threadState)
         {
-            while (true)
-            {
-                var task = currentSyncStateMachine;
-                var targetState = SystemState.Copy(ref systemState);
-                // We have to make sure that we are not looking at a state resulted from a different 
-                // task. It's ok to be behind when the thread steps through the state machine, but not
-                // ok if we are using the wrong task.
-                if (targetState.phase != Phase.INTERMEDIATE && currentSyncStateMachine == task)
-                    return ValueTuple.Create(task, targetState);
-            }
+            var _systemState = SystemState.Copy(ref systemState);
+            SystemState.RemoveIntermediate(ref _systemState);
+            return StartOfCurrentCycle(threadState).version == StartOfCurrentCycle(_systemState).version;
         }
 
         /// <summary>
@@ -121,25 +117,88 @@ namespace FASTER.core
         /// </summary>
         /// <param name="ctx">null if calling without a context (e.g. waiting on a checkpoint)</param>
         /// <param name="fasterSession">Faster session.</param>
-        /// <param name="async"></param>
-        /// <param name="token"></param>
+        /// <param name="valueTasks">Return list of tasks that caller needs to await, to continue checkpointing</param>
+        /// <param name="token">Cancellation token</param>
         /// <returns></returns>
-        private async ValueTask ThreadStateMachineStep<Input, Output, Context, FasterSession>(
+        private void ThreadStateMachineStep<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
-            if (async)
-                fasterSession.UnsafeResumeThread();
 
-            // Target state is the current (non-intermediate state) system state thread needs to catch up to
-            var (currentTask, targetState) = CaptureTaskAndTargetState();
+            #region Capture current (non-intermediate) system state
+            var currentTask = currentSyncStateMachine;
+            var targetState = SystemState.Copy(ref systemState);
+            SystemState.RemoveIntermediate(ref targetState);
 
-            // No state machine associated with target, we can
-            // directly fast forward session to target state
-            if (currentTask == null)
+            while (currentSyncStateMachine != currentTask)
+            {
+                currentTask = currentSyncStateMachine;
+                targetState = SystemState.Copy(ref systemState);
+                SystemState.RemoveIntermediate(ref targetState);
+            }
+            #endregion
+
+            var currentState = ctx == null ? targetState : SystemState.Make(ctx.phase, ctx.version);
+            var targetStartState = StartOfCurrentCycle(targetState);
+
+            #region Get returning thread to start of current cycle, issuing completion callbacks if needed
+            if (ctx != null)
+            {
+                if (ctx.version < targetStartState.version)
+                {
+                    // Issue CPR callback for full session
+                    if (ctx.serialNum != -1)
+                    {
+                        List<long> excludedSerialNos = new List<long>();
+                        foreach (var v in ctx.ioPendingRequests.Values)
+                        {
+                            excludedSerialNos.Add(v.serialNum);
+                        }
+                        foreach (var v in ctx.retryRequests)
+                        {
+                            excludedSerialNos.Add(v.serialNum);
+                        }
+
+                        var commitPoint = new CommitPoint
+                        {
+                            UntilSerialNo = ctx.serialNum,
+                            ExcludedSerialNos = excludedSerialNos
+                        };
+
+                        // Thread local action
+                        fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+                    }
+                }
+                if ((ctx.version == targetStartState.version) && (ctx.phase < Phase.REST))
+                {
+                    // Ensure atomic switch took place. Would not have happened
+                    // for index-only checkpoints.
+                    if (ctx.prevCtx.excludedSerialNos != null)
+                    {
+                        // Issue CPR callback on old version (prevCtx)
+                        if (ctx.prevCtx.serialNum != -1)
+                        {
+                            var commitPoint = new CommitPoint
+                            {
+                                UntilSerialNo = ctx.prevCtx.serialNum,
+                                ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
+                            };
+
+                            // Thread local action
+                            fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+                            ctx.prevCtx.excludedSerialNos = null;
+                        }
+                    }
+                }
+            }
+            #endregion 
+
+            // No state machine associated with target, or target is in REST phase:
+            // we can directly fast forward session to target state
+            if (currentTask == null || targetState.phase == Phase.REST)
             {
                 if (ctx != null)
                 {
@@ -149,27 +208,45 @@ namespace FASTER.core
                 return;
             }
 
-            // the current thread state is what the thread remembers, or simply what the current system
-            // is if we are calling from somewhere other than an execution thread (e.g. waiting on
-            // a checkpoint to complete on a client app thread)
-            var threadState = ctx == null ? targetState : SystemState.Make(ctx.phase, ctx.version);
+            #region Jump on and execute current state machine
+            // We start at either the start point or our previous position in the state machine.
+            // If we are calling from somewhere other than an execution thread (e.g. waiting on
+            // a checkpoint to complete on a client app thread), we start at current system state
+            var threadState = 
+                ctx == null ? targetState :
+                FastForwardToCurrentCycle(currentState, targetStartState);
 
-            // If the thread was in the middle of handling some older, unrelated task, fast-forward to the current task
-            // as the old one is no longer relevant
-            threadState = FastForwardToCurrentCycle(threadState, targetState);
             var previousState = threadState;
             do
             {
-                await currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, async, token);
+                Debug.Assert(
+                    (threadState.version < targetState.version) ||
+                    (threadState.version == targetState.version && threadState.phase <= targetState.phase)
+                    );
+
+                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, valueTasks, token);
+
                 if (ctx != null)
                 {
                     ctx.phase = threadState.phase;
                     ctx.version = threadState.version;
-                }
+                }   
 
                 previousState.word = threadState.word;
                 threadState = currentTask.NextState(threadState);
+                if (systemState.word != targetState.word)
+                {
+                    var tmp = SystemState.Copy(ref systemState);
+                    if (currentSyncStateMachine == currentTask)
+                    {
+                        targetState = tmp;
+                        SystemState.RemoveIntermediate(ref targetState);
+                    }
+                }
             } while (previousState.word != targetState.word);
+            #endregion
+
+            return;
         }
     }
 }
