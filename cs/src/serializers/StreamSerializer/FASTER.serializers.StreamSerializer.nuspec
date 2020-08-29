@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>Microsoft.FASTER.serializers.StreamSerializer</id>
+    <version>$version$</version>
+    <title>Stream serializer (from Trill) for FASTER</title>
+    <authors>Microsoft</authors>
+    <owners>Microsoft</owners>
+    <projectUrl>https://github.com/microsoft/FASTER</projectUrl>
+    <license type="expression">MIT</license>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <description>This is a serializer based on Trill's stream serializer. FASTER is a fast concurrent key-value store and log for larger-than-memory data.</description>
+    <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details</releaseNotes>
+    <copyright>© Microsoft Corporation. All rights reserved.</copyright>
+    <language>en-US</language>
+    <tags>key-value store dictionary hashtable concurrent log persistent azure storage FASTER</tags>
+    <dependencies>
+      <group targetFramework="net461">
+        <dependency id="Trill" version="2020.7.31.2" />
+        <dependency id="Microsoft.FASTER" version="$version$" />
+      </group>
+      <group targetFramework="netstandard2.0">
+        <dependency id="Trill" version="2020.7.31.2" />
+        <dependency id="Microsoft.FASTER" version="$version$" />
+      </group>
+      <group targetFramework="netstandard2.1">
+        <dependency id="Trill" version="2020.7.31.2" />
+        <dependency id="Microsoft.FASTER" version="$version$" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="bin\AnyCPU\Release\net461\FASTER.serializers.StreamSerializer.dll" target="lib\net461" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.serializers.StreamSerializer.pdb" target="lib\net461" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.serializers.StreamSerializer.xml" target="lib\net461" />
+    <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.serializers.StreamSerializer.dll" target="lib\netstandard2.0" />
+    <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.serializers.StreamSerializer.pdb" target="lib\netstandard2.0" />
+    <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.serializers.StreamSerializer.xml" target="lib\netstandard2.0" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.serializers.StreamSerializer.dll" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.serializers.StreamSerializer.pdb" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.serializers.StreamSerializer.xml" target="lib\netstandard2.1" />
+  </files>
+</package>

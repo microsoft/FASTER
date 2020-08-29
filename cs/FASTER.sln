@@ -54,6 +54,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterKVDiskReadBenchmark",
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterLogPubSub", "playground\FasterLogPubSub\FasterLogPubSub.csproj", "{340E0337-BB3B-4328-BDB7-E6FA63C63EA1}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "serializers", "serializers", "{68396DE7-659F-4B0A-8A34-23D376948433}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.serializers.StreamSerializer", "src\serializers\StreamSerializer\FASTER.serializers.StreamSerializer.csproj", "{E0B28F9C-20E9-442F-9D2D-181D66204AD2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -204,6 +208,14 @@ Global
 		{340E0337-BB3B-4328-BDB7-E6FA63C63EA1}.Release|Any CPU.ActiveCfg = Release|x64
 		{340E0337-BB3B-4328-BDB7-E6FA63C63EA1}.Release|x64.ActiveCfg = Release|x64
 		{340E0337-BB3B-4328-BDB7-E6FA63C63EA1}.Release|x64.Build.0 = Release|x64
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Debug|x64.ActiveCfg = Debug|x64
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Debug|x64.Build.0 = Debug|x64
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Release|x64.ActiveCfg = Release|x64
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -229,6 +241,8 @@ Global
 		{95AC8766-84F9-4E95-B2E9-2169B6375FB2} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{642DCE86-1BAA-4FFF-98BF-0FB9BB11CD49} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{340E0337-BB3B-4328-BDB7-E6FA63C63EA1} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
+		{68396DE7-659F-4B0A-8A34-23D376948433} = {28800357-C8CE-4CD0-A2AD-D4A910ABB496}
+		{E0B28F9C-20E9-442F-9D2D-181D66204AD2} = {68396DE7-659F-4B0A-8A34-23D376948433}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}
