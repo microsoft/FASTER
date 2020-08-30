@@ -199,7 +199,7 @@ namespace FASTER.test.recovery.sumstore.simple
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints5");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints6");
 
             fht1 = new FasterKV
                 <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
