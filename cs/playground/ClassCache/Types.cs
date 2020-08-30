@@ -34,12 +34,12 @@ namespace ClassCache
 
     public class CacheKeySerializer : BinaryObjectSerializer<CacheKey>
     {
-        public override void Deserialize(ref CacheKey obj)
+        public override void Deserialize(out CacheKey obj)
         {
             obj = new CacheKey(reader.ReadInt64());
         }
 
-        public override void Serialize(ref CacheKey obj)
+        public override void Serialize(in CacheKey obj)
         {
             writer.Write(obj.key);
         }
@@ -59,12 +59,12 @@ namespace ClassCache
 
     public class CacheValueSerializer : BinaryObjectSerializer<CacheValue>
     {
-        public override void Deserialize(ref CacheValue obj)
+        public override void Deserialize(out CacheValue obj)
         {
             obj = new CacheValue(reader.ReadInt64());
         }
 
-        public override void Serialize(ref CacheValue obj)
+        public override void Serialize(in CacheValue obj)
         {
             writer.Write(obj.value);
         }

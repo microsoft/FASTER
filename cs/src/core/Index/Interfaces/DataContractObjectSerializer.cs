@@ -13,40 +13,32 @@ namespace FASTER.core
     /// <typeparam name="T"></typeparam>
     public sealed class DataContractObjectSerializer<T> : BinaryObjectSerializer<T>
     {
-        private static DataContractSerializer serializer = new DataContractSerializer(typeof(T));
+        private readonly static DataContractSerializer serializer = new DataContractSerializer(typeof(T));
 
         /// <summary>
         /// Deserialize
         /// </summary>
         /// <param name="obj"></param>
-        public override void Deserialize(ref T obj)
+        public override void Deserialize(out T obj)
         {
             int count = reader.ReadInt32();
             var byteArray = reader.ReadBytes(count);
             using var ms = new MemoryStream(byteArray);
-            using (var _reader = XmlDictionaryReader.CreateBinaryReader(ms, XmlDictionaryReaderQuotas.Max))
-                obj = (T)serializer.ReadObject(_reader);
+            using var _reader = XmlDictionaryReader.CreateBinaryReader(ms, XmlDictionaryReaderQuotas.Max);
+            obj = (T)serializer.ReadObject(_reader);
         }
 
         /// <summary>
         /// Serialize
         /// </summary>
         /// <param name="obj"></param>
-        public override void Serialize(ref T obj)
+        public override void Serialize(in T obj)
         {
             using var ms = new MemoryStream();
             using (var _writer = XmlDictionaryWriter.CreateBinaryWriter(ms, null, null, false))
                 serializer.WriteObject(_writer, obj);
             writer.Write((int)ms.Position);
             writer.Write(ms.ToArray());
-        }
-
-        /// <summary>
-        /// End serialize
-        /// </summary>
-        public void EndSerialize()
-        {
-            writer.Dispose();
         }
     }
 }

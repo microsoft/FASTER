@@ -49,7 +49,7 @@ namespace FASTER.core
                 Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
                 if (SerializerSettings == null)
                     SerializerSettings = new SerializerSettings<Key, Value>();
-                SerializerSettings.keySerializer = () => new DataContractObjectSerializer<Key>();
+                SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
@@ -57,7 +57,7 @@ namespace FASTER.core
                 Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
                 if (SerializerSettings == null)
                     SerializerSettings = new SerializerSettings<Key, Value>();
-                SerializerSettings.valueSerializer = () => new DataContractObjectSerializer<Value>();
+                SerializerSettings.valueSerializer = ObjectSerializer.Get<Value>();
             }
 
             values = new Record<Key, Value>[BufferSize][];
@@ -363,7 +363,7 @@ namespace FASTER.core
                     if (KeyHasObjects())
                     {
                         long pos = ms.Position;
-                        keySerializer.Serialize(ref src[i].key);
+                        keySerializer.Serialize(in src[i].key);
                         var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
                         key_address->Address = pos;
                         key_address->Size = (int)(ms.Position - pos);
@@ -373,7 +373,7 @@ namespace FASTER.core
                     if (ValueHasObjects() && !src[i].info.Tombstone)
                     {
                         long pos = ms.Position;
-                        valueSerializer.Serialize(ref src[i].value);
+                        valueSerializer.Serialize(in src[i].value);
                         var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
                         value_address->Address = pos;
                         value_address->Size = (int)(ms.Position - pos);
@@ -587,7 +587,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -729,7 +729,7 @@ namespace FASTER.core
                             stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
                         }
 
-                        keySerializer.Deserialize(ref src[ptr/recordSize].key);
+                        keySerializer.Deserialize(out src[ptr/recordSize].key);
                     }
                     else
                     {
@@ -747,7 +747,7 @@ namespace FASTER.core
                                 stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
                             }
 
-                            valueSerializer.Deserialize(ref src[ptr / recordSize].value);
+                            valueSerializer.Deserialize(out src[ptr / recordSize].value);
                         }
                         else
                         {
@@ -890,7 +890,7 @@ namespace FASTER.core
             {
                 var keySerializer = SerializerSettings.keySerializer();
                 keySerializer.BeginDeserialize(ms);
-                keySerializer.Deserialize(ref ctx.key);
+                keySerializer.Deserialize(out ctx.key);
                 keySerializer.EndDeserialize();
             }
 
@@ -898,7 +898,7 @@ namespace FASTER.core
             {
                 var valueSerializer = SerializerSettings.valueSerializer();
                 valueSerializer.BeginDeserialize(ms);
-                valueSerializer.Deserialize(ref ctx.value);
+                valueSerializer.Deserialize(out ctx.value);
                 valueSerializer.EndDeserialize();
             }
 
