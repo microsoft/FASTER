@@ -171,7 +171,7 @@ namespace FASTER.test.recovery.objects
 
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
     {
-        public override void Serialize(ref MyKey key)
+        public override void Serialize(in MyKey key)
         {
             var bytes = System.Text.Encoding.UTF8.GetBytes(key.name);
             writer.Write(4 + bytes.Length);
@@ -179,8 +179,9 @@ namespace FASTER.test.recovery.objects
             writer.Write(bytes);
         }
 
-        public override void Deserialize(ref MyKey key)
+        public override void Deserialize(out MyKey key)
         {
+            key = new MyKey();
             var size = reader.ReadInt32();
             key.key = reader.ReadInt32();
             var bytes = new byte[size - 4];
@@ -192,15 +193,16 @@ namespace FASTER.test.recovery.objects
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>
     {
-        public override void Serialize(ref MyValue value)
+        public override void Serialize(in MyValue value)
         {
             var bytes = System.Text.Encoding.UTF8.GetBytes(value.value);
             writer.Write(bytes.Length);
             writer.Write(bytes);
         }
 
-        public override void Deserialize(ref MyValue value)
+        public override void Deserialize(out MyValue value)
         {
+            value = new MyValue();
             var size = reader.ReadInt32();
             var bytes = new byte[size];
             reader.Read(bytes, 0, size);

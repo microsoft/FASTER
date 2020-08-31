@@ -32,8 +32,6 @@ namespace FASTER.core
     }
 
     public partial class FasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs

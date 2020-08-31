@@ -18,8 +18,6 @@ namespace FASTER.core
     /// <typeparam name="Key">Key</typeparam>
     /// <typeparam name="Value">Value</typeparam>
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
 
         /// <summary>

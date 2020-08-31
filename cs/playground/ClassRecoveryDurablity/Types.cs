@@ -36,8 +36,9 @@ namespace ClassRecoveryDurablity
 
         public class StoreKeySerializer : BinaryObjectSerializer<StoreKey>
         {
-            public override void Deserialize(ref StoreKey obj)
+            public override void Deserialize(out StoreKey obj)
             {
+                obj = new StoreKey();
                 var bytesr = new byte[4];
                 reader.Read(bytesr, 0, 4);
                 var sizet = BitConverter.ToInt32(bytesr);
@@ -52,7 +53,7 @@ namespace ClassRecoveryDurablity
                 reader.Read(obj.key, 0, size);
             }
 
-            public override void Serialize(ref StoreKey obj)
+            public override void Serialize(in StoreKey obj)
             {
                 var bytes = System.Text.Encoding.UTF8.GetBytes(obj.tableType);
                 var len = BitConverter.GetBytes(bytes.Length);
@@ -75,15 +76,16 @@ namespace ClassRecoveryDurablity
 
         public class StoreValueSerializer : BinaryObjectSerializer<StoreValue>
         {
-            public override void Deserialize(ref StoreValue obj)
+            public override void Deserialize(out StoreValue obj)
             {
+                obj = new StoreValue();
                 var bytesr = new byte[4];
                 reader.Read(bytesr, 0, 4);
                 int size = BitConverter.ToInt32(bytesr);
                 obj.value = reader.ReadBytes(size);
             }
 
-            public override void Serialize(ref StoreValue obj)
+            public override void Serialize(in StoreValue obj)
             {
                 var len = BitConverter.GetBytes(obj.value.Length);
                 writer.Write(len);

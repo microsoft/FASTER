@@ -15,8 +15,6 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
         }
 
@@ -24,8 +22,6 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value>(
             SystemState start,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
         }
 
@@ -37,8 +33,6 @@ namespace FASTER.core
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession : IFasterSession
         {
             switch (current.phase)
@@ -114,8 +108,6 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
             if (next.phase == Phase.REST)
                 // Before leaving the checkpoint, make sure all previous versions are read-only.
@@ -126,8 +118,6 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         { }
 
         /// <inheritdoc />
@@ -139,8 +129,6 @@ namespace FASTER.core
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession : IFasterSession
         {
         }

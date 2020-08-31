@@ -14,8 +14,6 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase,
         IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         internal readonly AllocatorBase<Key, Value> hlog;
         private readonly AllocatorBase<Key, Value> readcache;
@@ -83,7 +81,14 @@ namespace FASTER.core
             {
                 if (typeof(IFasterEqualityComparer<Key>).IsAssignableFrom(typeof(Key)))
                 {
-                    this.comparer = new Key() as IFasterEqualityComparer<Key>;
+                    if (default(Key) != null)
+                    {
+                        this.comparer = default(Key) as IFasterEqualityComparer<Key>;
+                    }
+                    else if (typeof(Key).GetConstructor(Type.EmptyTypes) != null)
+                    {
+                        this.comparer = Activator.CreateInstance(typeof(Key)) as IFasterEqualityComparer<Key>;
+                    }
                 }
                 else
                 {

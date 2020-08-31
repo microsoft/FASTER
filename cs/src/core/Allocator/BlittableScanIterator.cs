@@ -11,8 +11,6 @@ namespace FASTER.core
     /// Scan iterator for hybrid log
     /// </summary>
     public sealed class BlittableScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         private readonly int frameSize;
         private readonly BlittableAllocator<Key, Value> hlog;

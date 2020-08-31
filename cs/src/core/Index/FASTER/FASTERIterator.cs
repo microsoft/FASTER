@@ -7,8 +7,6 @@ using System;
 namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
 
         /// <summary>
@@ -75,8 +73,6 @@ namespace FASTER.core
 
 
     internal sealed class FasterKVIterator<Key, Value, Functions, CompactionFunctions> : IFasterScanIterator<Key, Value>
-        where Key : new()
-        where Value : new()
         where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
         where CompactionFunctions : ICompactionFunctions<Key, Value>
     {
