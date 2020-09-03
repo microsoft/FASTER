@@ -58,10 +58,13 @@ namespace FASTER.core
                     {
                         // Need to be very careful here as threadCtx is changing
                         var _ctx = prev.phase == Phase.IN_PROGRESS ? ctx.prevCtx : ctx;
+                        var tokens = faster._hybridLogCheckpoint.info.checkpointTokens;
+                        if (!faster.SameCycle(current) || tokens == null)
+                            return;
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
-                            faster.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
+                            faster.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
                             faster.InitContext(ctx, ctx.prevCtx.guid, ctx.prevCtx.serialNum);
 
                             // Has to be prevCtx, not ctx

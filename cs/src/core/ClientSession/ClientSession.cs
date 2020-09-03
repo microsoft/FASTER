@@ -505,7 +505,7 @@ namespace FASTER.core
 
         void IClientSession.AtomicSwitch(int version)
         {
-            fht.AtomicSwitch(ctx, ctx.prevCtx, version);
+            fht.AtomicSwitch(ctx, ctx.prevCtx, version, fht._hybridLogCheckpoint.info.checkpointTokens);
         }
 
         /// <summary>
