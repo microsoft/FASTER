@@ -13,7 +13,7 @@ namespace FASTER.test
     internal class GenericByteArrayTests
     {
         private FasterKV<byte[], byte[]> fht;
-        private ClientSession<byte[], byte[], byte[], byte[], Empty, IFunctions<byte[], byte[], byte[], byte[], Empty>> session;
+        private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs> session;
         private IDevice log, objlog;
 
         [SetUp]
@@ -29,7 +29,7 @@ namespace FASTER.test
                     comparer: new ByteArrayEC()
                     );
 
-            session = fht.NewSession(new MyByteArrayFuncs());
+            session = fht.For(new MyByteArrayFuncs()).NewSession<MyByteArrayFuncs>();
         }
 
         [TearDown]

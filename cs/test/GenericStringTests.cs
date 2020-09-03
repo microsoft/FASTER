@@ -12,7 +12,7 @@ namespace FASTER.test
     internal class GenericStringTests
     {
         private FasterKV<string, string> fht;
-        private ClientSession<string, string, string, string, Empty, IFunctions<string, string, string, string, Empty>> session;
+        private ClientSession<string, string, string, string, Empty, MyFuncs> session;
         private IDevice log, objlog;
 
         [SetUp]
@@ -27,7 +27,7 @@ namespace FASTER.test
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 } // log device
                     );
 
-            session = fht.NewSession(new MyFuncs());
+            session = fht.For(new MyFuncs()).NewSession<MyFuncs>();
         }
 
         [TearDown]

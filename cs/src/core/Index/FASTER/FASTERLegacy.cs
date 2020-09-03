@@ -282,19 +282,19 @@ namespace FASTER.core
         public bool GrowIndex() => _fasterKV.GrowIndex();
 
         /// <inheritdoc />
-        public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) => _fasterKV.TakeFullCheckpoint(out token, targetVersion);
+        public bool TakeFullCheckpoint(out Guid token) => _fasterKV.TakeFullCheckpoint(out token);
 
         /// <inheritdoc />
-        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1) => _fasterKV.TakeFullCheckpoint(out token, checkpointType, targetVersion);
+        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType) => _fasterKV.TakeFullCheckpoint(out token, checkpointType);
 
         /// <inheritdoc />
         public bool TakeIndexCheckpoint(out Guid token) => _fasterKV.TakeIndexCheckpoint(out token);
 
         /// <inheritdoc />
-        public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1) => _fasterKV.TakeHybridLogCheckpoint(out token, targetVersion);
+        public bool TakeHybridLogCheckpoint(out Guid token) => _fasterKV.TakeHybridLogCheckpoint(out token);
 
         /// <inheritdoc />
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1) => _fasterKV.TakeHybridLogCheckpoint(out token, checkpointType, targetVersion);
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType) => _fasterKV.TakeHybridLogCheckpoint(out token, checkpointType);
 
         /// <inheritdoc />
         public void Recover() => _fasterKV.Recover();
@@ -306,7 +306,7 @@ namespace FASTER.core
         public void Recover(Guid indexToken, Guid hybridLogToken) => _fasterKV.Recover(indexToken, hybridLogToken);
 
         /// <inheritdoc />
-        public ValueTask CompleteCheckpointAsync(CancellationToken token = default(CancellationToken)) => _fasterKV.CompleteCheckpointAsync(token);
+        public ValueTask CompleteCheckpointAsync(CancellationToken token = default) => _fasterKV.CompleteCheckpointAsync(token);
 
         /// <inheritdoc />
         public string DumpDistribution() => _fasterKV.DumpDistribution();
