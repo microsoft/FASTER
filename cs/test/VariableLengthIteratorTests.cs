@@ -18,7 +18,7 @@ namespace FASTER.test
             var vlLength = new VLValue();
             var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog-vl-iter.log", deleteOnClose: true);
             var fht = new FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions>
-                (128, new VLFunctions(),
+                (1L << 20, new VLFunctions(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = vlLength }
                 );

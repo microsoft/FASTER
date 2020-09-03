@@ -24,7 +24,7 @@ namespace FASTER.test
             IDevice log;
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
             fht = new FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions>
-                (128, new VLFunctions(),
+                (1L << 20, new VLFunctions(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = new VLValue() }
                 );
@@ -83,7 +83,7 @@ namespace FASTER.test
             IDevice log;
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
             fht = new FasterKV<VLValue, VLValue, Input, int[], Empty, VLFunctions2>
-                (128, new VLFunctions2(),
+                (1L << 20, new VLFunctions2(),
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<VLValue, VLValue> { keyLength = new VLValue(), valueLength = new VLValue() }
                 );

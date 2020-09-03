@@ -21,7 +21,7 @@ namespace FASTER.test
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\ObjectReadCacheTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
-                (128, new MyFunctions(),
+                (1L << 20, new MyFunctions(),
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }

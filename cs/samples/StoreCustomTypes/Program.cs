@@ -32,9 +32,8 @@ namespace StoreCustomTypes
                     valueSerializer = () => new MyValueSerializer()
                 };
 
-            var store = new FasterKV
-                <MyKey, MyValue>
-                (1L << 20,
+            var store = new FasterKV<MyKey, MyValue>(
+                1L << 20,
                 new LogSettings {  LogDevice = log, ObjectLogDevice = objlog },
                 serializerSettings: serializerSettings
                 );

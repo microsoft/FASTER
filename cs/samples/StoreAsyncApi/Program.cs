@@ -136,7 +136,6 @@ namespace StoreAsyncApi
 
         static void CommitThread()
         {
-            //Task<LinkedCommitInfo> prevCommitTask = null;
             while (true)
             {
                 Thread.Sleep(5000);

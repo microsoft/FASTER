@@ -36,7 +36,7 @@ namespace FASTER.test.statemachine
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\StateMachineTest1.log", deleteOnClose: true);
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
             fht1 = new FasterKV<AdId, NumClicks>
-                (128,
+                (1L << 20,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.FoldOver }
                 );
@@ -389,7 +389,7 @@ namespace FASTER.test.statemachine
 
             var fht2 = new FasterKV
                 <AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions>
-                (128, f,
+                (1L << 20, f,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.FoldOver }
                 );

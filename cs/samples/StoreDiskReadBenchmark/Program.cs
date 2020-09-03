@@ -36,8 +36,7 @@ namespace StoreDiskReadBenchmark
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20 };
             var checkpointSettings = new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.FoldOver };
 
-            faster = new FasterKV<Key, Value>
-                (1L << 25, logSettings, checkpointSettings);
+            faster = new FasterKV<Key, Value>(1L << 25, logSettings, checkpointSettings);
 
             ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);
             TaskScheduler.UnobservedTaskException += (object sender, UnobservedTaskExceptionEventArgs e) =>

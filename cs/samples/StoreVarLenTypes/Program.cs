@@ -3,7 +3,6 @@
 
 using FASTER.core;
 using System;
-using System.IO;
 
 namespace StoreVarLenTypes
 {
@@ -19,36 +18,27 @@ namespace StoreVarLenTypes
         // required, as these are effectively value-types. One may provide safe APIs on top of 
         // this raw functionality using, for example, Span<T> and Memory<T>.
 
-        static void Main()
+        static unsafe void Main()
         {
-            Sample1();
-            Console.WriteLine("Press <ENTER> to end");
-            Console.ReadLine();
-        }
+            // VarLen types do not need an object log
+            var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
 
-        static unsafe void Sample1()
-        {
-            FasterKV<VarLenType, VarLenType> fht;
-            IDevice log;
-            log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
-            fht = new FasterKV<VarLenType, VarLenType>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
-                null, null,
-                new VarLenTypeComparer(),
-                new VariableLengthStructSettings<VarLenType, VarLenType>
-                { keyLength = new VarLenLength(), valueLength = new VarLenLength() }
+            // Create store, you provide VariableLengthStructSettings for VarLen types
+            var store = new FasterKV<VarLenType, VarLenType>(
+                size: 1L << 20,
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
+                comparer: new VarLenTypeComparer(),
+                variableLengthStructSettings: new VariableLengthStructSettings<VarLenType, VarLenType>
+                    { keyLength = new VarLenLength(), valueLength = new VarLenLength() }
                 );
-            var s = fht.For(new VarLenFunctions()).NewSession<VarLenFunctions>();
 
-            int[] input = default;
+            // Create session
+            var s = store.For(new VarLenFunctions()).NewSession<VarLenFunctions>();
 
             Random r = new Random(100);
 
             for (int i = 0; i < 5000; i++)
             {
-                if (i == 2968)
-                { }
                 var keylen = 2 + r.Next(10);
                 int* keyval = stackalloc int[keylen];
                 ref VarLenType key1 = ref *(VarLenType*)keyval;
@@ -62,7 +52,7 @@ namespace StoreVarLenTypes
                 for (int j = 0; j < len; j++)
                     *(val + j) = len;
 
-                s.Upsert(ref key1, ref value, Empty.Default, 0);
+                s.Upsert(ref key1, ref value);
             }
 
             bool success = true;
@@ -79,7 +69,7 @@ namespace StoreVarLenTypes
                 var len = 2 + r.Next(10);
 
                 int[] output = null;
-                var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = s.Read(ref key1, ref output);
 
                 if (status == Status.PENDING)
                 {
@@ -105,17 +95,19 @@ namespace StoreVarLenTypes
             }
             if (success)
             {
-                Console.WriteLine("Sample1: Success!");
+                Console.WriteLine("Success!");
             }
             else
             {
-                Console.WriteLine("Sample1: Error!");
+                Console.WriteLine("Error!");
             }
 
             s.Dispose();
-            fht.Dispose();
-            fht = null;
+            store.Dispose();
             log.Close();
+
+            Console.WriteLine("Press <ENTER> to end");
+            Console.ReadLine();
         }
     }
 }
