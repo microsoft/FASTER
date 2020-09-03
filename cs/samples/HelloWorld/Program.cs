@@ -19,13 +19,15 @@ namespace HelloWorld
             var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log", deleteOnClose: true);
 
             // Create store instance
-            var store = new FasterKV<long, long>(1L << 20,
-                new LogSettings { LogDevice = log },
-                comparer: new LongComparer() // key comparer
+            var store = new FasterKV<long, long>(
+                size: 1L << 20, // 1M cache lines of 64 bytes each = 64MB hash table
+                logSettings: new LogSettings { LogDevice = log }, // specify log settings (e.g., size of log in memory)
+                comparer: new LongComparer() // provide custom key equality comparer
                 );
 
-            // Create functions for callbacks; we use standard in-built functions
-            // Read-modify-writes will perform summation
+            // Create functions for callbacks; we use a standard in-built function in this sample
+            // although you can write your own by extending FunctionsBase or implementing IFunctions
+            // In this in-built function, read-modify-writes will perform value merges via summation
             var funcs = new SimpleFunctions<long, long>((a, b) => a + b);
 
             // Each logical sequence of calls to FASTER is associated
@@ -35,15 +37,19 @@ namespace HelloWorld
 
             // (1) Upsert and read back upserted value
             session.Upsert(ref key, ref value);
-            session.Read(ref key, ref output);
-            if (output == value)
+            
+            // In this sample, reads are served back from memory and return synchronously
+            // Reads from disk will return PENDING status; see StoreCustomTypes example for details
+            var status = session.Read(ref key, ref output);
+            if (status == Status.OK && output == value)
                 Console.WriteLine("(1) Success!");
             else
                 Console.WriteLine("(1) Error!");
 
             /// (2) Delete key, read to verify deletion
-            session.Delete(ref key, Empty.Default, 0);
-            var status = session.Read(ref key, ref output);
+            session.Delete(ref key);
+            
+            status = session.Read(ref key, ref output);
             if (status == Status.NOTFOUND)
                 Console.WriteLine("(2) Success!");
             else
@@ -55,9 +61,10 @@ namespace HelloWorld
 
             session.RMW(ref key, ref input1);
             session.RMW(ref key, ref input2);
-            session.Read(ref key, ref output);
 
-            if (output == input1 + input2)
+            status = session.Read(ref key, ref output);
+
+            if (status == Status.OK && output == input1 + input2)
                 Console.WriteLine("(3) Success!");
             else
                 Console.WriteLine("(3) Error!");
