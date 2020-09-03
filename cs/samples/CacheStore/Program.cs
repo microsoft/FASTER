@@ -33,7 +33,10 @@ namespace CacheStore
             var logSettings = new LogSettings {
                 LogDevice = log, 
                 ObjectLogDevice = objlog,
-                ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null
+                ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null,
+                // Uncomment below for low memory footprint demo
+                // PageSizeBits = 12, // (4K pages)
+                // MemorySizeBits = 20 // (1M memory for main log)
             };
 
             // Define serializers; otherwise FASTER will use the slower DataContract
@@ -107,6 +110,7 @@ namespace CacheStore
             {
                 if (i % (1 << 19) == 0)
                 {
+                    GC.Collect();
                     long workingSet = Process.GetCurrentProcess().WorkingSet64;
                     Console.WriteLine($"{i}: {workingSet / 1048576}M");
                 }
