@@ -163,7 +163,7 @@ namespace FASTER.core
 
 
             // Make index consistent for version v
-            if (FoldOverSnapshot)
+            if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
                 RecoverHybridLog(recoveredICInfo.info, recoveredHLCInfo.info);
             }
