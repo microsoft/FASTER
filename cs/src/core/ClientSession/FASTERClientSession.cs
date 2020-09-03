@@ -22,10 +22,18 @@ namespace FASTER.core
         public struct ClientSessionBuilder<Input, Output, Context>
         {
             private readonly FasterKV<Key, Value> _fasterKV;
+            private readonly IFunctions<Key, Value, Input, Output, Context> _functions;
 
             internal ClientSessionBuilder(FasterKV<Key, Value> fasterKV)
             {
                 _fasterKV = fasterKV;
+                _functions = null;
+            }
+
+            internal ClientSessionBuilder(FasterKV<Key, Value> fasterKV, IFunctions<Key, Value, Input, Output, Context> functions)
+            {
+                _fasterKV = fasterKV;
+                _functions = functions;
             }
 
             /// <summary>
@@ -57,6 +65,40 @@ namespace FASTER.core
             {
                 return _fasterKV.ResumeSession<Input, Output, Context, Functions>(functions, sessionId, out commitPoint, threadAffinitized, variableLengthStruct);
             }
+
+            /// <summary>
+            /// Start a new client session with FASTER.
+            /// </summary>
+            /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
+            /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+            /// <param name="variableLengthStruct">Implementation of input-specific length computation for variable-length structs</param>
+            /// <returns>Session instance</returns>
+            public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(string sessionId = null, bool threadAffinitized = false, IVariableLengthStruct<Value, Input> variableLengthStruct = null)
+                where Functions : IFunctions<Key, Value, Input, Output, Context>
+            {
+                if (_functions == null)
+                    throw new FasterException("Functions not provided for session");
+
+                return _fasterKV.NewSession<Input, Output, Context, Functions>((Functions)_functions, sessionId, threadAffinitized, variableLengthStruct);
+            }
+
+            /// <summary>
+            /// Resume (continue) prior client session with FASTER, used during
+            /// recovery from failure.
+            /// </summary>
+            /// <param name="sessionId">ID/name of previous session to resume</param>
+            /// <param name="commitPoint">Prior commit point of durability for session</param>
+            /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+            /// <param name="variableLengthStruct">Implementation of input-specific length computation for variable-length structs</param>
+            /// <returns>Session instance</returns>
+            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, IVariableLengthStruct<Value, Input> variableLengthStruct = null)
+                where Functions : IFunctions<Key, Value, Input, Output, Context>
+            {
+                if (_functions == null)
+                    throw new FasterException("Functions not provided for session");
+
+                return _fasterKV.ResumeSession<Input, Output, Context, Functions>((Functions)_functions, sessionId, out commitPoint, threadAffinitized, variableLengthStruct);
+            }
         }
 
         /// <summary>
@@ -69,6 +111,18 @@ namespace FASTER.core
         public ClientSessionBuilder<Input, Output, Context> For<Input, Output, Context>()
         {
             return new ClientSessionBuilder<Input, Output, Context>(this);
+        }
+
+        /// <summary>
+        /// Helper method to specify callback function instance along with Input, Output and Context types
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
+        /// <typeparam name="Context"></typeparam>
+        /// <returns></returns>
+        public ClientSessionBuilder<Input, Output, Context> For<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions)
+        {
+            return new ClientSessionBuilder<Input, Output, Context>(this, functions);
         }
 
         /// <summary>
