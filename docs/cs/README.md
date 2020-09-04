@@ -47,28 +47,10 @@ IDevice log = Devices.CreateLogDevice("C:\\Temp\\hybridlog_native.log");
 Then, an instance of FASTER is created as follows:
 
 ```cs
-fht = new FasterKV<Key, Value, Input, Output, Empty, Functions>
-  (1L << 20, new Functions(), new LogSettings { LogDevice = log });
+store = new FasterKV<Key, Value>(1L << 20, new Functions(), new LogSettings { LogDevice = log });
 ```
 
-### Type Arguments to Constructor
-
-There are six basic concepts, provided as generic type arguments when instantiating FASTER:
-1. `Key`: This is the type of the key, e.g., `long`.
-2. `Value`: This is the type of the value stored in FASTER.
-3. `Input`: This is the type of input provided to FASTER when calling Read or RMW. It may be regarded as a parameter for the Read or RMW operation. For example, with RMW, it may be the delta being accumulated into the value.
-4. `Output`: This is the type of the output of a Read operation. The reader copies the relevant parts of the Value to Output.
-5. `Context`: User-defined context for the operation. Use `Empty` if there is no context necesssary.
-6. `Functions`: These is a type that implemented `IFunctions<>` and provides all callbacks necessary to use FASTER.
-
-### Callback Functions
-
-The user provides an instance of a type that implements `IFunctions<>`. This type encapsulates all the callbacks, which are described next:
-
-1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume there are no concurrent operations.
-2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value.
-3. Completion callbacks: Called when various operations complete.
-4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
+Here, `Key` is the type of the key and `Value` is the type of the value stored in FASTER.
 
 ### Constructor Parameters
 
@@ -76,30 +58,50 @@ The user provides an instance of a type that implements `IFunctions<>`. This typ
 2. Log Settings: These are setings related to the size of the log and devices used by the log.
 3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the section on checkpointing [below](#checkpointing-and-recovery).
 4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for non-blittable types such as C# class objects.*
-5. Key Equality comparer: Used for providing a better comparer for keys, implements `IFasterEqualityComparer<Key>`.
+5. Key Equality comparer: Used for providing a better comparer for keys, implements `IFasterEqualityComparer<Key>`. FASTER provides default comparers for `int`, `long`, `string`, and `byte[]` types, as well as a default based on `EqualityComparer<T>.Default`.
 
 The total in-memory footprint of FASTER is controlled by the following parameters:
 1. Hash table size: This parameter (the first contructor argument) times 64 is the size of the in-memory hash table in bytes.
 2. Log size: The logSettings.MemorySizeBits denotes the size of the in-memory part of the hybrid log, in bits. In other words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class objects, this size does not include the size of objects, as this information is not accessible to FASTER. The older part of the log is spilled to storage.
 
+Read more about managing memory in FASTER [here](https://microsoft.github.io/FASTER/docs/tuning).
+
+### Callback Functions
+
+When creating a session to interact with FASTER, the user provides an instance of a type that implements `IFunctions<Key, Value, Input, Output, Context>`. This type encapsulates all the callbacks that are used to interact with the store.
+
+The three new types in the signature to `IFunctions` are described below:
+
+1. `Input`: This is the type of input provided to FASTER when calling Read or RMW. It may be regarded as a parameter for the Read or RMW operation. For example, with RMW, it may be the delta being accumulated into the value.
+2. `Output`: This is the type of the output of a Read operation. The reader copies the relevant parts of the Value to Output.
+3. `Context`: User-defined context for the operation. Use `Empty` if there is no context necesssary.
+
+The callbacks are described next:
+
+1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume there are no concurrent operations.
+2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value.
+3. Completion callbacks: Called when various operations complete.
+4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
+
+
 ### Sessions (Threads)
 
-Once FASTER is instantiated, threads may use FASTER by registering themselves via the concept of a Session, using the call 
+We may interact with FASTER by creating a Session, using the below call that provides the functions described above: 
 
 ```cs
-fht.StartSession();
+var session = store.For(new Functions()).NewSession<Functions>();
 ```
 
-At the end, the thread calls:
+At the end, the session is disposed:
 
 ```cs
-fht.StopSession();
+session.Dispose();
 ```
 
-When all threads are done operating on FASTER, you finally dispose the FASTER instance:
+When all sessions are done operating on FASTER, you finally dispose the FASTER instance:
 
 ```cs
-fht.Dispose();
+store.Dispose();
 ```
 
 
@@ -112,45 +114,28 @@ I/O operations. There is no checkpointing in this example as well.
 public static void Test()
 {
   var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-  var fht = new FasterKV<long, long, long, long, Empty, Funcs>
-    (1L << 20, new Funcs(), new LogSettings { LogDevice = log });
-  fht.StartSession();
+  var store = new FasterKV<long, long>(1L << 20, new Funcs(), new LogSettings { LogDevice = log });
+  var s = fht.NewSession(new SimpleFunctions<long, long>);
   long key = 1, value = 1, input = 10, output = 0;
-  fht.Upsert(ref key, ref value, Empty.Default, 0);
-  fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+  s.Upsert(ref key, ref value);
+  s.Read(ref key, ref output);
   Debug.Assert(output == value);
-  fht.RMW(ref key, ref input, Empty.Default, 0);
-  fht.RMW(ref key, ref input, Empty.Default, 0);
-  fht.Read(ref key, ref input, ref output, Empty.Default, 0);
+  s.RMW(ref key, ref input);
+  s.RMW(ref key, ref input);
+  s.Read(ref key, ref output);
   Debug.Assert(output == value + 20);
-  fht.StopSession();
-  fht.Dispose();
+  s.StopSession();
+  store.Dispose();
   log.Close();
 }
 ```
 
-Functions for this example:
+We use default out-of-the-box provided SimpleFunctions in the above example.
 
-```cs
-public class Funcs : IFunctions<long, long, long, long, Empty>
-{
-  public void SingleReader(ref long key, ref long input, ref long value, ref long dst) => dst = value;
-  public void SingleWriter(ref long key, ref long src, ref long dst) => dst = src;
-  public void ConcurrentReader(ref long key, ref long input, ref long value, ref long dst) => dst = value;
-  public void ConcurrentWriter(ref long key, ref long src, ref long dst) => dst = src;
-  public void InitialUpdater(ref long key, ref long input, ref long value) => value = input;
-  public void CopyUpdater(ref long key, ref long input, ref long oldv, ref long newv) => newv = oldv + input;
-  public void InPlaceUpdater(ref long key, ref long input, ref long value) => value += input;
-  public void UpsertCompletionCallback(ref long key, ref long value, Empty ctx) { }
-  public void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status s) { }
-  public void RMWCompletionCallback(ref long key, ref long input, Empty ctx, Status s) { }
-  public void CheckpointCompletionCallback(Guid sessionId, long serialNum) { }
-}
-```
 
 ## More Examples
 
-Several example projects are located in [cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground) (available through the solution). You can also check out more samples in the unit tests in [/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test), which can be run through the solution or using NUnit-Console. A basic YCSB benchmark is located in [cs/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/benchmark), also available through the main solution.
+Several example projects are located in [cs/samples](https://github.com/Microsoft/FASTER/tree/master/cs/samples) and [cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground) (available through the solution). You can also check out more samples in the unit tests in [/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test), which can be run through the solution or using NUnit-Console. A basic YCSB benchmark is located in [cs/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/benchmark), also available through the main solution.
 
 ## Checkpointing and Recovery
 
