@@ -186,11 +186,19 @@ We use default out-of-the-box provided `SimpleFunctions<Key,Value>` in the above
 
 ## More Examples
 
-Several example projects are located in [cs/samples](https://github.com/Microsoft/FASTER/tree/master/cs/samples) and 
-[cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground) (available through the solution). You can also
-check out more samples in the unit tests in [/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test), which can be 
-run through the solution or using NUnit-Console. A basic YCSB benchmark is located in 
-[cs/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/benchmark), also available through the main solution.
+Several sample projects are located in the [cs/samples](https://github.com/Microsoft/FASTER/tree/master/cs/samples) folder
+of GitHub.
+
+Advanced samples and prototypes are available in [cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground).
+
+Benchmarking code is present at [cs/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/benchmark)
+
+Unit tests are a useful resource to see how FASTER is used as well. They are in 
+[/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test).
+
+All these call be accessed through Visual Studio via the main FASTER.sln solution file at
+[/cs](https://github.com/Microsoft/FASTER/tree/master/cs).
+
 
 ## Checkpointing and Recovery
 
