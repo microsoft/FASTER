@@ -3,7 +3,7 @@ layout: default
 title: Tuning FASTER
 nav_order: 1500
 has_children: true
-permalink: /docs/tuning
+permalink: /tuning
 ---
 
 # Tuning FASTER
