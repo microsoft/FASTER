@@ -46,9 +46,8 @@ samples in the playground located [here](https://github.com/Microsoft/FASTER/tre
 
 # Getting Started
 
-* Docs website: [https://microsoft.github.io/FASTER](https://microsoft.github.io/FASTER)
-* Research papers: [https://www.microsoft.com/en-us/research/project/FASTER/](https://www.microsoft.com/en-us/research/project/FASTER/)
-* Usage and getting started: [github](docs/) | [web](https://microsoft.github.io/FASTER)
+* Docs: [github](docs/) | [web](https://microsoft.github.io/FASTER)
+* Research papers: [https://aka.ms/FASTER](https://aka.ms/FASTER)
 * FASTER C# details: [github](docs/cs/) | [web](https://microsoft.github.io/FASTER/cs)
 * FASTER C++ details: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc)
 * Tuning FASTER: [github](docs/tuning/) | [web](https://microsoft.github.io/FASTER/tuning)
