@@ -71,7 +71,7 @@ namespace FASTER.test.largeobjects
             objlog = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.obj.log");
 
             fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
-                (1L << 20, new MyLargeFunctions(),
+                (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
@@ -100,7 +100,7 @@ namespace FASTER.test.largeobjects
             objlog = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.obj.log");
 
             fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
-                (1L << 20, new MyLargeFunctions(),
+                (128, new MyLargeFunctions(),
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }

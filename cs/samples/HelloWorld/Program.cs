@@ -22,8 +22,7 @@ namespace HelloWorld
             // Create store instance
             var store = new FasterKV<long, long>(
                 size: 1L << 20, // 1M cache lines of 64 bytes each = 64MB hash table
-                logSettings: new LogSettings { LogDevice = log }, // specify log settings (e.g., size of log in memory)
-                comparer: new LongComparer() // provide custom key equality comparer
+                logSettings: new LogSettings { LogDevice = log } // specify log settings (e.g., size of log in memory)
                 );
 
             // Create functions for callbacks; we use a standard in-built function in this sample
@@ -80,16 +79,10 @@ namespace HelloWorld
             log.Close();
 
             // Delete the created files
-            new DirectoryInfo(path).Delete(true);
+            try { new DirectoryInfo(path).Delete(true); } catch { }
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();
         }
-    }
-
-    public struct LongComparer : IFasterEqualityComparer<long>
-    {
-        public bool Equals(ref long k1, ref long k2) => k1 == k2;
-        public long GetHashCode64(ref long k) => Utility.GetHashCode(k);
     }
 }

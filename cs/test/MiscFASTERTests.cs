@@ -27,7 +27,7 @@ namespace FASTER.test
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MiscFASTERTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<int, MyValue, MyInput, MyOutput, Empty, MixedFunctions>
-                (1L << 20, new MixedFunctions(),
+                (128, new MixedFunctions(),
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<int, MyValue> { valueSerializer = () => new MyValueSerializer() }
@@ -117,7 +117,7 @@ namespace FASTER.test
             {
                 log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
                 using var fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>
-                    (1L << 20, copyOnWrite, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+                    (128, copyOnWrite, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
                 using var session = fht.NewSession();
 
                 var key = default(KeyStruct);

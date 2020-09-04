@@ -109,7 +109,7 @@ namespace FASTER.test
         {
             _log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\FunctionPerSessionTests1.log", deleteOnClose: true);
 
-            _faster = new FasterKV<int, RefCountedValue>(1L << 20, new LogSettings()
+            _faster = new FasterKV<int, RefCountedValue>(128, new LogSettings()
             {
                 LogDevice = _log,
             });

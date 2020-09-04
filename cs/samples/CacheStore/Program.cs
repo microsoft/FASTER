@@ -93,7 +93,7 @@ namespace CacheStore
             objlog.Close();
 
             // Delete the created files
-            new DirectoryInfo(path).Delete(true);
+            try { new DirectoryInfo(path).Delete(true); } catch { }
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();

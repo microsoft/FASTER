@@ -21,7 +21,7 @@ namespace FASTER.test
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericDiskDeleteTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete>
-                (1L << 20, new MyFunctionsDelete(),
+                (128, new MyFunctionsDelete(),
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }

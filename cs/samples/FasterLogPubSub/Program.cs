@@ -40,7 +40,7 @@ namespace FasterLogPubSub
             Console.WriteLine("Finished.");
 
             log.Dispose();
-            new DirectoryInfo("path").Delete(true);
+            try { new DirectoryInfo(path).Delete(true); } catch { }
         }
 
         static async Task CommiterAsync(FasterLog log, CancellationToken cancellationToken)

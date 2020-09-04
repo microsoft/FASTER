@@ -91,7 +91,7 @@ namespace StoreCustomTypes
             log.Close();
             objlog.Close();
 
-            new DirectoryInfo(path).Delete(true);
+            try { new DirectoryInfo(path).Delete(true); } catch { }
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();
