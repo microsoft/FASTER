@@ -1,7 +1,8 @@
 ---
 layout: default
 title: FASTER C#
-nav_order: 2
+nav_order: 500
+has_children: true
 description: Overview of FASTER C#
 permalink: /cs
 ---
