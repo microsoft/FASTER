@@ -54,6 +54,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterLogSample", "samples\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterLogPubSub", "samples\FasterLogPubSub\FasterLogPubSub.csproj", "{F6EA46D5-DD66-47F2-8FAC-370FDD733DD3}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AzureBackedStore", "samples\AzureBackedStore\AzureBackedStore.csproj", "{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -198,6 +200,14 @@ Global
 		{F6EA46D5-DD66-47F2-8FAC-370FDD733DD3}.Release|Any CPU.Build.0 = Release|x64
 		{F6EA46D5-DD66-47F2-8FAC-370FDD733DD3}.Release|x64.ActiveCfg = Release|x64
 		{F6EA46D5-DD66-47F2-8FAC-370FDD733DD3}.Release|x64.Build.0 = Release|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Debug|Any CPU.Build.0 = Debug|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Debug|x64.ActiveCfg = Debug|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Debug|x64.Build.0 = Debug|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Release|Any CPU.ActiveCfg = Release|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Release|Any CPU.Build.0 = Release|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Release|x64.ActiveCfg = Release|x64
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -222,6 +232,7 @@ Global
 		{5BA87D12-ECD7-4CAD-A6F3-14816D0C43A0} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{DACB12EB-8A64-4BB4-BFA3-0377AACD28D3} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{F6EA46D5-DD66-47F2-8FAC-370FDD733DD3} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
+		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}
