@@ -44,6 +44,10 @@ namespace FASTER.core
         {
             pool = new SectorAlignedBufferPool(1, 1);
 
+            string path = new FileInfo(filename).Directory.FullName;
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             logHandles = new SafeConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)>();
