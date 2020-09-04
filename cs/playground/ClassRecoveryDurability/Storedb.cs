@@ -68,8 +68,8 @@ namespace ClassRecoveryDurablity
         public void Dispose()
         {
             db.Dispose();
-            log.Close();
-            objLog.Close();
+            log.Dispose();
+            objLog.Dispose();
         }
     }
 }

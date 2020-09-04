@@ -124,7 +124,7 @@ namespace FASTER.test
         {
             _faster.Dispose();
             _faster = null;
-            _log.Close();
+            _log.Dispose();
         }
 
         [Test]

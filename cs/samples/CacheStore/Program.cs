@@ -89,8 +89,8 @@ namespace CacheStore
 
             // Clean up
             store.Dispose();
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
 
             // Delete the created files
             try { new DirectoryInfo(path).Delete(true); } catch { }

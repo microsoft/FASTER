@@ -73,7 +73,7 @@ namespace FASTER.test
             s.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
         [Test]
@@ -145,7 +145,7 @@ namespace FASTER.test
             s.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
         
     }

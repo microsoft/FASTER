@@ -365,8 +365,8 @@ namespace FASTER.core
                 }
             }
 
-            recoveryStatus.recoveryDevice.Close();
-            recoveryStatus.objectLogRecoveryDevice.Close();
+            recoveryStatus.recoveryDevice.Dispose();
+            recoveryStatus.objectLogRecoveryDevice.Dispose();
         }
 
         private void RecoverFromPage(long startRecoveryAddress,

@@ -145,13 +145,13 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// <see cref="IDevice.Close"/>
+        /// <see cref="IDevice.Dispose"/>
         /// </summary>
-        public override void Close()
+        public override void Dispose()
         {
             foreach (IDevice device in partitions.Devices)
             {
-                device.Close();
+                device.Dispose();
             }
         }
 

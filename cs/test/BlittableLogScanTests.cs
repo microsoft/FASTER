@@ -34,7 +34,7 @@ namespace FASTER.test
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
         [Test]

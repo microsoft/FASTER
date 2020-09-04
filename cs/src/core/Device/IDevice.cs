@@ -16,7 +16,7 @@ namespace FASTER.core
     /// <summary>
     /// Interface for devices
     /// </summary>
-    public interface IDevice
+    public interface IDevice : IDisposable
     {
         /// <summary>
         /// Size of sector
@@ -162,12 +162,5 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segment">index of the segment to remov</param>
         void RemoveSegment(int segment);
-
-        /* Close */
-
-        /// <summary>
-        /// Close
-        /// </summary>
-        void Close();
     }
 }
