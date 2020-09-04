@@ -7,7 +7,7 @@
 Managing large application state easily, resiliently, and with high performance is one of the hardest
 problems in the cloud today. The FASTER project offers two artifacts to help tackle this problem.
 
-* :new: **FASTER Log** is a high-performance concurrent persistent recoverable log, iterator, and random 
+* **FASTER Log** is a high-performance concurrent persistent recoverable log, iterator, and random 
 reader library in C#. It supports very frequent commit operations at low latency, and can quickly saturate 
 disk bandwidth. It supports both sync and async interfaces, handles disk errors, and supports checksums. Learn 
 more about the FASTER Log [here](https://github.com/microsoft/FASTER/blob/master/docs/cs/FasterLog.md) or [here](https://microsoft.github.io/FASTER/docs/fasterlog).
@@ -32,22 +32,26 @@ storage, cloud storage, tiered storage, and sharded storage.
 
 For standard benchmarks where the working set fits in main memory, we found FASTER KV to achieve
 significantly higher throughput than current systems, and match or exceed the performance of pure 
-in-memory data structures while offering more functionality. See [the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf) for more details. We also have a detailed
-analysis of C# FASTER KV performance in a wiki page 
+in-memory data structures while offering more functionality. See 
+[the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf)
+for more details. We also have a detailed analysis of C# FASTER KV performance in a wiki page 
 [here](https://github.com/Microsoft/FASTER/wiki/Performance-of-FASTER-in-C%23). The performance of the 
 C# and C++ versions of FASTER are very similar. FASTER Log is also extremely fast, capable of saturating modern
 NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded setting.
 
-:new: We now support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md) for more information. Also, check out the 
+:new: We now support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](docs/cs/README.md) for more information. Also, check out the 
 samples in the playground located [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground).
 
 # Getting Started
 
-Visit our [research website](http://aka.ms/FASTER) for technical details and papers. For FASTER usage and 
-getting started information, head over to our [GitHub Pages](https://microsoft.github.io/FASTER) website. A 
-detailed guide to getting started with FASTER KV C# is also available in the repository at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER C# binaries are available via [NuGet](https://www.nuget.org/packages/Microsoft.FASTER/).
-
-You can take a look at the project roadmap [here](https://microsoft.github.io/FASTER/roadmap).
+* Docs website: [https://microsoft.github.io/FASTER](https://microsoft.github.io/FASTER)
+* Research papers: [https://www.microsoft.com/en-us/research/project/FASTER/](https://www.microsoft.com/en-us/research/project/FASTER/)
+* Usage and getting started: [github](docs/) | [web](https://microsoft.github.io/FASTER)
+* FASTER C# details: [github](docs/cs/) | [web](https://microsoft.github.io/FASTER/cs)
+* FASTER C++ details: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc)
+* Tuning FASTER: [github](docs/tuning/) | [web](https://microsoft.github.io/FASTER/tuning)
+* Project roadmap: [github](docs/Roadmap.md) | [web](https://microsoft.github.io/FASTER/roadmap).
+* NuGet binary feed: [NuGet](https://www.nuget.org/packages/Microsoft.FASTER/)
 
 # Build and Test
 
