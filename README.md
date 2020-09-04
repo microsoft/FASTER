@@ -57,9 +57,9 @@ samples in the playground located [here](https://github.com/Microsoft/FASTER/tre
 
 # Build and Test
 
-For C#, click [here](https://github.com/Microsoft/FASTER/tree/master/cs).
+For C#, click [here](cs/).
 
-For C++, click [here](https://github.com/Microsoft/FASTER/tree/master/cc).
+For C++, click [here](cc/).
 
 # Recovery in FASTER KV
 
@@ -72,8 +72,8 @@ operations, of the form “all operations until offset Ti in session i”; and (
 incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
 
 CPR is available in the C# and C++ versions of FASTER. More documentation on recovery in the C# version is
-[here](https://github.com/Microsoft/FASTER/tree/master/cs#checkpointing-and-recovery). For C++, we only
-have examples in code right now. The sum-store, located [here](https://github.com/Microsoft/FASTER/tree/master/cc/playground/sum_store-dir), is a good example of checkpointing and recovery.
+[here](docs/cs/FasterKV.md#checkpointing-and-recovery). For C++, we only
+have examples in code right now. The sum-store, located [here](cc/playground/sum_store-dir), is a good example of checkpointing and recovery.
 
 # Contributing
 
