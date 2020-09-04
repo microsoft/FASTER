@@ -2,7 +2,7 @@
 layout: default
 title: FasterKV store + cache in C#
 nav_order: 3
-permalink: /docs/fasterkv
+permalink: /cs/fasterkv
 ---
 
 Introduction to FasterKV C#
