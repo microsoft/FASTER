@@ -3,6 +3,7 @@ layout: default
 title: Hybrid Log and Read Cache
 parent: Tuning FASTER
 nav_order: 3
+permalink: /tuning/log
 ---
 
 # Configuring the Hybrid Log
