@@ -22,12 +22,11 @@ namespace CacheStore
             // Use blittable structs for *much* better performance
 
             // Create files for storing data
-            // We set deleteOnClose to true, so logs will auto-delete on completion
             var path = Path.GetTempPath() + "ClassCache\\";
-            var log =  Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            var log =  Devices.CreateLogDevice(path + "hlog.log");
 
             // Log for storing serialized objects; needed only for class keys/values
-            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log", deleteOnClose: true);
+            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log");
 
             // Define settings for log
             var logSettings = new LogSettings {
@@ -92,6 +91,8 @@ namespace CacheStore
             store.Dispose();
             log.Close();
             objlog.Close();
+
+            // Delete the created files
             new DirectoryInfo(path).Delete(true);
 
             Console.WriteLine("Press <ENTER> to end");

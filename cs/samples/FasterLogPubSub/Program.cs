@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +14,9 @@ namespace FasterLogPubSub
     {
         static async Task Main()
         {
-            var device = Devices.CreateLogDevice($"c:\\logs\\mylog");
+            var path = Path.GetTempPath() + "FasterLogPubSub\\";
+
+            var device = Devices.CreateLogDevice(path + "mylog");
 
             var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
 
@@ -36,6 +39,8 @@ namespace FasterLogPubSub
 
             Console.WriteLine("Finished.");
 
+            log.Dispose();
+            new DirectoryInfo("path").Delete(true);
         }
 
         static async Task CommiterAsync(FasterLog log, CancellationToken cancellationToken)

@@ -22,6 +22,8 @@ namespace StoreAsyncApi
         {
             var path = Path.GetTempPath() + "StoreAsyncApi\\";
 
+            // Since the example runs forever, we set option to auto-delete files on close
+            // Note that this setting precludes recovery
             var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
             var objlog = Devices.CreateLogDevice(path + "hlog.obj.log", deleteOnClose: true);
 

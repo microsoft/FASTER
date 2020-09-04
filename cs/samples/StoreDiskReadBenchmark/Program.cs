@@ -5,6 +5,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -28,9 +29,12 @@ namespace StoreDiskReadBenchmark
         /// </summary>
         static void Main()
         {
-            var path = "FasterKVDiskReadBenchmark\\";
+            var path = Path.GetTempPath() + "FasterKVDiskReadBenchmark\\";
 
+            // Use real local storage device
             // var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+
+            // Use in-memory device
             var log = new LocalMemoryDevice(1L << 33, 1L << 30, 1);
 
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20 };

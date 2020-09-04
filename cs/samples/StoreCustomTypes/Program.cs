@@ -17,12 +17,13 @@ namespace StoreCustomTypes
             // (1) Make Key implement IFasterEqualityComparer<Key> interface
             // (2) Provide IFasterEqualityComparer<Key> instance as param to FASTER constructor
 
-            // Main hybrid log device                        
-            var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
+            // Main hybrid log device
+            var path = Path.GetTempPath() + "StoreCustomTypes\\";
+            var log = Devices.CreateLogDevice(path + "hlog.log");
 
             // With non-blittable types, you need an object log device in addition to the
             // main device. FASTER serializes the actual objects in the object log.
-            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log");
+            var objlog = Devices.CreateLogDevice(path + "hlog.obj.log");
 
             // Serializers are required for class types in order to write to storage
             // You can also mark types as DataContract (lower performance)
@@ -89,6 +90,8 @@ namespace StoreCustomTypes
             // Close logs
             log.Close();
             objlog.Close();
+
+            new DirectoryInfo(path).Delete(true);
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();

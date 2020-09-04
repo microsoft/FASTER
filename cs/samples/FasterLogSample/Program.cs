@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -31,13 +31,10 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            IDevice device;
+            var path = Path.GetTempPath() + "FasterLogSample\\";
+            IDevice device = Devices.CreateLogDevice(path + "hlog.log");
 
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
-            else
-                device = Devices.CreateLogDevice("/mnt/tmp/hlog/hlog.log");
-
+            // FasterLog will recover and resume if there is a previous commit found
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))

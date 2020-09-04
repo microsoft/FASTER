@@ -14,9 +14,10 @@ namespace HelloWorld
             long key = 1, value = 1, output = 0;
 
             // This is a simple in-memory sample of FASTER using value types
-            
-            // Create device for FASTER log (auto-deleted on close)
-            var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log", deleteOnClose: true);
+
+            // Create device for FASTER log
+            var path = Path.GetTempPath() + "HelloWorld\\";
+            var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
 
             // Create store instance
             var store = new FasterKV<long, long>(
@@ -77,6 +78,9 @@ namespace HelloWorld
 
             // Close devices
             log.Close();
+
+            // Delete the created files
+            new DirectoryInfo(path).Delete(true);
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();

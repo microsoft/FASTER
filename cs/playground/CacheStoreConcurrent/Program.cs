@@ -30,18 +30,18 @@ namespace CacheStoreConcurrent
 
         static void Main()
         {
-            // This sample shows the use of FASTER as a multi-threaded (MT) cache + key-value store for 
-            // C# objects. Number of caches and number of threads can be varied.
+            // This sample shows the use of FASTER as a concurrent (multi-threaded) cache + key-value store.
+            // Number of caches and number of threads can be varied.
 
             h = new FasterKV<CacheKey, CacheValue>[kNumTables];
-            var path = Path.GetTempPath() + "ClassCacheMT\\";
+            var path = Path.GetTempPath() + "CacheStoreConcurrent\\";
 
             for (int ht = 0; ht < kNumTables; ht++)
             {
                 // Create files for storing data
                 // We set deleteOnClose to true, so logs will auto-delete on completion
-                var log = Devices.CreateLogDevice("hlog" + ht + ".log", deleteOnClose: true);
-                var objlog = Devices.CreateLogDevice("hlog" + ht + ".obj.log", deleteOnClose: true);
+                var log = Devices.CreateLogDevice(path + "hlog" + ht + ".log", deleteOnClose: true);
+                var objlog = Devices.CreateLogDevice(path + "hlog" + ht + ".obj.log", deleteOnClose: true);
 
                 // Define settings for log
                 var logSettings = new LogSettings
