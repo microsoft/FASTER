@@ -3,7 +3,7 @@
 
 using FASTER.core;
 
-namespace StoreCustomTypes
+namespace StoreCheckpointRecover
 {
     public class MyKey : IFasterEqualityComparer<MyKey>
     {

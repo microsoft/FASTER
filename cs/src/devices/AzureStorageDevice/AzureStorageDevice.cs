@@ -163,11 +163,18 @@ namespace FASTER.devices
             // to delete files after the end of our process. This leads to potential problems if multiple instances are sharing the same underlying page blobs.
             // Since this flag is only used for testing, it is probably fine.
             if (deleteOnClose)
+                PurgeAll();
+        }
+
+        /// <summary>
+        /// Purge all blobs related to this device. Do not use if 
+        /// multiple instances are sharing the same underlying page blobs.
+        /// </summary>
+        public void PurgeAll()
+        {
+            foreach (var entry in blobs)
             {
-                foreach (var entry in blobs)
-                {
-                    entry.Value.PageBlob.Delete();
-                }
+                entry.Value.PageBlob.Delete();
             }
         }
 

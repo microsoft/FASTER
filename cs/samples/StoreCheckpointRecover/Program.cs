@@ -5,7 +5,7 @@ using FASTER.core;
 using System;
 using System.IO;
 
-namespace StoreCustomTypes
+namespace StoreCheckpointRecover
 {
     class Program
     {

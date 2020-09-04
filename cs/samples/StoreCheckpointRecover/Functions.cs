@@ -4,7 +4,7 @@
 using FASTER.core;
 using System;
 
-namespace StoreCustomTypes
+namespace StoreCheckpointRecover
 {
     public class Functions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
