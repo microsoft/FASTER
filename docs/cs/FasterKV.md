@@ -1,7 +1,8 @@
 ---
 layout: default
 title: FasterKV store + cache in C#
-nav_order: 3
+parent: FASTER C#
+nav_order: 4
 permalink: /cs/fasterkv
 ---
 
