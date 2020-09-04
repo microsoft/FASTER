@@ -1,8 +1,9 @@
 ---
 layout: default
-title: Index Memory
+title: Index
 parent: Tuning FASTER
 nav_order: 2
+permalink: /tuning/index
 ---
 
 # Managing Index Size
