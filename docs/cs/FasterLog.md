@@ -161,7 +161,7 @@ By default, scan allows iteration over log entries that are committed (persisted
 committed entry. This is a desired behaviour in most cases, but sometimes consumers do not care whether the data 
 is commited or not, but just wish to read and process log entries as soon as possible, similar to a regular Channel.
 
-You can allow scans to proceed and read uncommitted data as follows:
+You can allow scans to proceed and read uncommitted data by setting `scanUncommitted` to `true`, as follows:
 
 ```cs
 log.Scan(0, long.MaxValue, scanUncommitted: true)
