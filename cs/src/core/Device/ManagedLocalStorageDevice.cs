@@ -147,12 +147,24 @@ namespace FASTER.core
                     memory.Return();
 #endif
 
+                    // Sequentialize all reads from same handle on non-windows
+#if DOTNETCORE
+                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        if (offset >= 0) streampool?.Return(offset);
+                    }
+#endif
+
                     callback(errorCode, (uint)t.Result, context);
                 }
                 );
-            
-            if (offset >= 0)
-                streampool?.Return(offset);
+
+#if DOTNETCORE
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (offset >= 0) streampool?.Return(offset);
+#else
+            if (offset >= 0) streampool?.Return(offset);
+#endif
         }
 
         /// <summary>
@@ -215,7 +227,7 @@ namespace FASTER.core
                     memory.Return();
 #endif
 
-                    // Sequentialize all writes on non-windows
+                    // Sequentialize all writes to same handle on non-windows
 #if DOTNETCORE
                     if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
