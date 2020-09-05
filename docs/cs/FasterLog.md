@@ -154,20 +154,23 @@ You may also force an iterator to start at the specified begin address, i.e., wi
 using (var iter = log.Scan(0, long.MaxValue, name: "foo", recover: false))
 ```
 
-### Iteration for Uncommitted Data
+### Iteration for Uncommitted Data (Publish/Subscribe)
 
-By default, scan iterates over committted data only, awaiting (in case of `IAsyncEnumerable`) or returning `false` (in 
-case of `GetNext`) if we have returned the last committed entry. You can instead allow scans to proceed and read
-uncommitted data as follows:
+By default, scan allows iteration over log entries that are committed (persisted on an I/O device) only, awaiting 
+(in case of `IAsyncEnumerable`) or returning `false` (in case of `GetNext`) if we have returned the last 
+committed entry. This is a desired behaviour in most cases, but sometimes consumers do not care whether the data 
+is commited or not, but just wish to read and process log entries as soon as possible, similar to a regular Channel.
+
+You can allow scans to proceed and read uncommitted data as follows:
 
 ```cs
 log.Scan(0, long.MaxValue, scanUncommitted: true)
 ```
 
-This option allows readers to read beyond the committed address in the log. As long as readers keep up with writers, the
-log can stay entirely in memory and avoid being written out to disk. During transient overload, when readers are unable to
-keep up with writers, the logs will start getting written to disk. In effect, FasterLog in this setting behaves like an 
-unbounded channel with bounded memory usage.
+This option allows readers to read beyond the committed address in the log. This mode has a useful side-effect: as long
+as readers keep up with writers, the log can stay entirely in memory and avoid being written out to disk. During transient
+overload, when readers are unable to keep up with writers, the logs will start getting written to disk. In effect, FasterLog
+in this setting behaves like an _unbounded channel with bounded memory usage_.
 
 <img src="https://raw.githubusercontent.com/microsoft/FASTER/master/img/scan-uncommitted.png" width="400" />
 
@@ -176,13 +179,14 @@ the same time means that there may be holes in the log until the threads complet
 this, we add a method called `RefreshUncommitted` (with async variants). Similar to `Commit`, this call exposes the tail of
 the log to consumers in a safe way. Since it is slightly more expensive, we do not automatically perform this operation after
 every enqueue, and instead expose to users to call on demand. You use `RefreshUncommitted` similarly to `Commit`, either call
-it from the enqueue thread (e.g., after a batch of enqueues) or have a separate thread/task that periodically calls it.
+it from the enqueue thread (e.g., after every enqueue or a batch of enqueues) or have a separate thread/task that periodically 
+calls it. Note that while `RefreshUncommitted` incurs a small CPU overhead to the write operation, it does not perform any 
+I/O operation.
 
 For optimal performance, we suggest using more than one page in memory for FasterLog used with uncommitted scans (e.g., 2 or 4 pages), 
 and set mutable fraction (`MutableFraction` in log settings) to say 0.5. This will ensure that pages get auto-committed only when the
 in-memory log of 2 of 4 pages is 50% full. This will allow pages sufficient time for records to be consumed by readers before the 
-auto-commit tries to push them to disk. You may also commit manually as usual. The example [here](https://github.com/microsoft/FASTER/tree/master/cs/playground/FasterLogPubSub) 
-shows how to use this feature.
+auto-commit tries to push them to disk. You may also commit manually as usual. The example in [playground](https://github.com/microsoft/FASTER/tree/master/cs/playground/FasterLogPubSub) shows how to use this feature.
 
 
 ### Log Head Truncation
@@ -337,14 +341,3 @@ void RefreshUncommitted(bool spinWait = false)
 
 ```
 
-# Publish-subscribe with uncommited entries
-
-By default FasterLog publishes only log entries that are commited (and persisted on a I/O device) to the scanning iterators. This is a desired behaviour in most cases but sometimes the consumers don't care whether the data are commited or not and just strive to process the entries as soon as possible.
-
-In such cases (given that the producers are not commiting after each entry but in some regular intervals or batches instead) waiting for the commit is not only increasing the latency in processing. It also puts unnecessary load on the backing I/O device (e.g. disk), because the consumers might be able to process and trim all log entries **before** the producers wish to commit. In this case writing the log entries to the disk during commit is unnecessary because they have been already sucessfully processed. Avoiding this uncessary I/O operations increases the overall througput and reduces the load on the I/O device.
-
-To sum up, the approach with reading uncommited entries allows for processing of log entries as fast as possible, with minimal amount of I/O operations. Also, when consumers start to fall behind producers for any reason, the producers can still perform the commit operation which will persist the unprocessed entries as usual.
-
-To achieve this behavior, the producers must call `RefreshUncommitted` method on the log after each write (or at some other suitable time) and consumers need to set `scanUncommitted` parameter of the `Scan` method to `true`. Note: Calling `RefreshUncommited` incurs some small overhead to the write operation, but is not performing any I/O operation.
-
-You find complete example of this approach in the [playground](https://github.com/microsoft/FASTER/blob/scan-uncommitted/cs/playground/FasterLogPubSub/Program.cs).
