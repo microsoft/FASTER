@@ -154,9 +154,7 @@ namespace FASTER.devices
             return $"{blobName}.{segmentId}";
         }
 
-        /// <summary>
-        /// <see cref="IDevice.Dispose">Inherited</see>
-        /// </summary>
+        /// <inheritdoc />
         public override void Dispose()
         {
             // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system

@@ -68,9 +68,9 @@ namespace AzureBackedStore
             // Dispose store instance
             store.Dispose();
 
-            // Close logs
-            log.Close();
-            objlog.Close();
+            // Dispose logs
+            log.Dispose();
+            objlog.Dispose();
 
             // Create new store
             log = new AzureStorageDevice(STORAGE_STRING, BASE_CONTAINER, "", "hlog.log");
@@ -113,8 +113,8 @@ namespace AzureBackedStore
             checkpointManager.PurgeAll();
 
             // Dispose devices
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
 
             // Dispose checkpoint manager
             checkpointManager.Dispose();

@@ -144,9 +144,7 @@ namespace FASTER.core
             this.partitions = partitions;
         }
 
-        /// <summary>
-        /// <see cref="IDevice.Dispose"/>
-        /// </summary>
+        /// <inheritdoc />
         public override void Dispose()
         {
             foreach (IDevice device in partitions.Devices)
