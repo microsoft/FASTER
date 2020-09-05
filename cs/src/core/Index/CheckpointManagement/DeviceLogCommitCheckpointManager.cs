@@ -85,7 +85,7 @@ namespace FASTER.core
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
 
             if (!overwriteLogCommits)
-                device.Close();
+                device.Dispose();
 
             RemoveOutdated();
         }
@@ -93,7 +93,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public void Dispose()
         {
-            singleLogCommitDevice?.Close();
+            singleLogCommitDevice?.Dispose();
             singleLogCommitDevice = null;
         }
 
@@ -130,7 +130,7 @@ namespace FASTER.core
                 ReadInto(device, 0, out body, size + sizeof(int));
             
             if (!overwriteLogCommits)
-                device.Close();
+                device.Dispose();
 
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
@@ -168,7 +168,7 @@ namespace FASTER.core
             writer.Write(commitMetadata);
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
-            device.Close();
+            device.Dispose();
         }
 
         /// <inheritdoc />
@@ -190,7 +190,7 @@ namespace FASTER.core
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Close();
+            device.Dispose();
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
 
@@ -206,7 +206,7 @@ namespace FASTER.core
             writer.Write(commitMetadata);
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
-            device.Close();
+            device.Dispose();
         }
 
         /// <inheritdoc />
@@ -228,7 +228,7 @@ namespace FASTER.core
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Close();
+            device.Dispose();
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
 

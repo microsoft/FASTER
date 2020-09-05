@@ -65,8 +65,8 @@ namespace StoreCheckpointRecover
             store.Dispose();
 
             // Close logs
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
 
             // Create new store
             log = Devices.CreateLogDevice(path + "hlog.log");
@@ -96,8 +96,8 @@ namespace StoreCheckpointRecover
             }
 
             store2.Dispose();
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
 
             try { new DirectoryInfo(path).Delete(true); } catch { }
 

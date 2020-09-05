@@ -76,7 +76,7 @@ namespace HelloWorld
             store.Dispose();
 
             // Close devices
-            log.Close();
+            log.Dispose();
 
             // Delete the created files
             try { new DirectoryInfo(path).Delete(true); } catch { }

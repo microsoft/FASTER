@@ -134,7 +134,7 @@ namespace FASTER.test.recovery.sumstore
             {
                 this.Faster?.Dispose();
                 this.Faster = null;
-                this.LogDevice?.Close();
+                this.LogDevice?.Dispose();
                 this.LogDevice = null;
             }
         }

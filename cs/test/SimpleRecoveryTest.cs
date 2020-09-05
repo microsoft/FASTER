@@ -116,7 +116,7 @@ namespace FASTER.test.recovery.sumstore.simple
             }
             session2.Dispose();
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
 
@@ -186,7 +186,7 @@ namespace FASTER.test.recovery.sumstore.simple
             }
             session2.Dispose();
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
             checkpointManager.Dispose();
@@ -246,7 +246,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             Assert.AreEqual(address, fht2.Log.BeginAddress);
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints6").Delete(true);

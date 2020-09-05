@@ -104,7 +104,7 @@ namespace StoreVarLenTypes
 
             s.Dispose();
             store.Dispose();
-            log.Close();
+            log.Dispose();
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();

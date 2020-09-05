@@ -33,7 +33,7 @@ namespace FASTER.test.async
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
 

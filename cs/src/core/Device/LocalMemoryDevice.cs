@@ -168,7 +168,7 @@ namespace FASTER.core
         /// <summary>
         /// Close device
         /// </summary>
-        public override void Close()
+        public override void Dispose()
         {
             foreach (var q in ioQueue)
                 while (q.Count != 0) { }

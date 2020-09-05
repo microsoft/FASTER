@@ -88,8 +88,8 @@ namespace StoreCustomTypes
             store.Dispose();
 
             // Close logs
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
 
             try { new DirectoryInfo(path).Delete(true); } catch { }
 
