@@ -330,4 +330,21 @@ async IAsyncEnumerable<(IMemoryOwner<byte>, int entryLength, long currentAddress
 // Random read
 
 async ValueTask<(byte[], int)> ReadAsync(long address, int estimatedLength = 0)
+
+// Refreshing uncommited entries
+
+void RefreshUncommitted(bool spinWait = false)
+
 ```
+
+# Publish-subscribe with uncommited entries
+
+By default FasterLog publishes only log entries that are commited (and persisted on a I/O device) to the scanning iterators. This is a desired behaviour in most cases but sometimes the consumers don't care whether the data are commited or not and just strive to process the entries as soon as possible.
+
+In such cases (given that the producers are not commiting after each entry but in some regular intervals or batches instead) waiting for the commit is not only increasing the latency in processing. It also puts unnecessary load on the backing I/O device (e.g. disk), because the consumers might be able to process and trim all log entries **before** the producers wish to commit. In this case writing the log entries to the disk during commit is unnecessary because they have been already sucessfully processed. Avoiding this uncessary I/O operations increases the overall througput and reduces the load on the I/O device.
+
+To sum up, the approach with reading uncommited entries allows for processing of log entries as fast as possible, with minimal amount of I/O operations. Also, when consumers start to fall behind producers for any reason, the producers can still perform the commit operation which will persist the unprocessed entries as usual.
+
+To achieve this behavior, the producers must call `RefreshUncommitted` method on the log after each write (or at some other suitable time) and consumers need to set `scanUncommitted` parameter of the `Scan` method to `true`. Note: Calling `RefreshUncommited` incurs some small overhead to the write operation, but is not performing any I/O operation.
+
+You find complete example of this approach in the [playground](https://github.com/microsoft/FASTER/blob/scan-uncommitted/cs/playground/FasterLogPubSub/Program.cs).
