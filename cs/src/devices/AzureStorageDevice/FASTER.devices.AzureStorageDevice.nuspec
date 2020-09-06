@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>Microsoft.FASTER.devices.AzureStorageDevice</id>
+    <id>Microsoft.FASTER.Devices.AzureStorage</id>
     <version>$version$</version>
     <title>Azure storage device for FASTER</title>
     <authors>Microsoft</authors>
@@ -16,16 +16,16 @@
     <tags>key-value store dictionary hashtable concurrent log persistent azure storage FASTER</tags>
     <dependencies>
       <group targetFramework="net461">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.0" />
-        <dependency id="Microsoft.FASTER" version="$version$" />
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
+        <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
       <group targetFramework="netstandard2.0">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.0" />
-        <dependency id="Microsoft.FASTER" version="$version$" />
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
+        <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
       <group targetFramework="netstandard2.1">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.0" />
-        <dependency id="Microsoft.FASTER" version="$version$" />
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
+        <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
     </dependencies>
   </metadata>
