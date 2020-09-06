@@ -363,7 +363,7 @@ namespace FASTER.core
                     if (KeyHasObjects())
                     {
                         long pos = ms.Position;
-                        keySerializer.Serialize(in src[i].key);
+                        keySerializer.Serialize(ref src[i].key);
                         var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
                         key_address->Address = pos;
                         key_address->Size = (int)(ms.Position - pos);
@@ -373,7 +373,7 @@ namespace FASTER.core
                     if (ValueHasObjects() && !src[i].info.Tombstone)
                     {
                         long pos = ms.Position;
-                        valueSerializer.Serialize(in src[i].value);
+                        valueSerializer.Serialize(ref src[i].value);
                         var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
                         value_address->Address = pos;
                         value_address->Size = (int)(ms.Position - pos);

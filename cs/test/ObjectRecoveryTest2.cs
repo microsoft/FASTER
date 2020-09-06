@@ -171,7 +171,7 @@ namespace FASTER.test.recovery.objects
 
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
     {
-        public override void Serialize(in MyKey key)
+        public override void Serialize(ref MyKey key)
         {
             var bytes = System.Text.Encoding.UTF8.GetBytes(key.name);
             writer.Write(4 + bytes.Length);
@@ -193,7 +193,7 @@ namespace FASTER.test.recovery.objects
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>
     {
-        public override void Serialize(in MyValue value)
+        public override void Serialize(ref MyValue value)
         {
             var bytes = System.Text.Encoding.UTF8.GetBytes(value.value);
             writer.Write(bytes.Length);

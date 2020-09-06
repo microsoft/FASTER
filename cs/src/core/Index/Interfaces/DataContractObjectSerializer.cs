@@ -32,7 +32,7 @@ namespace FASTER.core
         /// Serialize
         /// </summary>
         /// <param name="obj"></param>
-        public override void Serialize(in T obj)
+        public override void Serialize(ref T obj)
         {
             using var ms = new MemoryStream();
             using (var _writer = XmlDictionaryWriter.CreateBinaryWriter(ms, null, null, false))

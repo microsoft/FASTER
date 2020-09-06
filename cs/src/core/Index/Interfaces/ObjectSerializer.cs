@@ -21,13 +21,13 @@ namespace FASTER.core
     internal class StringBinaryObjectSerializer : BinaryObjectSerializer<string>
     {
         public override void Deserialize(out string obj) => obj = reader.ReadString();
-        public override void Serialize(in string obj) => writer.Write(obj);
+        public override void Serialize(ref string obj) => writer.Write(obj);
     }
 
     internal class ByteArrayBinaryObjectSerializer : BinaryObjectSerializer<byte[]>
     {
         public override void Deserialize(out byte[] obj) => obj = reader.ReadBytes(reader.ReadInt32());
-        public override void Serialize(in byte[] obj)
+        public override void Serialize(ref byte[] obj)
         {
             writer.Write(obj.Length);
             writer.Write(obj);
