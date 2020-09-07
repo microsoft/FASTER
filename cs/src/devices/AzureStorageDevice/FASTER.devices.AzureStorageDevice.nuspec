@@ -13,7 +13,8 @@
     <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
-    <tags>key-value store dictionary hashtable concurrent log persistent azure storage FASTER</tags>
+    <tags>FASTER key-value store cache log azure storage device microsoft dictionary hashtable concurrent persistent</tags>
+    <repository type="git" url="https://github.com/microsoft/FASTER" />
     <dependencies>
       <group targetFramework="net461">
         <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
