@@ -214,24 +214,25 @@ namespace FASTER.core
         {
             var internalStatus = default(OperationStatus);
             ref Key key = ref pendingContext.key.Get();
-            ref Value value = ref pendingContext.value.Get();
 
-            // Issue retry command
-            switch (pendingContext.type)
+            do
             {
-                case OperationType.RMW:
-                    internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                    break;
-                case OperationType.UPSERT:
-                    internalStatus = InternalUpsert(ref key, ref value, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                    break;
-                case OperationType.DELETE:
-                    internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                    break;
-                case OperationType.READ:
-                    throw new FasterException("Cannot happen!");
-            }
-
+                // Issue retry command
+                switch (pendingContext.type)
+                {
+                    case OperationType.RMW:
+                        internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                        break;
+                    case OperationType.UPSERT:
+                        internalStatus = InternalUpsert(ref key, ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                        break;
+                    case OperationType.DELETE:
+                        internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                        break;
+                    case OperationType.READ:
+                        throw new FasterException("Cannot happen!");
+                }
+            } while (internalStatus == OperationStatus.RETRY_NOW);
 
             Status status;
             // Handle operation status
@@ -259,7 +260,7 @@ namespace FASTER.core
                         break;
                     case OperationType.UPSERT:
                         fasterSession.UpsertCompletionCallback(ref key,
-                                                 ref value,
+                                                 ref pendingContext.value.Get(),
                                                  pendingContext.userContext);
                         break;
                     case OperationType.DELETE:
@@ -347,6 +348,8 @@ namespace FASTER.core
                 }
 
                 request.Dispose();
+
+                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
 
                 Status status;
                 // Handle operation status
