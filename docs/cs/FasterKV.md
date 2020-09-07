@@ -35,7 +35,7 @@ Clone the Git repo, open cs/FASTER.sln in Visual Studio, and build.
 
 ### NuGet
 You can install FASTER binaries using Nuget, from Nuget.org. Right-click on your project, manage NuGet packages, browse 
-for FASTER. Here is a [direct link](https://www.nuget.org/packages/Microsoft.FASTER).
+for Microsoft.FASTER.Core. Here is a [direct link](https://www.nuget.org/packages/Microsoft.FASTER.Core).
 
 ## Basic Concepts
 
