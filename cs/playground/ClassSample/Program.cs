@@ -28,7 +28,7 @@ namespace ClassSample
 
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
     {
-        public override void Serialize(in MyKey key)
+        public override void Serialize(ref MyKey key)
         {
             writer.Write(key.key);
         }
@@ -48,7 +48,7 @@ namespace ClassSample
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>
     {
-        public override void Serialize(in MyValue value)
+        public override void Serialize(ref MyValue value)
         {
             writer.Write(value.value);
         }

@@ -53,7 +53,7 @@ namespace ClassRecoveryDurablity
                 reader.Read(obj.key, 0, size);
             }
 
-            public override void Serialize(in StoreKey obj)
+            public override void Serialize(ref StoreKey obj)
             {
                 var bytes = System.Text.Encoding.UTF8.GetBytes(obj.tableType);
                 var len = BitConverter.GetBytes(bytes.Length);
@@ -85,7 +85,7 @@ namespace ClassRecoveryDurablity
                 obj.value = reader.ReadBytes(size);
             }
 
-            public override void Serialize(in StoreValue obj)
+            public override void Serialize(ref StoreValue obj)
             {
                 var len = BitConverter.GetBytes(obj.value.Length);
                 writer.Write(len);

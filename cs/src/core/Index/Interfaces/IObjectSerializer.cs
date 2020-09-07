@@ -25,7 +25,7 @@ namespace FASTER.core
         /// Serialize object
         /// </summary>
         /// <param name="obj"></param>
-        void Serialize(in T obj);
+        void Serialize(ref T obj);
 
         /// <summary>
         /// End serialization to given stream
@@ -102,7 +102,7 @@ namespace FASTER.core
         /// Serialize
         /// </summary>
         /// <param name="obj"></param>
-        public abstract void Serialize(in T obj);
+        public abstract void Serialize(ref T obj);
 
         /// <summary>
         /// End serialize
