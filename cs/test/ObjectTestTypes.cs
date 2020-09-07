@@ -40,7 +40,7 @@ namespace FASTER.test
             obj.key = reader.ReadInt32();
         }
 
-        public override void Serialize(in MyKey obj)
+        public override void Serialize(ref MyKey obj)
         {
             writer.Write(obj.key);
         }
@@ -59,7 +59,7 @@ namespace FASTER.test
             obj.value = reader.ReadInt32();
         }
 
-        public override void Serialize(in MyValue obj)
+        public override void Serialize(ref MyValue obj)
         {
             writer.Write(obj.value);
         }
@@ -310,7 +310,7 @@ namespace FASTER.test
             obj.value = reader.ReadBytes(size);
         }
 
-        public override void Serialize(in MyLargeValue obj)
+        public override void Serialize(ref MyLargeValue obj)
         {
             writer.Write(obj.value.Length);
             writer.Write(obj.value);

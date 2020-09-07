@@ -38,7 +38,7 @@ namespace FASTER.test.recovery.objectstore
             obj.adId = reader.ReadInt64();
         }
 
-        public override void Serialize(in AdId obj)
+        public override void Serialize(ref AdId obj)
         {
             writer.Write(obj.adId);
         }
@@ -64,7 +64,7 @@ namespace FASTER.test.recovery.objectstore
             obj.numClicks = reader.ReadInt64();
         }
 
-        public override void Serialize(in NumClicks obj)
+        public override void Serialize(ref NumClicks obj)
         {
             writer.Write(obj.numClicks);
         }

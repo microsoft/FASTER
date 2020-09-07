@@ -21,15 +21,17 @@ namespace AzureBackedStore
     }
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
     {
-        public override void Serialize(in MyKey key)
+        public override void Serialize(ref MyKey key)
         {
             writer.Write(key.key);
         }
 
         public override void Deserialize(out MyKey key)
         {
-            key = new MyKey();
-            key.key = reader.ReadInt32();
+            key = new MyKey
+            {
+                key = reader.ReadInt32()
+            };
         }
     }
 
@@ -41,15 +43,17 @@ namespace AzureBackedStore
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>
     {
-        public override void Serialize(in MyValue value)
+        public override void Serialize(ref MyValue value)
         {
             writer.Write(value.value);
         }
 
         public override void Deserialize(out MyValue value)
         {
-            value = new MyValue();
-            value.value = reader.ReadInt32();
+            value = new MyValue
+            {
+                value = reader.ReadInt32()
+            };
         }
     }
 

@@ -46,7 +46,7 @@ namespace CacheStore
             obj = new CacheKey(reader.ReadInt64());
         }
 
-        public override void Serialize(in CacheKey obj)
+        public override void Serialize(ref CacheKey obj)
         {
             writer.Write(obj.key);
         }
@@ -62,7 +62,7 @@ namespace CacheStore
             obj = new CacheValue(reader.ReadInt64());
         }
 
-        public override void Serialize(in CacheValue obj)
+        public override void Serialize(ref CacheValue obj)
         {
             writer.Write(obj.value);
         }
