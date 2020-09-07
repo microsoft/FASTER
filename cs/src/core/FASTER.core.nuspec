@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>Microsoft.FASTER</id>
+    <id>Microsoft.FASTER.Core</id>
     <version>$version$</version>
     <title>FASTER</title>
     <authors>Microsoft</authors>
@@ -10,10 +10,11 @@
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <description>FASTER is a fast concurrent persistent log and key-value store for larger-than-memory data.</description>
-    <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details.</releaseNotes>
+    <releaseNotes>See the FASTER project website at https://github.com/microsoft/FASTER for more details.</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
-    <tags>key-value store dictionary hashtable concurrent log persistent commit write-ahead</tags>
+    <tags>FASTER key-value store cache log  microsoft dictionary hashtable concurrent persistent</tags>
+    <repository type="git" url="https://github.com/microsoft/FASTER" />
     <dependencies>
       <group targetFramework="net461">
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.7.1" />

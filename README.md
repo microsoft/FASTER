@@ -1,4 +1,4 @@
-[![NuGet](https://img.shields.io/nuget/v/Microsoft.FASTER.svg)](https://www.nuget.org/packages/Microsoft.FASTER/)
+[![NuGet](https://img.shields.io/nuget/v/Microsoft.FASTER.Core.svg)](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
 [![Build Status](https://dev.azure.com/ms/FASTER/_apis/build/status/Microsoft.FASTER)](https://dev.azure.com/ms/FASTER/_build/latest?definitionId=8)
 [![Gitter](https://badges.gitter.im/Microsoft/FASTER.svg)](https://gitter.im/Microsoft/FASTER?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
@@ -45,7 +45,10 @@ samples in the playground located [here](https://github.com/Microsoft/FASTER/tre
 
 Visit our [research website](http://aka.ms/FASTER) for technical details and papers. For FASTER usage and 
 getting started information, head over to our [GitHub Pages](https://microsoft.github.io/FASTER) website. A 
-detailed guide to getting started with FASTER KV C# is also available in the repository at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER C# binaries are available via [NuGet](https://www.nuget.org/packages/Microsoft.FASTER/).
+detailed guide to getting started with FASTER KV C# is also available in the repository at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER C# binaries are available via NuGet:
+* [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
+* [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
+
 
 You can take a look at the project roadmap [here](https://microsoft.github.io/FASTER/roadmap).
 
