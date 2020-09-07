@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>Microsoft.FASTER</id>
+    <id>Microsoft.FASTER.Core</id>
     <version>$version$</version>
     <title>FASTER</title>
     <authors>Microsoft</authors>
