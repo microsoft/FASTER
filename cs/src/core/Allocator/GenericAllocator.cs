@@ -236,7 +236,7 @@ namespace FASTER.core
         protected override void TruncateUntilAddress(long toAddress)
         {
             base.TruncateUntilAddress(toAddress);
-            objectLogDevice.TruncateUntilAddress(toAddress);
+            objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
         }
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
