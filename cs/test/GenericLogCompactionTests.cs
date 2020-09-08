@@ -64,7 +64,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -116,7 +116,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var tail = fht.Log.TailAddress;
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
             Assert.IsTrue(fht.Log.TailAddress == tail);
 
@@ -163,7 +163,7 @@ namespace FASTER.test
                 }
             }
 
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -211,7 +211,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil);
+            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -263,7 +263,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var compactionFunctions = new Test2CompactionFunctions();
-            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress);
+            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress, true);
 
             Assert.IsTrue(compactionFunctions.CopyCalled);
 

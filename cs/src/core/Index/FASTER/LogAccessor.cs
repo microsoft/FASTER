@@ -67,9 +67,8 @@ namespace FASTER.core
         /// Shift log head address to prune memory foorprint of hybrid log
         /// </summary>
         /// <param name="newHeadAddress">Address to shift head until</param>
-        /// <param name="wait">Wait to ensure shift is registered (may involve page flushing)</param>
-        /// <returns>When wait is false, this tells whether the shift to newHeadAddress was successfully registered with FASTER</returns>
-        public bool ShiftHeadAddress(long newHeadAddress, bool wait)
+        /// <param name="wait">Wait for operation to complete (may involve page flushing and closing)</param>
+        public void ShiftHeadAddress(long newHeadAddress, bool wait)
         {
             // First shift read-only
             // Force wait so that we do not close unflushed page
@@ -79,14 +78,15 @@ namespace FASTER.core
             if (!fht.epoch.ThisInstanceProtected())
             {
                 fht.epoch.Resume();
-                var updatedHeadAddress = allocator.ShiftHeadAddress(newHeadAddress);
+                allocator.ShiftHeadAddress(newHeadAddress);
                 fht.epoch.Suspend();
-                return updatedHeadAddress >= newHeadAddress;
+                while (wait && allocator.SafeHeadAddress < newHeadAddress) ;
             }
             else
             {
-                var updatedHeadAddress = allocator.ShiftHeadAddress(newHeadAddress);
-                return updatedHeadAddress >= newHeadAddress;
+                allocator.ShiftHeadAddress(newHeadAddress);
+                while (wait && allocator.SafeHeadAddress < newHeadAddress)
+                    fht.epoch.ProtectAndDrain();
             }
         }
 
@@ -171,11 +171,10 @@ namespace FASTER.core
         /// <summary>
         /// Flush log and evict all records from memory
         /// </summary>
-        /// <param name="wait">Synchronous wait for operation to complete</param>
-        /// <returns>When wait is false, this tells whether the full eviction was successfully registered with FASTER</returns>
-        public bool FlushAndEvict(bool wait)
+        /// <param name="wait">Wait for operation to complete</param>
+        public void FlushAndEvict(bool wait)
         {
-            return ShiftHeadAddress(allocator.GetTailAddress(), wait);
+            ShiftHeadAddress(allocator.GetTailAddress(), wait);
         }
 
         /// <summary>
@@ -192,12 +191,15 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Compact the log until specified address, moving active
-        /// records to the tail of the log. 
-        /// Uses default compaction functions that only deletes explicitly deleted records, copying is implemeted by shallow copying values from source to destination.
+        /// Compact the log until specified address, moving active records to the tail of the log. 
+        /// Uses default compaction functions that only deletes explicitly deleted records, 
+        /// copying is implemeted by shallow copying values from source to destination.
         /// </summary>
-        /// <param name="untilAddress"></param>
-        public void Compact(long untilAddress)
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
+        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
+        /// ensures that records written to the tail during compaction are first made stable.</param>
+        public void Compact(long untilAddress, bool shiftBeginAddress)
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
@@ -208,21 +210,23 @@ namespace FASTER.core
                     valueLength = varLen.ValueLength,
                 };
 
-                Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings);
+                Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
             }
             else
             {
-                Compact(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default(DefaultCompactionFunctions<Key, Value>), untilAddress, null);
+                Compact(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default(DefaultCompactionFunctions<Key, Value>), untilAddress, null, shiftBeginAddress);
             }
         }
 
         /// <summary>
-        /// Compact the log until specified address, moving active
-        /// records to the tail of the log.
+        /// Compact the log until specified address, moving active records to the tail of the log.
         /// </summary>
         /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
-        /// <param name="untilAddress"></param>
-        public void Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress)
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
+        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
+        /// ensures that records written to the tail during compaction are first made stable.</param>
+        public void Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress, bool shiftBeginAddress)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
@@ -234,15 +238,15 @@ namespace FASTER.core
                     valueLength = varLen.ValueLength,
                 };
 
-                Compact(functions, compactionFunctions, untilAddress, variableLengthStructSettings);
+                Compact(functions, compactionFunctions, untilAddress, variableLengthStructSettings, shiftBeginAddress);
             }
             else
             {
-                Compact(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null);
+                Compact(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null, shiftBeginAddress);
             }
         }
 
-        private unsafe void Compact<Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        private unsafe void Compact<Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
             where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
@@ -308,7 +312,8 @@ namespace FASTER.core
                 }
             }
 
-            ShiftBeginAddress(originalUntilAddress);
+            if (shiftBeginAddress)
+                ShiftBeginAddress(originalUntilAddress);
         }
 
         private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, ref long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
