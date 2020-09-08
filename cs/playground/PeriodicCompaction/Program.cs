@@ -104,7 +104,7 @@ namespace PeriodicCompaction
 
                 s.CompletePending(true);
                 Console.WriteLine("Compacting log");
-                h.Log.Compact(h.Log.HeadAddress);
+                h.Log.Compact(h.Log.HeadAddress, true);
 
                 Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
                 Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
