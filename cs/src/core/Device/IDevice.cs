@@ -163,4 +163,20 @@ namespace FASTER.core
         /// <param name="segment">index of the segment to remov</param>
         void RemoveSegment(int segment);
     }
+
+    /// <summary>
+    /// Extension for backward compatibility
+    /// </summary>
+    public static class Device
+    {
+        /// <summary>
+        /// Close log - use IDevice.Dispose instead
+        /// </summary>
+        /// <param name="device"></param>
+        [Obsolete("Use IDevice.Dispose() instead.")]
+        public static void Close(this IDevice device)
+        {
+            device.Dispose();
+        }
+    }
 }
