@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 #define CPR
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -453,14 +454,7 @@ namespace FASTER.core
             }
             #endregion
 
-            if (status == OperationStatus.RETRY_NOW)
-            {
-                return InternalUpsert(ref key, ref value, ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
-            }
-            else
-            {
-                return status;
-            }
+            return status;
         }
 
         #endregion
@@ -596,7 +590,8 @@ namespace FASTER.core
                                 {
                                     // Set to release exclusive latch (default)
                                     latchOperation = LatchOperation.Exclusive;
-                                    goto CreateNewRecord; // Create a (v+1) record
+                                    if (logicalAddress >= hlog.HeadAddress)
+                                        goto CreateNewRecord; // Create a (v+1) record
                                 }
                                 else
                                 {
@@ -612,7 +607,8 @@ namespace FASTER.core
                             {
                                 if (HashBucket.NoSharedLatches(bucket))
                                 {
-                                    goto CreateNewRecord; // Create a (v+1) record
+                                    if (logicalAddress >= hlog.HeadAddress)
+                                        goto CreateNewRecord; // Create a (v+1) record
                                 }
                                 else
                                 {
@@ -626,7 +622,8 @@ namespace FASTER.core
                         {
                             if (GetLatestRecordVersion(ref entry, sessionCtx.version) < sessionCtx.version)
                             {
-                                goto CreateNewRecord; // Create a (v+1) record
+                                if (logicalAddress >= hlog.HeadAddress)
+                                    goto CreateNewRecord; // Create a (v+1) record
                             }
                             break; // Normal Processing
                         }
@@ -703,7 +700,7 @@ namespace FASTER.core
 
         #endregion
 
-            #region Create new record
+        #region Create new record
         CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
@@ -766,9 +763,9 @@ namespace FASTER.core
                     goto LatchRelease;
                 }
             }
-            #endregion
+        #endregion
 
-            #region Create failure context
+        #region Create failure context
         CreateFailureContext:
             {
                 pendingContext.type = OperationType.RMW;
@@ -781,9 +778,9 @@ namespace FASTER.core
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
             }
-            #endregion
+        #endregion
 
-            #region Latch release
+        #region Latch release
         LatchRelease:
             {
                 switch (latchOperation)
@@ -800,14 +797,7 @@ namespace FASTER.core
             }
             #endregion
 
-            if (status == OperationStatus.RETRY_NOW)
-            {
-                return InternalRMW(ref key, ref input, ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
-            }
-            else
-            {
-                return status;
-            }
+            return status;
         }
 
         #endregion
@@ -1024,7 +1014,7 @@ namespace FASTER.core
         // All other regions: Create a record in the mutable region
         #endregion
 
-            #region Create new record in the mutable region
+        #region Create new record in the mutable region
         CreateNewRecord:
             {
                 var value = default(Value);
@@ -1062,9 +1052,9 @@ namespace FASTER.core
                     goto LatchRelease;
                 }
             }
-            #endregion
+        #endregion
 
-            #region Create pending context
+        #region Create pending context
         CreatePendingContext:
             {
                 pendingContext.type = OperationType.DELETE;
@@ -1075,9 +1065,9 @@ namespace FASTER.core
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
             }
-            #endregion
+        #endregion
 
-            #region Latch release
+        #region Latch release
         LatchRelease:
             {
                 switch (latchOperation)
@@ -1094,14 +1084,7 @@ namespace FASTER.core
             }
             #endregion
 
-            if (status == OperationStatus.RETRY_NOW)
-            {
-                return InternalDelete(ref key, ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
-            }
-            else
-            {
-                return status;
-            }
+            return status;
         }
 
         #endregion
@@ -1465,7 +1448,11 @@ namespace FASTER.core
         #endregion
 
         Retry:
-            return InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, fasterSession, sessionCtx, pendingContext.serialNum);
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
+            while (internalStatus == OperationStatus.RETRY_NOW);
+            return internalStatus;
         }
 
         #endregion
@@ -1512,35 +1499,37 @@ namespace FASTER.core
 
                 #region Retry as (v+1) Operation
                 var internalStatus = default(OperationStatus);
-                switch (pendingContext.type)
+                do
                 {
-                    case OperationType.READ:
-                        internalStatus = InternalRead(ref pendingContext.key.Get(),
-                                                      ref pendingContext.input,
-                                                      ref pendingContext.output,
-                                                      ref pendingContext.userContext,
-                                                      ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                        break;
-                    case OperationType.UPSERT:
-                        internalStatus = InternalUpsert(ref pendingContext.key.Get(),
-                                                        ref pendingContext.value.Get(),
-                                                        ref pendingContext.userContext,
-                                                        ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                        break;
-                    case OperationType.DELETE:
-                        internalStatus = InternalDelete(ref pendingContext.key.Get(),
-                                                        ref pendingContext.userContext,
-                                                        ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                        break;
-                    case OperationType.RMW:
-                        internalStatus = InternalRMW(ref pendingContext.key.Get(),
-                                                     ref pendingContext.input,
-                                                     ref pendingContext.userContext,
-                                                     ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                        break;
-                }
-
-                Debug.Assert(internalStatus != OperationStatus.CPR_SHIFT_DETECTED);
+                    switch (pendingContext.type)
+                    {
+                        case OperationType.READ:
+                            internalStatus = InternalRead(ref pendingContext.key.Get(),
+                                                          ref pendingContext.input,
+                                                          ref pendingContext.output,
+                                                          ref pendingContext.userContext,
+                                                          ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                            break;
+                        case OperationType.UPSERT:
+                            internalStatus = InternalUpsert(ref pendingContext.key.Get(),
+                                                            ref pendingContext.value.Get(),
+                                                            ref pendingContext.userContext,
+                                                            ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                            break;
+                        case OperationType.DELETE:
+                            internalStatus = InternalDelete(ref pendingContext.key.Get(),
+                                                            ref pendingContext.userContext,
+                                                            ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                            break;
+                        case OperationType.RMW:
+                            internalStatus = InternalRMW(ref pendingContext.key.Get(),
+                                                         ref pendingContext.input,
+                                                         ref pendingContext.userContext,
+                                                         ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                            break;
+                    }
+                    Debug.Assert(internalStatus != OperationStatus.CPR_SHIFT_DETECTED);
+                } while (internalStatus == OperationStatus.RETRY_NOW);
                 status = internalStatus;
                 #endregion
             }
@@ -1591,8 +1580,7 @@ namespace FASTER.core
             Debug.Assert(currentCtx.version == version);
             Debug.Assert(currentCtx.phase == Phase.PREPARE);
             InternalRefresh(currentCtx, fasterSession);
-            Debug.Assert(currentCtx.version == version + 1);
-            Debug.Assert(currentCtx.phase == Phase.IN_PROGRESS);
+            Debug.Assert(currentCtx.version > version);
 
             pendingContext.version = currentCtx.version;
         }
