@@ -46,7 +46,7 @@ namespace FASTER.test.statemachine
         public void TearDown()
         {
             fht1.Dispose();
-            log.Close();
+            log.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
 

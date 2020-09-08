@@ -39,8 +39,8 @@ namespace FASTER.test
         {
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
 
@@ -146,7 +146,7 @@ namespace FASTER.test
             finally
             {
                 if (log != null)
-                    log.Close();
+                    log.Dispose();
             }
         }
     }

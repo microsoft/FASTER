@@ -63,10 +63,8 @@ namespace FASTER.core
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result) => callback(result);
 
-        /// <summary>
-        /// <see cref="IDevice.Close"/>
-        /// </summary>
-        public override void Close()
+        /// <inheritdoc />
+        public override void Dispose()
         {
         }
     }

@@ -67,7 +67,7 @@ namespace FASTER.test
             {
                 session.Dispose();
                 fht.Dispose();
-                log.Close();
+                log.Dispose();
             }
 
             void Set(long keyValue, int length, int tag)

@@ -113,4 +113,23 @@ namespace FASTER.core
         /// <param name="dst"></param>
         bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
     }
+
+    /// <summary>
+    /// Callback functions to FASTER (two-param version)
+    /// </summary>
+    /// <typeparam name="Key"></typeparam>
+    /// <typeparam name="Value"></typeparam>
+    public interface IFunctions<Key, Value> : IFunctions<Key, Value, Value, Value, Empty>
+    {
+    }
+
+    /// <summary>
+    /// Callback functions to FASTER (two-param version with context)
+    /// </summary>
+    /// <typeparam name="Key"></typeparam>
+    /// <typeparam name="Value"></typeparam>
+    /// <typeparam name="Context"></typeparam>
+    public interface IFunctions<Key, Value, Context> : IFunctions<Key, Value, Value, Value, Context>
+    {
+    }
 }

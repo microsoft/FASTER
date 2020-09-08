@@ -72,8 +72,12 @@ namespace FASTER.core
             }
             else
             {
-                var dir = new DirectoryInfo(Path.Combine(baseName, fileInfo.directoryName));
-                dir.Delete(true);
+                try
+                {
+                    var dir = new DirectoryInfo(Path.Combine(baseName, fileInfo.directoryName));
+                    dir.Delete(true);
+                }
+                catch { }
             }
         }
     }

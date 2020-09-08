@@ -63,11 +63,11 @@ namespace FASTER.core
             }
         }
 
-        public override void Close()
+        public override void Dispose()
         {
             foreach (IDevice device in devices)
             {
-                device.Close();
+                device.Dispose();
             }
         }
 

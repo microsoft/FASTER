@@ -61,7 +61,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             fht1 = null;
             fht2 = null;
             fht3 = null;
-            log.Close();
+            log.Dispose();
             Directory.Delete(TestContext.CurrentContext.TestDirectory + "\\checkpoints3", true);
         }
 
