@@ -29,21 +29,27 @@ namespace FASTER.benchmark
         const bool kDumpDistribution = false;
         const bool kUseSmallData = true;
         const bool kUseSyntheticData = true;
-
-        const bool kCheckpointStoreContents = false;
-        const bool kRecoverStoreContents = false;
         const bool kSmallMemoryLog = false;
         const bool kAffinitizedSession = true;
+        const int kRunSeconds = 30;
+        const int kPeriodicCheckpointMilliseconds = 0;
 #else
         const bool kDumpDistribution = false;
         const bool kUseSmallData = false;
         const bool kUseSyntheticData = false;
-
-        const bool kCheckpointStoreContents = false;
-        const bool kRecoverStoreContents = false;
         const bool kSmallMemoryLog = false;
         const bool kAffinitizedSession = true;
+        const int kRunSeconds = 30;
+        const int kPeriodicCheckpointMilliseconds = 0;
 #endif
+
+        // *** Use below settings to backup and recover database for fast benchmark repeat runs
+        // First set kBackupStoreForFastRestarts to get the backup
+        // Then reset kBackupStoreForFastRestarts and set kRestoreFromBackupForFastRestarts for fast subsequent runs
+        // Does NOT work when periodic checkpointing is turned on
+        const bool kBackupStoreForFastRestarts = false;
+        const bool kRestoreFromBackupForFastRestarts = false;
+        // ***
 
         const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
@@ -69,9 +75,6 @@ namespace FASTER.benchmark
         readonly int numaStyle;
         readonly string distribution;
         readonly int readPercent;
-
-        const int kRunSeconds = 30;
-        const int kCheckpointMilliseconds = 0;
 
         volatile bool done = false;
 
@@ -242,7 +245,13 @@ namespace FASTER.benchmark
             Console.WriteLine("Executing setup.");
 
             Stopwatch sw = new Stopwatch();
-            if (!kRecoverStoreContents)
+            if (kRestoreFromBackupForFastRestarts && kPeriodicCheckpointMilliseconds <= 0)
+            {
+                sw.Start();
+                store.Recover();
+                sw.Stop();
+            }
+            else
             {
                 // Setup the store for the YCSB benchmark.
                 for (int idx = 0; idx < threadCount; ++idx)
@@ -263,20 +272,12 @@ namespace FASTER.benchmark
                 }
                 sw.Stop();
             }
-            else
-            {
-                sw.Start();
-                store.Recover();
-                sw.Stop();
-            }
             Console.WriteLine("Loading time: {0}ms", sw.ElapsedMilliseconds);
-
-
 
             long startTailAddress = store.Log.TailAddress;
             Console.WriteLine("Start tail address = " + startTailAddress);
 
-            if (kCheckpointStoreContents)
+            if (kBackupStoreForFastRestarts && kPeriodicCheckpointMilliseconds <= 0)
             {
                 store.TakeFullCheckpoint(out _);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
@@ -292,7 +293,7 @@ namespace FASTER.benchmark
                 Console.WriteLine(store.DumpDistribution());
 
             // Ensure first checkpoint is fast
-            if (kCheckpointMilliseconds > 0)
+            if (kPeriodicCheckpointMilliseconds > 0)
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, true);
 
             Console.WriteLine("Executing experiment.");
@@ -312,7 +313,7 @@ namespace FASTER.benchmark
             Stopwatch swatch = new Stopwatch();
             swatch.Start();
 
-            if (kCheckpointMilliseconds <= 0)
+            if (kPeriodicCheckpointMilliseconds <= 0)
             {
                 Thread.Sleep(TimeSpan.FromSeconds(kRunSeconds));
             }
@@ -321,7 +322,7 @@ namespace FASTER.benchmark
                 var checkpointTaken = 0;
                 while (swatch.ElapsedMilliseconds < 1000 * kRunSeconds)
                 {
-                    if (checkpointTaken < swatch.ElapsedMilliseconds / kCheckpointMilliseconds)
+                    if (checkpointTaken < swatch.ElapsedMilliseconds / kPeriodicCheckpointMilliseconds)
                     {
                         if (store.TakeHybridLogCheckpoint(out _))
                         {
