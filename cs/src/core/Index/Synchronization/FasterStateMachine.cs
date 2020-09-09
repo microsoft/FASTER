@@ -172,24 +172,7 @@ namespace FASTER.core
                 }
                 if ((ctx.version == targetStartState.version) && (ctx.phase < Phase.REST))
                 {
-                    CommitPoint commitPoint = default;
-                    if (ctx.prevCtx.excludedSerialNos != null)
-                    {
-                        lock (ctx.prevCtx)
-                        {
-                            if (ctx.prevCtx.serialNum != -1)
-                            {
-                                commitPoint = new CommitPoint
-                                {
-                                    UntilSerialNo = ctx.prevCtx.serialNum,
-                                    ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                                };
-                                ctx.prevCtx.excludedSerialNos = null;
-                            }
-                        }
-                        if (commitPoint.ExcludedSerialNos != null)
-                            fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
-                    }
+                    IssueCompletionCallback(ctx, fasterSession);
                 }
             }
             #endregion 
@@ -245,6 +228,33 @@ namespace FASTER.core
             #endregion
 
             return;
+        }
+
+        /// <summary>
+        /// Issue completion callback if needed, for the given context's prevCtx
+        /// </summary>
+        internal void IssueCompletionCallback<Input, Output, Context, FasterSession>(FasterExecutionContext<Input, Output, Context> ctx, FasterSession fasterSession)
+             where FasterSession : IFasterSession
+        {
+            CommitPoint commitPoint = default;
+            if (ctx.prevCtx.excludedSerialNos != null)
+            {
+                lock (ctx.prevCtx)
+                {
+                    if (ctx.prevCtx.serialNum != -1)
+                    {
+                        commitPoint = new CommitPoint
+                        {
+                            UntilSerialNo = ctx.prevCtx.serialNum,
+                            ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
+                        };
+                        ctx.prevCtx.excludedSerialNos = null;
+                    }
+                }
+                if (commitPoint.ExcludedSerialNos != null)
+                    fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+            }
+
         }
     }
 }
