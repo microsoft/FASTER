@@ -17,8 +17,8 @@ namespace FASTER.test.largeobjects
     [TestFixture]
     internal class LargeObjectTests
     {
-        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions> fht1;
-        private FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions> fht2;
+        private FasterKV<MyKey, MyLargeValue> fht1;
+        private FasterKV<MyKey, MyLargeValue> fht2;
         private IDevice log, objlog;
         private string test_path;
 
@@ -70,8 +70,8 @@ namespace FASTER.test.largeobjects
             log = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.log");
             objlog = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.obj.log");
 
-            fht1 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
-                (128, new MyLargeFunctions(),
+            fht1 = new FasterKV<MyKey, MyLargeValue>
+                (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
@@ -80,7 +80,7 @@ namespace FASTER.test.largeobjects
             int maxSize = 100;
             int numOps = 5000;
 
-            var session1 = fht1.NewSession();
+            var session1 = fht1.For(new MyLargeFunctions()).NewSession<MyLargeFunctions>();
             Random r = new Random(33);
             for (int key = 0; key < numOps; key++)
             {
@@ -99,8 +99,8 @@ namespace FASTER.test.largeobjects
             log = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.log");
             objlog = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.obj.log");
 
-            fht2 = new FasterKV<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty, MyLargeFunctions>
-                (128, new MyLargeFunctions(),
+            fht2 = new FasterKV<MyKey, MyLargeValue>
+                (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
@@ -108,7 +108,7 @@ namespace FASTER.test.largeobjects
 
             fht2.Recover(token);
 
-            var session2 = fht2.NewSession();
+            var session2 = fht2.For(new MyLargeFunctions()).NewSession<MyLargeFunctions>();
             for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
                 var key = new MyKey { key = keycnt };

@@ -19,7 +19,7 @@ namespace SumStore
         const long completePendingInterval = 1 << 12;
         const int checkpointInterval = 10 * 1000;
         readonly int threadCount;
-        readonly FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+        readonly FasterKV<AdId, NumClicks> fht;
 
         readonly BlockingCollection<Input[]> inputArrays;
 
@@ -29,10 +29,8 @@ namespace SumStore
 
             // Create FASTER index
             var log = Devices.CreateLogDevice("logs\\hlog");
-            fht = new FasterKV
-                <AdId, NumClicks, Input, Output, Empty, Functions>
-                (indexSize, new Functions(),
-                new LogSettings { LogDevice = log },
+            fht = new FasterKV<AdId, NumClicks>
+                (indexSize, new LogSettings { LogDevice = log },
                 new CheckpointSettings { CheckpointDir = "logs" });
 
             inputArrays = new BlockingCollection<Input[]>();
@@ -118,7 +116,7 @@ namespace SumStore
                 // Register with thread
                 do
                 {
-                    session = fht.ResumeSession(threadId.ToString(), out CommitPoint cp);
+                    session = fht.For(new Functions()).ResumeSession<Functions>(threadId.ToString(), out CommitPoint cp);
                     sno = cp.UntilSerialNo;
                 } while (sno == -1);
                 Console.WriteLine("Session {0} recovered until {1}", threadId, sno);
@@ -127,7 +125,7 @@ namespace SumStore
             else
             {
                 // Register thread with FASTER
-                session = fht.NewSession(threadId.ToString(), true);
+                session = fht.For(new Functions()).NewSession<Functions>(threadId.ToString(), true);
             }
 
             GenerateClicks(session, sno);
@@ -182,7 +180,7 @@ namespace SumStore
 
             for (int i = 0; i < threadCount; i++)
             {
-                var s = fht.ResumeSession(i.ToString(), out CommitPoint cp);
+                var s = fht.For(new Functions()).ResumeSession<Functions>(i.ToString(), out CommitPoint cp);
                 sno.Add(cp.UntilSerialNo);
                 Console.WriteLine("Session {0} recovered until {1}", i, cp.UntilSerialNo);
                 s.Dispose();
@@ -198,7 +196,7 @@ namespace SumStore
             }
 
             // Start a new session
-            var session = fht.NewSession();
+            var session = fht.For(new Functions()).NewSession<Functions>();
 
             // Issue read requests
             for (int i = 0; i < numUniqueKeys; i++)
