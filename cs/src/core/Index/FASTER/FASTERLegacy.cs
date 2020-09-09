@@ -297,13 +297,13 @@ namespace FASTER.core
         public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType) => _fasterKV.TakeHybridLogCheckpoint(out token, checkpointType);
 
         /// <inheritdoc />
-        public void Recover() => _fasterKV.Recover();
+        public void Recover(int numPagesToPreload = -1) => _fasterKV.Recover(numPagesToPreload);
 
         /// <inheritdoc />
-        public void Recover(Guid fullcheckpointToken) => _fasterKV.Recover(fullcheckpointToken);
+        public void Recover(Guid fullcheckpointToken, int numPagesToPreload = -1) => _fasterKV.Recover(fullcheckpointToken, numPagesToPreload);
 
         /// <inheritdoc />
-        public void Recover(Guid indexToken, Guid hybridLogToken) => _fasterKV.Recover(indexToken, hybridLogToken);
+        public void Recover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1) => _fasterKV.Recover(indexToken, hybridLogToken, numPagesToPreload);
 
         /// <inheritdoc />
         public ValueTask CompleteCheckpointAsync(CancellationToken token = default) => _fasterKV.CompleteCheckpointAsync(token);
@@ -556,22 +556,25 @@ namespace FASTER.core
         bool TakeHybridLogCheckpoint(out Guid token);
 
         /// <summary>
-        /// Recover from last successfuly checkpoints
+        /// Recover from last successful index and log checkpoint
         /// </summary>
-        void Recover();
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(int numPagesToPreload = -1);
 
         /// <summary>
         /// Recover using full checkpoint token
         /// </summary>
         /// <param name="fullcheckpointToken"></param>
-        void Recover(Guid fullcheckpointToken);
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(Guid fullcheckpointToken, int numPagesToPreload = -1);
 
         /// <summary>
         /// Recover using a separate index and log checkpoint token
         /// </summary>
         /// <param name="indexToken"></param>
         /// <param name="hybridLogToken"></param>
-        void Recover(Guid indexToken, Guid hybridLogToken);
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        void Recover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1);
 
         /// <summary>
         /// Complete ongoing checkpoint (spin-wait)
