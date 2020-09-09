@@ -57,9 +57,9 @@ namespace FASTER.test.recovery.objects
             [Range(100, 1500, 600)] int iterations)
         {
             this.iterations = iterations;
-            Prepare(checkpointType, out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> h, out MyContext context);
+            Prepare(checkpointType, out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
 
-            var session1 = h.NewSession();
+            var session1 = h.For(new MyFunctions()).NewSession<MyFunctions>();
             Write(session1, context, h);
             Read(session1, context, false);
             session1.Dispose();
@@ -73,22 +73,22 @@ namespace FASTER.test.recovery.objects
 
             h.Recover();
 
-            var session2 = h.NewSession();
+            var session2 = h.For(new MyFunctions()).NewSession<MyFunctions>();
             Read(session2, context, true);
             session2.Dispose();
 
             Destroy(log, objlog, h);
         }
 
-        private void Prepare(CheckpointType checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> h, out MyContext context)
+        private void Prepare(CheckpointType checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
         {
             logPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests.log");
             objPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests_HEAP.log");
             log = Devices.CreateLogDevice(logPath);
             objlog = Devices.CreateLogDevice(objPath);
             h = new FasterKV
-                <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (1L << 20, new MyFunctions(),
+                <MyKey, MyValue>
+                (1L << 20,
                 new LogSettings
                 {
                     LogDevice = log,
@@ -107,7 +107,7 @@ namespace FASTER.test.recovery.objects
             context = new MyContext();
         }
 
-        private static void Destroy(IDevice log, IDevice objlog, FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> h)
+        private static void Destroy(IDevice log, IDevice objlog, FasterKV<MyKey, MyValue> h)
         {
             // Dispose FASTER instance and log
             h.Dispose();
@@ -115,7 +115,7 @@ namespace FASTER.test.recovery.objects
             objlog.Dispose();
         }
 
-        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> fht)
+        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht)
         {
             for (int i = 0; i < iterations; i++)
             {

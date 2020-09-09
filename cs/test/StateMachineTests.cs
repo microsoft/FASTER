@@ -388,15 +388,15 @@ namespace FASTER.test.statemachine
             var f = new SimpleFunctions();
 
             var fht2 = new FasterKV
-                <AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions>
-                (128, f,
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2.Recover(); // sync, does not require session
 
-            using (var s3 = fht2.ResumeSession("foo", out CommitPoint lsn))
+            using (var s3 = fht2.ResumeSession(f, "foo", out CommitPoint lsn))
             {
                 Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
 

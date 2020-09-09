@@ -17,15 +17,15 @@ namespace FASTER.test
     [TestFixture]
     internal class BlittableIterationTests
     {
-        private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction> fht;
+        private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BlittableIterationTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction>
-                (1L << 20, new FunctionsCompaction(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
         }
 
         [TearDown]
@@ -39,7 +39,7 @@ namespace FASTER.test
         [Test]
         public void BlittableIterationTest1()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;

@@ -18,8 +18,8 @@ namespace FASTER.test.recovery.sumstore.simple
     [TestFixture]
     public class RecoveryTests
     {
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht1;
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht2;
+        private FasterKV<AdId, NumClicks> fht1;
+        private FasterKV<AdId, NumClicks> fht2;
         private IDevice log;
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "checkpoints4";
@@ -65,15 +65,15 @@ namespace FASTER.test.recovery.sumstore.simple
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest1.log", deleteOnClose: true);
 
             fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
             fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
@@ -90,7 +90,7 @@ namespace FASTER.test.recovery.sumstore.simple
             AdInput inputArg = default;
             Output output = default;
 
-            var session1 = fht1.NewSession();
+            var session1 = fht1.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
@@ -102,7 +102,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht2.Recover(token);
 
-            var session2 = fht2.NewSession();
+            var session2 = fht2.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
@@ -135,15 +135,15 @@ namespace FASTER.test.recovery.sumstore.simple
             // Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
 
             fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
             fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
@@ -160,7 +160,7 @@ namespace FASTER.test.recovery.sumstore.simple
             AdInput inputArg = default;
             Output output = default;
 
-            var session1 = fht1.NewSession();
+            var session1 = fht1.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
@@ -172,7 +172,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht2.Recover(token);
 
-            var session2 = fht2.NewSession();
+            var session2 = fht2.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
@@ -202,15 +202,15 @@ namespace FASTER.test.recovery.sumstore.simple
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints6");
 
             fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints6", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints6", CheckPointType = CheckpointType.FoldOver }
                 );
@@ -225,7 +225,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             NumClicks value;
 
-            var session1 = fht1.NewSession();
+            var session1 = fht1.NewSession(new SimpleFunctions());
             var address = 0L;
             for (int key = 0; key < numOps; key++)
             {

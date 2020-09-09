@@ -17,15 +17,15 @@ namespace FASTER.test.async
     [TestFixture]
     internal class SessionFASTERTests
     {
-        private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
+        private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                (128, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
 
         [TearDown]
@@ -41,7 +41,7 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest1()
         {
-            using (var session = fht.NewSession())
+            using (var session = fht.NewSession(new Functions()))
             {
                 InputStruct input = default(InputStruct);
                 OutputStruct output = default(OutputStruct);
@@ -70,8 +70,8 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest2()
         {
-            using (var session1 = fht.NewSession())
-            using (var session2 = fht.NewSession())
+            using (var session1 = fht.NewSession(new Functions()))
+            using (var session2 = fht.NewSession(new Functions()))
             {
                 InputStruct input = default(InputStruct);
                 OutputStruct output = default(OutputStruct);
@@ -117,7 +117,7 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest3()
         {
-            using (var session = fht.NewSession())
+            using (var session = fht.NewSession(new Functions()))
             {
                 Task.CompletedTask.ContinueWith((t) =>
                 {
@@ -148,8 +148,8 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest4()
         {
-            using (var session1 = fht.NewSession())
-            using (var session2 = fht.NewSession())
+            using (var session1 = fht.NewSession(new Functions()))
+            using (var session2 = fht.NewSession(new Functions()))
             {
                 var t1 = Task.CompletedTask.ContinueWith((t) =>
                 {
@@ -208,7 +208,7 @@ namespace FASTER.test.async
         [Test]
         public void SessionTest5()
         {
-            var session = fht.NewSession();
+            var session = fht.NewSession(new Functions());
             var id = session.ID;
 
             InputStruct input = default(InputStruct);
@@ -234,7 +234,7 @@ namespace FASTER.test.async
 
             session.Dispose();
 
-            session = fht.NewSession();
+            session = fht.NewSession(new Functions());
 
             var key2 = new KeyStruct { kfield1 = 17, kfield2 = 18 };
             var value2 = new ValueStruct { vfield1 = 27, vfield2 = 28 };

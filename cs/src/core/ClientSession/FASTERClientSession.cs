@@ -127,7 +127,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Start a new client session with FASTER.
-        /// For performance reasons this overload is not recommended if functions is value type (struct).
+        /// For performance reasons, pleae use session.For(functions).NewSession&lt;Functions&gt;(...) instead of this overload.
         /// </summary>
         /// <param name="functions">Callback functions</param>
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>

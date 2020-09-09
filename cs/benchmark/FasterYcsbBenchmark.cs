@@ -67,7 +67,7 @@ namespace FASTER.benchmark
         Input[] input_;
         readonly IDevice device;
 
-        readonly FasterKV<Key, Value, Input, Output, Empty, Functions> store;
+        readonly FasterKV<Key, Value> store;
 
         long total_ops_done = 0;
 
@@ -75,6 +75,7 @@ namespace FASTER.benchmark
         readonly int numaStyle;
         readonly string distribution;
         readonly int readPercent;
+        readonly Functions functions = new Functions();
 
         volatile bool done = false;
 
@@ -103,11 +104,11 @@ namespace FASTER.benchmark
             device = Devices.CreateLogDevice(path + "hlog", preallocateFile: true);
 
             if (kSmallMemoryLog)
-                store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
-                    (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
+                store = new FasterKV<Key, Value>
+                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
             else
-                store = new FasterKV<Key, Value, Input, Output, Empty, Functions>
-                    (kMaxKey / 2, new Functions(), new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
+                store = new FasterKV<Key, Value>
+                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
         }
 
         private void RunYcsb(int thread_idx)
@@ -137,7 +138,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession(null, kAffinitizedSession);
+            var session = store.For(functions).NewSession<Functions>(null, kAffinitizedSession);
 
             while (!done)
             {
@@ -364,7 +365,7 @@ namespace FASTER.benchmark
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            var session = store.NewSession(null, kAffinitizedSession);
+            var session = store.For(functions).NewSession<Functions>(null, kAffinitizedSession);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();

@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class MiscFASTERTests
     {
-        private FasterKV<int, MyValue, MyInput, MyOutput, Empty, MixedFunctions> fht;
+        private FasterKV<int, MyValue> fht;
         private IDevice log, objlog;
 
         [SetUp]
@@ -26,8 +26,8 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MiscFASTERTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MiscFASTERTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<int, MyValue, MyInput, MyOutput, Empty, MixedFunctions>
-                (128, new MixedFunctions(),
+            fht = new FasterKV<int, MyValue>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<int, MyValue> { valueSerializer = () => new MyValueSerializer() }
@@ -47,7 +47,7 @@ namespace FASTER.test
         [Test]
         public void MixedTest1()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new MixedFunctions()).NewSession<MixedFunctions>();
 
             int key = 8999998;
             var input1 = new MyInput { value = 23 };
@@ -69,7 +69,7 @@ namespace FASTER.test
         [Test]
         public void MixedTest2()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new MixedFunctions()).NewSession<MixedFunctions>();
 
             for (int i = 0; i < 2000; i++)
             {
@@ -116,9 +116,9 @@ namespace FASTER.test
             try
             {
                 log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-                using var fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>
-                    (128, copyOnWrite, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
-                using var session = fht.NewSession();
+                using var fht = new FasterKV<KeyStruct, ValueStruct>
+                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+                using var session = fht.NewSession(copyOnWrite);
 
                 var key = default(KeyStruct);
                 var value = default(ValueStruct);
