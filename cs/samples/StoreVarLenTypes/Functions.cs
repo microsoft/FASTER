@@ -11,13 +11,10 @@ namespace StoreVarLenTypes
     /// <summary>
     /// Callback functions for FASTER operations
     /// </summary>
-    public class VarLenFunctions : IFunctions<VarLenType, VarLenType, int[], int[], Empty>
+    public sealed class VarLenFunctions : FunctionsBase<VarLenType, VarLenType, int[], int[], Empty>
     {
-        public void RMWCompletionCallback(ref VarLenType key, ref int[] input, Empty ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(ref VarLenType key, ref int[] input, ref int[] output, Empty ctx, Status status)
+        // Read completion callback
+        public override void ReadCompletionCallback(ref VarLenType key, ref int[] input, ref int[] output, Empty ctx, Status status)
         {
             if (status != Status.OK)
             {
@@ -35,54 +32,28 @@ namespace StoreVarLenTypes
             }
         }
 
-        public void UpsertCompletionCallback(ref VarLenType key, ref VarLenType output, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref VarLenType key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
-        }
-
         // Read functions
-        public void SingleReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst)
+        public override void SingleReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
         }
 
-        public void ConcurrentReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst)
+        public override void ConcurrentReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
         }
 
         // Upsert functions
-        public void SingleWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
+        public override void SingleWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
         {
             src.CopyTo(ref dst);
         }
 
-        public bool ConcurrentWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
+        public override bool ConcurrentWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
         {
+            if (dst.length < src.length) return false;
             src.CopyTo(ref dst);
             return true;
-        }
-
-        // RMW functions
-        public void InitialUpdater(ref VarLenType key, ref int[] input, ref VarLenType value)
-        {
-        }
-
-        public bool InPlaceUpdater(ref VarLenType key, ref int[] input, ref VarLenType value)
-        {
-            return true;
-        }
-
-        public void CopyUpdater(ref VarLenType key, ref int[] input, ref VarLenType oldValue, ref VarLenType newValue)
-        {
         }
     }
 }

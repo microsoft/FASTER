@@ -85,40 +85,19 @@ namespace StoreAsyncApi
         public long ticks;
     }
 
-    public class CacheFunctions : IFunctions<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
+    public sealed class CacheFunctions : FunctionsBase<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
     {
-        public void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
         {
             dst.value = value;
         }
 
-        public bool ConcurrentWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
-        {
-            dst = src;
-            return true;
-        }
-
-        public void CopyUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue oldValue, ref CacheValue newValue)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void InitialUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public bool InPlaceUpdater(ref CacheKey key, ref CacheInput input, ref CacheValue value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
+        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
             Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
-        public void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status)
+        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status)
         {
             if (ctx.type == 0)
             {
@@ -139,29 +118,9 @@ namespace StoreAsyncApi
             }
         }
 
-        public void RMWCompletionCallback(ref CacheKey key, ref CacheInput input, CacheContext ctx, Status status)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override void SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
         {
             dst.value = value;
-        }
-
-        public void SingleWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
-        {
-            dst = src;
-        }
-
-        public void UpsertCompletionCallback(ref CacheKey key, ref CacheValue value, CacheContext ctx)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void DeleteCompletionCallback(ref CacheKey key, CacheContext ctx)
-        {
-            throw new NotImplementedException();
         }
     }
 }

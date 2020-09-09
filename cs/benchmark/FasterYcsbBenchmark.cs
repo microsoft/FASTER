@@ -40,7 +40,7 @@ namespace FASTER.benchmark
         const bool kSmallMemoryLog = false;
         const bool kAffinitizedSession = true;
         const int kRunSeconds = 30;
-        const int kPeriodicCheckpointMilliseconds = 0;
+        const int kPeriodicCheckpointMilliseconds = 25;
 #endif
 
         // *** Use below settings to backup and recover database for fast benchmark repeat runs

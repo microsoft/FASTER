@@ -121,74 +121,22 @@ namespace ClassRecoveryDurablity
             }
         }
 
-        public class StoreFunctions : IFunctions<StoreKey, StoreValue, StoreInput, StoreOutput, StoreContext>
+        public sealed class StoreFunctions : FunctionsBase<StoreKey, StoreValue, StoreInput, StoreOutput, StoreContext>
         {
-            public void RMWCompletionCallback(ref StoreKey key, ref StoreInput input, StoreContext ctx, Status status)
+            public override void SingleReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst)
             {
+                dst.value = value;
             }
 
-            public void ReadCompletionCallback(ref StoreKey key, ref StoreInput input, ref StoreOutput output, StoreContext ctx, Status status)
+            public override void ConcurrentReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst)
+            {
+                dst.value = value;
+            }
+
+            public override void ReadCompletionCallback(ref StoreKey key, ref StoreInput input, ref StoreOutput output, StoreContext ctx, Status status)
             {
                 ctx.Populate(ref status, ref output);
-            }
-
-
-            public void UpsertCompletionCallback(ref StoreKey key, ref StoreValue value, StoreContext ctx)
-            {
-            }
-
-            public void DeleteCompletionCallback(ref StoreKey key, StoreContext ctx)
-            {
-            }
-
-            public void CopyUpdater(ref StoreKey key, ref StoreInput input, ref StoreValue oldValue, ref StoreValue newValue)
-            {
-            }
-
-            public void InitialUpdater(ref StoreKey key, ref StoreInput input, ref StoreValue value)
-            {
-            }
-
-            public bool InPlaceUpdater(ref StoreKey key, ref StoreInput input, ref StoreValue value)
-            {
-                if (value.value.Length < input.value.Length)
-                    return false;
-
-                value.value = input.value;
-                return true;
-            }
-
-            public void SingleReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst)
-            {
-                dst.value = value;
-            }
-
-            public void ConcurrentReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst)
-            {
-                dst.value = value;
-            }
-
-            public bool ConcurrentWriter(ref StoreKey key, ref StoreValue src, ref StoreValue dst)
-            {
-                if (src == null)
-                    return false;
-
-                if (dst.value.Length != src.value.Length)
-                    return false;
-
-                dst = src;
-                return true;
-            }
-
-            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-            {
-            }
-
-            public void SingleWriter(ref StoreKey key, ref StoreValue src, ref StoreValue dst)
-            {
-                dst = src;
             }
         }
     }
 }
-
