@@ -9,7 +9,7 @@
     <projectUrl>https://github.com/microsoft/FASTER</projectUrl>
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <description>This is a FASTER device implementation for Azure Storage (page blobs). FASTER is a fast concurrent key-value store and log for larger-than-memory data.</description>
+    <description>This is a FASTER device implementation for Azure Storage (page blobs). FASTER is a fast concurrent persistent log and key-value store with cache for larger-than-memory data.</description>
     <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
