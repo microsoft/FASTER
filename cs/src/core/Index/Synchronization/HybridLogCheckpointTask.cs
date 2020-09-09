@@ -81,21 +81,7 @@ namespace FASTER.core
             {
                 if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                 {
-                    if (ctx.prevCtx.serialNum != -1)
-                    {
-                        var commitPoint = new CommitPoint
-                        {
-                            UntilSerialNo = ctx.prevCtx.serialNum,
-                            ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                        };
-
-                        // Thread local action
-                        fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
-
-                        // Set to null to indicate already called (for re-entering sessions)
-                        ctx.prevCtx.excludedSerialNos = null;
-                    }
-
+                    faster.IssueCompletionCallback(ctx, fasterSession);
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                 }
 
