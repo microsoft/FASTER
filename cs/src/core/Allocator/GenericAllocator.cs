@@ -23,8 +23,6 @@ namespace FASTER.core
 
 
     public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         // Circular buffer definition
         internal Record<Key, Value>[][] values;
@@ -48,12 +46,18 @@ namespace FASTER.core
 
             if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
-                throw new FasterException("Key is not blittable, but no serializer specified via SerializerSettings");
+                Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+                if (SerializerSettings == null)
+                    SerializerSettings = new SerializerSettings<Key, Value>();
+                SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
-                throw new FasterException("Value is not blittable, but no serializer specified via SerializerSettings");
+                Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+                if (SerializerSettings == null)
+                    SerializerSettings = new SerializerSettings<Key, Value>();
+                SerializerSettings.valueSerializer = ObjectSerializer.Get<Value>();
             }
 
             values = new Record<Key, Value>[BufferSize][];
@@ -232,7 +236,7 @@ namespace FASTER.core
         protected override void TruncateUntilAddress(long toAddress)
         {
             base.TruncateUntilAddress(toAddress);
-            objectLogDevice.TruncateUntilAddress(toAddress);
+            objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
         }
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
@@ -583,7 +587,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -725,8 +729,7 @@ namespace FASTER.core
                             stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
                         }
 
-                        src[ptr / recordSize].key = new Key();
-                        keySerializer.Deserialize(ref src[ptr/recordSize].key);
+                        keySerializer.Deserialize(out src[ptr/recordSize].key);
                     }
                     else
                     {
@@ -744,8 +747,7 @@ namespace FASTER.core
                                 stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
                             }
 
-                            src[ptr / recordSize].value = new Value();
-                            valueSerializer.Deserialize(ref src[ptr / recordSize].value);
+                            valueSerializer.Deserialize(out src[ptr / recordSize].value);
                         }
                         else
                         {
@@ -886,21 +888,17 @@ namespace FASTER.core
 
             if (KeyHasObjects())
             {
-                ctx.key = new Key();
-
                 var keySerializer = SerializerSettings.keySerializer();
                 keySerializer.BeginDeserialize(ms);
-                keySerializer.Deserialize(ref ctx.key);
+                keySerializer.Deserialize(out ctx.key);
                 keySerializer.EndDeserialize();
             }
 
             if (ValueHasObjects() && !GetInfoFromBytePointer(record).Tombstone)
             {
-                ctx.value = new Value();
-
                 var valueSerializer = SerializerSettings.valueSerializer();
                 valueSerializer.BeginDeserialize(ms);
-                valueSerializer.Deserialize(ref ctx.value);
+                valueSerializer.Deserialize(out ctx.value);
                 valueSerializer.EndDeserialize();
             }
 

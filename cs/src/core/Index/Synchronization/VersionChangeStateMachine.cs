@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
@@ -14,8 +15,6 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
         }
 
@@ -23,21 +22,17 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value>(
             SystemState start,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current, SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession : IFasterSession
         {
             switch (current.phase)
@@ -63,10 +58,13 @@ namespace FASTER.core
                     {
                         // Need to be very careful here as threadCtx is changing
                         var _ctx = prev.phase == Phase.IN_PROGRESS ? ctx.prevCtx : ctx;
+                        var tokens = faster._hybridLogCheckpoint.info.checkpointTokens;
+                        if (!faster.SameCycle(current) || tokens == null)
+                            return;
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
-                            faster.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
+                            faster.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
                             faster.InitContext(ctx, ctx.prevCtx.guid, ctx.prevCtx.serialNum);
 
                             // Has to be prevCtx, not ctx
@@ -100,8 +98,6 @@ namespace FASTER.core
                 case Phase.REST:
                     break;
             }
-
-            return default;
         }
     }
 
@@ -115,8 +111,6 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
             if (next.phase == Phase.REST)
                 // Before leaving the checkpoint, make sure all previous versions are read-only.
@@ -127,24 +121,19 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         { }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession : IFasterSession
         {
-            return default;
         }
     }
 

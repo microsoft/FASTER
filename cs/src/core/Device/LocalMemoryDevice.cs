@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -28,6 +29,7 @@ namespace FASTER.core
         private readonly ConcurrentQueue<IORequestLocalMemory>[] ioQueue;
         private readonly Thread[] ioProcessors;
         private readonly int parallelism;
+        private readonly long sz_segment;
         private bool terminated;
 
         /// <summary>
@@ -43,6 +45,7 @@ namespace FASTER.core
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
             Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
             num_segments = (int) (capacity / sz_segment);
+            this.sz_segment = sz_segment;
             
             ram_segments = new byte*[num_segments];
             ram_segment_handles = new GCHandle[num_segments];
@@ -124,6 +127,8 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
+            Debug.Assert(destinationAddress + numBytesToWrite <= (ulong)sz_segment, "Out of space in segment - LocalMemoryDevice does not support variable-sized segments needed for the object log");
+
             // We ensure capability of writing to next segment, because there is no
             // extra buffer space allocated in this device
             HandleCapacity(segmentId + 1);
@@ -163,7 +168,7 @@ namespace FASTER.core
         /// <summary>
         /// Close device
         /// </summary>
-        public override void Close()
+        public override void Dispose()
         {
             foreach (var q in ioQueue)
                 while (q.Count != 0) { }

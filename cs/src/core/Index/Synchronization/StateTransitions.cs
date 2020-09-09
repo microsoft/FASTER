@@ -29,11 +29,10 @@ namespace FASTER.core
         WAIT_INDEX_CHECKPOINT,
         REST,
         PREP_INDEX_CHECKPOINT, 
-        INDEX_CHECKPOINT, 
         PREPARE,
         PREPARE_GROW, 
         IN_PROGRESS_GROW, 
-        INTERMEDIATE,
+        INTERMEDIATE = 16,
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
@@ -63,6 +62,26 @@ namespace FASTER.core
             info.phase = status;
             info.version = version;
             return info;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static SystemState MakeIntermediate(SystemState state) 
+            => Make(state.phase | Phase.INTERMEDIATE, state.version);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void RemoveIntermediate(ref SystemState state)
+        {
+            state.phase &= ~Phase.INTERMEDIATE;
+        }
+
+        public static bool Equal(SystemState s1, SystemState s2)
+        {
+            return s1.word == s2.word;
+        }
+
+        public override string ToString()
+        {
+            return $"[{phase},{version}]";
         }
     }
 }

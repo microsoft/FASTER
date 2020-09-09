@@ -33,7 +33,7 @@ namespace FASTER.test
                     new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
                     new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobFasterLogTest1"));
                 FasterLogTest1(logChecksum, device, checkpointManager);
-                device.Close();
+                device.Dispose();
                 checkpointManager.PurgeAll();
                 checkpointManager.Dispose();
             }

@@ -111,8 +111,8 @@ namespace FASTER.test.recovery.objects
         {
             // Dispose FASTER instance and log
             h.Dispose();
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
         private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> fht)
@@ -179,8 +179,9 @@ namespace FASTER.test.recovery.objects
             writer.Write(bytes);
         }
 
-        public override void Deserialize(ref MyKey key)
+        public override void Deserialize(out MyKey key)
         {
+            key = new MyKey();
             var size = reader.ReadInt32();
             key.key = reader.ReadInt32();
             var bytes = new byte[size - 4];
@@ -199,8 +200,9 @@ namespace FASTER.test.recovery.objects
             writer.Write(bytes);
         }
 
-        public override void Deserialize(ref MyValue value)
+        public override void Deserialize(out MyValue value)
         {
+            value = new MyValue();
             var size = reader.ReadInt32();
             var bytes = new byte[size];
             reader.Read(bytes, 0, size);

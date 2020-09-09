@@ -11,8 +11,6 @@ namespace FASTER.core
     /// Interface to FASTER key-value store
     /// </summary>
     public interface IFasterKV<Key, Value, Input, Output, Context, Functions> : IDisposable
-        where Key : new()
-        where Value : new()
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         #region Session Operations (Deprecated)
@@ -142,9 +140,8 @@ namespace FASTER.core
         /// Take full checkpoint of FASTER
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <returns>Whether checkpoint was initiated</returns>
-        bool TakeFullCheckpoint(out Guid token, long targetVersion = -1);
+        bool TakeFullCheckpoint(out Guid token);
 
         /// <summary>
         /// Take checkpoint of FASTER index only (not log)
@@ -157,9 +154,8 @@ namespace FASTER.core
         /// Take checkpoint of FASTER log only (not index)
         /// </summary>
         /// <param name="token">Token describing checkpoin</param>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <returns>Whether checkpoint was initiated</returns>
-        bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1);
+        bool TakeHybridLogCheckpoint(out Guid token);
 
         /// <summary>
         /// Recover from last successfuly checkpoints
@@ -229,8 +225,6 @@ namespace FASTER.core
     /// Interface to FASTER key-value store
     /// </summary>
     public interface IFasterKV<Key, Value> : IDisposable
-        where Key : new()
-        where Value : new()
     {
         #region New Session Operations
 
@@ -272,9 +266,8 @@ namespace FASTER.core
         /// Take full checkpoint of FASTER
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <returns>Whether checkpoint was initiated</returns>
-        bool TakeFullCheckpoint(out Guid token, long targetVersion = -1);
+        bool TakeFullCheckpoint(out Guid token);
 
         /// <summary>
         /// Take checkpoint of FASTER index only (not log)
@@ -287,9 +280,8 @@ namespace FASTER.core
         /// Take checkpoint of FASTER log only (not index)
         /// </summary>
         /// <param name="token">Token describing checkpoin</param>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <returns>Whether checkpoint was initiated</returns>
-        bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1);
+        bool TakeHybridLogCheckpoint(out Guid token);
 
         /// <summary>
         /// Recover from last successfuly checkpoints

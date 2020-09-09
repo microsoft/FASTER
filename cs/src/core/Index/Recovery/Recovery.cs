@@ -47,8 +47,6 @@ namespace FASTER.core
 
 
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
 
         private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload)
@@ -165,7 +163,7 @@ namespace FASTER.core
 
 
             // Make index consistent for version v
-            if (FoldOverSnapshot)
+            if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
                 RecoverHybridLog(recoveredICInfo.info, recoveredHLCInfo.info);
             }
@@ -367,8 +365,8 @@ namespace FASTER.core
                 }
             }
 
-            recoveryStatus.recoveryDevice.Close();
-            recoveryStatus.objectLogRecoveryDevice.Close();
+            recoveryStatus.recoveryDevice.Dispose();
+            recoveryStatus.objectLogRecoveryDevice.Dispose();
         }
 
         private void RecoverFromPage(long startRecoveryAddress,
@@ -467,8 +465,6 @@ namespace FASTER.core
     }
 
     public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
-        where Key : new()
-        where Value : new()
     {
         /// <summary>
         /// Restore log

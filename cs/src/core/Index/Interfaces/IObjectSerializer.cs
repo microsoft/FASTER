@@ -3,6 +3,9 @@
 
 using System;
 using System.IO;
+using System.Runtime.Serialization;
+using System.Text;
+using System.Xml;
 
 namespace FASTER.core
 {
@@ -39,7 +42,7 @@ namespace FASTER.core
         /// Deserialize object
         /// </summary>
         /// <param name="obj"></param>
-        void Deserialize(ref T obj);
+        void Deserialize(out T obj);
 
         /// <summary>
         /// End deserialization from given stream
@@ -69,20 +72,21 @@ namespace FASTER.core
         /// <param name="stream"></param>
         public void BeginDeserialize(Stream stream)
         {
-            reader = new BinaryReader(stream);
+            reader = new BinaryReader(stream, new UTF8Encoding(), true);
         }
 
         /// <summary>
         /// Deserialize
         /// </summary>
         /// <param name="obj"></param>
-        public abstract void Deserialize(ref T obj);
+        public abstract void Deserialize(out T obj);
 
         /// <summary>
         /// End deserialize
         /// </summary>
         public void EndDeserialize()
         {
+            reader.Dispose();
         }
 
         /// <summary>
@@ -91,7 +95,7 @@ namespace FASTER.core
         /// <param name="stream"></param>
         public void BeginSerialize(Stream stream)
         {
-            writer = new BinaryWriter(stream);
+            writer = new BinaryWriter(stream, new UTF8Encoding(), true);
         }
 
         /// <summary>

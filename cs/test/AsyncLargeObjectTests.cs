@@ -95,8 +95,8 @@ namespace FASTER.test.async
             await fht1.CompleteCheckpointAsync();
 
             fht1.Dispose();
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
 
             log = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.log");
             objlog = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.obj.log");
@@ -130,8 +130,8 @@ namespace FASTER.test.async
 
             fht2.Dispose();
 
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
     }
 }

@@ -11,8 +11,6 @@ using System.Runtime.InteropServices;
 namespace FASTER.core
 {
     public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         // Circular buffer definition
         private byte[][] values;

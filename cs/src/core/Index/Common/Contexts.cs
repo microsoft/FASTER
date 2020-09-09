@@ -64,8 +64,6 @@ namespace FASTER.core
     }
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         internal struct PendingContext<Input, Output, Context>
         {
@@ -206,7 +204,6 @@ namespace FASTER.core
             finalLogicalAddress = 0;
             headAddress = 0;
 
-            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
             checkpointTokens = new ConcurrentDictionary<string, CommitPoint>();
 
             objectLogSegmentOffsets = null;
@@ -408,8 +405,8 @@ namespace FASTER.core
         {
             flushedSemaphore = null;
             info = default;
-            if (snapshotFileDevice != null) snapshotFileDevice.Close();
-            if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Close();
+            if (snapshotFileDevice != null) snapshotFileDevice.Dispose();
+            if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Dispose();
         }
 
         public bool IsDefault()
@@ -558,7 +555,7 @@ namespace FASTER.core
         public void Reset()
         {
             info = default;
-            main_ht_device.Close();
+            main_ht_device.Dispose();
         }
 
         public bool IsDefault()

@@ -9,8 +9,6 @@ using System.Runtime.CompilerServices;
 namespace FASTER.core
 {
     internal sealed class LogVariableCompactFunctions<Key, Value, CompactionFunctions> : IFunctions<Key, Value, Empty, Empty, Empty>
-        where Key : new()
-        where Value : new()
         where CompactionFunctions : ICompactionFunctions<Key, Value>
     {
         private readonly VariableLengthBlittableAllocator<Key, Value> _allocator;
@@ -37,8 +35,6 @@ namespace FASTER.core
     }
 
     internal sealed class LogCompactFunctions<Key, Value, CompactionFunctions> : IFunctions<Key, Value, Empty, Empty, Empty>
-        where Key : new()
-        where Value : new()
         where CompactionFunctions : ICompactionFunctions<Key, Value>
     {
         private readonly CompactionFunctions _functions;

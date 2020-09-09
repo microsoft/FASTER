@@ -34,8 +34,9 @@ namespace FASTER.test
 
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
     {
-        public override void Deserialize(ref MyKey obj)
+        public override void Deserialize(out MyKey obj)
         {
+            obj = new MyKey();
             obj.key = reader.ReadInt32();
         }
 
@@ -52,8 +53,9 @@ namespace FASTER.test
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>
     {
-        public override void Deserialize(ref MyValue obj)
+        public override void Deserialize(out MyValue obj)
         {
+            obj = new MyValue();
             obj.value = reader.ReadInt32();
         }
 
@@ -301,8 +303,9 @@ namespace FASTER.test
 
     public class MyLargeValueSerializer : BinaryObjectSerializer<MyLargeValue>
     {
-        public override void Deserialize(ref MyLargeValue obj)
+        public override void Deserialize(out MyLargeValue obj)
         {
+            obj = new MyLargeValue();
             int size = reader.ReadInt32();
             obj.value = reader.ReadBytes(size);
         }

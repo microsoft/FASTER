@@ -69,6 +69,11 @@ namespace FASTER.core
         /// Overrides the "copy reads to tail" setting
         /// </summary>
         public ReadCacheSettings ReadCacheSettings = null;
+
+        /// <summary>
+        /// Whether to preallocate the entire log (pages) in memory
+        /// </summary>
+        public bool PreallocateLog = false;
     }
 
     /// <summary>

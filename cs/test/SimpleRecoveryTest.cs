@@ -116,7 +116,7 @@ namespace FASTER.test.recovery.sumstore.simple
             }
             session2.Dispose();
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
 
@@ -186,7 +186,7 @@ namespace FASTER.test.recovery.sumstore.simple
             }
             session2.Dispose();
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
             checkpointManager.Dispose();
@@ -199,7 +199,7 @@ namespace FASTER.test.recovery.sumstore.simple
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints5");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints6");
 
             fht1 = new FasterKV
                 <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
@@ -246,7 +246,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             Assert.AreEqual(address, fht2.Log.BeginAddress);
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints6").Delete(true);

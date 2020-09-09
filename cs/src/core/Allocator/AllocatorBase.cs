@@ -39,8 +39,6 @@ namespace FASTER.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
-        where Key : new()
-        where Value : new()
     {
         /// <summary>
         /// Epoch information
@@ -209,6 +207,11 @@ namespace FASTER.core
         /// Flush callback
         /// </summary>
         protected readonly Action<CommitInfo> FlushCallback = null;
+
+        /// <summary>
+        /// Whether to preallocate log on initialization
+        /// </summary>
+        private readonly bool PreallocateLog = false;
 
         /// <summary>
         /// Error handling
@@ -487,6 +490,7 @@ namespace FASTER.core
                 EvictCallback = evictCallback;
             }
             FlushCallback = flushCallback;
+            PreallocateLog = settings.PreallocateLog;
 
             this.comparer = comparer;
             if (epoch == null)
@@ -563,6 +567,17 @@ namespace FASTER.core
             if ((!IsAllocated(nextPageIndex)))
             {
                 AllocatePage(nextPageIndex);
+            }
+
+            if (PreallocateLog)
+            {
+                for (int i = 0; i < BufferSize; i++)
+                {
+                    if ((!IsAllocated(i)))
+                    {
+                        AllocatePage(i);
+                    }
+                }
             }
 
             SafeReadOnlyAddress = firstValidAddress;
