@@ -281,7 +281,7 @@ namespace FASTER.core
         /// <summary>
         /// 
         /// </summary>
-        public override void Close()
+        public override void Dispose()
         {
             foreach (var entry in logHandles)
             {

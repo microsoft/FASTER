@@ -45,7 +45,7 @@ namespace FASTER.core
             IsFuzzyIndexRecoveryComplete(true);
 
             // close index checkpoint files appropriately
-            info.main_ht_device.Close();
+            info.main_ht_device.Dispose();
 
             // Delete all tentative entries!
             DeleteTentativeEntries();

@@ -93,8 +93,8 @@ namespace FASTER.test.largeobjects
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             fht1.Dispose();
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
 
             log = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.log");
             objlog = Devices.CreateLogDevice(test_path + "\\LargeObjectTest.obj.log");
@@ -128,8 +128,8 @@ namespace FASTER.test.largeobjects
 
             fht2.Dispose();
 
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
     }
 }

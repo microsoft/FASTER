@@ -93,9 +93,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    Console.WriteLine(
-                        "***WARNING*** Creating default FASTER key equality comparer based on potentially slow EqualityComparer<Key>.Default. To avoid this, provide a comparer (IFasterEqualityComparer<Key>) as an argument to FASTER's constructor, or make Key implement the interface IFasterEqualityComparer<Key>");
-                    this.comparer = FasterEqualityComparer<Key>.Default;
+                    this.comparer = FasterEqualityComparer.Get<Key>();
                 }
             }
 

@@ -111,8 +111,8 @@ namespace FASTER.test.recovery.objects
         {
             // Dispose FASTER instance and log
             h.Dispose();
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
         private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> fht)

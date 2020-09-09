@@ -16,7 +16,7 @@ namespace FASTER.core
     /// <summary>
     /// Interface for devices
     /// </summary>
-    public interface IDevice
+    public interface IDevice : IDisposable
     {
         /// <summary>
         /// Size of sector
@@ -162,12 +162,21 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segment">index of the segment to remov</param>
         void RemoveSegment(int segment);
+    }
 
-        /* Close */
-
+    /// <summary>
+    /// Extension for backward compatibility
+    /// </summary>
+    public static class Device
+    {
         /// <summary>
-        /// Close
+        /// Close log - use IDevice.Dispose instead
         /// </summary>
-        void Close();
+        /// <param name="device"></param>
+        [Obsolete("Use IDevice.Dispose() instead.")]
+        public static void Close(this IDevice device)
+        {
+            device.Dispose();
+        }
     }
 }

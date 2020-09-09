@@ -107,7 +107,7 @@ namespace FASTER.test.async
             }
 
             fht2.Dispose();
-            log.Close();
+            log.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
     }

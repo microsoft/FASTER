@@ -1,8 +1,9 @@
 ---
 layout: default
 title: FasterLog persistent log in C#
+parent: FASTER C#
 nav_order: 3
-permalink: /docs/fasterlog
+permalink: /cs/fasterlog
 ---
 
 # Introducing FasterLog
