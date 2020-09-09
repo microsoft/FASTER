@@ -56,8 +56,8 @@ namespace FASTER.test.recovery.objectstore
         {
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
             DeleteDirectory(test_path);
         }
 
@@ -88,8 +88,8 @@ namespace FASTER.test.recovery.objectstore
             Populate();
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
             Setup();
             RecoverAndTest(token, token);
         }

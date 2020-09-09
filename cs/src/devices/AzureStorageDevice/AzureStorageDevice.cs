@@ -41,7 +41,7 @@ namespace FASTER.devices
         /// <param name="blobManager">Blob manager instance</param>
         /// <param name="underLease">Whether we use leases</param>
         /// <param name="deleteOnClose">
-        /// True if the program should delete all blobs created on call to <see cref="Close">Close</see>. False otherwise. 
+        /// True if the program should delete all blobs created on call to <see cref="Dispose">Close</see>. False otherwise. 
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
@@ -70,7 +70,7 @@ namespace FASTER.devices
         /// <param name="blobManager">Blob manager instance</param>
         /// <param name="underLease">Whether we use leases</param>
         /// <param name="deleteOnClose">
-        /// True if the program should delete all blobs created on call to <see cref="Close">Close</see>. False otherwise. 
+        /// True if the program should delete all blobs created on call to <see cref="Dispose">Close</see>. False otherwise. 
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
@@ -154,20 +154,25 @@ namespace FASTER.devices
             return $"{blobName}.{segmentId}";
         }
 
-        /// <summary>
-        /// <see cref="IDevice.Close">Inherited</see>
-        /// </summary>
-        public override void Close()
+        /// <inheritdoc />
+        public override void Dispose()
         {
             // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system
             // to delete files after the end of our process. This leads to potential problems if multiple instances are sharing the same underlying page blobs.
             // Since this flag is only used for testing, it is probably fine.
             if (deleteOnClose)
+                PurgeAll();
+        }
+
+        /// <summary>
+        /// Purge all blobs related to this device. Do not use if 
+        /// multiple instances are sharing the same underlying page blobs.
+        /// </summary>
+        public void PurgeAll()
+        {
+            foreach (var entry in blobs)
             {
-                foreach (var entry in blobs)
-                {
-                    entry.Value.PageBlob.Delete();
-                }
+                entry.Value.PageBlob.Delete();
             }
         }
 

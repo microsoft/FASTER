@@ -29,7 +29,7 @@ namespace FASTER.core
         /// </summary>
         public void PurgeAll()
         {
-            new DirectoryInfo(directoryConfiguration.checkpointDir).Delete(true);
+            try { new DirectoryInfo(directoryConfiguration.checkpointDir).Delete(true); } catch { }
         }
 
         /// <summary>

@@ -39,7 +39,7 @@ namespace FASTER.test
         public void TearDown()
         {
             manager.Dispose();
-            device.Close();
+            device.Dispose();
 
             if (Directory.Exists(commitPath))
                 DeleteDirectory(commitPath);

@@ -7,15 +7,17 @@
 Managing large application state easily, resiliently, and with high performance is one of the hardest
 problems in the cloud today. The FASTER project offers two artifacts to help tackle this problem.
 
-* :new: **FASTER Log** is a high-performance concurrent persistent recoverable log, iterator, and random 
+* **FASTER Log** is a high-performance concurrent persistent recoverable log, iterator, and random 
 reader library in C#. It supports very frequent commit operations at low latency, and can quickly saturate 
 disk bandwidth. It supports both sync and async interfaces, handles disk errors, and supports checksums. Learn 
-more about the FASTER Log [here](https://github.com/microsoft/FASTER/blob/master/docs/cs/FasterLog.md) or [here](https://microsoft.github.io/FASTER/docs/fasterlog).
+more about the FASTER Log in C# here: [github](docs/cs/FasterLog.md) | [web](https://microsoft.github.io/FASTER/cs/fasterlog).
 
 * **FASTER KV** is a concurrent key-value store + cache (available in C# and C++) that is designed for point 
 lookups and heavy updates. FASTER supports data larger than memory, by leveraging fast external 
 storage (local or cloud). It also supports consistent recovery using a new checkpointing technique that lets 
-applications trade-off performance for commit latency.
+applications trade-off performance for commit latency. Learn 
+more about the FASTER KV in C# here: [github](docs/cs/FasterKV.md) | [web](https://microsoft.github.io/FASTER/cs/fasterkv).
+For FASTER C++, check here: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc).
 
 
 Some key differentiating features of FASTER KV and FASTER Log include:
@@ -32,31 +34,34 @@ storage, cloud storage, tiered storage, and sharded storage.
 
 For standard benchmarks where the working set fits in main memory, we found FASTER KV to achieve
 significantly higher throughput than current systems, and match or exceed the performance of pure 
-in-memory data structures while offering more functionality. See [the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf) for more details. We also have a detailed
-analysis of C# FASTER KV performance in a wiki page 
+in-memory data structures while offering more functionality. See 
+[the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf)
+for more details. We also have a detailed analysis of C# FASTER KV performance in a wiki page 
 [here](https://github.com/Microsoft/FASTER/wiki/Performance-of-FASTER-in-C%23). The performance of the 
 C# and C++ versions of FASTER are very similar. FASTER Log is also extremely fast, capable of saturating modern
 NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded setting.
 
-:new: We now support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md) for more information. Also, check out the 
+:new: We now support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](docs/cs/README.md) for more information. Also, check out the 
 samples in the playground located [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground).
 
 # Getting Started
 
-Visit our [research website](http://aka.ms/FASTER) for technical details and papers. For FASTER usage and 
-getting started information, head over to our [GitHub Pages](https://microsoft.github.io/FASTER) website. A 
-detailed guide to getting started with FASTER KV C# is also available in the repository at [this link](https://github.com/Microsoft/FASTER/blob/master/cs/README.md). FASTER C# binaries are available via NuGet:
-* [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
-* [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
+* Docs: [github](docs/) | [web](https://microsoft.github.io/FASTER)
+* Research papers: [https://aka.ms/FASTER](https://aka.ms/FASTER)
+* FASTER C# details: [github](docs/cs/) | [web](https://microsoft.github.io/FASTER/cs)
+* FASTER C++ details: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc)
+* Tuning FASTER: [github](docs/tuning/) | [web](https://microsoft.github.io/FASTER/tuning)
+* Project roadmap: [github](docs/Roadmap.md) | [web](https://microsoft.github.io/FASTER/roadmap).
+* NuGet binary feed:
+  * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
+  * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
 
-
-You can take a look at the project roadmap [here](https://microsoft.github.io/FASTER/roadmap).
 
 # Build and Test
 
-For C#, click [here](https://github.com/Microsoft/FASTER/tree/master/cs).
+For C#, click [here](cs/).
 
-For C++, click [here](https://github.com/Microsoft/FASTER/tree/master/cc).
+For C++, click [here](cc/).
 
 # Recovery in FASTER KV
 
@@ -69,8 +74,8 @@ operations, of the form “all operations until offset Ti in session i”; and (
 incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
 
 CPR is available in the C# and C++ versions of FASTER. More documentation on recovery in the C# version is
-[here](https://github.com/Microsoft/FASTER/tree/master/cs#checkpointing-and-recovery). For C++, we only
-have examples in code right now. The sum-store, located [here](https://github.com/Microsoft/FASTER/tree/master/cc/playground/sum_store-dir), is a good example of checkpointing and recovery.
+[here](docs/cs/FasterKV.md#checkpointing-and-recovery). For C++, we only
+have examples in code right now. The sum-store, located [here](cc/playground/sum_store-dir), is a good example of checkpointing and recovery.
 
 # Contributing
 

@@ -48,7 +48,7 @@ namespace FASTER.test.recovery.sumstore
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
             DeleteDirectory(test_path);
         }
 
@@ -83,7 +83,7 @@ namespace FASTER.test.recovery.sumstore
                 if (i >= indexTokens.Count) break;
                 fht.Dispose();
                 fht = null;
-                log.Close();
+                log.Dispose();
                 Setup();
                 RecoverAndTest(logTokens[i], indexTokens[i]);
             }
@@ -98,7 +98,7 @@ namespace FASTER.test.recovery.sumstore
             {
                 fht.Dispose();
                 fht = null;
-                log.Close();
+                log.Dispose();
                 Setup();
                 RecoverAndTest(token, token);
             }

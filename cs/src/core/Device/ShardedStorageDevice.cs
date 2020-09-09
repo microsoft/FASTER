@@ -144,14 +144,12 @@ namespace FASTER.core
             this.partitions = partitions;
         }
 
-        /// <summary>
-        /// <see cref="IDevice.Close"/>
-        /// </summary>
-        public override void Close()
+        /// <inheritdoc />
+        public override void Dispose()
         {
             foreach (IDevice device in partitions.Devices)
             {
-                device.Close();
+                device.Dispose();
             }
         }
 

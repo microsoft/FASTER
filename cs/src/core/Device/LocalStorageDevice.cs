@@ -286,7 +286,7 @@ namespace FASTER.core
         /// <summary>
         /// Close device
         /// </summary>
-        public override void Close()
+        public override void Dispose()
         {
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();

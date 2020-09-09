@@ -266,7 +266,7 @@ namespace FASTER.core
         /// <summary>
         /// 
         /// </summary>
-        public abstract void Close();
+        public abstract void Dispose();
 
         /// <summary>
         /// Handle space utilization of limited capacity devices by invoking segment truncation if necessary
