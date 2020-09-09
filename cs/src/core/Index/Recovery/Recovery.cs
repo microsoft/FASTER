@@ -49,7 +49,7 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
 
-        private void InternalRecoverFromLatestCheckpoints()
+        private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload)
         {
             Debug.WriteLine("********* Primary Recovery Information ********");
 
@@ -107,7 +107,7 @@ namespace FASTER.core
             recoveredICInfo.info.DebugPrint();
 
 
-            InternalRecover(recoveredICInfo, recoveredHLCInfo);
+            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload);
         }
 
         private bool IsCompatible(in IndexRecoveryInfo indexInfo, in HybridLogRecoveryInfo recoveryInfo)
@@ -117,7 +117,7 @@ namespace FASTER.core
             return l1 <= l2;
         }
 
-        private void InternalRecover(Guid indexToken, Guid hybridLogToken)
+        private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload)
         {
             Debug.WriteLine("********* Primary Recovery Information ********");
             Debug.WriteLine("Index Checkpoint: {0}", indexToken);
@@ -139,10 +139,10 @@ namespace FASTER.core
                 throw new FasterException("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
             }
 
-            InternalRecover(recoveredICInfo, recoveredHLCInfo);
+            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload);
         }
 
-        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo)
+        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload)
         {
             // Ensure active state machine to null
             currentSyncStateMachine = null;
@@ -174,7 +174,7 @@ namespace FASTER.core
 
 
             // Read appropriate hybrid log pages into memory
-            hlog.RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress, recoveredHLCInfo.info.beginAddress);
+            hlog.RestoreHybridLog(recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.headAddress, recoveredHLCInfo.info.beginAddress, numPagesToPreload);
 
             // Recover session information
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
@@ -472,8 +472,15 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         /// <param name="headAddress"></param>
         /// <param name="beginAddress"></param>
-        public void RestoreHybridLog(long untilAddress, long headAddress, long beginAddress)
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        public void RestoreHybridLog(long untilAddress, long headAddress, long beginAddress, int numPagesToPreload = -1)
         {
+            if (numPagesToPreload != -1)
+            {
+                var head = (GetPage(untilAddress) - numPagesToPreload) << LogPageSizeBits;
+                if (head > headAddress)
+                    headAddress = head;
+            }
             Debug.Assert(beginAddress <= headAddress);
             Debug.Assert(headAddress <= untilAddress);
 

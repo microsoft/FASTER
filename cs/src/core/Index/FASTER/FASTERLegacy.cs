@@ -297,13 +297,13 @@ namespace FASTER.core
         public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType) => _fasterKV.TakeHybridLogCheckpoint(out token, checkpointType);
 
         /// <inheritdoc />
-        public void Recover() => _fasterKV.Recover();
+        public void Recover(int numPagesToPreload = -1) => _fasterKV.Recover(numPagesToPreload);
 
         /// <inheritdoc />
-        public void Recover(Guid fullcheckpointToken) => _fasterKV.Recover(fullcheckpointToken);
+        public void Recover(Guid fullcheckpointToken, int numPagesToPreload = -1) => _fasterKV.Recover(fullcheckpointToken, numPagesToPreload);
 
         /// <inheritdoc />
-        public void Recover(Guid indexToken, Guid hybridLogToken) => _fasterKV.Recover(indexToken, hybridLogToken);
+        public void Recover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1) => _fasterKV.Recover(indexToken, hybridLogToken, numPagesToPreload);
 
         /// <inheritdoc />
         public ValueTask CompleteCheckpointAsync(CancellationToken token = default) => _fasterKV.CompleteCheckpointAsync(token);
