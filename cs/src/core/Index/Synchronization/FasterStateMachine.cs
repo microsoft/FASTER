@@ -172,23 +172,23 @@ namespace FASTER.core
                 }
                 if ((ctx.version == targetStartState.version) && (ctx.phase < Phase.REST))
                 {
-                    // Ensure atomic switch took place. Would not have happened
-                    // for index-only checkpoints.
+                    CommitPoint commitPoint = default;
                     if (ctx.prevCtx.excludedSerialNos != null)
                     {
-                        // Issue CPR callback on old version (prevCtx)
-                        if (ctx.prevCtx.serialNum != -1)
+                        lock (ctx.prevCtx)
                         {
-                            var commitPoint = new CommitPoint
+                            if (ctx.prevCtx.serialNum != -1)
                             {
-                                UntilSerialNo = ctx.prevCtx.serialNum,
-                                ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                            };
-
-                            // Thread local action
-                            fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
-                            ctx.prevCtx.excludedSerialNos = null;
+                                commitPoint = new CommitPoint
+                                {
+                                    UntilSerialNo = ctx.prevCtx.serialNum,
+                                    ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
+                                };
+                                ctx.prevCtx.excludedSerialNos = null;
+                            }
                         }
+                        if (commitPoint.ExcludedSerialNos != null)
+                            fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
                     }
                 }
             }
