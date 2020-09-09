@@ -27,7 +27,6 @@
   
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DefineConstants>TRACE</DefineConstants>
-    <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
