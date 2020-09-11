@@ -54,7 +54,6 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' != 'net461'">
-    <PackageReference Include="Mono.Posix.NETStandard" Version="1.0.0" />
     <PackageReference Include="System.Interactive.Async" Version="4.1.1" />
   </ItemGroup>
 </Project>

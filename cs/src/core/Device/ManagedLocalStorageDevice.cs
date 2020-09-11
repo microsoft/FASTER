@@ -2,17 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading;
-
-#if DOTNETCORE
-using Mono.Unix.Native;
-#endif
 
 namespace FASTER.core
 {
@@ -333,13 +326,6 @@ namespace FASTER.core
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
                 FileAccess.Read, FileShare.ReadWrite, 512, fo);
 
-#if DOTNETCORE
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                Syscall.fcntl((int)logReadHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
-            }
-#endif
-
             return logReadHandle;
         }
 
@@ -355,13 +341,6 @@ namespace FASTER.core
             var logWriteHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
                 FileAccess.Write, FileShare.ReadWrite, 512, fo);
-
-#if DOTNETCORE
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                Syscall.fcntl((int)logWriteHandle.SafeFileHandle.DangerousGetHandle(), FcntlCommand.F_NOCACHE, 1);
-            }
-#endif
 
             if (preallocateFile && segmentSize != -1)
                 SetFileSize(logWriteHandle, segmentSize);
