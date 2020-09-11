@@ -98,14 +98,14 @@ namespace FASTER.core
                 }
 
                 Debug.WriteLine("Index Checkpoint: {0}", indexToken);
+                recoveredICInfo.info.DebugPrint();
                 break;
             }
 
             if (recoveredICInfo.IsDefault())
-                throw new FasterException("Unable to find valid index token");
-
-            recoveredICInfo.info.DebugPrint();
-
+            {
+                Debug.WriteLine("No index checkpoint found, recovering from beginning of log");
+            }
 
             InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload);
         }
@@ -125,18 +125,33 @@ namespace FASTER.core
 
 
             // Recovery appropriate context information
-            var recoveredICInfo = new IndexCheckpointInfo();
-            recoveredICInfo.Recover(indexToken, checkpointManager);
-            recoveredICInfo.info.DebugPrint();
-
             var recoveredHLCInfo = new HybridLogCheckpointInfo();
             recoveredHLCInfo.Recover(hybridLogToken, checkpointManager);
             recoveredHLCInfo.info.DebugPrint();
 
-            // Check if the two checkpoints are compatible for recovery
-            if (!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
+            IndexCheckpointInfo recoveredICInfo;
+            try
             {
-                throw new FasterException("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
+                recoveredICInfo = new IndexCheckpointInfo();
+                recoveredICInfo.Recover(indexToken, checkpointManager);
+                recoveredICInfo.info.DebugPrint();
+            }
+            catch
+            {
+                recoveredICInfo = default;
+            }
+
+            if (recoveredICInfo.IsDefault())
+            {
+                Debug.WriteLine("Invalid index checkpoint token, recovering from beginning of log");
+            }
+            else
+            {
+                // Check if the two checkpoints are compatible for recovery
+                if (!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
+                {
+                    throw new FasterException("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
+                }
             }
 
             InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload);
@@ -153,7 +168,11 @@ namespace FASTER.core
             systemState.version = (v + 1);
 
             // Recover fuzzy index from checkpoint
-            RecoverFuzzyIndex(recoveredICInfo);
+            if (recoveredICInfo.IsDefault())
+                recoveredICInfo.info.startLogicalAddress = recoveredHLCInfo.info.beginAddress;
+            else
+                RecoverFuzzyIndex(recoveredICInfo);
+
 
             // Recover segment offsets for object log
             if (recoveredHLCInfo.info.objectLogSegmentOffsets != null)
