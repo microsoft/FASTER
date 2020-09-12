@@ -26,9 +26,6 @@ namespace FASTER.core
         /// <returns>Device instance</returns>
         public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false)
         {
-            if (string.IsNullOrWhiteSpace(logPath))
-                return new NullDevice();
-
             IDevice logDevice;
 
 #if DOTNETCORE

@@ -253,7 +253,7 @@ namespace FASTER.core
             var originalUntilAddress = untilAddress;
 
             using (var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions))
-            using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
+            using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
             using (var tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions))
             {
                 using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))

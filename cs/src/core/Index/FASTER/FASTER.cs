@@ -144,6 +144,7 @@ namespace FASTER.core
                         readcache = new VariableLengthBlittableAllocator<Key, Value>(
                             new LogSettings
                             {
+                                LogDevice = new NullDevice(),
                                 PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                                 MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                                 SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
@@ -162,6 +163,7 @@ namespace FASTER.core
                         readcache = new BlittableAllocator<Key, Value>(
                             new LogSettings
                             {
+                                LogDevice = new NullDevice(),
                                 PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                                 MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                                 SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
@@ -183,6 +185,8 @@ namespace FASTER.core
                     readcache = new GenericAllocator<Key, Value>(
                         new LogSettings
                         {
+                            LogDevice = new NullDevice(),
+                            ObjectLogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
