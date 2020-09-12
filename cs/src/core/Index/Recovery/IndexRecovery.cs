@@ -27,7 +27,9 @@ namespace FASTER.core
         {
             var token = info.info.token;
             var ht_version = resizeInfo.version;
-            Debug.Assert(state[ht_version].size == info.info.table_size);
+
+            if (state[ht_version].size != info.info.table_size)
+                throw new FasterException($"Incompatible hash table size during recovery; allocated {state[ht_version].size} buckets, recovering {info.info.table_size} buckets");
 
             // Create devices to read from using Async API
             info.main_ht_device = checkpointManager.GetIndexDevice(token);
