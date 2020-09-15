@@ -1118,6 +1118,7 @@ namespace FASTER.core
         /// <param name="tailAddress"></param>
         /// <param name="headAddress"></param>
         /// <param name="beginAddress"></param>
+        /// <param name="readonlyAddress"></param>
         public void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
         {
             long tailPage = GetPage(tailAddress);
