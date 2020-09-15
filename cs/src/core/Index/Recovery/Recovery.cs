@@ -230,7 +230,7 @@ namespace FASTER.core
                 if (headAddress < recoveredHLCInfo.info.headAddress)
                     headAddress = recoveredHLCInfo.info.headAddress;
             }
-
+            
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
@@ -239,10 +239,13 @@ namespace FASTER.core
             }
             else
             {
+                if (recoveredHLCInfo.info.flushedLogicalAddress < headAddress)
+                    headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
+
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
                 RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version);
                 // Then recover snapshot into mutable region
-                RecoverHybridLogFromSnapshotFile(fromAddress, recoveredHLCInfo.info);
+                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid);
                 hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, recoveredHLCInfo.info.flushedLogicalAddress);
             }
 
@@ -336,13 +339,10 @@ namespace FASTER.core
             }
         }
 
-        private void RecoverHybridLogFromSnapshotFile(long fromAddress, HybridLogRecoveryInfo recoveryInfo)
+        private void RecoverHybridLogFromSnapshotFile(long fromAddress, long untilAddress, int version, Guid guid)
         {
-            var fileStartAddress = recoveryInfo.flushedLogicalAddress;
-            var untilAddress = recoveryInfo.finalLogicalAddress;
-            
             // Compute startPage and endPage
-            var startPage = hlog.GetPage(fileStartAddress);
+            var startPage = hlog.GetPage(fromAddress);
             var endPage = hlog.GetPage(untilAddress);
             if (untilAddress > hlog.GetStartLogicalAddress(endPage))
             {
@@ -351,8 +351,8 @@ namespace FASTER.core
 
             // By default first page has one extra record
             var capacity = hlog.GetCapacityNumPages();
-            var recoveryDevice = checkpointManager.GetSnapshotLogDevice(recoveryInfo.guid);
-            var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(recoveryInfo.guid);
+            var recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid);
+            var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(guid);
             recoveryDevice.Initialize(hlog.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(-1);
             var recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress, CheckpointType.Snapshot)
@@ -413,16 +413,21 @@ namespace FASTER.core
 
                     var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                     RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                    startLogicalAddress, physicalAddress, recoveryInfo.version);
+                                    startLogicalAddress, physicalAddress, version);
 
                 }
 
-                // OS thread flushes current page and issues a read request if necessary
-                recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
+                recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
 
-                // Write back records from snapshot to main hybrid log
-                hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
+                // Issue next read
+                if (page + capacity < endPage)
+                {
+                    recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
+                    hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
+                                                        recoveryStatus,
+                                                        recoveryStatus.recoveryDevicePageOffset,
+                                                        recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
+                }
             }
 
             // Assert and wait until all pages have been flushed
