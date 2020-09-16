@@ -99,12 +99,9 @@ namespace FasterLogPubSub
         static async Task SeparateConsumerAsync(CancellationToken cancellationToken)
         {
             var device = Devices.CreateLogDevice(path + "mylog");
-
-            // MemorySizeBits = 0 indicates 
             var log = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
-            var recover = RecoverAsync(log, cancellationToken);
+            var _ = RecoverAsync(log, cancellationToken);
 
-            // Required to use SingleBuffering for tailing
             using var iter = log.Scan(log.BeginAddress, long.MaxValue);
 
             await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
