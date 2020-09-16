@@ -172,7 +172,7 @@ namespace FASTER.core
 
             long fromAddress;
 
-            if (!recoveredICInfo.IsDefault() && hlog.FlushedUntilAddress != hlog.GetFirstValidLogicalAddress(0))
+            if (!recoveredICInfo.IsDefault() && mainIndexRecoveryEvent != null)
             {
                 Debug.WriteLine("Ignoring index checkpoint as we have already recovered index previously");
                 recoveredICInfo = default;
@@ -230,7 +230,10 @@ namespace FASTER.core
                 if (headAddress < recoveredHLCInfo.info.headAddress)
                     headAddress = recoveredHLCInfo.info.headAddress;
             }
-            
+
+            if (hlog.FlushedUntilAddress > scanFromAddress)
+                scanFromAddress = hlog.FlushedUntilAddress;
+
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {

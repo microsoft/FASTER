@@ -69,7 +69,7 @@ namespace FASTER.core
         }
 
         //Main Index Recovery Functions
-        private CountdownEvent mainIndexRecoveryEvent;
+        protected CountdownEvent mainIndexRecoveryEvent;
 
         private void BeginMainIndexRecovery(
                                 int version,
