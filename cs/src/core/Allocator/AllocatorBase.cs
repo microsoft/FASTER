@@ -1118,7 +1118,8 @@ namespace FASTER.core
         /// <param name="tailAddress"></param>
         /// <param name="headAddress"></param>
         /// <param name="beginAddress"></param>
-        public void RecoveryReset(long tailAddress, long headAddress, long beginAddress)
+        /// <param name="readonlyAddress"></param>
+        public void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
         {
             long tailPage = GetPage(tailAddress);
             long offsetInPage = GetOffsetInPage(tailAddress);
@@ -1136,9 +1137,9 @@ namespace FASTER.core
             HeadAddress = headAddress;
             SafeHeadAddress = headAddress;
             ClosedUntilAddress = headAddress;
-            FlushedUntilAddress = tailAddress;
-            ReadOnlyAddress = tailAddress;
-            SafeReadOnlyAddress = tailAddress;
+            FlushedUntilAddress = readonlyAddress;
+            ReadOnlyAddress = readonlyAddress;
+            SafeReadOnlyAddress = readonlyAddress;
 
             // for the last page which contains tailoffset, it must be open
             pageIndex = GetPageIndexForAddress(tailAddress);

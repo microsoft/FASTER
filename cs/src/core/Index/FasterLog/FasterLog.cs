@@ -912,7 +912,7 @@ namespace FASTER.core
 
                     recoveredIterators = info.Iterators;
 
-                    allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
+                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
                     CommittedUntilAddress = info.FlushedUntilAddress;
                     CommittedBeginAddress = info.BeginAddress;
                     SafeTailAddress = info.FlushedUntilAddress;

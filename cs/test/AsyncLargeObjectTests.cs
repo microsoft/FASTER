@@ -21,7 +21,7 @@ namespace FASTER.test.async
         private FasterKV<MyKey, MyLargeValue> fht2;
         private IDevice log, objlog;
         private string test_path;
-        private MyLargeFunctions functions = new MyLargeFunctions();
+        private readonly MyLargeFunctions functions = new MyLargeFunctions();
 
         [SetUp]
         public void Setup()

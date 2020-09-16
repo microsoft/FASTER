@@ -20,7 +20,7 @@ namespace FASTER.test.async
     {
         private FasterKV<AdId, NumClicks> fht1;
         private FasterKV<AdId, NumClicks> fht2;
-        private SimpleFunctions functions = new SimpleFunctions();
+        private readonly SimpleFunctions functions = new SimpleFunctions();
         private IDevice log;
 
 
