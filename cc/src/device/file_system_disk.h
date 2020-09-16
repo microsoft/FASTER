@@ -87,6 +87,38 @@ class FileSystemFile {
   environment::FileOptions file_options_;
 };
 
+// Similar to std::lock_guard, but allows manual early unlock
+//
+class ReleasableLockGuard
+{
+public:
+    ReleasableLockGuard(std::mutex* mutex)
+    {
+        m_mutex = mutex;
+        m_mutex->lock();
+        m_released = false;
+    }
+
+    ~ReleasableLockGuard()
+    {
+        if (!m_released)
+        {
+            m_mutex->unlock();
+        }
+    }
+
+    void Unlock()
+    {
+        assert(!m_released);
+        m_mutex->unlock();
+        m_released = true;
+    }
+
+private:
+    std::mutex* m_mutex;
+    bool m_released;
+};
+ 
 /// Manages a bundle of segment files.
 template <class H>
 class FileSystemSegmentBundle {
@@ -310,7 +342,7 @@ class FileSystemSegmentedFile {
     };
 
     // Only one thread can modify the list of files at a given time.
-    std::lock_guard<std::mutex> lock{ mutex_ };
+    ReleasableLockGuard lock{ &mutex_ };
     bundle_t* files = files_.load();
 
     if(segment < begin_segment_) {
@@ -343,6 +375,11 @@ class FileSystemSegmentedFile {
     core::IAsyncContext* context_copy;
     core::Status result = context.DeepCopy(context_copy);
     assert(result == core::Status::Ok);
+    // unlock the lock before calling BumpCurrentEpoch(),
+    // which may call completion callbacks which call this function again,
+    // resulting in self-deadlock.
+    //
+    lock.Unlock();
     epoch_->BumpCurrentEpoch(callback, context_copy);
     return core::Status::Ok;
   }
@@ -386,7 +423,7 @@ class FileSystemSegmentedFile {
     };
 
     // Only one thread can modify the list of files at a given time.
-    std::lock_guard<std::mutex> lock{ mutex_ };
+    ReleasableLockGuard lock{ &mutex_ };
     bundle_t* files = files_.load();
     assert(files);
     if(files->begin_segment >= new_begin_segment) {
@@ -407,6 +444,11 @@ class FileSystemSegmentedFile {
     core::IAsyncContext* context_copy;
     core::Status result = context.DeepCopy(context_copy);
     assert(result == core::Status::Ok);
+    // unlock the lock before calling BumpCurrentEpoch(),
+    // which may call completion callbacks which call this function again,
+    // resulting in self-deadlock.
+    //
+    lock.Unlock();
     epoch_->BumpCurrentEpoch(callback, context_copy);
   }
 
