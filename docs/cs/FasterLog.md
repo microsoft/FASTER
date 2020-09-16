@@ -17,7 +17,7 @@ Underlying FasterLog is a global 64-bit logical log address space starting from 
 segments corresponding to files on disk. Each segment consists of a fixed number of pages. Both segment
 and pages sizes are configurable during construction of FasterLog. By default, 
 FasterLog commits at page boundaries. You can also force-commit the log as frequently as you need, e.g., every 
-5ms. The typical use cases of FasterLog are captured in our extremely detailed commented sample [here](https://github.com/microsoft/FASTER/blob/master/cs/playground/FasterLogSample/Program.cs). FasterLog
+5ms. The typical use cases of FasterLog are captured in our extremely detailed commented sample [here](https://github.com/microsoft/FASTER/blob/master/cs/samples/FasterLogSample/Program.cs). FasterLog
 works with .NET Standard 2.0, and can be used on a broad range of machines and devices. We have tested
 it on both Windows and Linux-based machines.
 
