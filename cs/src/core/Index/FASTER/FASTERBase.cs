@@ -306,7 +306,7 @@ namespace FASTER.core
             }
 
             minTableSize = size;
-            resizeInfo = default(ResizeInfo);
+            resizeInfo = default;
             resizeInfo.status = ResizeOperationStatus.DONE;
             resizeInfo.version = 0;
             Initialize(resizeInfo.version, size, sector_size);
@@ -382,7 +382,7 @@ namespace FASTER.core
 
                 if (target_entry_word == 0)
                 {
-                    entry = default(HashBucketEntry);
+                    entry = default;
                     return false;
                 }
                 bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
@@ -405,7 +405,7 @@ namespace FASTER.core
 
 
                 // Install tentative tag in free slot
-                entry = default(HashBucketEntry);
+                entry = default;
                 entry.Tag = tag;
                 entry.Address = Constants.kTempInvalidAddress;
                 entry.Pending = false;
@@ -448,7 +448,7 @@ namespace FASTER.core
                         continue;
                     }
 
-                    HashBucketEntry entry = default(HashBucketEntry);
+                    HashBucketEntry entry = default;
                     entry.word = target_entry_word;
                     if (tag == entry.Tag)
                     {
@@ -488,7 +488,7 @@ namespace FASTER.core
                         continue;
                     }
 
-                    HashBucketEntry entry = default(HashBucketEntry);
+                    HashBucketEntry entry = default;
                     entry.word = target_entry_word;
                     if (tag == entry.Tag)
                     {
@@ -596,7 +596,7 @@ namespace FASTER.core
                             // Install succeeded
                             bucket = physicalBucketAddress;
                             slot = 0;
-                            entry = default(HashBucketEntry);
+                            entry = default;
                             return recordExists;
                         }
                     }
@@ -606,7 +606,7 @@ namespace FASTER.core
                         {
                             bucket = entry_slot_bucket;
                         }
-                        entry = default(HashBucketEntry);
+                        entry = default;
                         break;
                     }
                 }
@@ -647,7 +647,7 @@ namespace FASTER.core
                         continue;
                     }
 
-                    HashBucketEntry entry = default(HashBucketEntry);
+                    HashBucketEntry entry = default;
                     entry.word = target_entry_word;
                     if (tag == entry.Tag)
                     {
@@ -723,7 +723,7 @@ namespace FASTER.core
         /// 
         /// </summary>
         /// <param name="version"></param>
-        protected virtual string _DumpDistribution(int version)
+        protected virtual string DumpDistributionInternal(int version)
         {
             var table_size_ = state[version].size;
             var ptable_ = state[version].tableAligned;
@@ -776,7 +776,7 @@ namespace FASTER.core
         /// </summary>
         public string DumpDistribution()
         {
-            return _DumpDistribution(resizeInfo.version);
+            return DumpDistributionInternal(resizeInfo.version);
         }
 
     }

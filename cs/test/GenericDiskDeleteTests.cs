@@ -71,11 +71,7 @@ namespace FASTER.test
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var input = new MyInput();
-                var output = new MyOutput();
                 var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
                 session.Delete(ref key1, 0, 0);
             }
 
@@ -84,7 +80,6 @@ namespace FASTER.test
                 var input = new MyInput();
                 var output = new MyOutput();
                 var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 1, 0);
                 

@@ -68,7 +68,9 @@ namespace FASTER.core
             return completed1 && completed2;
         }
 
-        //Main Index Recovery Functions
+        /// <summary>
+        /// Main Index Recovery Functions
+        /// </summary>
         protected CountdownEvent mainIndexRecoveryEvent;
 
         private void BeginMainIndexRecovery(
@@ -93,7 +95,7 @@ namespace FASTER.core
             for (int index = 0; index < numChunks; index++)
             {
                 long chunkStartBucket = (long)start + (index * chunkSize);
-                HashIndexPageAsyncReadResult result = default(HashIndexPageAsyncReadResult);
+                HashIndexPageAsyncReadResult result = default;
                 result.chunkIndex = index;
                 device.ReadAsync(numBytesRead, (IntPtr)chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
                 numBytesRead += chunkSize;
@@ -124,7 +126,7 @@ namespace FASTER.core
 
         internal void DeleteTentativeEntries()
         {
-            HashBucketEntry entry = default(HashBucketEntry);
+            HashBucketEntry entry = default;
 
             int version = resizeInfo.version;
             var table_size_ = state[version].size;
