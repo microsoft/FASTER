@@ -257,9 +257,6 @@ namespace FASTER.core
         // Used as an atomic counter to check if resizing is complete
         internal long numPendingChunksToBeSplit;
 
-        // Epoch set for resizing
-        internal int resizeEpoch;
-
         internal LightEpoch epoch;
 
         internal ResizeInfo resizeInfo;
