@@ -12,10 +12,12 @@ namespace FasterLogPubSub
 {
     class Program
     {
+        const int commitPeriodMs = 5000;
+        const int restorePeriodMs = 1000;
+        static string path = Path.GetTempPath() + "FasterLogPubSub\\";
+
         static async Task Main()
         {
-            var path = Path.GetTempPath() + "FasterLogPubSub\\";
-
             var device = Devices.CreateLogDevice(path + "mylog");
 
             var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
@@ -23,9 +25,14 @@ namespace FasterLogPubSub
             using var cts = new CancellationTokenSource();
 
             var producer = ProducerAsync(log, cts.Token);
-            var commiter = CommiterAsync(log, cts.Token);
-            var consumer = ConsumerAsync(log, cts.Token);
+            var commiter = CommitterAsync(log, cts.Token);
 
+            // Consumer on SAME FasterLog instance
+            // var consumer = ConsumerAsync(log, true, cts.Token);
+
+            // Consumer on SEPARATE read-only FasterLog instance
+            var consumer = SeparateConsumerAsync(cts.Token);
+            
             Console.CancelKeyPress += (o, eventArgs) =>
             {
                 Console.WriteLine("Cancelling program...");
@@ -43,11 +50,11 @@ namespace FasterLogPubSub
             try { new DirectoryInfo(path).Delete(true); } catch { }
         }
 
-        static async Task CommiterAsync(FasterLog log, CancellationToken cancellationToken)
+        static async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(5000), cancellationToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
 
                 Console.WriteLine("Committing...");
 
@@ -60,7 +67,7 @@ namespace FasterLogPubSub
             var i = 0L;
             while (!cancellationToken.IsCancellationRequested)
             {
-                Console.WriteLine($"Producing {i}");
+                // Console.WriteLine($"Producing {i}");
 
                 log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
                 log.RefreshUncommitted();
@@ -71,9 +78,9 @@ namespace FasterLogPubSub
             }
         }
 
-        static async Task ConsumerAsync(FasterLog log, CancellationToken cancellationToken)
+        static async Task ConsumerAsync(FasterLog log, bool scanUncommitted, CancellationToken cancellationToken)
         {
-            using var iter = log.Scan(log.BeginAddress, long.MaxValue, "foo", true, ScanBufferingMode.DoublePageBuffering, scanUncommitted: true);
+            using var iter = log.Scan(log.BeginAddress, long.MaxValue, "foo", true, ScanBufferingMode.DoublePageBuffering, scanUncommitted);
 
             int count = 0;
             await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
@@ -86,6 +93,36 @@ namespace FasterLogPubSub
                 // This will cause transient log spill to disk (observe folder on storage)
                 if (count++ > 1000 && count < 1200)
                     Thread.Sleep(100);
+            }
+        }
+
+        static async Task SeparateConsumerAsync(CancellationToken cancellationToken)
+        {
+            var device = Devices.CreateLogDevice(path + "mylog");
+
+            // MemorySizeBits = 0 indicates 
+            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 0, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
+            var recover = RecoverAsync(log, cancellationToken);
+
+            // Required to use SingleBuffering for tailing
+            using var iter = log.Scan(log.BeginAddress, long.MaxValue, null, true, ScanBufferingMode.SinglePageBuffering);
+
+            await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+            {
+                Console.WriteLine($"Consuming {Encoding.UTF8.GetString(result)}");
+                iter.CompleteUntil(nextAddress);
+            }
+        }
+
+        static async Task RecoverAsync(FasterLog log, CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
+
+                Console.WriteLine("Restoring ...");
+
+                log.RecoverReadOnly();
             }
         }
 

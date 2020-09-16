@@ -80,7 +80,7 @@ namespace FASTER.core
         /// <summary>
         /// Table of persisted iterators
         /// </summary>
-        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators 
+        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators
             = new ConcurrentDictionary<string, FasterLogScanIterator>();
 
         /// <summary>
@@ -128,6 +128,13 @@ namespace FASTER.core
                 logSettings.GetLogSettings(), null,
                 null, epoch, CommitCallback);
             allocator.Initialize();
+
+            // FasterLog is used as a read-only iterator
+            if (logSettings.MemorySizeBits == 0)
+            {
+                allocator.HeadAddress = int.MaxValue;
+            }
+
             Restore(out RecoveredIterators);
         }
 
@@ -882,6 +889,23 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Recover FasterLog's latest commit, when being used as a readonly iterator
+        /// </summary>
+        public void RecoverReadOnly()
+        {
+            Restore(out _);
+
+
+            // Update commit to release pending iterators
+            var lci = new LinkedCommitInfo
+            {
+                CommitInfo = new CommitInfo(),
+                NextTask = commitTcs.Task
+            };
+            commitTcs?.TrySetResult(lci);
+        }
+
+        /// <summary>
         /// Restore log
         /// </summary>
         private void Restore(out Dictionary<string, long> recoveredIterators)
@@ -912,8 +936,16 @@ namespace FASTER.core
 
                     recoveredIterators = info.Iterators;
 
-                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
-                    CommittedUntilAddress = info.FlushedUntilAddress;
+                    if (allocator.BufferSize > 0)
+                    {
+                        allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
+                        CommittedUntilAddress = info.FlushedUntilAddress;
+                    }
+                    else
+                    {
+                        // Limitation: we cannot read partially committed pages
+                        CommittedUntilAddress = info.FlushedUntilAddress & ~allocator.PageSizeMask;
+                    }   
                     CommittedBeginAddress = info.BeginAddress;
                     SafeTailAddress = info.FlushedUntilAddress;
 
