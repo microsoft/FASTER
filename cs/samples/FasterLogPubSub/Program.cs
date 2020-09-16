@@ -12,7 +12,7 @@ namespace FasterLogPubSub
 {
     class Program
     {
-        const int commitPeriodMs = 5000;
+        const int commitPeriodMs = 2000;
         const int restorePeriodMs = 1000;
         static string path = Path.GetTempPath() + "FasterLogPubSub\\";
 
@@ -101,11 +101,11 @@ namespace FasterLogPubSub
             var device = Devices.CreateLogDevice(path + "mylog");
 
             // MemorySizeBits = 0 indicates 
-            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 0, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
+            var log = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
             var recover = RecoverAsync(log, cancellationToken);
 
             // Required to use SingleBuffering for tailing
-            using var iter = log.Scan(log.BeginAddress, long.MaxValue, null, true, ScanBufferingMode.SinglePageBuffering);
+            using var iter = log.Scan(log.BeginAddress, long.MaxValue);
 
             await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
             {
