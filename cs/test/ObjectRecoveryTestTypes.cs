@@ -32,8 +32,9 @@ namespace FASTER.test.recovery.objectstore
 
     public class AdIdSerializer : BinaryObjectSerializer<AdId>
     {
-        public override void Deserialize(ref AdId obj)
+        public override void Deserialize(out AdId obj)
         {
+            obj = new AdId();
             obj.adId = reader.ReadInt64();
         }
 
@@ -57,8 +58,9 @@ namespace FASTER.test.recovery.objectstore
 
     public class NumClicksSerializer : BinaryObjectSerializer<NumClicks>
     {
-        public override void Deserialize(ref NumClicks obj)
+        public override void Deserialize(out NumClicks obj)
         {
+            obj = new NumClicks();
             obj.numClicks = reader.ReadInt64();
         }
 

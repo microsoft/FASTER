@@ -7,8 +7,6 @@ using System;
 namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
 
         /// <summary>
@@ -75,8 +73,6 @@ namespace FASTER.core
 
 
     internal sealed class FasterKVIterator<Key, Value, Functions, CompactionFunctions> : IFasterScanIterator<Key, Value>
-        where Key : new()
-        where Value : new()
         where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
         where CompactionFunctions : ICompactionFunctions<Key, Value>
     {
@@ -96,7 +92,7 @@ namespace FASTER.core
             this.cf = cf;
             enumerationPhase = 0;
             fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
-            tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { MutableFraction = 1 }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
+            tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
             tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions);
             iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
         }

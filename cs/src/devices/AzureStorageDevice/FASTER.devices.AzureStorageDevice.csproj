@@ -27,7 +27,6 @@
   
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DefineConstants>TRACE</DefineConstants>
-    <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
@@ -37,7 +36,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Azure.Storage.Blob" Version="11.2.0" />
+    <PackageReference Include="Microsoft.Azure.Storage.Blob" Version="11.2.2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\FASTER.core.csproj" />

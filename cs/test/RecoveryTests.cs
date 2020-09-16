@@ -19,7 +19,7 @@ namespace FASTER.test.recovery.sumstore
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
 
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fht;
+        private FasterKV<AdId, NumClicks> fht;
         private string test_path;
         private List<Guid> logTokens, indexTokens;
         private IDevice log;
@@ -36,8 +36,8 @@ namespace FASTER.test.recovery.sumstore
 
             log = Devices.CreateLogDevice(test_path + "\\FullRecoveryTests.log");
 
-            fht = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>
-            (keySpace, new Functions(),
+            fht = new FasterKV<AdId, NumClicks>
+            (keySpace,
                 new LogSettings {LogDevice = log},
                 new CheckpointSettings {CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot}
             );
@@ -48,7 +48,7 @@ namespace FASTER.test.recovery.sumstore
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
             DeleteDirectory(test_path);
         }
 
@@ -83,7 +83,7 @@ namespace FASTER.test.recovery.sumstore
                 if (i >= indexTokens.Count) break;
                 fht.Dispose();
                 fht = null;
-                log.Close();
+                log.Dispose();
                 Setup();
                 RecoverAndTest(logTokens[i], indexTokens[i]);
             }
@@ -98,7 +98,7 @@ namespace FASTER.test.recovery.sumstore
             {
                 fht.Dispose();
                 fht = null;
-                log.Close();
+                log.Dispose();
                 Setup();
                 RecoverAndTest(token, token);
             }
@@ -160,7 +160,7 @@ namespace FASTER.test.recovery.sumstore
             }
 
             // Register thread with FASTER
-            using var session = fht.NewSession();
+            using var session = fht.NewSession(new Functions());
 
             // Process the batch of input data
             for (int i = 0; i < numOps; i++)
@@ -196,7 +196,7 @@ namespace FASTER.test.recovery.sumstore
             }
 
             // Register with thread
-            var session = fht.NewSession();
+            var session = fht.NewSession(new Functions());
 
             AdInput input = default;
             Output output = default;

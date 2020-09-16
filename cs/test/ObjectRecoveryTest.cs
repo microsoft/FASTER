@@ -24,7 +24,7 @@ namespace FASTER.test.recovery.objectstore
         const long numOps = (1L << 19);
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
-        private FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+        private FasterKV<AdId, NumClicks> fht;
         private string test_path;
         private Guid token;
         private IDevice log, objlog;
@@ -42,9 +42,9 @@ namespace FASTER.test.recovery.objectstore
             log = Devices.CreateLogDevice(test_path + "\\ObjectRecoveryTests.log", false);
             objlog = Devices.CreateLogDevice(test_path + "\\ObjectRecoveryTests.obj.log", false);
 
-            fht = new FasterKV<AdId, NumClicks, Input, Output, Empty, Functions>
+            fht = new FasterKV<AdId, NumClicks>
                 (
-                    keySpace, new Functions(),
+                    keySpace,
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
                     new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot },
                     new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
@@ -56,8 +56,8 @@ namespace FASTER.test.recovery.objectstore
         {
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
             DeleteDirectory(test_path);
         }
 
@@ -88,8 +88,8 @@ namespace FASTER.test.recovery.objectstore
             Populate();
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
             Setup();
             RecoverAndTest(token, token);
         }
@@ -108,7 +108,7 @@ namespace FASTER.test.recovery.objectstore
             }
 
             // Register thread with FASTER
-            var session = fht.NewSession();
+            var session = fht.NewSession(new Functions());
 
             // Prpcess the batch of input data
             bool first = true;
@@ -163,7 +163,7 @@ namespace FASTER.test.recovery.objectstore
             }
 
             // Register with thread
-            var session = fht.NewSession();
+            var session = fht.NewSession(new Functions());
 
             Input input = default;
             // Issue read requests

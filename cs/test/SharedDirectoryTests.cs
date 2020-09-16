@@ -94,7 +94,7 @@ namespace FASTER.test.recovery.sumstore
         {
             public string CheckpointDirectory { get; private set; }
             public string LogDirectory { get; private set; }
-            public FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> Faster { get; private set; }
+            public FasterKV<AdId, NumClicks> Faster { get; private set; }
             public IDevice LogDevice { get; private set; }
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
@@ -123,9 +123,8 @@ namespace FASTER.test.recovery.sumstore
                 }
 
                 this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
-                this.Faster = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>(
+                this.Faster = new FasterKV<AdId, NumClicks>(
                     keySpace,
-                    new Functions(),
                     new LogSettings { LogDevice = this.LogDevice },
                     new CheckpointSettings { CheckpointDir = this.CheckpointDirectory, CheckPointType = CheckpointType.FoldOver });
             }
@@ -134,14 +133,14 @@ namespace FASTER.test.recovery.sumstore
             {
                 this.Faster?.Dispose();
                 this.Faster = null;
-                this.LogDevice?.Close();
+                this.LogDevice?.Dispose();
                 this.LogDevice = null;
             }
         }
 
-        private void Populate(FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fasterInstance)
+        private void Populate(FasterKV<AdId, NumClicks> fasterInstance)
         {
-            using var session = fasterInstance.NewSession();
+            using var session = fasterInstance.NewSession(new Functions());
 
             // Prepare the dataset
             var inputArray = new AdInput[numOps];
@@ -186,7 +185,7 @@ namespace FASTER.test.recovery.sumstore
             var input = default(AdInput);
             var output = default(Output);
 
-            using var session = fasterInstance.Faster.NewSession();
+            using var session = fasterInstance.Faster.NewSession(new Functions());
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {

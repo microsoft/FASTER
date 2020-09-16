@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class GenericLogCompactionTests
     {
-        private FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> fht;
+        private FasterKV<MyKey, MyValue> fht;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
 
@@ -27,13 +27,13 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericLogCompactionTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericLogCompactionTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete>
-                (128, new MyFunctionsDelete(),
+            fht = new FasterKV<MyKey, MyValue>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            session = fht.NewSession();
+            session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
         [TearDown]
@@ -42,8 +42,8 @@ namespace FASTER.test
             session.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
         [Test]
@@ -64,7 +64,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -116,7 +116,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var tail = fht.Log.TailAddress;
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
             Assert.IsTrue(fht.Log.TailAddress == tail);
 
@@ -163,7 +163,7 @@ namespace FASTER.test
                 }
             }
 
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -211,7 +211,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil);
+            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -248,7 +248,7 @@ namespace FASTER.test
         {
             // This test checks if CopyInPlace returning false triggers call to Copy
 
-            using var session = fht.NewSession();
+            using var session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
 
             var key = new MyKey { key = 100 };
             var value = new MyValue { value = 20 };
@@ -263,7 +263,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var compactionFunctions = new Test2CompactionFunctions();
-            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress);
+            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress, true);
 
             Assert.IsTrue(compactionFunctions.CopyCalled);
 

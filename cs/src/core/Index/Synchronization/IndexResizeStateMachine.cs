@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
@@ -12,8 +13,6 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
             switch (next.phase)
             {
@@ -44,8 +43,6 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
             FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new()
         {
             switch (next.phase)
             {
@@ -62,16 +59,14 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession : IFasterSession
         {
             switch (current.phase)
@@ -79,7 +74,7 @@ namespace FASTER.core
                 case Phase.PREPARE_GROW:
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:
-                    return default;
+                    return;
                 default:
                     throw new FasterException("Invalid Enum Argument");
             }

@@ -20,16 +20,16 @@ namespace FASTER.test
         [Test]
         public unsafe void VariableLengthTest1()
         {
-            FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions> fht;
+            FasterKV<Key, VLValue> fht;
             IDevice log;
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions>
-                (128, new VLFunctions(),
+            fht = new FasterKV<Key, VLValue>
+                (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = new VLValue() }
                 );
 
-            var s = fht.NewSession();
+            var s = fht.NewSession(new VLFunctions());
 
             Input input = default;
             Random r = new Random(100);
@@ -73,23 +73,23 @@ namespace FASTER.test
             s.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
         [Test]
         public unsafe void VariableLengthTest2()
         {
-            FasterKV<VLValue, VLValue, Input, int[], Empty, VLFunctions2> fht;
+            FasterKV<VLValue, VLValue> fht;
             IDevice log;
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<VLValue, VLValue, Input, int[], Empty, VLFunctions2>
-                (128, new VLFunctions2(),
+            fht = new FasterKV<VLValue, VLValue>
+                (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<VLValue, VLValue> { keyLength = new VLValue(), valueLength = new VLValue() }
                 );
 
 
-            var s = fht.NewSession();
+            var s = fht.NewSession(new VLFunctions2());
 
             Input input = default;
             Random r = new Random(100);
@@ -145,7 +145,7 @@ namespace FASTER.test
             s.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
         
     }

@@ -8,6 +8,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,6 +29,8 @@ namespace FASTER.core
         private readonly LogChecksumType logChecksum;
         private TaskCompletionSource<LinkedCommitInfo> commitTcs
             = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<Empty> refreshUncommittedTcs
+            = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>
         /// Beginning address of log
@@ -43,6 +46,11 @@ namespace FASTER.core
         /// Log flushed until address
         /// </summary>
         public long FlushedUntilAddress => allocator.FlushedUntilAddress;
+
+        /// <summary>
+        /// Log safe read-only address
+        /// </summary>
+        internal long SafeTailAddress;
 
         /// <summary>
         /// Dictionary of recovered iterators and their committed until addresses
@@ -63,6 +71,11 @@ namespace FASTER.core
         /// Task notifying commit completions
         /// </summary>
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
+
+        /// <summary>
+        /// Task notifying refresh uncommitted
+        /// </summary>
+        internal Task<Empty> RefreshUncommittedTask => refreshUncommittedTcs.Task;
 
         /// <summary>
         /// Table of persisted iterators
@@ -109,6 +122,7 @@ namespace FASTER.core
             epoch = new LightEpoch();
             CommittedUntilAddress = Constants.kFirstValidAddress;
             CommittedBeginAddress = Constants.kFirstValidAddress;
+            SafeTailAddress = Constants.kFirstValidAddress;
 
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null,
@@ -465,6 +479,34 @@ namespace FASTER.core
             return prevCommitTask;
         }
 
+        /// <summary>
+        /// Trigger a refresh of information about uncommitted part of log (tail address) to ensure visibility 
+        /// to uncommitted scan iterators. Will cause SafeTailAddress to reflect the current tail address.
+        /// </summary>
+        public void RefreshUncommitted(bool spinWait = false)
+        {
+            RefreshUncommittedInternal(spinWait);
+        }
+
+        /// <summary>
+        /// Trigger a refresh of information about uncommitted part of log (tail address) to ensure visibility 
+        /// to uncommitted scan iterators. Will cause SafeTailAddress to reflect the current tail address.
+        /// Async method completes only when we complete the refresh.
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask RefreshUncommittedAsync(CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            var task = RefreshUncommittedTask;
+            var tailAddress = RefreshUncommittedInternal();
+
+            while (SafeTailAddress < tailAddress)
+            {
+                await task.WithCancellationAsync(token);
+                task = RefreshUncommittedTask;
+            }
+        }
+
         #endregion
 
         #region EnqueueAndWaitForCommit
@@ -708,14 +750,15 @@ namespace FASTER.core
         /// <param name="name">Name of iterator, if we need to persist/recover it (default null - do not persist).</param>
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
+        /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <returns></returns>
-        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false)
         {
             FasterLogScanIterator iter;
             if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
-                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name);
+                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
             else
-                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name);
+                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
 
             if (name != null)
             {
@@ -796,7 +839,7 @@ namespace FASTER.core
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
                 CommittedBeginAddress = info.BeginAddress;
                 CommittedUntilAddress = info.FlushedUntilAddress;
-                
+
                 // Update completed address for persisted iterators
                 info.CommitIterators(PersistedIterators);
 
@@ -818,6 +861,24 @@ namespace FASTER.core
                 _commitTcs?.TrySetResult(lci);
             else
                 _commitTcs.TrySetException(new CommitFailureException(lci, $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}"));
+        }
+
+        /// <summary>
+        /// Read-only callback
+        /// </summary>
+        private void UpdateTailCallback(long tailAddress)
+        {
+            lock (this)
+            {
+                if (tailAddress > SafeTailAddress)
+                {
+                    SafeTailAddress = tailAddress;
+
+                    var _refreshUncommittedTcs = refreshUncommittedTcs;
+                    refreshUncommittedTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _refreshUncommittedTcs.SetResult(Empty.Default);
+                }
+            }
         }
 
         /// <summary>
@@ -854,6 +915,16 @@ namespace FASTER.core
                     allocator.RestoreHybridLog(info.FlushedUntilAddress, headAddress, info.BeginAddress);
                     CommittedUntilAddress = info.FlushedUntilAddress;
                     CommittedBeginAddress = info.BeginAddress;
+                    SafeTailAddress = info.FlushedUntilAddress;
+
+                    // Fix uncommitted addresses in iterators
+                    if (recoveredIterators != null)
+                    {
+                        List<string> keys = recoveredIterators.Keys.ToList();
+                        foreach (var key in keys)
+                            if (recoveredIterators[key] > SafeTailAddress)
+                                recoveredIterators[key] = SafeTailAddress;
+                    }
                     return;
                 }
                 catch { }
@@ -992,13 +1063,31 @@ namespace FASTER.core
                     CommitCallback(new CommitInfo
                     {
                         BeginAddress = beginAddress,
-                        FromAddress = CommittedUntilAddress,
-                        UntilAddress = CommittedUntilAddress,
+                        FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
+                        UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         ErrorCode = 0
                     });
             }
 
             return tailAddress;
+        }
+
+        private long RefreshUncommittedInternal(bool spinWait = false)
+        {
+            epoch.Resume();
+            var localTail = allocator.GetTailAddress();
+            if (SafeTailAddress < localTail)
+                epoch.BumpCurrentEpoch(() => UpdateTailCallback(localTail));
+            if (spinWait)
+            {
+                while (SafeTailAddress < localTail)
+                {
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
+                }
+            }
+            epoch.Suspend();
+            return localTail;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

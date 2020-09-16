@@ -18,8 +18,9 @@ namespace FASTER.test.async
     [TestFixture]
     public class RecoveryTests
     {
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht1;
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht2;
+        private FasterKV<AdId, NumClicks> fht1;
+        private FasterKV<AdId, NumClicks> fht2;
+        private SimpleFunctions functions = new SimpleFunctions();
         private IDevice log;
 
 
@@ -31,16 +32,14 @@ namespace FASTER.test.async
 
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
 
-            fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+            fht1 = new FasterKV<AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
 
-            fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+            fht2 = new FasterKV<AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
                 );
@@ -56,9 +55,9 @@ namespace FASTER.test.async
             AdInput inputArg = default;
             Output output = default;
 
-            var s0 = fht1.NewSession();
-            var s1 = fht1.NewSession();
-            var s2 = fht1.NewSession();
+            var s0 = fht1.For(functions).NewSession<SimpleFunctions>();
+            var s1 = fht1.For(functions).NewSession<SimpleFunctions>();
+            var s2 = fht1.For(functions).NewSession<SimpleFunctions>();
 
             for (int key = 0; key < numOps; key++)
             {
@@ -89,7 +88,7 @@ namespace FASTER.test.async
             fht2.Recover(token); // sync, does not require session
 
             var guid = s1.ID;
-            using (var s3 = fht2.ResumeSession(guid, out CommitPoint lsn))
+            using (var s3 = fht2.For(functions).ResumeSession<SimpleFunctions>(guid, out CommitPoint lsn))
             {
                 Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
 
@@ -107,7 +106,7 @@ namespace FASTER.test.async
             }
 
             fht2.Dispose();
-            log.Close();
+            log.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
     }

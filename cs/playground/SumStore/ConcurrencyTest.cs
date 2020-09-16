@@ -17,7 +17,7 @@ namespace SumStore
         const long completePendingInterval = (1 << 12);
         readonly int threadCount;
         int numActiveThreads;
-        readonly FasterKV<AdId, NumClicks, Input, Output, Empty, Functions> fht;
+        readonly FasterKV<AdId, NumClicks> fht;
         readonly BlockingCollection<Input[]> inputArrays;
         readonly long[] threadNumOps;
 
@@ -27,10 +27,8 @@ namespace SumStore
 
             // Create FASTER index
             var log = Devices.CreateLogDevice("logs\\hlog");
-            fht = new FasterKV
-                <AdId, NumClicks, Input, Output, Empty, Functions>
-                (keySpace, new Functions(), 
-                new LogSettings { LogDevice = log }, 
+            fht = new FasterKV<AdId, NumClicks>
+                (keySpace, new LogSettings { LogDevice = log }, 
                 new CheckpointSettings { CheckpointDir = "logs" });
             numActiveThreads = 0;
 
@@ -110,7 +108,7 @@ namespace SumStore
             }
 
             // Register thread with the store
-            var session = fht.NewSession();
+            var session = fht.NewSession(new Functions());
 
             Interlocked.Increment(ref numActiveThreads);
 
@@ -150,7 +148,7 @@ namespace SumStore
             }
 
             // Register with thread
-            var session = fht.NewSession();
+            var session = fht.NewSession(new Functions());
 
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)

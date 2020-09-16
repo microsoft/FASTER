@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class GenericIterationTests
     {
-        private FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> fht;
+        private FasterKV<MyKey, MyValue> fht;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
 
@@ -27,13 +27,13 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericIterationTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericIterationTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete>
-                (128, new MyFunctionsDelete(),
+            fht = new FasterKV<MyKey, MyValue>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            session = fht.NewSession();
+            session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
         [TearDown]
@@ -42,14 +42,14 @@ namespace FASTER.test
             session.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
         [Test]
         public void GenericIterationTest1()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;

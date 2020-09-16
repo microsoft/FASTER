@@ -39,8 +39,6 @@ namespace FASTER.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
-        where Key : new()
-        where Value : new()
     {
         /// <summary>
         /// Epoch information
@@ -209,6 +207,11 @@ namespace FASTER.core
         /// Flush callback
         /// </summary>
         protected readonly Action<CommitInfo> FlushCallback = null;
+
+        /// <summary>
+        /// Whether to preallocate log on initialization
+        /// </summary>
+        private readonly bool PreallocateLog = false;
 
         /// <summary>
         /// Error handling
@@ -481,12 +484,17 @@ namespace FASTER.core
         /// <param name="flushCallback"></param>
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
         {
+            if (settings.LogDevice == null)
+            {
+                throw new FasterException("LogSettings.LogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
+            }
             if (evictCallback != null)
             {
                 ReadCache = true;
                 EvictCallback = evictCallback;
             }
             FlushCallback = flushCallback;
+            PreallocateLog = settings.PreallocateLog;
 
             this.comparer = comparer;
             if (epoch == null)
@@ -563,6 +571,17 @@ namespace FASTER.core
             if ((!IsAllocated(nextPageIndex)))
             {
                 AllocatePage(nextPageIndex);
+            }
+
+            if (PreallocateLog)
+            {
+                for (int i = 0; i < BufferSize; i++)
+                {
+                    if ((!IsAllocated(i)))
+                    {
+                        AllocatePage(i);
+                    }
+                }
             }
 
             SafeReadOnlyAddress = firstValidAddress;
@@ -826,29 +845,31 @@ namespace FASTER.core
         public void ShiftBeginAddress(long newBeginAddress)
         {
             // First update the begin address
-            var b = Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress);
-            b = b && (oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits);
+            if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
+                return;
 
-            // Then the head address
+            var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
+
+            // Shift read-only address
+            epoch.Resume();
+            ShiftReadOnlyAddress(newBeginAddress);
+            epoch.Suspend();
+
+            // Wait for flush to complete
+            while (FlushedUntilAddress < newBeginAddress) ;
+
+            // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
 
-            // Finally the read-only address
-            var r = Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out old);
-
-            if (h || r || b)
+            if (h || b)
             {
                 epoch.Resume();
-                // Clean up until begin address
                 epoch.BumpCurrentEpoch(() =>
                 {
-                    if (r)
-                    {
-                        Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out long _old);
-                        Utility.MonotonicUpdate(ref FlushedUntilAddress, newBeginAddress, out _old);
-                    }
-                    if (h) OnPagesClosed(newBeginAddress);
-
-                    if (b) TruncateUntilAddress(newBeginAddress);
+                    if (h)
+                        OnPagesClosed(newBeginAddress);
+                    if (b)
+                        TruncateUntilAddress(newBeginAddress);
                 });
                 epoch.Suspend();
             }
@@ -1336,6 +1357,14 @@ namespace FASTER.core
 
                     if (fromAddress > pageStartAddress)
                         asyncResult.fromAddress = fromAddress;
+                }
+
+                if (asyncResult.untilAddress <= BeginAddress)
+                {
+                    // Short circuit as no flush needed
+                    Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, BeginAddress, out _);
+                    ShiftFlushedUntilAddress();
+                    continue;
                 }
 
                 // Partial page starting point, need to wait until the

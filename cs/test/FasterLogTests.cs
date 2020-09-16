@@ -21,37 +21,34 @@ namespace FASTER.test
         private FasterLog log;
         private IDevice device;
         private string commitPath;
+        private DeviceLogCommitCheckpointManager manager;
 
         [SetUp]
         public void Setup()
         {
-            commitPath = new DefaultCheckpointNamingScheme().FasterLogCommitBasePath();
-            if (commitPath == "")
-                throw new Exception("Write log commits to separate folder for testing");
-            commitPath = TestContext.CurrentContext.TestDirectory + "\\" + commitPath;
+            commitPath = TestContext.CurrentContext.TestDirectory + "\\" + TestContext.CurrentContext.Test.Name +  "\\";
 
             if (Directory.Exists(commitPath))
                 DeleteDirectory(commitPath);
-            if (File.Exists(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit"))
-                File.Delete(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit");
 
-            device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
+            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(commitPath));
         }
 
         [TearDown]
         public void TearDown()
         {
-            device.Close();
+            manager.Dispose();
+            device.Dispose();
+
             if (Directory.Exists(commitPath))
                 DeleteDirectory(commitPath);
-            if (File.Exists(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit"))
-                File.Delete(TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit");
         }
 
         [Test]
         public void FasterLogTest1([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -66,7 +63,7 @@ namespace FASTER.test
             using (var iter = log.Scan(0, long.MaxValue))
             {
                 int count = 0;
-                while (iter.GetNext(out byte[] result, out int length, out long currentAddress))
+                while (iter.GetNext(out byte[] result, out _, out _))
                 {
                     count++;
                     Assert.IsTrue(result.SequenceEqual(entry));
@@ -82,7 +79,7 @@ namespace FASTER.test
         [Test]
         public async Task FasterLogTest2([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[10000];
             for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
 
@@ -95,6 +92,15 @@ namespace FASTER.test
                     Assert.IsTrue(!waitingReader.IsCompleted);
 
                     while (!log.TryEnqueue(data1, out _)) ;
+
+                    // We might have auto-committed at page boundary
+                    // Ensure we don't find new entry in iterator
+                    while (waitingReader.IsCompleted)
+                    {
+                        var _next = iter.GetNext(out _, out _, out _);
+                        Assert.IsFalse(_next);
+                        waitingReader = iter.WaitAsync();
+                    }
                     Assert.IsFalse(waitingReader.IsCompleted);
 
                     await log.CommitAsync();
@@ -115,7 +121,7 @@ namespace FASTER.test
         [Test]
         public async Task FasterLogTest3([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[10000];
             for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
 
@@ -154,7 +160,7 @@ namespace FASTER.test
         [Test]
         public async Task FasterLogTest4([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[100];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
@@ -190,7 +196,7 @@ namespace FASTER.test
         [Test]
         public async Task FasterLogTest5([Values]LogChecksumType logChecksum)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
 
             int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
             bool _disposed = false;
@@ -220,94 +226,34 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task ResumePersistedReaderSpec([Values]LogChecksumType logChecksum)
+        public void FasterLogTest6([Values] LogChecksumType logChecksum)
         {
-            var input1 = new byte[] { 0, 1, 2, 3 };
-            var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
-            var input3 = new byte[] { 11, 12 };
-            string readerName = "abc";
-            string commitFilePath = TestContext.CurrentContext.TestDirectory + "\\fasterlog.log.commit";
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
+            byte[] data1 = new byte[1000];
+            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
-            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitFilePath }))
+            for (int i = 0; i < 100; i++)
             {
-                await l.EnqueueAsync(input1);
-                await l.EnqueueAsync(input2);
-                await l.EnqueueAsync(input3);
-                await l.CommitAsync();
-                long recoveryAddress;
-
-                using (var originalIterator = l.Scan(0, long.MaxValue, readerName))
-                {
-                    originalIterator.GetNext(out _, out _, out _, out recoveryAddress);
-                    originalIterator.CompleteUntil(recoveryAddress);
-                    originalIterator.GetNext(out _, out _, out _, out _);  // move the reader ahead
-                    await l.CommitAsync();
-                }
+                log.Enqueue(data1);
             }
+            log.RefreshUncommitted();
+            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
 
-            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitFilePath }))
+            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+
+            using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
             {
-                using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
+                while (iter.GetNext(out _, out _, out _))
                 {
-                    byte[] outBuf;
-                    recoveredIterator.GetNext(out outBuf, out _, out _, out _);
-                    Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
+                    log.TruncateUntil(iter.NextAddress);
                 }
+                Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                log.Enqueue(data1);
+                Assert.IsFalse(iter.GetNext(out _, out _, out _));
+                log.RefreshUncommitted();
+                Assert.IsTrue(iter.GetNext(out _, out _, out _));
             }
-        }
-
-        [Test]
-        public async Task ResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool overwriteLogCommits, [Values] bool removeOutdated)
-        {
-            var input1 = new byte[] { 0, 1, 2, 3 };
-            var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
-            var input3 = new byte[] { 11, 12 };
-            string readerName = "abc";
-
-            var commitPath = TestContext.CurrentContext.TestDirectory + "\\ResumePersistedReader2";
-
-            if (Directory.Exists(commitPath))
-                DeleteDirectory(commitPath);
-
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), overwriteLogCommits, removeOutdated))
-            {
-
-                long originalCompleted;
-
-                using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
-                {
-                    await l.EnqueueAsync(input1);
-                    await l.CommitAsync();
-                    await l.EnqueueAsync(input2);
-                    await l.CommitAsync();
-                    await l.EnqueueAsync(input3);
-                    await l.CommitAsync();
-                    long recoveryAddress;
-
-                    using (var originalIterator = l.Scan(0, long.MaxValue, readerName))
-                    {
-                        originalIterator.GetNext(out _, out _, out _, out recoveryAddress);
-                        originalIterator.CompleteUntil(recoveryAddress);
-                        originalIterator.GetNext(out _, out _, out _, out _);  // move the reader ahead
-                        await l.CommitAsync();
-                        originalCompleted = originalIterator.CompletedUntilAddress;
-                    }
-                }
-
-                using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
-                {
-                    using (var recoveredIterator = l.Scan(0, long.MaxValue, readerName))
-                    {
-                        recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _);
-
-                        // we should have read in input2, not input1 or input3
-                        Assert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");
-
-                        // TestContext.Progress.WriteLine($"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}"); 
-                    }
-                }
-            }
-            DeleteDirectory(commitPath);
+            log.Dispose();
         }
 
         private static void DeleteDirectory(string path)
@@ -323,11 +269,19 @@ namespace FASTER.test
             }
             catch (IOException)
             {
-                Directory.Delete(path, true);
+                try
+                {
+                    Directory.Delete(path, true);
+                }
+                catch { }
             }
             catch (UnauthorizedAccessException)
             {
-                Directory.Delete(path, true);
+                try
+                {
+                    Directory.Delete(path, true);
+                }
+                catch { }
             }
         }
 

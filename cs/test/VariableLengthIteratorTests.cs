@@ -17,13 +17,13 @@ namespace FASTER.test
         {
             var vlLength = new VLValue();
             var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog-vl-iter.log", deleteOnClose: true);
-            var fht = new FasterKV<Key, VLValue, Input, int[], Empty, VLFunctions>
-                (128, new VLFunctions(),
+            var fht = new FasterKV<Key, VLValue>
+                (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = vlLength }
                 );
 
-            var session = fht.NewSession();
+            var session = fht.NewSession(new VLFunctions());
 
             try
             {
@@ -67,7 +67,7 @@ namespace FASTER.test
             {
                 session.Dispose();
                 fht.Dispose();
-                log.Close();
+                log.Dispose();
             }
 
             void Set(long keyValue, int length, int tag)

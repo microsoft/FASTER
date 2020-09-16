@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Globalization;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,9 +27,7 @@ namespace FASTER.core
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
         void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new();
+            FasterKV<Key, Value> faster);
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
@@ -39,9 +37,7 @@ namespace FASTER.core
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
         void GlobalAfterEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new();
+            FasterKV<Key, Value> faster);
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -53,7 +49,7 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
         /// <param name="fasterSession"></param>
-        /// <param name="async"></param>
+        /// <param name="valueTasks"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
@@ -62,15 +58,13 @@ namespace FASTER.core
         /// <typeparam name="Context"></typeparam>
         /// <typeparam name="FasterSession"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(SystemState current,
+        void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession: IFasterSession;
     }
 
@@ -91,9 +85,7 @@ namespace FASTER.core
         /// <typeparam name="Value"></typeparam>
         void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new();
+            FasterKV<Key, Value> faster);
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
@@ -104,9 +96,7 @@ namespace FASTER.core
         /// <typeparam name="Value"></typeparam>
         void GlobalAfterEnteringState<Key, Value>(
             SystemState next,
-            FasterKV<Key, Value> faster)
-            where Key : new()
-            where Value : new();
+            FasterKV<Key, Value> faster);
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -118,7 +108,7 @@ namespace FASTER.core
         /// <param name="faster"></param>
         /// <param name="ctx"></param>
         /// <param name="fasterSession"></param>
-        /// <param name="async"></param>
+        /// <param name="valueTasks"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
@@ -127,16 +117,14 @@ namespace FASTER.core
         /// <typeparam name="Context"></typeparam>
         /// <typeparam name="FasterSession"></typeparam>
         /// <returns></returns>
-        ValueTask OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
+            List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where Key : new()
-            where Value : new()
             where FasterSession: IFasterSession;
     }
 
@@ -163,8 +151,7 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster) where Key : new()
-            where Value : new()
+            FasterKV<Key, Value> faster) 
         {
             foreach (var task in tasks)
                 task.GlobalBeforeEnteringState(next, faster);
@@ -172,27 +159,27 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public void GlobalAfterEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster) where Key : new()
-            where Value : new()
+            FasterKV<Key, Value> faster)
         {
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, faster);
         }
 
         /// <inheritdoc />
-        public async ValueTask OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(
             SystemState current,
             SystemState prev,
             FasterKV<Key, Value> faster,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
-            bool async = true,
-            CancellationToken token = default) where Key : new()
-            where Value : new()
+            List<ValueTask> valueTasks,
+            CancellationToken token = default)
             where FasterSession: IFasterSession
         {
             foreach (var task in tasks)
-                await task.OnThreadState(current, prev, faster, ctx, fasterSession, async, token);
+            {
+                task.OnThreadState(current, prev, faster, ctx, fasterSession, valueTasks, token);
+            }
         }
     }
 }

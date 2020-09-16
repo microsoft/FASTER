@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>Microsoft.FASTER</id>
+    <id>Microsoft.FASTER.Core</id>
     <version>$version$</version>
     <title>FASTER</title>
     <authors>Microsoft</authors>
@@ -9,11 +9,12 @@
     <projectUrl>https://github.com/microsoft/FASTER</projectUrl>
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <description>FASTER is a fast concurrent persistent log and key-value store for larger-than-memory data.</description>
-    <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details.</releaseNotes>
+    <description>FASTER is a fast concurrent persistent log and key-value store with cache for larger-than-memory data.</description>
+    <releaseNotes>See the FASTER project website at https://github.com/microsoft/FASTER for more details.</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
-    <tags>key-value store dictionary hashtable concurrent log persistent commit write-ahead</tags>
+    <tags>FASTER key-value store cache log  microsoft dictionary hashtable concurrent persistent</tags>
+    <repository type="git" url="https://github.com/microsoft/FASTER" />
     <dependencies>
       <group targetFramework="net461">
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.7.1" />
@@ -26,12 +27,10 @@
         <dependency id="System.Memory" version="4.5.4" />
         <dependency id="System.Threading.Tasks.Extensions" version="4.5.4" />
         <dependency id="System.Interactive.Async" version="4.1.1" />
-        <dependency id="Mono.Posix.NETStandard" version="1.0.0" />
       </group>
       <group targetFramework="netstandard2.1">
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="4.7.1" />
         <dependency id="System.Interactive.Async" version="4.1.1" />
-        <dependency id="Mono.Posix.NETStandard" version="1.0.0" />
       </group>
     </dependencies>
   </metadata>

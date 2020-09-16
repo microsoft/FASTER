@@ -24,17 +24,14 @@ namespace FASTER.core
     
     internal static class EpochPhaseIdx
     {
-        public const int PrepareForIndexCheckpt = 0;
-        public const int Prepare = 1;
-        public const int InProgress = 2;
-        public const int WaitPending = 3;
-        public const int WaitFlush = 4;
-        public const int CheckpointCompletionCallback = 5;
+        public const int Prepare = 0;
+        public const int InProgress = 1;
+        public const int WaitPending = 2;
+        public const int WaitFlush = 3;
+        public const int CheckpointCompletionCallback = 4;
     }
 
     public partial class FasterKV<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs

@@ -32,12 +32,12 @@ namespace FASTER.core
         /// <summary>
         /// Device used for main hybrid log
         /// </summary>
-        public IDevice LogDevice = new NullDevice();
+        public IDevice LogDevice;
 
         /// <summary>
         /// Device used for serialized heap objects in hybrid log
         /// </summary>
-        public IDevice ObjectLogDevice = new NullDevice();
+        public IDevice ObjectLogDevice;
 
         /// <summary>
         /// Size of a segment (group of pages), in bits
@@ -69,6 +69,11 @@ namespace FASTER.core
         /// Overrides the "copy reads to tail" setting
         /// </summary>
         public ReadCacheSettings ReadCacheSettings = null;
+
+        /// <summary>
+        /// Whether to preallocate the entire log (pages) in memory
+        /// </summary>
+        public bool PreallocateLog = false;
     }
 
     /// <summary>

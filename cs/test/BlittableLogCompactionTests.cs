@@ -17,15 +17,15 @@ namespace FASTER.test
     [TestFixture]
     internal class BlittableLogCompactionTests
     {
-        private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction> fht;
+        private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BlittableLogCompactionTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction>
-                (1L << 20, new FunctionsCompaction(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
         }
 
         [TearDown]
@@ -33,13 +33,13 @@ namespace FASTER.test
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
         [Test]
         public void BlittableLogCompactionTest1()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
             InputStruct input = default;
 
@@ -57,7 +57,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -83,7 +83,7 @@ namespace FASTER.test
         [Test]
         public void BlittableLogCompactionTest2()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
             InputStruct input = default;
 
@@ -112,7 +112,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var tail = fht.Log.TailAddress;
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
             Assert.IsTrue(fht.Log.TailAddress == tail);
 
@@ -139,7 +139,7 @@ namespace FASTER.test
         [Test]
         public void BlittableLogCompactionTest3()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
             InputStruct input = default;
 
@@ -165,7 +165,7 @@ namespace FASTER.test
             }
 
             var tail = fht.Log.TailAddress;
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -199,7 +199,7 @@ namespace FASTER.test
         [Test]
         public void BlittableLogCompactionCustomFunctionsTest1()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
             InputStruct input = default;
 
@@ -220,7 +220,7 @@ namespace FASTER.test
             var tail = fht.Log.TailAddress;
 
             // Only leave records with even vfield1
-            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil);
+            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -258,7 +258,7 @@ namespace FASTER.test
         {
             // This test checks if CopyInPlace returning false triggers call to Copy
 
-            using var session = fht.NewSession();
+            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
             var key = new KeyStruct { kfield1 = 100, kfield2 = 101 };
             var value = new ValueStruct { vfield1 = 10, vfield2 = 20 };
@@ -273,7 +273,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var compactionFunctions = new Test2CompactionFunctions();
-            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress);
+            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress, true);
 
             Assert.IsTrue(compactionFunctions.CopyCalled);
 
