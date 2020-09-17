@@ -135,7 +135,7 @@ namespace FASTER.core
             if (logSettings.ReadOnlyMode)
             {
                 readOnlyMode = true;
-                allocator.HeadAddress = int.MaxValue;
+                allocator.HeadAddress = long.MaxValue;
             }
 
             Restore(out RecoveredIterators);
