@@ -379,10 +379,11 @@ namespace FASTER.core
         /// <summary>
         /// Recover from the latest checkpoint (blocking operation)
         /// </summary>
-        /// <param name="numPagesToPreload"></param>
-        public void Recover(int numPagesToPreload = -1)
+        /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
+        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public void Recover(int numPagesToPreload = -1, bool undoFutureVersions = true)
         {
-            InternalRecoverFromLatestCheckpoints(numPagesToPreload);
+            InternalRecoverFromLatestCheckpoints(numPagesToPreload, undoFutureVersions);
         }
 
         /// <summary>
@@ -390,9 +391,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fullCheckpointToken">Token</param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        public void Recover(Guid fullCheckpointToken, int numPagesToPreload = -1)
+        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public void Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true)
         {
-            InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload);
+            InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoFutureVersions);
         }
 
         /// <summary>
@@ -401,9 +403,10 @@ namespace FASTER.core
         /// <param name="indexCheckpointToken"></param>
         /// <param name="hybridLogCheckpointToken"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1)
+        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true)
         {
-            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload);
+            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoFutureVersions);
         }
 
         /// <summary>
