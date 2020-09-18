@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class ObjectFASTERTests
     {
-        private FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> fht;
+        private FasterKV<MyKey, MyValue> fht;
         private IDevice log, objlog;
 
         [SetUp]
@@ -26,8 +26,8 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\ObjectFASTERTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\ObjectFASTERTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
-                (128, new MyFunctions(),
+            fht = new FasterKV<MyKey, MyValue>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
@@ -39,13 +39,13 @@ namespace FASTER.test
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
         [Test]
         public void ObjectInMemWriteRead()
         {
-            using var session = fht.NewSession();
+            using var session = fht.NewSession(new MyFunctions());
 
             var key1 = new MyKey { key = 9999999 };
             var value = new MyValue { value = 23 };
@@ -61,7 +61,7 @@ namespace FASTER.test
         [Test]
         public void ObjectInMemWriteRead2()
         {
-            using var session = fht.NewSession();
+            using var session = fht.NewSession(new MyFunctions());
 
             var key1 = new MyKey { key = 8999998 };
             var input1 = new MyInput { value = 23 };
@@ -86,7 +86,7 @@ namespace FASTER.test
         [Test]
         public void ObjectDiskWriteRead()
         {
-            using var session = fht.NewSession();
+            using var session = fht.NewSession(new MyFunctions());
 
             for (int i = 0; i < 2000; i++)
             {
@@ -164,7 +164,7 @@ namespace FASTER.test
         [Test]
         public async Task AsyncObjectDiskWriteRead()
         {
-            using var session = fht.NewSession();
+            using var session = fht.NewSession(new MyFunctions());
 
             for (int i = 0; i < 2000; i++)
             {
@@ -175,18 +175,21 @@ namespace FASTER.test
 
             var key1 = new MyKey { key = 1989 };
             var input = new MyInput();
-            var result = await session.ReadAsync(ref key1, ref input, Empty.Default);
+            var readResult = await session.ReadAsync(ref key1, ref input, Empty.Default);
+            var result = readResult.CompleteRead();
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 1989);
 
             var key2 = new MyKey { key = 23 };
-            result = await session.ReadAsync(ref key2, ref input, Empty.Default);
+            readResult = await session.ReadAsync(ref key2, ref input, Empty.Default);
+            result = readResult.CompleteRead();
 
             Assert.IsTrue(result.Item1 == Status.OK);
             Assert.IsTrue(result.Item2.value.value == 23);
 
             var key3 = new MyKey { key = 9999 };
-            result = await session.ReadAsync(ref key3, ref input, Empty.Default);
+            readResult = await session.ReadAsync(ref key3, ref input, Empty.Default);
+            result = readResult.CompleteRead();
 
             Assert.IsTrue(result.Item1 == Status.NOTFOUND);
 
@@ -213,7 +216,8 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                result = await session.ReadAsync(ref key, ref input, Empty.Default);
+                readResult = await session.ReadAsync(ref key, ref input, Empty.Default);
+                result = readResult.CompleteRead();
                 Assert.IsTrue(result.Item1 == Status.OK);
                 if (i < 100 || i >= 1900)
                     Assert.IsTrue(result.Item2.value.value == value.value + 1);

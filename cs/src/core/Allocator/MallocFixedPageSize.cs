@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -436,8 +435,9 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask IsCheckpointCompletedAsync(CancellationToken token = default)
         {
-            await checkpointSemaphore.WaitAsync(token);
-            checkpointSemaphore.Release();
+            var s = checkpointSemaphore;
+            await s.WaitAsync(token);
+            s.Release();
         }
 
         internal unsafe void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
@@ -464,26 +464,16 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, NativeOverlapped* overlap)
+        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, object context)
         {
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
+                System.Diagnostics.Trace.TraceError("AsyncFlushCallback error: {0}", errorCode);
             }
-            catch (Exception ex)
+
+            if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
             {
-                System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
-                {
-                    checkpointSemaphore.Release();
-                }
-                Overlapped.Free(overlap);
+                checkpointSemaphore.Release();
             }
         }
 
@@ -572,27 +562,13 @@ namespace FASTER.core
             }
         }
 
-        private unsafe void AsyncPageReadCallback(
-                                    uint errorCode,
-                                    uint numBytes,
-                                    NativeOverlapped* overlap)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context)
         {
-            try
+            if (errorCode != 0)
             {
-                if (errorCode != 0)
-                {
-                    System.Diagnostics.Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
+                System.Diagnostics.Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref numLevelsToBeRecovered);
-                Overlapped.Free(overlap);
-            }
+            Interlocked.Decrement(ref numLevelsToBeRecovered);
         }
         #endregion
     }

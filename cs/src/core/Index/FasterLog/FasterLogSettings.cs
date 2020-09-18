@@ -3,10 +3,6 @@
 
 #pragma warning disable 0162
 
-using System;
-using System.Diagnostics;
-using System.IO;
-
 namespace FASTER.core
 {
     /// <summary>
@@ -81,6 +77,11 @@ namespace FASTER.core
         /// </summary>
         public LogChecksumType LogChecksum = LogChecksumType.None;
 
+        /// <summary>
+        /// Fraction of log marked as mutable (uncommitted)
+        /// </summary>
+        public double MutableFraction = 0;
+
         internal LogSettings GetLogSettings()
         {
             return new LogSettings
@@ -90,7 +91,7 @@ namespace FASTER.core
                 SegmentSizeBits = SegmentSizeBits,
                 MemorySizeBits = MemorySizeBits,
                 CopyReadsToTail = false,
-                MutableFraction = 0,
+                MutableFraction = MutableFraction,
                 ObjectLogDevice = null,
                 ReadCacheSettings = null
             };

@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class BlittableFASTERScanTests
     {
-        private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
+        private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
         const int totalRecords = 2000;
 
@@ -25,8 +25,8 @@ namespace FASTER.test
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BlittableFASTERScanTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 7 });
         }
 
         [TearDown]
@@ -34,13 +34,13 @@ namespace FASTER.test
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
         [Test]
         public void BlittableDiskWriteScan()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new Functions()).NewSession<Functions>();
 
             var s = fht.Log.Subscribe(new LogObserver());
 

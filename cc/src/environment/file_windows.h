@@ -69,7 +69,7 @@ class File {
 
   ~File() {
     if(owner_) {
-      Status s = Close();
+      core::Status s = Close();
     }
   }
 
@@ -89,11 +89,11 @@ class File {
   }
 
  protected:
-  Status Open(DWORD flags, FileCreateDisposition create_disposition, bool* exists = nullptr);
+  core::Status Open(DWORD flags, FileCreateDisposition create_disposition, bool* exists = nullptr);
 
  public:
-  Status Close();
-  Status Delete();
+  core::Status Close();
+  core::Status Delete();
 
   uint64_t size() const {
     LARGE_INTEGER file_size;
@@ -122,7 +122,7 @@ class File {
 #endif
 
  private:
-  Status GetDeviceAlignment();
+  core::Status GetDeviceAlignment();
   static DWORD GetCreateDisposition(FileCreateDisposition create_disposition);
 
  protected:
@@ -168,7 +168,7 @@ class WindowsPtpThreadPool {
 
   ~WindowsPtpThreadPool();
 
-  Status Schedule(Task task, void* task_argument);
+  core::Status Schedule(Task task, void* task_argument);
 
   PTP_CALLBACK_ENVIRON callback_environment() {
     return callback_environment_;
@@ -247,7 +247,7 @@ class ThreadPoolIoHandler {
   }
 
   struct IoCallbackContext {
-    IoCallbackContext(size_t offset, IAsyncContext* context_, AsyncIOCallback callback_)
+    IoCallbackContext(size_t offset, core::IAsyncContext* context_, core::AsyncIOCallback callback_)
       : caller_context{ context_ }
       , callback{ callback_ } {
       ::memset(&parent_overlapped, 0, sizeof(parent_overlapped));
@@ -261,9 +261,9 @@ class ThreadPoolIoHandler {
     /// The overlapped structure for Windows IO
     OVERLAPPED parent_overlapped;
     /// Caller callback context.
-    IAsyncContext* caller_context;
+    core::IAsyncContext* caller_context;
     /// The caller's asynchronous callback function
-    AsyncIOCallback callback;
+    core::AsyncIOCallback callback;
   };
 
   inline static constexpr bool TryComplete() {
@@ -287,7 +287,7 @@ class QueueIoHandler {
   QueueIoHandler(size_t max_threads)
     : io_completion_port_{ 0 } {
     io_completion_port_ = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0,
-                          (DWORD)Thread::kMaxNumThreads);
+                          (DWORD)core::Thread::kMaxNumThreads);
   }
 
   /// Move constructor
@@ -309,7 +309,7 @@ class QueueIoHandler {
   }
 
   struct IoCallbackContext {
-    IoCallbackContext(size_t offset, IAsyncContext* context_, AsyncIOCallback callback_)
+    IoCallbackContext(size_t offset, core::IAsyncContext* context_, core::AsyncIOCallback callback_)
       : caller_context{ context_ }
       , callback{ callback_ } {
       ::memset(&parent_overlapped, 0, sizeof(parent_overlapped));
@@ -323,9 +323,9 @@ class QueueIoHandler {
     /// The overlapped structure for Windows IO
     OVERLAPPED parent_overlapped;
     /// Caller callback context.
-    IAsyncContext* caller_context;
+    core::IAsyncContext* caller_context;
     /// The caller's asynchronous callback function
-    AsyncIOCallback callback;
+    core::AsyncIOCallback callback;
   };
 
   bool TryComplete();
@@ -362,17 +362,17 @@ class ThreadPoolFile : public File {
     return *this;
   }
 
-  Status Open(FileCreateDisposition create_disposition, const FileOptions& options,
+  core::Status Open(FileCreateDisposition create_disposition, const FileOptions& options,
               ThreadPoolIoHandler* handler, bool* exists = nullptr);
 
-  Status Read(size_t offset, uint32_t length, uint8_t* buffer,
-              IAsyncContext& context, AsyncIOCallback callback) const;
-  Status Write(size_t offset, uint32_t length, const uint8_t* buffer,
-               IAsyncContext& context, AsyncIOCallback callback);
+  core::Status Read(size_t offset, uint32_t length, uint8_t* buffer,
+              core::IAsyncContext& context, core::AsyncIOCallback callback) const;
+  core::Status Write(size_t offset, uint32_t length, const uint8_t* buffer,
+               core::IAsyncContext& context, core::AsyncIOCallback callback);
 
  private:
-  Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
-                           uint32_t length, IAsyncContext& context, AsyncIOCallback callback);
+  core::Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
+                           uint32_t length, core::IAsyncContext& context, core::AsyncIOCallback callback);
 
   PTP_IO io_object_;
 };
@@ -398,17 +398,17 @@ class QueueFile : public File {
     return *this;
   }
 
-  Status Open(FileCreateDisposition create_disposition, const FileOptions& options,
+  core::Status Open(FileCreateDisposition create_disposition, const FileOptions& options,
               QueueIoHandler* handler, bool* exists = nullptr);
 
-  Status Read(size_t offset, uint32_t length, uint8_t* buffer,
-              IAsyncContext& context, AsyncIOCallback callback) const;
-  Status Write(size_t offset, uint32_t length, const uint8_t* buffer,
-               IAsyncContext& context, AsyncIOCallback callback);
+  core::Status Read(size_t offset, uint32_t length, uint8_t* buffer,
+              core::IAsyncContext& context, core::AsyncIOCallback callback) const;
+  core::Status Write(size_t offset, uint32_t length, const uint8_t* buffer,
+               core::IAsyncContext& context, core::AsyncIOCallback callback);
 
  private:
-  Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
-                           uint32_t length, IAsyncContext& context, AsyncIOCallback callback);
+  core::Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
+                           uint32_t length, core::IAsyncContext& context, core::AsyncIOCallback callback);
 };
 
 }

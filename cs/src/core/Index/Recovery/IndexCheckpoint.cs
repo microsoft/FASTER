@@ -2,20 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-
-
     public partial class FasterBase
     {
         // Derived class facing persistence API
@@ -56,8 +48,11 @@ namespace FASTER.core
 
         internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)
         {
-            await IsMainIndexCheckpointCompletedAsync(token);
-            await overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
+            // Get tasks first to ensure we have captured the semaphore instances synchronously
+            var t1 = IsMainIndexCheckpointCompletedAsync(token);
+            var t2 = overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
+            await t1;
+            await t2;
         }
 
 
@@ -78,9 +73,14 @@ namespace FASTER.core
                                            IDevice device,
                                            out ulong numBytesWritten)
         {
-            int numChunks = 1;
             long totalSize = state[version].size * sizeof(HashBucket);
-            Debug.Assert(totalSize < (long)uint.MaxValue); // required since numChunks = 1
+
+            int numChunks = 1;
+            if (totalSize > uint.MaxValue)
+            {
+                numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
+                numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
+            }
 
             uint chunkSize = (uint)(totalSize / numChunks);
             mainIndexCheckpointCallbackCount = numChunks;
@@ -98,7 +98,6 @@ namespace FASTER.core
             }
         }
 
-
         private bool IsMainIndexCheckpointCompleted()
         {
             return mainIndexCheckpointCallbackCount == 0;
@@ -106,42 +105,24 @@ namespace FASTER.core
 
         private async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
         {
-            if (mainIndexCheckpointCallbackCount > 0)
+            var s = mainIndexCheckpointSemaphore;
+            await s.WaitAsync(token);
+            s.Release();
+        }
+
+        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
+        {
+            // Set the page status to flushed
+            _ = (HashIndexPageAsyncFlushResult)context;
+
+            if (errorCode != 0)
             {
-                await mainIndexCheckpointSemaphore.WaitAsync(token);
+                Trace.TraceError("AsyncPageFlushCallback error: {0}", errorCode);
+            }
+            if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
+            {
                 mainIndexCheckpointSemaphore.Release();
             }
         }
-
-        private unsafe void AsyncPageFlushCallback(
-                                            uint errorCode,
-                                            uint numBytes,
-                                            NativeOverlapped* overlap)
-        {
-            //Set the page status to flushed
-            _ = (HashIndexPageAsyncFlushResult)Overlapped.Unpack(overlap).AsyncResult;
-
-            try
-            {
-                if (errorCode != 0)
-                {
-                    Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
-                }
-            }
-            catch (Exception ex)
-            {
-                Trace.TraceError("Completion Callback error, {0}", ex.Message);
-            }
-            finally
-            {
-                if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
-                {
-                    mainIndexCheckpointSemaphore.Release();
-                }
-                Overlapped.Free(overlap);
-            }
-        }
-
     }
-
 }

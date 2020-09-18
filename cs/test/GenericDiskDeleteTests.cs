@@ -10,7 +10,7 @@ namespace FASTER.test
     [TestFixture]
     internal class GenericDiskDeleteTests
     {
-        private FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> fht;
+        private FasterKV<MyKey, MyValue> fht;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
 
@@ -20,13 +20,13 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericDiskDeleteTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericDiskDeleteTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete>
-                (128, new MyFunctionsDelete(),
+            fht = new FasterKV<MyKey, MyValue>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            session = fht.NewSession();
+            session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
         [TearDown]
@@ -35,8 +35,8 @@ namespace FASTER.test
             session.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
 
@@ -71,11 +71,7 @@ namespace FASTER.test
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var input = new MyInput();
-                var output = new MyOutput();
                 var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
                 session.Delete(ref key1, 0, 0);
             }
 
@@ -84,7 +80,6 @@ namespace FASTER.test
                 var input = new MyInput();
                 var output = new MyOutput();
                 var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 1, 0);
                 

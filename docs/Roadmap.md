@@ -33,6 +33,11 @@ Completed items are included to provide the context and progress of the work.
 * [x] Remove C# dynamic code-gen for quicker instantiation, stability, debuggability
 * [x] Full support for .NET core and Linux/Mac
 * [x] Individual key delete support
+* [x] Support iteration over all and only live key-value pairs (different from log scan)
+* [x] Full support for async interface to FasterKV
+* [x] Full support for async/await threading model in C#: [PR](https://github.com/Microsoft/FASTER/pull/130)
+* [x] `IFunctions` specified via sessions
+* [x] Remove generic type constraints, add default serializers and comparers for common types
 
 #### Log, Cache, and Storage
 
@@ -54,6 +59,7 @@ Completed items are included to provide the context and progress of the work.
 * [x] Improved performance of fine-grained epoch protection
 * [x] Support per-entry checksums and persistent iterators in FasterLog
 * [x] Full support for async interface to FasterLog
+* [x] Improved `IDevice` v2 interface without `Overlapped`, improved local storage scalability
 
 #### Checkpoint and Recovery
 
@@ -61,15 +67,21 @@ Completed items are included to provide the context and progress of the work.
 * [x] Optional separate checkpointing of index and log (so that index may be checkpointed less frequently)
 * [x] Auto-recover to most recent checkpoint
 * [x] Make checkpointing use a pluggable user-specified interface for providing devices and performing metadata commit: [PR](https://github.com/microsoft/FASTER/pull/161)
+* [x] Generic state machine for checkpointing (internals)
+* [x] Choose checkpoint type (Snapshot and FoldOver) on a per-checkpoint basis
+* [x] Process all checkpoints through a `IDevice`-based checkpoint and log commit manager
 
 ### Ongoing and Future Work
 
-* [ ] Better integration with an async/await threading model in C#: [PR](https://github.com/Microsoft/FASTER/pull/130)
+* [ ] Client-server interface to FASTER
+* [ ] Read variant starting from given logical addresses
+* [ ] Limit number of preloaded pages during recovery
+* [ ] RDMA `IDevice` implementation
+* [ ] Support for Incremental Snapshot checkpoint type
+* [ ] Expose incremental data structures over FasterKV hash chains
 * [ ] Scale-out and elasticity support
-* [ ] Checksums for storage pages
-* [ ] Support iteration over all and only live key-value pairs (different from log scan)
 * [ ] Handle log logical addresses greater than 48 bit (up to 64 bit)
-* [ ] Expose other data structures, starting with a FIFO FasterQueue
+* [ ] Checksums for storage pages
 
 ## Release Notes
 

@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class GenericLogCompactionTests
     {
-        private FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> fht;
+        private FasterKV<MyKey, MyValue> fht;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
 
@@ -27,13 +27,13 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericLogCompactionTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericLogCompactionTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete>
-                (128, new MyFunctionsDelete(),
+            fht = new FasterKV<MyKey, MyValue>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
-            session = fht.NewSession();
+            session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
         [TearDown]
@@ -42,8 +42,8 @@ namespace FASTER.test
             session.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
         [Test]
@@ -64,7 +64,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -116,7 +116,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var tail = fht.Log.TailAddress;
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
             Assert.IsTrue(fht.Log.TailAddress == tail);
 
@@ -137,7 +137,6 @@ namespace FASTER.test
                 }
             }
         }
-
 
         [Test]
         public void GenericLogCompactionTest3()
@@ -164,7 +163,7 @@ namespace FASTER.test
                 }
             }
 
-            fht.Log.Compact(compactUntil);
+            fht.Log.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -193,5 +192,135 @@ namespace FASTER.test
                 }
             }
         }
+
+        [Test]
+        public void GenericLogCompactionCustomFunctionsTest1()
+        {
+            MyInput input = new MyInput();
+
+            const int totalRecords = 2000;
+            var compactUntil = 0L;
+
+            for (var i = 0; i < totalRecords; i++)
+            {
+                if (i == totalRecords / 2)
+                    compactUntil = fht.Log.TailAddress;
+
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+                session.Upsert(ref key1, ref value, 0, 0);
+            }
+
+            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil, true);
+            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+
+            // Read 2000 keys - all should be present
+            for (var i = 0; i < totalRecords; i++)
+            {
+                var output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
+
+                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
+                if (status == Status.PENDING)
+                {
+                    session.CompletePending(true);
+                }
+                else
+                {
+                    if (ctx == 0)
+                    {
+                        Assert.IsTrue(status == Status.OK);
+                        Assert.IsTrue(output.value.value == value.value);
+                    }
+                    else
+                    {
+                        Assert.IsTrue(status == Status.NOTFOUND);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void GenericLogCompactionCustomFunctionsTest2()
+        {
+            // This test checks if CopyInPlace returning false triggers call to Copy
+
+            using var session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
+
+            var key = new MyKey { key = 100 };
+            var value = new MyValue { value = 20 };
+
+            session.Upsert(ref key, ref value, 0, 0);
+
+            fht.Log.Flush(true);
+
+            value = new MyValue { value = 21 };
+            session.Upsert(ref key, ref value, 0, 0);
+
+            fht.Log.Flush(true);
+
+            var compactionFunctions = new Test2CompactionFunctions();
+            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress, true);
+
+            Assert.IsTrue(compactionFunctions.CopyCalled);
+
+            var input = default(MyInput);
+            var output = default(MyOutput);
+            var status = session.Read(ref key, ref input, ref output, 0, 0);
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(output.value.value == value.value);
+            }
+        }
+
+        private class Test2CompactionFunctions : ICompactionFunctions<MyKey, MyValue>
+        {
+            public bool CopyCalled;
+
+            public void Copy(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
+            {
+                if (src.value == 21)
+                    CopyCalled = true;
+                dst = src;
+            }
+
+            public bool CopyInPlace(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
+            {
+                return false;
+            }
+
+            public bool IsDeleted(in MyKey key, in MyValue value)
+            {
+                return false;
+            }
+        }
+
+        private struct EvenCompactionFunctions : ICompactionFunctions<MyKey, MyValue>
+        {
+            public void Copy(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
+            {
+                dst = src;
+            }
+
+            public bool CopyInPlace(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
+            {
+                dst = src;
+                return true;
+            }
+
+            public bool IsDeleted(in MyKey key, in MyValue value)
+            {
+                return value.value % 2 != 0;
+            }
+        }
+
     }
 }

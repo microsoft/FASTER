@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-
 using System;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -25,95 +25,6 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// Interface for variable length in-place objects
-    /// modeled as structs, in FASTER
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    public interface IVariableLengthStruct<T>
-    {
-        /// <summary>
-        /// Actual length of object
-        /// </summary>
-        /// <param name="t"></param>
-        /// <returns></returns>
-        int GetLength(ref T t);
-
-        /// <summary>
-        /// Average length of objects, make sure this includes the object
-        /// header needed to compute the actual object length
-        /// </summary>
-        /// <returns></returns>
-        int GetAverageLength();
-
-        /// <summary>
-        /// Initial length, when populating for RMW from given input
-        /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        int GetInitialLength<Input>(ref Input input);
-    }
-
-
-    /// <summary>
-    /// Length specification for fixed size (normal) structs
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    public struct FixedLengthStruct<T> : IVariableLengthStruct<T>
-    {
-        private static readonly int size = Utility.GetSize(default(T));
-
-        /// <summary>
-        /// Get average length
-        /// </summary>
-        /// <returns></returns>
-        public int GetAverageLength()
-        {
-            return size;
-        }
-
-        /// <summary>
-        /// Get initial length
-        /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        public int GetInitialLength<Input>(ref Input input)
-        {
-            return size;
-        }
-
-        /// <summary>
-        /// Get length
-        /// </summary>
-        /// <param name="t"></param>
-        /// <returns></returns>
-        public int GetLength(ref T t)
-        {
-            return size;
-        }
-    }
-
-    /// <summary>
-    /// Settings for variable length keys and values
-    /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public class VariableLengthStructSettings<Key, Value>
-    {
-        /// <summary>
-        /// Key length
-        /// </summary>
-        public IVariableLengthStruct<Key> keyLength;
-
-        /// <summary>
-        /// Value length
-        /// </summary>
-        public IVariableLengthStruct<Value> valueLength;
-    }
-
-
-    /// <summary>
     /// Configuration settings for hybrid log
     /// </summary>
     public class LogSettings
@@ -121,12 +32,12 @@ namespace FASTER.core
         /// <summary>
         /// Device used for main hybrid log
         /// </summary>
-        public IDevice LogDevice = new NullDevice();
+        public IDevice LogDevice;
 
         /// <summary>
         /// Device used for serialized heap objects in hybrid log
         /// </summary>
-        public IDevice ObjectLogDevice = new NullDevice();
+        public IDevice ObjectLogDevice;
 
         /// <summary>
         /// Size of a segment (group of pages), in bits
@@ -158,6 +69,11 @@ namespace FASTER.core
         /// Overrides the "copy reads to tail" setting
         /// </summary>
         public ReadCacheSettings ReadCacheSettings = null;
+
+        /// <summary>
+        /// Whether to preallocate the entire log (pages) in memory
+        /// </summary>
+        public bool PreallocateLog = false;
     }
 
     /// <summary>

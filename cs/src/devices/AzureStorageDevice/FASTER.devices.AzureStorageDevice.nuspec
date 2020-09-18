@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>Microsoft.FASTER.devices.AzureStorageDevice</id>
+    <id>Microsoft.FASTER.Devices.AzureStorage</id>
     <version>$version$</version>
     <title>Azure storage device for FASTER</title>
     <authors>Microsoft</authors>
@@ -9,28 +9,36 @@
     <projectUrl>https://github.com/microsoft/FASTER</projectUrl>
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <description>This is a FASTER device implementation for Azure Storage (page blobs). FASTER is a fast concurrent key-value store and log for larger-than-memory data.</description>
+    <description>This is a FASTER device implementation for Azure Storage (page blobs). FASTER is a fast concurrent persistent log and key-value store with cache for larger-than-memory data.</description>
     <releaseNotes>See the project website at https://github.com/microsoft/FASTER for more details</releaseNotes>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <language>en-US</language>
-    <tags>key-value store dictionary hashtable concurrent log persistent azure storage FASTER</tags>
+    <tags>FASTER key-value store cache log azure storage device microsoft dictionary hashtable concurrent persistent</tags>
+    <repository type="git" url="https://github.com/microsoft/FASTER" />
     <dependencies>
-      <group targetFramework="net46">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.1.0" />
-        <dependency id="Microsoft.FASTER" version="$version$" />
+      <group targetFramework="net461">
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
+        <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
       <group targetFramework="netstandard2.0">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.1.0" />
-        <dependency id="Microsoft.FASTER" version="$version$" />
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
+        <dependency id="Microsoft.FASTER.Core" version="$version$" />
+      </group>
+      <group targetFramework="netstandard2.1">
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
+        <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
     </dependencies>
   </metadata>
   <files>
-    <file src="bin\AnyCPU\Release\net46\FASTER.devices.AzureStorageDevice.dll" target="lib\net46" />
-    <file src="bin\AnyCPU\Release\net46\FASTER.devices.AzureStorageDevice.pdb" target="lib\net46" />
-    <file src="bin\AnyCPU\Release\net46\FASTER.devices.AzureStorageDevice.xml" target="lib\net46" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.devices.AzureStorageDevice.dll" target="lib\net461" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.devices.AzureStorageDevice.pdb" target="lib\net461" />
+    <file src="bin\AnyCPU\Release\net461\FASTER.devices.AzureStorageDevice.xml" target="lib\net461" />
     <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.devices.AzureStorageDevice.dll" target="lib\netstandard2.0" />
     <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.devices.AzureStorageDevice.pdb" target="lib\netstandard2.0" />
     <file src="bin\AnyCPU\Release\netstandard2.0\FASTER.devices.AzureStorageDevice.xml" target="lib\netstandard2.0" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.dll" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.pdb" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.xml" target="lib\netstandard2.1" />
   </files>
 </package>

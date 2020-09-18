@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class BasicFASTERTests
     {
-        private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
+        private FasterKV<KeyStruct, ValueStruct> fht;
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
         private IDevice log;
 
@@ -25,9 +25,9 @@ namespace FASTER.test
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                (128, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 29 });
-            session = fht.NewSession();
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+            session = fht.For(new Functions()).NewSession<Functions>();
         }
 
         [TearDown]
@@ -36,7 +36,7 @@ namespace FASTER.test
             session.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
 

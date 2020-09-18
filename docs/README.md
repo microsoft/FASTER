@@ -31,7 +31,9 @@ C# and C++ versions of FASTER are very similar.
 
 * Visit our [research page](http://aka.ms/FASTER) for technical details and papers.
 * Start reading about FASTER C# [here](cs).
-* FASTER C# binaries are available via [NuGet](https://www.nuget.org/packages/FASTER/).
+* FASTER C# binaries are available via NuGet:
+  * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
+  * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
 * Start reading about FASTER C++ [here](cc).
 
 

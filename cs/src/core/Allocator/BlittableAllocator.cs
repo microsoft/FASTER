@@ -11,8 +11,6 @@ using System.Runtime.InteropServices;
 namespace FASTER.core
 {
     public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         // Circular buffer definition
         private byte[][] values;
@@ -67,12 +65,17 @@ namespace FASTER.core
             return recordSize;
         }
 
+        public override int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        {
+            return recordSize;
+        }
+
         public override int GetAverageRecordSize()
         {
             return recordSize;
         }
 
-        public override int GetInitialRecordSize<Input>(ref Key key, ref Input input)
+        public override int GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
             return recordSize;
         }
@@ -145,7 +148,7 @@ namespace FASTER.core
             return values[pageIndex] != null;
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
@@ -155,7 +158,7 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, IOCompletionCallback callback,
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
@@ -220,7 +223,7 @@ namespace FASTER.core
 
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
-                        IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
+                        DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device)
         {
             if (asyncResult.partial)
@@ -244,7 +247,7 @@ namespace FASTER.core
 
         protected override void ReadAsync<TContext>(
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
-            IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
             device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex],
                 aligned_read_length, callback, asyncResult);
@@ -259,7 +262,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for BlittableAllocator");
         }
@@ -341,7 +344,7 @@ namespace FASTER.core
                                         long readPageStart,
                                         int numPages,
                                         long untilAddress,
-                                        IOCompletionCallback callback,
+                                        DeviceIOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
                                         out CountdownEvent completed,

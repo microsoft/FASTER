@@ -11,7 +11,7 @@ namespace FASTER.core
     /// Async queue
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class AsyncQueue<T>
+    public sealed class AsyncQueue<T>
     {
         private readonly SemaphoreSlim semaphore;
         private readonly ConcurrentQueue<T> queue;
@@ -56,6 +56,16 @@ namespace FASTER.core
                     return item;
                 }
             }
+        }
+
+        /// <summary>
+        /// Wait for queue to have at least one entry
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public async Task WaitForEntryAsync(CancellationToken token = default)
+        {
+            await semaphore.WaitAsync(token);
         }
 
         /// <summary>

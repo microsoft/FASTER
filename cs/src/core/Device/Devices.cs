@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.IO;
-using System.Linq.Expressions;
 using System.Runtime.InteropServices;
 
 namespace FASTER.core
@@ -17,8 +14,6 @@ namespace FASTER.core
         /// This value is supplied for capacity when the device does not have a specified limit.
         /// </summary>
         public const long CAPACITY_UNSPECIFIED = -1;
-        private const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        private const string TEST_CONTAINER = "test";
 
         /// <summary>
         /// Create a storage device for the log
@@ -29,11 +24,8 @@ namespace FASTER.core
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = true, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false)
+        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false)
         {
-            if (string.IsNullOrWhiteSpace(logPath))
-                return new NullDevice();
-
             IDevice logDevice;
 
 #if DOTNETCORE

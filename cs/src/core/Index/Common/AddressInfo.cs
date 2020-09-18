@@ -4,7 +4,6 @@
 #pragma warning disable 1591
 
 using System;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FASTER.core
@@ -43,7 +42,7 @@ namespace FASTER.core
 
         public long Size
         {
-            get
+            readonly get
             {
                 int multiplier = (int)((((long)word & kMultiplierMaskInWord) >> (kAddressBits + kSizeBits)) & kMultiplierMaskInInteger);
                 return (multiplier == 0 ? 512 : 1<<20)*((((long)word & kSizeMaskInWord) >> kAddressBits) & kSizeMaskInInteger);
@@ -75,7 +74,7 @@ namespace FASTER.core
 
         public long Address
         {
-            get
+            readonly get
             {
                 return (long)word & kAddressMask;
             }

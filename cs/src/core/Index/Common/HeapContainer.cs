@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-
 using System;
 using System.Runtime.CompilerServices;
 
@@ -50,7 +49,6 @@ namespace FASTER.core
     internal class VarLenHeapContainer<T> : IHeapContainer<T>
     {
         private SectorAlignedMemory mem;
-
 
         public unsafe VarLenHeapContainer(ref T obj, IVariableLengthStruct<T> varLenStruct, SectorAlignedBufferPool pool)
         {

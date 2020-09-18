@@ -7,7 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,20 +18,40 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key">Key</typeparam>
     /// <typeparam name="Value">Value</typeparam>
-    /// <typeparam name="Input">Input</typeparam>
-    /// <typeparam name="Output">Output</typeparam>
-    /// <typeparam name="Context">Context</typeparam>
-    /// <typeparam name="Functions">Functions</typeparam>
-    public partial class FasterKV<Key, Value, Input, Output, Context, Functions> : FasterBase, IFasterKV<Key, Value, Input, Output, Context, Functions>
-        where Key : new()
-        where Value : new()
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+
         /// <summary>
-        /// Complete outstanding pending operations
+        /// Check if at least one (sync) request is ready for CompletePending to operate on
+        /// </summary>
+        /// <param name="clientSession"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        internal async ValueTask ReadyToCompletePendingAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            #region Previous pending requests
+            if (!RelaxedCPR)
+            {
+                if (clientSession.ctx.phase == Phase.IN_PROGRESS || clientSession.ctx.phase == Phase.WAIT_PENDING)
+                {
+                    if (clientSession.ctx.prevCtx.SyncIoPendingCount != 0)
+                        await clientSession.ctx.prevCtx.readyResponses.WaitForEntryAsync(token);
+                }
+            }
+            #endregion
+
+            if (clientSession.ctx.SyncIoPendingCount != 0)
+                await clientSession.ctx.readyResponses.WaitForEntryAsync(token);
+        }
+
+        /// <summary>
+        /// Complete outstanding pending operations that were issued synchronously
+        /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        internal async ValueTask CompletePendingAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             bool done = true;
 
@@ -43,100 +63,213 @@ namespace FASTER.core
                     clientSession.ctx.phase == Phase.WAIT_PENDING)
                 {
 
-                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
-                    Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
+                    await clientSession.ctx.prevCtx.pendingReads.WaitEmptyAsync();
+
+                    await InternalCompletePendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession.FasterSession, token);
+                    Debug.Assert(clientSession.ctx.prevCtx.SyncIoPendingCount == 0);
 
                     if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
                     {
-                        CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
+                        clientSession.FasterSession.UnsafeResumeThread();
+                        InternalCompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession.FasterSession);
+                        clientSession.FasterSession.UnsafeSuspendThread();
                     }
 
-                    done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-                    done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
+                    done &= (clientSession.ctx.prevCtx.HasNoPendingRequests);
                 }
             }
             #endregion
 
-            await CompleteIOPendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession, token);
-            CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
+            await InternalCompletePendingRequestsAsync(clientSession.ctx, clientSession.ctx, clientSession.FasterSession, token);
 
-            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
+            clientSession.FasterSession.UnsafeResumeThread();
+            InternalCompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession.FasterSession);
+            clientSession.FasterSession.UnsafeSuspendThread();
 
-            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
-            done &= (clientSession.ctx.retryRequests.Count == 0);
+            Debug.Assert(clientSession.ctx.HasNoPendingRequests);
+
+            done &= (clientSession.ctx.HasNoPendingRequests);
 
             if (!done)
             {
                 throw new Exception("CompletePendingAsync did not complete");
+            }
+        }
+
+        internal sealed class ReadAsyncInternal<Input, Output, Context, Functions>
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            const int Completed = 1;
+            const int Pending = 0;
+            ExceptionDispatchInfo _exception;
+            readonly FasterKV<Key, Value> _fasterKV;
+            readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+            PendingContext<Input, Output, Context> _pendingContext;
+            AsyncIOContext<Key, Value> _diskRequest;
+            int CompletionComputeStatus;
+
+            internal ReadAsyncInternal(FasterKV<Key, Value> fasterKV, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            {
+                _exception = default;
+                _fasterKV = fasterKV;
+                _clientSession = clientSession;
+                _pendingContext = pendingContext;
+                _diskRequest = diskRequest;
+                CompletionComputeStatus = Pending;
+            }
+
+            internal (Status, Output) CompleteRead()
+            {
+                (Status, Output) _result = default;
+                if (_diskRequest.asyncOperation != null
+                    && CompletionComputeStatus != Completed
+                    && Interlocked.CompareExchange(ref CompletionComputeStatus, Completed, Pending) == Pending)
+                {
+                    try
+                    {
+                        if (_clientSession.SupportAsync) _clientSession.UnsafeResumeThread();
+                        try
+                        {
+                            Debug.Assert(_fasterKV.RelaxedCPR);
+
+                            _result = _fasterKV.InternalCompletePendingReadRequest(
+                                _clientSession.ctx, _clientSession.ctx, _clientSession.FasterSession, _diskRequest, _pendingContext);
+                        }
+                        finally
+                        {
+                            if (_clientSession.SupportAsync) _clientSession.UnsafeSuspendThread();
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        _exception = ExceptionDispatchInfo.Capture(e);
+                    }
+                    finally
+                    {
+                        _clientSession.ctx.ioPendingRequests.Remove(_pendingContext.id);
+                        _clientSession.ctx.asyncPendingCount--;
+                    }
+                }
+
+                if (_exception != default)
+                    _exception.Throw();
+                return _result;
             }
         }
 
         /// <summary>
-        /// Complete outstanding pending operations
+        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
         /// </summary>
-        /// <returns></returns>
-        internal async ValueTask<(Status, Output)> CompletePendingReadAsync(long serialNo, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, CancellationToken token = default)
+        public struct ReadAsyncResult<Input, Output, Context, Functions>
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            bool done = true;
+            internal readonly Status status;
+            internal readonly Output output;
 
-            #region Previous pending requests
-            if (!RelaxedCPR)
+            internal readonly ReadAsyncInternal<Input, Output, Context, Functions> readAsyncInternal;
+
+            internal ReadAsyncResult(Status status, Output output)
             {
-                if (clientSession.ctx.phase == Phase.IN_PROGRESS
-                    ||
-                    clientSession.ctx.phase == Phase.WAIT_PENDING)
-                {
-
-                    await CompleteIOPendingRequestsAsync(clientSession.ctx.prevCtx, clientSession.ctx, clientSession, token);
-                    Debug.Assert(clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-
-                    if (clientSession.ctx.prevCtx.retryRequests.Count > 0)
-                    {
-                        CompleteRetryRequests(clientSession.ctx.prevCtx, clientSession.ctx, clientSession);
-                    }
-
-                    done &= (clientSession.ctx.prevCtx.ioPendingRequests.Count == 0);
-                    done &= (clientSession.ctx.prevCtx.retryRequests.Count == 0);
-                }
+                this.status = status;
+                this.output = output;
+                this.readAsyncInternal = default;
             }
-            #endregion
 
-            var s = await CompleteIOPendingReadRequestsAsync(serialNo, clientSession.ctx, clientSession.ctx, clientSession, token);
-            CompleteRetryRequests(clientSession.ctx, clientSession.ctx, clientSession);
-
-            Debug.Assert(clientSession.ctx.ioPendingRequests.Count == 0);
-
-            done &= (clientSession.ctx.ioPendingRequests.Count == 0);
-            done &= (clientSession.ctx.retryRequests.Count == 0);
-
-            if (!done)
+            internal ReadAsyncResult(
+                FasterKV<Key, Value> fasterKV,
+                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
             {
-                throw new Exception("CompletePendingAsync did not complete");
+                status = Status.PENDING;
+                output = default;
+                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context, Functions>(fasterKV, clientSession, pendingContext, diskRequest);
             }
-            return s;
+
+            /// <summary>
+            /// Complete the read operation, after any I/O is completed.
+            /// </summary>
+            /// <returns>The read result, or throws an exception if error encountered.</returns>
+            public (Status, Output) CompleteRead()
+            {
+                if (status != Status.PENDING)
+                    return (status, output);
+
+                return readAsyncInternal.CompleteRead();
+            }
         }
+
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal async ValueTask InternalRefreshAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            ref Key key, ref Input input, Context context = default, CancellationToken token = default)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            // We check if we are in normal mode
-            var newPhaseInfo = SystemState.Copy(ref _systemState);
-            if (clientSession.ctx.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && clientSession.ctx.version == newPhaseInfo.version)
+            var pcontext = default(PendingContext<Input, Output, Context>);
+            Output output = default;
+            OperationStatus internalStatus;
+            var nextSerialNum = clientSession.ctx.serialNum + 1;
+
+            if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+            try
             {
-                return;
+            TryReadAgain:
+
+                internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, nextSerialNum);
+                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+                {
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output));
+                }
+
+                if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
+                {
+                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession);
+                    goto TryReadAgain;
+                }
+            }
+            finally
+            {
+                clientSession.ctx.serialNum = nextSerialNum;
+                if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }
 
-            // In non-checkpointing phases
-            if (newPhaseInfo.phase == Phase.PREPARE_GROW || newPhaseInfo.phase == Phase.IN_PROGRESS_GROW)
-            {
-                return;
-            }
-
-            await HandleCheckpointingPhasesAsync(ctx, clientSession);
+            return SlowReadAsync(this, clientSession, pcontext, token);
         }
 
+        private static async ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> SlowReadAsync<Input, Output, Context, Functions>(
+            FasterKV<Key, Value> @this,
+            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            PendingContext<Input, Output, Context> pendingContext, CancellationToken token = default)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
+            clientSession.ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
+            clientSession.ctx.asyncPendingCount++;
+            clientSession.ctx.pendingReads.Add();
 
-        private bool AtomicSwitch(FasterExecutionContext fromCtx, FasterExecutionContext toCtx, int version)
+            try
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (@this.epoch.ThisInstanceProtected())
+                    throw new NotSupportedException("Async operations not supported over protected epoch");
+
+                diskRequest = await diskRequest.asyncOperation.Task;
+            }
+            catch
+            {
+                clientSession.ctx.ioPendingRequests.Remove(pendingContext.id);
+                clientSession.ctx.asyncPendingCount--;
+                throw;
+            }
+            finally
+            {
+                clientSession.ctx.pendingReads.Remove();
+            }
+
+            return new ReadAsyncResult<Input, Output, Context, Functions>(@this, clientSession, pendingContext, diskRequest);
+        }
+
+        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, int version, ConcurrentDictionary<string, CommitPoint> tokens)
         {
             lock (toCtx)
             {
@@ -145,7 +278,7 @@ namespace FASTER.core
                     CopyContext(fromCtx, toCtx);
                     if (toCtx.serialNum != -1)
                     {
-                        _hybridLogCheckpoint.info.checkpointTokens.TryAdd(toCtx.guid,
+                        tokens.TryAdd(toCtx.guid,
                             new CommitPoint
                             {
                                 UntilSerialNo = toCtx.serialNum,
@@ -156,268 +289,6 @@ namespace FASTER.core
                 }
             }
             return false;
-        }
-
-        private SystemState GetStartState(SystemState state)
-        {
-            if (state.phase <= Phase.REST)
-                return SystemState.Make(Phase.REST, state.version - 1);
-            else
-                return SystemState.Make(Phase.REST, state.version);
-        }
-
-        private async ValueTask HandleCheckpointingPhasesAsync(FasterExecutionContext ctx, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, bool async = true, CancellationToken token = default)
-        {
-            if (async)
-                clientSession?.UnsafeResumeThread();
-
-            var finalState = SystemState.Copy(ref _systemState);
-            while (finalState.phase == Phase.INTERMEDIATE)
-                finalState = SystemState.Copy(ref _systemState);
-
-            var previousState = ctx != null ? SystemState.Make(ctx.phase, ctx.version) : finalState;
-
-            // We need to move from previousState to finalState one step at a time
-            var currentState = previousState;
-
-            SystemState startState = GetStartState(finalState);
-
-            if ((currentState.version < startState.version) ||
-                (currentState.version == startState.version && currentState.phase < startState.phase))
-            {
-                // Fast-forward to beginning of current checkpoint cycle
-                currentState = startState;
-            }
-
-            do
-            {
-                switch (currentState.phase)
-                {
-                    case Phase.PREP_INDEX_CHECKPOINT:
-                        {
-                            if (ctx != null)
-                            {
-                                if (!ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt])
-                                {
-                                    ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = true;
-                                }
-                                epoch.Mark(EpochPhaseIdx.PrepareForIndexCheckpt, currentState.version);
-                            }
-
-                            if (epoch.CheckIsComplete(EpochPhaseIdx.PrepareForIndexCheckpt, currentState.version))
-                            {
-                                GlobalMoveToNextCheckpointState(currentState);
-                            }
-                            break;
-                        }
-                    case Phase.INDEX_CHECKPOINT:
-                        {
-                            if (_checkpointType == CheckpointType.INDEX_ONLY && ctx != null)
-                            {
-                                // Reseting the marker for a potential FULL or INDEX_ONLY checkpoint in the future
-                                ctx.markers[EpochPhaseIdx.PrepareForIndexCheckpt] = false;
-                            }
-
-                            if (async && !IsIndexFuzzyCheckpointCompleted())
-                            {
-                                clientSession?.UnsafeSuspendThread();
-                                await IsIndexFuzzyCheckpointCompletedAsync(token);
-                                clientSession?.UnsafeResumeThread();
-                            }
-                            GlobalMoveToNextCheckpointState(currentState);
-
-                            break;
-                        }
-                    case Phase.PREPARE:
-                        {
-                            if (ctx != null)
-                            {
-                                if (!ctx.markers[EpochPhaseIdx.Prepare])
-                                {
-                                    if (!RelaxedCPR)
-                                    {
-                                        AcquireSharedLatchesForAllPendingRequests(ctx);
-                                    }
-                                    ctx.markers[EpochPhaseIdx.Prepare] = true;
-                                }
-                                epoch.Mark(EpochPhaseIdx.Prepare, currentState.version);
-                            }
-
-                            if (epoch.CheckIsComplete(EpochPhaseIdx.Prepare, currentState.version))
-                            {
-                                GlobalMoveToNextCheckpointState(currentState);
-                            }
-
-                            break;
-                        }
-                    case Phase.IN_PROGRESS:
-                        {
-                            if (ctx != null)
-                            {
-                                // Need to be very careful here as threadCtx is changing
-                                FasterExecutionContext _ctx;
-                                if (previousState.phase == Phase.IN_PROGRESS)
-                                {
-                                    _ctx = ctx.prevCtx;
-                                }
-                                else
-                                {
-                                    _ctx = ctx;
-                                }
-
-                                if (!_ctx.markers[EpochPhaseIdx.InProgress])
-                                {
-                                    AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
-                                    InitContext(ctx, ctx.prevCtx.guid, ctx.prevCtx.serialNum);
-
-                                    // Has to be prevCtx, not ctx
-                                    ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
-                                }
-
-                                epoch.Mark(EpochPhaseIdx.InProgress, currentState.version);
-                            }
-
-                            // Has to be prevCtx, not ctx
-                            if (epoch.CheckIsComplete(EpochPhaseIdx.InProgress, currentState.version))
-                            {
-                                GlobalMoveToNextCheckpointState(currentState);
-                            }
-                            break;
-                        }
-                    case Phase.WAIT_PENDING:
-                        {
-                            if (ctx != null)
-                            {
-                                if (!ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
-                                {
-                                    var notify = (ctx.prevCtx.ioPendingRequests.Count == 0);
-                                    notify = notify && (ctx.prevCtx.retryRequests.Count == 0);
-
-                                    if (notify)
-                                    {
-                                        ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
-                                    }
-                                    else
-                                        break;
-                                }
-                                epoch.Mark(EpochPhaseIdx.WaitPending, currentState.version);
-                            }
-
-                            if (epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, currentState.version))
-                            {
-                                GlobalMoveToNextCheckpointState(currentState);
-                            }
-                            break;
-                        }
-                    case Phase.WAIT_FLUSH:
-                        {
-                            if (ctx == null  || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
-                            {
-                                bool notify;
-
-                                if (FoldOverSnapshot)
-                                {
-                                    notify = (hlog.FlushedUntilAddress >= _hybridLogCheckpoint.info.finalLogicalAddress);
-                                }
-                                else
-                                {
-                                    notify = (_hybridLogCheckpoint.flushedSemaphore != null) && _hybridLogCheckpoint.flushedSemaphore.CurrentCount > 0;
-                                }
-
-                                if (async && !notify)
-                                {
-                                    Debug.Assert(_hybridLogCheckpoint.flushedSemaphore != null);
-                                    clientSession?.UnsafeSuspendThread();
-                                    await _hybridLogCheckpoint.flushedSemaphore.WaitAsync(token);
-                                    clientSession?.UnsafeResumeThread();
-
-                                    _hybridLogCheckpoint.flushedSemaphore.Release();
-
-                                    notify = true;
-                                }
-
-                                if (_checkpointType == CheckpointType.FULL)
-                                {
-                                    notify = notify && IsIndexFuzzyCheckpointCompleted();
-
-                                    if (async && !notify)
-                                    {
-                                        clientSession?.UnsafeSuspendThread();
-                                        await IsIndexFuzzyCheckpointCompletedAsync(token);
-                                        clientSession?.UnsafeResumeThread();
-
-                                        notify = true;
-                                    }
-                                }
-
-                                if (notify)
-                                {
-                                    if (ctx != null)
-                                        ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
-                                }
-                                else
-                                    break;
-                            }
-
-                            if (ctx != null)
-                                epoch.Mark(EpochPhaseIdx.WaitFlush, currentState.version);
-
-                            if (epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, currentState.version))
-                            {
-                                GlobalMoveToNextCheckpointState(currentState);
-                            }
-                            break;
-                        }
-
-                    case Phase.PERSISTENCE_CALLBACK:
-                        {
-                            if (ctx != null)
-                            {
-                                if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
-                                {
-                                    if (ctx.prevCtx.serialNum != -1)
-                                    {
-                                        var commitPoint = new CommitPoint
-                                        {
-                                            UntilSerialNo = ctx.prevCtx.serialNum,
-                                            ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                                        };
-
-                                        // Thread local action
-                                        functions.CheckpointCompletionCallback(ctx.guid, commitPoint);
-                                        if (clientSession != null)
-                                            clientSession.LatestCommitPoint = commitPoint;
-                                    }
-                                    ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
-                                }
-                                epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, currentState.version);
-                            }
-                            if (epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, currentState.version))
-                            {
-                                GlobalMoveToNextCheckpointState(currentState);
-                            }
-                            break;
-                        }
-                    case Phase.REST:
-                        {
-                            break;
-                        }
-                    default:
-                        throw new FasterException("Invalid state found during checkpointing");
-                }
-
-                if (ctx != null)
-                {
-                    // update thread local variables
-                    ctx.phase = currentState.phase;
-                    ctx.version = currentState.version;
-                }
-                previousState.word = currentState.word;
-                currentState = GetNextState(currentState, _checkpointType);
-            } while (previousState.word != finalState.word);
-
-            if (async)
-                clientSession?.UnsafeSuspendThread();
         }
     }
 }

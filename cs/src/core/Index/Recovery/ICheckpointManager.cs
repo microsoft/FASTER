@@ -2,13 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -26,7 +20,6 @@ namespace FASTER.core
     ///   CommitIndexCheckpoint (for index checkpoints) ->
     /// 
     /// Recovery:
-    ///   GetLatestCheckpoint (if request to recover to latest checkpoint) ->
     ///   GetIndexCommitMetadata ->
     ///   GetLogCommitMetadata ->
     ///   GetIndexDevice ->
@@ -35,7 +28,7 @@ namespace FASTER.core
     /// 
     /// Provided devices will be closed directly by FASTER when done.
     /// </summary>
-    public interface ICheckpointManager
+    public interface ICheckpointManager :  IDisposable
     {
         /// <summary>
         /// Initialize index checkpoint
@@ -70,14 +63,27 @@ namespace FASTER.core
         /// </summary>
         /// <param name="indexToken">Token</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetIndexCommitMetadata(Guid indexToken);
+        byte[] GetIndexCheckpointMetadata(Guid indexToken);
 
         /// <summary>
         /// Retrieve commit metadata for specified log checkpoint
         /// </summary>
         /// <param name="logToken">Token</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCommitMetadata(Guid logToken);
+        byte[] GetLogCheckpointMetadata(Guid logToken);
+
+        /// <summary>
+        /// Get list of index checkpoint tokens, in order of usage preference
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerable<Guid> GetIndexCheckpointTokens();
+
+        /// <summary>
+        /// Get list of log checkpoint tokens, in order of usage preference
+        /// </summary>
+        /// <returns></returns>
+        public IEnumerable<Guid> GetLogCheckpointTokens();
+
 
         /// <summary>
         /// Provide device to store index checkpoint (including overflow buckets)
@@ -101,11 +107,8 @@ namespace FASTER.core
         IDevice GetSnapshotObjectLogDevice(Guid token);
 
         /// <summary>
-        /// Get latest valid checkpoint for recovery
+        /// Cleanup all data (subfolder) related to checkpoints by this manager
         /// </summary>
-        /// <param name="indexToken"></param>
-        /// <param name="logToken"></param>
-        /// <returns>true if latest valid checkpoint found, false otherwise</returns>
-        bool GetLatestCheckpoint(out Guid indexToken, out Guid logToken);
+        public void PurgeAll();
     }
 }

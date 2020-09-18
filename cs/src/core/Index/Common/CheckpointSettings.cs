@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-
-using System;
-
 namespace FASTER.core
 {
     /// <summary>
@@ -40,8 +37,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Use specified directory for storing and retrieving checkpoints
-        /// This is a shortcut to providing the following:
-        ///   CheckpointSettings.CheckpointManager = new LocalCheckpointManager(CheckpointDir)
+        /// using local storage device.
         /// </summary>
         public string CheckpointDir = null;
     }

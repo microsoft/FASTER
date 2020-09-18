@@ -3,21 +3,14 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using System.IO;
-using System.Diagnostics;
+using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace FASTER.core
 {
     public unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
-        where Key : new()
-        where Value : new()
     {
         public const int kRecordAlignment = 8; // RecordInfo has a long field, so it should be aligned to 8-bytes
 
@@ -105,6 +98,17 @@ namespace FASTER.core
             return size;
         }
 
+        public override int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        {
+            ref var recordInfo = ref GetInfo(physicalAddress);
+            if (recordInfo.IsNull())
+                return RecordInfo.GetLength();
+
+            var size = RecordInfo.GetLength() + KeySize(physicalAddress) + fasterSession.GetLength(ref GetValue(physicalAddress), ref input);
+            size = (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
+            return size;
+        }
+
         public override int GetRequiredRecordSize(long physicalAddress, int availableBytes)
         {
             // We need at least [record size] + [average key size] + [average value size]
@@ -115,7 +119,7 @@ namespace FASTER.core
             }
 
             // We need at least [record size] + [actual key size] + [average value size]
-            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueLength.GetAverageLength();
+            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueLength.GetInitialLength();
             if (availableBytes < reqBytes)
             {
                 return reqBytes;
@@ -131,15 +135,15 @@ namespace FASTER.core
         {
             return RecordInfo.GetLength() +
                 kRecordAlignment +
-                KeyLength.GetAverageLength() +
-                ValueLength.GetAverageLength();
+                KeyLength.GetInitialLength() +
+                ValueLength.GetInitialLength();
         }
 
-        public override int GetInitialRecordSize<TInput>(ref Key key, ref TInput input)
+        public override int GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
         {
             var actualSize = RecordInfo.GetLength() +
                 KeyLength.GetLength(ref key) +
-                ValueLength.GetInitialLength(ref input);
+                fasterSession.GetInitialLength(ref input);
 
             return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
@@ -233,7 +237,7 @@ namespace FASTER.core
             return values[pageIndex] != null;
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
@@ -243,7 +247,7 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, IOCompletionCallback callback,
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
@@ -308,7 +312,7 @@ namespace FASTER.core
 
 
         private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
-                        IOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
+                        DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device)
         {
             if (asyncResult.partial)
@@ -325,14 +329,13 @@ namespace FASTER.core
             }
             else
             {
-                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
-                    numBytesToWrite, callback, asyncResult);
+                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress, numBytesToWrite, callback, asyncResult);
             }
         }
 
         protected override void ReadAsync<TContext>(
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
-            IOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
             device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex],
                 aligned_read_length, callback, asyncResult);
@@ -347,7 +350,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, IOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default(SectorAlignedMemory))
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for BlittableAllocator");
         }
@@ -362,7 +365,6 @@ namespace FASTER.core
         {
             return true;
         }
-
 
         public override ref Key GetContextRecordKey(ref AsyncIOContext<Key, Value> ctx)
         {
@@ -446,7 +448,7 @@ namespace FASTER.core
                                         long readPageStart,
                                         int numPages,
                                         long untilAddress,
-                                        IOCompletionCallback callback,
+                                        DeviceIOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
                                         out CountdownEvent completed,

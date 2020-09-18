@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using Microsoft.Win32.SafeHandles;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -68,7 +70,7 @@ namespace FASTER.test.recovery.sumstore
             CopyDirectory(new DirectoryInfo(this.original.CheckpointDirectory), new DirectoryInfo(cloneCheckpointDirectory));
 
             // Recover from original checkpoint
-            this.clone.Initialize(cloneCheckpointDirectory, this.sharedLogDirectory);
+            this.clone.Initialize(cloneCheckpointDirectory, this.sharedLogDirectory, populateLogHandles: true);
             this.clone.Faster.Recover(checkpointGuid);
 
             // Both sessions should work concurrently
@@ -92,18 +94,37 @@ namespace FASTER.test.recovery.sumstore
         {
             public string CheckpointDirectory { get; private set; }
             public string LogDirectory { get; private set; }
-            public FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> Faster { get; private set; }
+            public FasterKV<AdId, NumClicks> Faster { get; private set; }
             public IDevice LogDevice { get; private set; }
 
-            public void Initialize(string checkpointDirectory, string logDirectory)
+            public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
                 this.CheckpointDirectory = checkpointDirectory;
                 this.LogDirectory = logDirectory;
 
-                this.LogDevice = Devices.CreateLogDevice($"{this.LogDirectory}\\log", deleteOnClose: true);
-                this.Faster = new FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions>(
+                string logFileName = "log";
+                string deviceFileName = $"{this.LogDirectory}\\{logFileName}";
+                KeyValuePair<int, SafeFileHandle>[] initialHandles = null;
+                if (populateLogHandles)
+                {
+                    var segmentIds = new List<int>();
+                    foreach (FileInfo item in new DirectoryInfo(logDirectory).GetFiles(logFileName + "*"))
+                    {
+                        segmentIds.Add(int.Parse(item.Name.Replace(logFileName, "").Replace(".", "")));
+                    }
+                    segmentIds.Sort();
+                    initialHandles = new KeyValuePair<int, SafeFileHandle>[segmentIds.Count];
+                    for (int i = 0; i < segmentIds.Count; i++)
+                    {
+                        var segmentId = segmentIds[i];
+                        var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName);
+                        initialHandles[i] = new KeyValuePair<int, SafeFileHandle>(segmentId, handle);
+                    }
+                }
+
+                this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
+                this.Faster = new FasterKV<AdId, NumClicks>(
                     keySpace,
-                    new Functions(),
                     new LogSettings { LogDevice = this.LogDevice },
                     new CheckpointSettings { CheckpointDir = this.CheckpointDirectory, CheckPointType = CheckpointType.FoldOver });
             }
@@ -112,14 +133,14 @@ namespace FASTER.test.recovery.sumstore
             {
                 this.Faster?.Dispose();
                 this.Faster = null;
-                this.LogDevice?.Close();
+                this.LogDevice?.Dispose();
                 this.LogDevice = null;
             }
         }
 
-        private void Populate(FasterKV<AdId, NumClicks, AdInput, Output, Empty, Functions> fasterInstance)
+        private void Populate(FasterKV<AdId, NumClicks> fasterInstance)
         {
-            using var session = fasterInstance.NewSession();
+            using var session = fasterInstance.NewSession(new Functions());
 
             // Prepare the dataset
             var inputArray = new AdInput[numOps];
@@ -147,7 +168,11 @@ namespace FASTER.test.recovery.sumstore
         private void Test(FasterTestInstance fasterInstance, Guid checkpointToken)
         {
             var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(checkpointToken, new LocalCheckpointManager(fasterInstance.CheckpointDirectory));
+            checkpointInfo.Recover(checkpointToken,
+                new DeviceLogCommitCheckpointManager(
+                    new LocalStorageNamedDeviceFactory(),
+                        new DefaultCheckpointNamingScheme(
+                          new DirectoryInfo(fasterInstance.CheckpointDirectory).FullName)));
 
             // Create array for reading
             var inputArray = new AdInput[numUniqueKeys];
@@ -160,7 +185,7 @@ namespace FASTER.test.recovery.sumstore
             var input = default(AdInput);
             var output = default(Output);
 
-            using var session = fasterInstance.Faster.NewSession();
+            using var session = fasterInstance.Faster.NewSession(new Functions());
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {

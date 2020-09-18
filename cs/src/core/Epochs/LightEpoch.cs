@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Epoch protection
     /// </summary>
-    public unsafe class LightEpoch
+    public unsafe sealed class LightEpoch
     {
         /// <summary>
         /// Default invalid index entry.
@@ -61,6 +61,9 @@ namespace FASTER.core
 
         [ThreadStatic]
         static int threadId;
+
+        [ThreadStatic]
+        static int threadIdHash;
 
         /// <summary>
         /// Global current epoch value
@@ -414,11 +417,11 @@ namespace FASTER.core
         {
             if (threadId == 0) // run once per thread for performance
             {
-                // For portability(run on non-windows platform)
+                // For portability (run on non-windows platform)
                 threadId = Environment.OSVersion.Platform == PlatformID.Win32NT ? (int)Native32.GetCurrentThreadId() : Thread.CurrentThread.ManagedThreadId;
+                threadIdHash = Utility.Murmur3(threadId);
             }
-            int startIndex = Utility.Murmur3(threadId);
-            return ReserveEntry(startIndex, threadId);
+            return ReserveEntry(threadIdHash, threadId);
         }
 
         /// <summary>
@@ -427,7 +430,6 @@ namespace FASTER.core
         [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
         private struct Entry
         {
-
             /// <summary>
             /// Thread-local value of epoch
             /// </summary>

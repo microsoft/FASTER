@@ -10,6 +10,7 @@ using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
+using FASTER.devices;
 
 namespace FASTER.test.recovery.sumstore.simple
 {
@@ -17,30 +18,64 @@ namespace FASTER.test.recovery.sumstore.simple
     [TestFixture]
     public class RecoveryTests
     {
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht1;
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht2;
+        private FasterKV<AdId, NumClicks> fht1;
+        private FasterKV<AdId, NumClicks> fht2;
         private IDevice log;
+        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+        public const string TEST_CONTAINER = "checkpoints4";
+
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
-        public void SimpleRecoveryTest1(CheckpointType checkpointType)
+        public void PageBlobSimpleRecoveryTest(CheckpointType checkpointType)
         {
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            {
+                ICheckpointManager checkpointManager = new DeviceLogCommitCheckpointManager(
+                    new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
+                    new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobSimpleRecoveryTest"));
+                SimpleRecoveryTest1(checkpointType, checkpointManager);
+                checkpointManager.PurgeAll();
+                checkpointManager.Dispose();
+            }
+        }
+
+        [TestCase(CheckpointType.FoldOver)]
+        [TestCase(CheckpointType.Snapshot)]
+        public void LocalDeviceSimpleRecoveryTest(CheckpointType checkpointType)
+        {
+            ICheckpointManager checkpointManager = new DeviceLogCommitCheckpointManager(
+                new LocalStorageNamedDeviceFactory(),
+                new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobSimpleRecoveryTest"));
+            SimpleRecoveryTest1(checkpointType, checkpointManager);
+            checkpointManager.PurgeAll();
+            checkpointManager.Dispose();
+        }
+
+
+        [TestCase(CheckpointType.FoldOver)]
+        [TestCase(CheckpointType.Snapshot)]
+        public void SimpleRecoveryTest1(CheckpointType checkpointType, ICheckpointManager checkpointManager = null)
+        {
+            string checkpointDir = TestContext.CurrentContext.TestDirectory + $"\\{TEST_CONTAINER}";
+
+            if (checkpointManager != null)
+                checkpointDir = null;
+
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest1.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
-
             fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
             fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
 
@@ -55,7 +90,7 @@ namespace FASTER.test.recovery.sumstore.simple
             AdInput inputArg = default;
             Output output = default;
 
-            var session1 = fht1.NewSession();
+            var session1 = fht1.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
@@ -67,7 +102,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht2.Recover(token);
 
-            var session2 = fht2.NewSession();
+            var session2 = fht2.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
@@ -81,9 +116,81 @@ namespace FASTER.test.recovery.sumstore.simple
             }
             session2.Dispose();
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
+
+            if (checkpointManager == null)
+                new DirectoryInfo(checkpointDir).Delete(true);
+        }
+
+        [TestCase(CheckpointType.FoldOver)]
+        [TestCase(CheckpointType.Snapshot)]
+        public void SimpleRecoveryTest2(CheckpointType checkpointType)
+        {
+            var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestContext.CurrentContext.TestDirectory + "\\checkpoints4"), false);
+
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
+
+            // Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
+
+            fht1 = new FasterKV
+                <AdId, NumClicks>
+                (128,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                );
+
+            fht2 = new FasterKV
+                <AdId, NumClicks>
+                (128,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                );
+
+
+            int numOps = 5000;
+            var inputArray = new AdId[numOps];
+            for (int i = 0; i < numOps; i++)
+            {
+                inputArray[i].adId = i;
+            }
+
+            NumClicks value;
+            AdInput inputArg = default;
+            Output output = default;
+
+            var session1 = fht1.NewSession(new SimpleFunctions());
+            for (int key = 0; key < numOps; key++)
+            {
+                value.numClicks = key;
+                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+            }
+            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            session1.Dispose();
+
+            fht2.Recover(token);
+
+            var session2 = fht2.NewSession(new SimpleFunctions());
+            for (int key = 0; key < numOps; key++)
+            {
+                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+
+                if (status == Status.PENDING)
+                    session2.CompletePending(true);
+                else
+                {
+                    Assert.IsTrue(output.value.numClicks == key);
+                }
+            }
+            session2.Dispose();
+
+            log.Dispose();
+            fht1.Dispose();
+            fht2.Dispose();
+            checkpointManager.Dispose();
+
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
         }
 
@@ -92,18 +199,18 @@ namespace FASTER.test.recovery.sumstore.simple
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints5");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints6");
 
             fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints6", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints6", CheckPointType = CheckpointType.FoldOver }
                 );
@@ -118,7 +225,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             NumClicks value;
 
-            var session1 = fht1.NewSession();
+            var session1 = fht1.NewSession(new SimpleFunctions());
             var address = 0L;
             for (int key = 0; key < numOps; key++)
             {
@@ -139,7 +246,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             Assert.AreEqual(address, fht2.Log.BeginAddress);
 
-            log.Close();
+            log.Dispose();
             fht1.Dispose();
             fht2.Dispose();
             new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints6").Delete(true);

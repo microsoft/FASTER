@@ -16,9 +16,9 @@ namespace FASTER.test.recovery.sumstore.recover_continue
     [TestFixture]
     internal class RecoverContinueTests
     {
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht1;
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht2;
-        private FasterKV<AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions> fht3;
+        private FasterKV<AdId, NumClicks> fht1;
+        private FasterKV<AdId, NumClicks> fht2;
+        private FasterKV<AdId, NumClicks> fht3;
         private IDevice log;
         private int numOps;
 
@@ -29,22 +29,22 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints3");
 
             fht1 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht3 = new FasterKV
-                <AdId, NumClicks, AdInput, Output, Empty, SimpleFunctions>
-                (128, new SimpleFunctions(),
+                <AdId, NumClicks>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints3", CheckPointType = CheckpointType.Snapshot }
                 );
@@ -61,7 +61,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             fht1 = null;
             fht2 = null;
             fht3 = null;
-            log.Close();
+            log.Dispose();
             Directory.Delete(TestContext.CurrentContext.TestDirectory + "\\checkpoints3", true);
         }
 
@@ -92,25 +92,25 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
             long sno = 0;
 
-            var firstsession = fht1.NewSession("first");
+            var firstsession = fht1.For(new SimpleFunctions()).NewSession<SimpleFunctions>("first");
             IncrementAllValues(ref firstsession, ref sno);
             fht1.TakeFullCheckpoint(out _);
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             firstsession.Dispose();
 
             // Check if values after checkpoint are correct
-            var session1 = fht1.NewSession();
+            var session1 = fht1.For(new SimpleFunctions()).NewSession<SimpleFunctions>();
             CheckAllValues(ref session1, 1);
             session1.Dispose();
 
             // Recover and check if recovered values are correct
             fht2.Recover();
-            var session2 = fht2.NewSession();
+            var session2 = fht2.For(new SimpleFunctions()).NewSession<SimpleFunctions>();
             CheckAllValues(ref session2, 1);
             session2.Dispose();
 
             // Continue and increment values
-            var continuesession = fht2.ResumeSession("first", out CommitPoint cp);
+            var continuesession = fht2.For(new SimpleFunctions()).ResumeSession<SimpleFunctions>("first", out CommitPoint cp);
             long newSno = cp.UntilSerialNo;
             Assert.IsTrue(newSno == sno - 1);
             IncrementAllValues(ref continuesession, ref sno);
@@ -119,7 +119,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             continuesession.Dispose();
 
             // Check if values after continue checkpoint are correct
-            var session3 = fht2.NewSession();
+            var session3 = fht2.For(new SimpleFunctions()).NewSession<SimpleFunctions>();
             CheckAllValues(ref session3, 2);
             session3.Dispose();
 
@@ -127,7 +127,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             // Recover and check if recovered values are correct
             fht3.Recover();
 
-            var nextsession = fht3.ResumeSession("first", out cp);
+            var nextsession = fht3.For(new SimpleFunctions()).ResumeSession<SimpleFunctions>("first", out cp);
             long newSno2 = cp.UntilSerialNo;
             Assert.IsTrue(newSno2 == sno - 1);
             CheckAllValues(ref nextsession, 2);

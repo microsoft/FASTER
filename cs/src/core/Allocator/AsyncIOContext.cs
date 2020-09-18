@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -52,6 +52,12 @@ namespace FASTER.core
         /// </summary>
         public AsyncQueue<AsyncIOContext<Key, Value>> callbackQueue;
 
+
+        /// <summary>
+        /// Async Operation ValueTask backer
+        /// </summary>
+        public TaskCompletionSource<AsyncIOContext<Key, Value>> asyncOperation;
+
         /// <summary>
         /// Dispose
         /// </summary>
@@ -63,18 +69,10 @@ namespace FASTER.core
         }
     }
 
-    internal class SimpleReadContext : IAsyncResult
+    internal sealed class SimpleReadContext
     {
         public long logicalAddress;
         public SectorAlignedMemory record;
         public SemaphoreSlim completedRead;
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
-
-        public bool IsCompleted => throw new NotImplementedException();
     }
 }

@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class NativeReadCacheTests
     {
-        private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
+        private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
 
         [SetUp]
@@ -25,8 +25,8 @@ namespace FASTER.test
         {
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\NativeReadCacheTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                (1L<<20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (1L<<20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
         }
 
         [TearDown]
@@ -34,13 +34,13 @@ namespace FASTER.test
         {
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
 
         [Test]
         public void NativeDiskWriteReadCache()
         {
-            using var session = fht.NewSession();
+            using var session = fht.NewSession(new Functions());
 
             InputStruct input = default;
 
@@ -145,7 +145,7 @@ namespace FASTER.test
         [Test]
         public void NativeDiskWriteReadCache2()
         {
-            using var session = fht.NewSession();
+            using var session = fht.NewSession(new Functions());
 
             InputStruct input = default;
 

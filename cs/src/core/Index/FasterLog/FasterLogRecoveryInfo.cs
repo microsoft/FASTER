@@ -83,20 +83,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        ///  Recover info from token
-        /// </summary>
-        /// <param name="logCommitManager"></param>
-        /// <returns></returns>
-        internal void Recover(ILogCommitManager logCommitManager)
-        {
-            var metadata = logCommitManager.GetCommitMetadata();
-            if (metadata == null)
-                throw new FasterException("Invalid log commit metadata during recovery");
-
-            Initialize(new BinaryReader(new MemoryStream(metadata)));
-        }
-
-        /// <summary>
         /// Reset
         /// </summary>
         public void Reset()
@@ -107,7 +93,7 @@ namespace FASTER.core
         /// <summary>
         /// Write info to byte array
         /// </summary>
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             using (var ms = new MemoryStream())
             {

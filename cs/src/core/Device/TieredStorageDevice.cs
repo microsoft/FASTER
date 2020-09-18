@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Diagnostics;
+using System.Text;
 using System.Threading;
-using System.ComponentModel;
-using System.Collections.Concurrent;
 
 namespace FASTER.core
 {
@@ -14,7 +12,7 @@ namespace FASTER.core
     /// on the device, it is considered persistent. Reads are served from the closest device with available data. Writes are issued in parallel to
     /// all devices 
     /// </summary>
-    class TieredStorageDevice : StorageDeviceBase
+    sealed class TieredStorageDevice : StorageDeviceBase
     {
         private readonly IList<IDevice> devices;
         private readonly int commitPoint;
@@ -24,7 +22,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="commitPoint">
         /// The index of an <see cref="IDevice">IDevice</see> in <see cref="devices"/>. When a write has been completed on the device,
-        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)"/>
         /// will not be called until the write is completed on the commit point device.
         /// </param>
         /// <param name="devices">
@@ -44,7 +42,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="commitPoint">
         /// The index of an <see cref="IDevice">IDevice</see> in <see cref="devices">devices</see>. When a write has been completed on the device,
-        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, int, ulong, uint, IOCompletionCallback, IAsyncResult)"/>
+        /// the write is considered persistent. It is guaranteed that the callback in <see cref="WriteAsync(IntPtr, int, ulong, uint, DeviceIOCompletionCallback, object)"/>
         /// will not be called until the write is completed on commit point device and all previous tiers.
         /// </param>
         /// <param name="devices">
@@ -65,24 +63,24 @@ namespace FASTER.core
             }
         }
 
-        public override void Close()
+        public override void Dispose()
         {
             foreach (IDevice device in devices)
             {
-                device.Close();
+                device.Dispose();
             }
         }
 
-        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
             // This device is epoch-protected and cannot be stale while the operation is in flight
             IDevice closestDevice = devices[FindClosestDeviceContaining(segmentId)];
             // We can directly forward the address, because assuming an inclusive policy, all devices agree on the same address space. The only difference is that some segments may not
             // be present for certain devices. 
-            closestDevice.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, asyncResult);
+            closestDevice.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
         }
 
-        public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, IOCompletionCallback callback, IAsyncResult asyncResult)
+        public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
 
             int startTier = FindClosestDeviceContaining(segmentId);
@@ -105,7 +103,7 @@ namespace FASTER.core
                             countdown.Dispose();
                         }
                         
-                    }, asyncResult);
+                    }, context);
                 }
                 else
                 {

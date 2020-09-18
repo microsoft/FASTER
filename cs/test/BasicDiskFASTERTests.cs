@@ -18,7 +18,7 @@ namespace FASTER.test
     [TestFixture]
     internal class BasicStorageFASTERTests
     {
-        private FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fht;
+        private FasterKV<KeyStruct, ValueStruct> fht;
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "test";
 
@@ -32,7 +32,7 @@ namespace FASTER.test
         public void PageBlobWriteRead()
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false));
+                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "PageBlobWriteRead", "BasicDiskFASTERTests"));
         }
 
         [Test]
@@ -42,7 +42,7 @@ namespace FASTER.test
             IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
-                IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "BasicDiskFASTERTests", false);
+                IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "TieredWriteRead", "BasicDiskFASTERTests");
                 tested = new TieredStorageDevice(1, localDevice, cloudDevice);
             }
             else
@@ -66,10 +66,10 @@ namespace FASTER.test
 
         void TestDeviceWriteRead(IDevice log)
         {
-            fht = new FasterKV<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions>
-                       (1L << 20, new Functions(), new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                       (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
             
-            var session = fht.NewSession();
+            var session = fht.NewSession(new Functions());
 
             InputStruct input = default;
 
@@ -120,7 +120,7 @@ namespace FASTER.test
             session.Dispose();
             fht.Dispose();
             fht = null;
-            log.Close();
+            log.Dispose();
         }
     }
 }

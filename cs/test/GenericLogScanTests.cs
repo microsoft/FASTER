@@ -17,7 +17,7 @@ namespace FASTER.test
     [TestFixture]
     internal class GenericFASTERScanTests
     {
-        private FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> fht;
+        private FasterKV<MyKey, MyValue> fht;
         private IDevice log, objlog;
         const int totalRecords = 2000;
 
@@ -27,8 +27,8 @@ namespace FASTER.test
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericFASTERScanTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericFASTERScanTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions>
-                (128, new MyFunctions(),
+            fht = new FasterKV<MyKey, MyValue>
+                (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9 },
                 checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
@@ -40,15 +40,15 @@ namespace FASTER.test
         {
             fht.Dispose();
             fht = null;
-            log.Close();
-            objlog.Close();
+            log.Dispose();
+            objlog.Dispose();
         }
 
 
         [Test]
         public void GenericDiskWriteScan()
         {
-            using var session = fht.NewSession();
+            using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
 
             var s = fht.Log.Subscribe(new LogObserver());
 

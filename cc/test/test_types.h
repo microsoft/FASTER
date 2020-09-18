@@ -22,9 +22,9 @@ class FixedSizeKey {
     return static_cast<uint32_t>(sizeof(FixedSizeKey));
   }
 
-  inline KeyHash GetHash() const {
+  inline core::KeyHash GetHash() const {
     HashFn hash_fn;
-    return KeyHash{ hash_fn(key) };
+    return core::KeyHash{ hash_fn(key) };
   }
 
   inline bool operator==(const FixedSizeKey& other) const {
@@ -60,6 +60,28 @@ class SimpleAtomicValue {
     T value;
     std::atomic<T> atomic_value;
   };
+};
+
+class NonCopyable
+{
+  public:
+  NonCopyable(const NonCopyable&) = delete;
+  NonCopyable& operator=(const NonCopyable&) = delete;
+
+  protected:
+  NonCopyable() = default;
+  ~NonCopyable() = default;
+};
+
+class NonMovable
+{
+  public:
+  NonMovable(NonMovable&&) = delete;
+  NonMovable& operator=(NonMovable&&) = delete;
+
+  protected:
+  NonMovable() = default;
+  ~NonMovable() = default;
 };
 
 }

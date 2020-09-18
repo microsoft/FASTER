@@ -44,6 +44,45 @@ namespace FASTER.core
             public IntPtr VolumeHandle;
             public uint HandleInfo;
         }
+
+        internal enum FILE_INFO_BY_HANDLE_CLASS
+        {
+            FileBasicInfo = 0,
+            FileStandardInfo = 1,
+            FileNameInfo = 2,
+            FileRenameInfo = 3,
+            FileDispositionInfo = 4,
+            FileAllocationInfo = 5,
+            FileEndOfFileInfo = 6,
+            FileStreamInfo = 7,
+            FileCompressionInfo = 8,
+            FileAttributeTagInfo = 9,
+            FileIdBothDirectoryInfo = 10,// 0x0A
+            FileIdBothDirectoryRestartInfo = 11, // 0xB
+            FileIoPriorityHintInfo = 12, // 0xC
+            FileRemoteProtocolInfo = 13, // 0xD
+            FileFullDirectoryInfo = 14, // 0xE
+            FileFullDirectoryRestartInfo = 15, // 0xF
+            FileStorageInfo = 16, // 0x10
+            FileAlignmentInfo = 17, // 0x11
+            FileIdInfo = 18, // 0x12
+            FileIdExtdDirectoryInfo = 19, // 0x13
+            FileIdExtdDirectoryRestartInfo = 20, // 0x14
+            MaximumFileInfoByHandlesClass
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct FILE_STORAGE_INFO
+        {
+            public uint LogicalBytesPerSector;
+            public uint PhysicalBytesPerSectorForAtomicity;
+            public uint PhysicalBytesPerSectorForPerformance;
+            public uint FileSystemEffectivePhysicalBytesPerSectorForAtomicity;
+            public uint Flags;
+            public uint ByteOffsetForSectorAlignment;
+            public uint ByteOffsetForPartitionAlignment;
+        }
+
         #endregion
 
         #region io constants and flags
@@ -111,6 +150,10 @@ namespace FASTER.core
            out uint lpBytesPerSector,
            out uint lpNumberOfFreeClusters,
            out uint lpTotalNumberOfClusters);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        internal static extern bool GetFileInformationByHandleEx([In] SafeFileHandle hFile, FILE_INFO_BY_HANDLE_CLASS infoClass, out FILE_STORAGE_INFO fileStorageInfo, uint dwBufferSize);
+
 
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName);
