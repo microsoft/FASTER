@@ -354,22 +354,34 @@ namespace FASTER.core
             {
                 var nextPage = currentPage + i;
 
+                var pageEndAddress = (nextPage + 1 ) << allocator.LogPageSizeBits;
+
+                if (fasterLog.readOnlyMode)
+                {
+                    // Support partial page reads of committed data
+                    var _flush = fasterLog.CommittedUntilAddress;
+                    if (_flush < pageEndAddress)
+                    {
+                        pageEndAddress = _flush;
+                    }
+                }
+
                 // Cannot load page if its not fully written to storage
-                if (headAddress < (nextPage + 1) << allocator.LogPageSizeBits)
+                if (headAddress < pageEndAddress)
                     continue;
 
                 var nextFrame = (currentFrame + i) % frameSize;
 
                 long val;
-                while ((val = nextLoadedPage[nextFrame]) < nextPage || loadedPage[nextFrame] < nextPage)
+                while ((val = nextLoadedPage[nextFrame]) < pageEndAddress || loadedPage[nextFrame] < pageEndAddress)
                 {
-                    if (val < nextPage && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], nextPage, val) == val)
+                    if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], pageEndAddress, val) == val)
                     {
                         var tmp_i = i;
                         epoch.BumpCurrentEpoch(() =>
                         {
                             allocator.AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> allocator.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
-                            loadedPage[nextFrame] = nextPage;
+                            loadedPage[nextFrame] = pageEndAddress;
                         });
                     }
                     else

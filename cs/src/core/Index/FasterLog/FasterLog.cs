@@ -27,6 +27,8 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
+        internal readonly bool readOnlyMode;
+
         private TaskCompletionSource<LinkedCommitInfo> commitTcs
             = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
         private TaskCompletionSource<Empty> refreshUncommittedTcs
@@ -80,7 +82,7 @@ namespace FASTER.core
         /// <summary>
         /// Table of persisted iterators
         /// </summary>
-        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators 
+        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators
             = new ConcurrentDictionary<string, FasterLogScanIterator>();
 
         /// <summary>
@@ -128,6 +130,14 @@ namespace FASTER.core
                 logSettings.GetLogSettings(), null,
                 null, epoch, CommitCallback);
             allocator.Initialize();
+
+            // FasterLog is used as a read-only iterator
+            if (logSettings.ReadOnlyMode)
+            {
+                readOnlyMode = true;
+                allocator.HeadAddress = long.MaxValue;
+            }
+
             Restore(out RecoveredIterators);
         }
 
@@ -754,6 +764,16 @@ namespace FASTER.core
         /// <returns></returns>
         public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false)
         {
+            if (readOnlyMode)
+            {
+                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+
+                if (name != null)
+                    throw new FasterException("Cannot used named iterators with read-only FasterLog");
+                if (scanUncommitted)
+                    throw new FasterException("Cannot used scanUncommitted with read-only FasterLog");
+            }
+
             FasterLogScanIterator iter;
             if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
                 iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
@@ -882,6 +902,31 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Recover instance to FasterLog's latest commit, when being used as a readonly log iterator
+        /// </summary>
+        public void RecoverReadOnly()
+        {
+            if (!readOnlyMode)
+                throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
+
+            Restore(out _);
+
+            var _commitTcs = commitTcs;
+            if (commitTcs.Task.Status != TaskStatus.Faulted || commitTcs.Task.Exception.InnerException as CommitFailureException != null)
+            {
+                commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            // Update commit to release pending iterators
+            var lci = new LinkedCommitInfo
+            {
+                CommitInfo = new CommitInfo { BeginAddress = BeginAddress, FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
+                NextTask = commitTcs.Task
+            };
+            _commitTcs?.TrySetResult(lci);
+        }
+
+        /// <summary>
         /// Restore log
         /// </summary>
         private void Restore(out Dictionary<string, long> recoveredIterators)
@@ -904,15 +949,18 @@ namespace FASTER.core
                         info.Initialize(r);
                     }
 
-                    var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
-                    if (info.BeginAddress > headAddress)
-                        headAddress = info.BeginAddress;
-
-                    if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
-
                     recoveredIterators = info.Iterators;
 
-                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
+                    if (!readOnlyMode)
+                    {
+                        var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
+                        if (info.BeginAddress > headAddress)
+                            headAddress = info.BeginAddress;
+
+                        if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
+
+                        allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
+                    }
                     CommittedUntilAddress = info.FlushedUntilAddress;
                     CommittedBeginAddress = info.BeginAddress;
                     SafeTailAddress = info.FlushedUntilAddress;
@@ -1041,6 +1089,9 @@ namespace FASTER.core
 
         private long CommitInternal(bool spinWait = false)
         {
+            if (readOnlyMode)
+                throw new FasterException("Cannot commit in read-only mode");
+
             epoch.Resume();
             if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
             {

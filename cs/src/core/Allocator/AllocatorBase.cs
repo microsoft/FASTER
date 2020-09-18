@@ -537,11 +537,6 @@ namespace FASTER.core
             if (SegmentSize < PageSize)
                 throw new FasterException("Segment must be at least of page size");
 
-            if (BufferSize < 1)
-            {
-                throw new FasterException("Log buffer must be of size at least 1 page");
-            }
-
             PageStatusIndicator = new FullPageStatus[BufferSize];
             PendingFlush = new PendingFlushList[BufferSize];
             for (int i = 0; i < BufferSize; i++)
@@ -562,15 +557,18 @@ namespace FASTER.core
 
             bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
-            long tailPage = firstValidAddress >> LogPageSizeBits;
-            int tailPageIndex = (int)(tailPage % BufferSize);
-            AllocatePage(tailPageIndex);
-
-            // Allocate next page as well
-            int nextPageIndex = (int)(tailPage + 1) % BufferSize;
-            if ((!IsAllocated(nextPageIndex)))
+            if (BufferSize > 0)
             {
-                AllocatePage(nextPageIndex);
+                long tailPage = firstValidAddress >> LogPageSizeBits;
+                int tailPageIndex = (int)(tailPage % BufferSize);
+                AllocatePage(tailPageIndex);
+
+                // Allocate next page as well
+                int nextPageIndex = (int)(tailPage + 1) % BufferSize;
+                if ((!IsAllocated(nextPageIndex)))
+                {
+                    AllocatePage(nextPageIndex);
+                }
             }
 
             if (PreallocateLog)
