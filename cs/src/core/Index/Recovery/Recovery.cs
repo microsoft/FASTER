@@ -52,7 +52,7 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
 
-        private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload)
+        private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload, bool undoFutureVersions)
         {
             Debug.WriteLine("********* Primary Recovery Information ********");
 
@@ -110,7 +110,7 @@ namespace FASTER.core
                 Debug.WriteLine("No index checkpoint found, recovering from beginning of log");
             }
 
-            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload);
+            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoFutureVersions);
         }
 
         private bool IsCompatible(in IndexRecoveryInfo indexInfo, in HybridLogRecoveryInfo recoveryInfo)
@@ -120,7 +120,7 @@ namespace FASTER.core
             return l1 <= l2;
         }
 
-        private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload)
+        private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoFutureVersions)
         {
             Debug.WriteLine("********* Primary Recovery Information ********");
             Debug.WriteLine("Index Checkpoint: {0}", indexToken);
@@ -157,10 +157,10 @@ namespace FASTER.core
                 }
             }
 
-            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload);
+            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoFutureVersions);
         }
 
-        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload)
+        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoFutureVersions)
         {
             // Ensure active state machine to null
             currentSyncStateMachine = null;
@@ -186,6 +186,12 @@ namespace FASTER.core
                 // Unless we recovered previously until some hlog address
                 if (hlog.FlushedUntilAddress > fromAddress)
                     fromAddress = hlog.FlushedUntilAddress;
+
+                // Start recovery at least from beginning of fuzzy log region
+                // Needed if we are recovering to the same checkpoint a second time, with undo
+                // set to true during the second time.
+                if (recoveredHLCInfo.info.startLogicalAddress < fromAddress)
+                    fromAddress = recoveredHLCInfo.info.startLogicalAddress;
             }
             else
             {
@@ -237,7 +243,7 @@ namespace FASTER.core
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version);
+                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, undoFutureVersions);
                 hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, tailAddress);
             }
             else
@@ -246,9 +252,9 @@ namespace FASTER.core
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version);
+                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version, undoFutureVersions);
                 // Then recover snapshot into mutable region
-                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid);
+                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid, undoFutureVersions);
                 hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, recoveredHLCInfo.info.flushedLogicalAddress);
             }
 
@@ -256,7 +262,7 @@ namespace FASTER.core
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
         }
 
-        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int version)
+        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, bool undoFutureVersions)
         {
             if (untilAddress < scanFromAddress)
                 return;
@@ -304,7 +310,7 @@ namespace FASTER.core
                     }
 
                     var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
-                    if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, version))
+                    if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, version, undoFutureVersions))
                     {
                         // OS thread flushes current page and issues a read request if necessary
                         recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -342,7 +348,7 @@ namespace FASTER.core
             }
         }
 
-        private void RecoverHybridLogFromSnapshotFile(long fromAddress, long untilAddress, int version, Guid guid)
+        private void RecoverHybridLogFromSnapshotFile(long fromAddress, long untilAddress, int version, Guid guid, bool undoFutureVersions)
         {
             // Compute startPage and endPage
             var startPage = hlog.GetPage(fromAddress);
@@ -416,7 +422,7 @@ namespace FASTER.core
 
                     var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                     RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                    startLogicalAddress, physicalAddress, version);
+                                    startLogicalAddress, physicalAddress, version, undoFutureVersions);
 
                 }
 
@@ -458,7 +464,7 @@ namespace FASTER.core
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
                                      long pagePhysicalAddress,
-                                     int version)
+                                     int version, bool undoFutureVersions)
         {
             bool touched = false;
 
@@ -490,7 +496,7 @@ namespace FASTER.core
                     entry = default;
                     FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
 
-                    if (info.Version <= version)
+                    if (info.Version <= version || !undoFutureVersions)
                     {
                         entry.Address = pageLogicalAddress + pointer;
                         entry.Tag = tag;
