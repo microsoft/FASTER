@@ -28,10 +28,10 @@ namespace FasterLogPubSub
             var commiter = CommitterAsync(log, cts.Token);
 
             // Consumer on SAME FasterLog instance
-            // var consumer = ConsumerAsync(log, true, cts.Token);
+            var consumer = ConsumerAsync(log, true, cts.Token);
 
-            // Consumer on SEPARATE read-only FasterLog instance
-            var consumer = SeparateConsumerAsync(cts.Token);
+            // Uncomment below to run consumer on SEPARATE read-only FasterLog instance
+            // var consumer = SeparateConsumerAsync(cts.Token);
             
             Console.CancelKeyPress += (o, eventArgs) =>
             {
