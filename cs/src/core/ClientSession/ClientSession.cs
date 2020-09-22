@@ -564,24 +564,24 @@ namespace FASTER.core
                 _clientSession.LatestCommitPoint = commitPoint;
             }
 
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Context ctx)
             {
-                _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+                _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref ctx);
             }
 
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx)
             {
-                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst, ref ctx);
             }
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Context ctx)
             {
-                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref ctx);
             }
 
-            public void DeleteCompletionCallback(ref Key key, Context ctx)
+            public void DeleteCompletionCallback(ref Key key, ref Context ctx)
             {
-                _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
+                _clientSession.functions.DeleteCompletionCallback(ref key, ref ctx);
             }
 
             public int GetInitialLength(ref Input input)
@@ -594,34 +594,34 @@ namespace FASTER.core
                 return _clientSession.variableLengthStruct.GetLength(ref t, ref input);
             }
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Context ctx)
             {
-                _clientSession.functions.InitialUpdater(ref key, ref input, ref value);
+                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref ctx);
             }
 
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Context ctx)
             {
-                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref ctx);
             }
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Context ctx, Status status)
             {
-                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ref ctx, status);
             }
 
-            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)
+            public void RMWCompletionCallback(ref Key key, ref Input input, ref Context ctx, Status status)
             {
-                _clientSession.functions.RMWCompletionCallback(ref key, ref input, ctx, status);
+                _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref ctx, status);
             }
 
-            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Context ctx)
             {
-                _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst);
+                _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref ctx);
             }
 
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx)
             {
-                _clientSession.functions.SingleWriter(ref key, ref src, ref dst);
+                _clientSession.functions.SingleWriter(ref key, ref src, ref dst, ref ctx);
             }
 
             public void UnsafeResumeThread()
@@ -634,9 +634,9 @@ namespace FASTER.core
                 _clientSession.UnsafeSuspendThread();
             }
 
-            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx)
+            public void UpsertCompletionCallback(ref Key key, ref Value value, ref Context ctx)
             {
-                _clientSession.functions.UpsertCompletionCallback(ref key, ref value, ctx);
+                _clientSession.functions.UpsertCompletionCallback(ref key, ref value, ref ctx);
             }
         }
     }
