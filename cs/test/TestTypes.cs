@@ -80,43 +80,43 @@ namespace FASTER.test
         }
 
         // Read functions
-        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
         // Upsert functions
-        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref Empty ctx)
         {
             dst = src;
         }
 
-        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref Empty ctx)
         {
             dst = src;
             return true;
         }
 
         // RMW functions
-        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref Empty ctx)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
         }
 
-        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref Empty ctx)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
             return true;
         }
 
-        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
+        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref Empty ctx)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
@@ -158,43 +158,43 @@ namespace FASTER.test
         }
 
         // Read functions
-        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref int ctx)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref int ctx)
         {
             dst.value = value;
         }
 
         // Upsert functions
-        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref int ctx)
         {
             dst = src;
         }
 
-        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref int ctx)
         {
             dst = src;
             return true;
         }
 
         // RMW functions
-        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref int ctx)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
         }
 
-        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref int ctx)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
             return true;
         }
 
-        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
+        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref int ctx)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
@@ -235,42 +235,42 @@ namespace FASTER.test
         }
 
         // Read functions
-        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
         // Upsert functions
-        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref Empty ctx)
         {
             dst = src;
         }
 
-        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref Empty ctx)
         {
             Interlocked.Increment(ref _concurrentWriterCallCount);
             return false;
         }
 
         // RMW functions
-        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref Empty ctx)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
         }
 
-        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value)
+        public bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref Empty ctx)
         {
             Interlocked.Increment(ref _inPlaceUpdaterCallCount);
             return false;
         }
 
-        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
+        public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref Empty ctx)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;

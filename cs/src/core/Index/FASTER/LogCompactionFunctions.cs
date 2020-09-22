@@ -21,15 +21,15 @@ namespace FASTER.core
         }
 
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
-        public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, _allocator.ValueLength); }
-        public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
-        public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
-        public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) => false;
+        public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst, ref Empty ctx) { }
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx) { return _functions.CopyInPlace(ref src, ref dst, _allocator.ValueLength); }
+        public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue, ref Empty ctx) { }
+        public void InitialUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) { }
+        public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) => false;
         public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
         public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
-        public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-        public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, _allocator.ValueLength); }
+        public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst, ref Empty ctx) { }
+        public void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx) { _functions.Copy(ref src, ref dst, _allocator.ValueLength); }
         public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
         public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
     }
@@ -45,15 +45,15 @@ namespace FASTER.core
         }
 
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
-        public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, null); }
-        public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
-        public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
-        public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) { return true; }
+        public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst, ref Empty ctx) { }
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx) { return _functions.CopyInPlace(ref src, ref dst, null); }
+        public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue, ref Empty ctx) { }
+        public void InitialUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) { }
+        public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) { return true; }
         public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
         public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
-        public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
-        public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, null); }
+        public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst, ref Empty ctx) { }
+        public void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx) { _functions.Copy(ref src, ref dst, null); }
         public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
         public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
     }

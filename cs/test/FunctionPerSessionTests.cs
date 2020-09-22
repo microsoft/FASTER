@@ -21,7 +21,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value)
+        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty ctx)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -29,7 +29,7 @@ namespace FASTER.test
             value.ReferenceCount = 1;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty ctx)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -38,7 +38,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue)
+        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty ctx)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -53,7 +53,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value)
+        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty ctx)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -61,7 +61,7 @@ namespace FASTER.test
             value.ReferenceCount = 0;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value)
+        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty ctx)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -71,7 +71,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue)
+        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty ctx)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -84,12 +84,12 @@ namespace FASTER.test
 
     public class RefCountedReader : FunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
     {
-        public override void SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
+        public override void SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref Empty ctx)
         {
             dst = value;
         }
 
-        public override void ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
+        public override void ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref Empty ctx)
         {
             dst = value;
         }

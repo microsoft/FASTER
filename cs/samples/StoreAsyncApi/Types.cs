@@ -87,7 +87,7 @@ namespace StoreAsyncApi
 
     public sealed class CacheFunctions : FunctionsBase<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
     {
-        public override void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref CacheContext ctx)
         {
             dst.value = value;
         }
@@ -118,7 +118,7 @@ namespace StoreAsyncApi
             }
         }
 
-        public override void SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override void SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref CacheContext ctx)
         {
             dst.value = value;
         }

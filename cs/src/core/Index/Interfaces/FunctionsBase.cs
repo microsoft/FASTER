@@ -18,15 +18,15 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public abstract class FunctionsBase<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>
     {
-        public virtual void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
-        public virtual void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+        public virtual void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Context ctx) { }
+        public virtual void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Context ctx) { }
 
-        public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
-        public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
+        public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx) { dst = src; return true; }
+        public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx) => dst = src;
 
-        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
-        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) { return true; }
+        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Context ctx) { }
+        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Context ctx) { }
+        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Context ctx) { return true; }
 
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
@@ -48,15 +48,15 @@ namespace FASTER.core
         public SimpleFunctions() => merger = (l, r) => l;
         public SimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
 
-        public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst) => dst = value;
-        public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst) => dst = value;
+        public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref Context ctx) => dst = value;
+        public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref Context ctx) => dst = value;
 
-        public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
-        public override void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
+        public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx) { dst = src; return true; }
+        public override void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx) => dst = src;
 
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value) => value = input;
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue) => newValue = merger(input, oldValue);
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) { value = merger(input, value); return true; }
+        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Context ctx) => value = input;
+        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Context ctx) => newValue = merger(input, oldValue);
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Context ctx) { value = merger(input, value); return true; }
 
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
         public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }

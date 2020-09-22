@@ -244,9 +244,9 @@ namespace FASTER.test.recovery.objects
 
     public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
-        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
-        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyContext ctx) => value.value = input.value;
+        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyContext ctx) => newValue = oldValue;
+        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyContext ctx)
         {
             if (value.value.Length < input.value.Length)
                 return false;
@@ -255,10 +255,10 @@ namespace FASTER.test.recovery.objects
         }
 
 
-        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
-        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
-        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
-        public bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref MyContext ctx) => dst.value = value;
+        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst, ref MyContext ctx) => dst = src;
+        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref MyContext ctx) => dst.value = value;
+        public bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst, ref MyContext ctx)
         {
             if (src == null)
                 return false;

@@ -45,29 +45,29 @@ namespace SumStore
         }
 
         // Read functions
-        public override void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
-        public override void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Empty ctx)
         {
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Empty ctx)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Empty ctx)
         {
             newValue.numClicks = oldValue.numClicks + input.numClicks.numClicks;
         }

@@ -95,7 +95,7 @@ namespace FASTER.core
                         status = OperationStatus.CPR_SHIFT_DETECTED;
                         goto CreatePendingContext; // Pivot thread
                     }
-                    fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output);
+                    fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output, ref userContext);
                     return OperationStatus.SUCCESS;
                 }
 
@@ -135,7 +135,7 @@ namespace FASTER.core
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                fasterSession.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
+                fasterSession.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref userContext);
                 return OperationStatus.SUCCESS;
             }
 
@@ -145,7 +145,7 @@ namespace FASTER.core
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
+                fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref userContext);
                 return OperationStatus.SUCCESS;
             }
 
@@ -288,7 +288,7 @@ namespace FASTER.core
             // Optimization for most common case
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                if (fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
+                if (fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref userContext))
                 {
                     return OperationStatus.SUCCESS;
                 }
@@ -373,7 +373,7 @@ namespace FASTER.core
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                if (fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress)))
+                if (fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref userContext))
                 {
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease; // Release shared latch (if acquired)
@@ -396,7 +396,8 @@ namespace FASTER.core
                                latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 fasterSession.SingleWriter(ref key, ref value,
-                                       ref hlog.GetValue(newPhysicalAddress));
+                                       ref hlog.GetValue(newPhysicalAddress),
+                                       ref userContext);
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -550,7 +551,7 @@ namespace FASTER.core
             // Optimization for the most common case
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
-                if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
+                if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref userContext))
                 {
                     return OperationStatus.SUCCESS;
                 }
@@ -645,7 +646,7 @@ namespace FASTER.core
                     Debug.Assert(hlog.GetInfo(physicalAddress).Version == sessionCtx.version);
                 }
 
-                if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress)))
+                if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref userContext))
                 {
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease; // Release shared latch (if acquired)
@@ -714,21 +715,22 @@ namespace FASTER.core
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref userContext);
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     if (hlog.GetInfo(physicalAddress).Tombstone)
                     {
-                        fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                        fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref userContext);
                         status = OperationStatus.NOTFOUND;
                     }
                     else
                     {
                         fasterSession.CopyUpdater(ref key, ref input,
                                                 ref hlog.GetValue(physicalAddress),
-                                                ref hlog.GetValue(newPhysicalAddress));
+                                                ref hlog.GetValue(newPhysicalAddress),
+                                                ref userContext);
                         status = OperationStatus.SUCCESS;
                     }
                 }
@@ -985,7 +987,7 @@ namespace FASTER.core
                             // Write default value
                             // Ignore return value, the record is already marked
                             Value v = default;
-                            fasterSession.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                            fasterSession.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress), ref userContext);
                         }
 
                         status = OperationStatus.SUCCESS;
@@ -1004,7 +1006,7 @@ namespace FASTER.core
                     // Write default value
                     // Ignore return value, the record is already marked
                     Value v = default;
-                    fasterSession.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                    fasterSession.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress), ref userContext);
                 }
 
                 status = OperationStatus.SUCCESS;
@@ -1194,7 +1196,7 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
 
                 fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
-                                       ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
+                                       ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, ref pendingContext.userContext);
 
                 if (CopyReadsToTail || UseReadCache)
                 {
@@ -1279,7 +1281,8 @@ namespace FASTER.core
                 readcache.ShallowCopy(ref pendingContext.key.Get(), ref readcache.GetKey(newPhysicalAddress));
                 fasterSession.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
-                                       ref readcache.GetValue(newPhysicalAddress));
+                                       ref readcache.GetValue(newPhysicalAddress),
+                                       ref pendingContext.userContext);
             }
             else
             {
@@ -1291,7 +1294,8 @@ namespace FASTER.core
                 hlog.ShallowCopy(ref pendingContext.key.Get(), ref hlog.GetKey(newPhysicalAddress));
                 fasterSession.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
-                                       ref hlog.GetValue(newPhysicalAddress));
+                                       ref hlog.GetValue(newPhysicalAddress),
+                                       ref pendingContext.userContext);
             }
 
 
@@ -1413,7 +1417,8 @@ namespace FASTER.core
             {
                 fasterSession.InitialUpdater(ref key,
                                          ref pendingContext.input,
-                                         ref hlog.GetValue(newPhysicalAddress));
+                                         ref hlog.GetValue(newPhysicalAddress),
+                                         ref pendingContext.userContext);
                 status = OperationStatus.NOTFOUND;
             }
             else
@@ -1421,7 +1426,8 @@ namespace FASTER.core
                 fasterSession.CopyUpdater(ref key,
                                       ref pendingContext.input,
                                       ref hlog.GetContextRecordValue(ref request),
-                                      ref hlog.GetValue(newPhysicalAddress));
+                                      ref hlog.GetValue(newPhysicalAddress),
+                                      ref pendingContext.userContext);
                 status = OperationStatus.SUCCESS;
             }
 

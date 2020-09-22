@@ -36,26 +36,26 @@ namespace FASTER.benchmark
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+        public void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx)
         {
             dst = src;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx)
         {
             dst = src;
             return true;
@@ -63,20 +63,20 @@ namespace FASTER.benchmark
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Empty ctx)
         {
             value.value = input.value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Empty ctx)
         {
             value.value += input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Empty ctx)
         {
             newValue.value = input.value + oldValue.value;
         }

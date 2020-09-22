@@ -100,41 +100,41 @@ namespace FASTER.test.recovery.objectstore
         }
 
         // Read functions
-        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref Empty ctx)
         {
             dst.value = value;
         }
 
         // Upsert functions
-        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst, ref Empty ctx)
         {
             dst = src;
         }
 
-        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
+        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst, ref Empty ctx)
         {
             dst = src;
             return true;
         }
 
         // RMW functions
-        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Empty ctx)
         {
             value = input.numClicks;
         }
 
-        public bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Empty ctx)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Empty ctx)
         {
             newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks.numClicks };
         }

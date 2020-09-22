@@ -60,7 +60,8 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="value"></param>
-        void InitialUpdater(ref Key key, ref Input input, ref Value value);
+        /// <param name="ctx"></param>
+        void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Context ctx);
 
         /// <summary>
         /// Copy-update for RMW
@@ -69,7 +70,8 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="oldValue"></param>
         /// <param name="newValue"></param>
-        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue);
+        /// <param name="ctx"></param>
+        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Context ctx);
 
         /// <summary>
         /// In-place update for RMW
@@ -77,7 +79,8 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="value"></param>
-        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value);
+        /// <param name="ctx"></param>
+        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Context ctx);
 
         /// <summary>
         /// Single reader
@@ -86,16 +89,18 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="value"></param>
         /// <param name="dst"></param>
-        void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst);
+        /// <param name="ctx"></param>
+        void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Context ctx);
 
         /// <summary>
-        /// Conncurrent reader
+        /// Concurrent reader
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="value"></param>
         /// <param name="dst"></param>
-        void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst);
+        /// <param name="ctx"></param>
+        void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Context ctx);
 
         /// <summary>
         /// Single writer
@@ -103,7 +108,8 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="src"></param>
         /// <param name="dst"></param>
-        void SingleWriter(ref Key key, ref Value src, ref Value dst);
+        /// <param name="ctx"></param>
+        void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx);
 
         /// <summary>
         /// Concurrent writer
@@ -111,7 +117,8 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="src"></param>
         /// <param name="dst"></param>
-        bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
+        /// <param name="ctx"></param>
+        bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref Context ctx);
     }
 
     /// <summary>

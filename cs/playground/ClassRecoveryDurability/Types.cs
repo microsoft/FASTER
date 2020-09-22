@@ -123,12 +123,12 @@ namespace ClassRecoveryDurablity
 
         public sealed class StoreFunctions : FunctionsBase<StoreKey, StoreValue, StoreInput, StoreOutput, StoreContext>
         {
-            public override void SingleReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst)
+            public override void SingleReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst, ref StoreContext ctx)
             {
                 dst.value = value;
             }
 
-            public override void ConcurrentReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst)
+            public override void ConcurrentReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst, ref StoreContext ctx)
             {
                 dst.value = value;
             }

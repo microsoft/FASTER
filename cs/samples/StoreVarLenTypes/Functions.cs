@@ -33,23 +33,23 @@ namespace StoreVarLenTypes
         }
 
         // Read functions
-        public override void SingleReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst)
+        public override void SingleReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst, ref Empty ctx)
         {
             value.ToIntArray(ref dst);
         }
 
-        public override void ConcurrentReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst)
+        public override void ConcurrentReader(ref VarLenType key, ref int[] input, ref VarLenType value, ref int[] dst, ref Empty ctx)
         {
             value.ToIntArray(ref dst);
         }
 
         // Upsert functions
-        public override void SingleWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
+        public override void SingleWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst, ref Empty ctx)
         {
             src.CopyTo(ref dst);
         }
 
-        public override bool ConcurrentWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst)
+        public override bool ConcurrentWriter(ref VarLenType key, ref VarLenType src, ref VarLenType dst, ref Empty ctx)
         {
             if (dst.length < src.length) return false;
             src.CopyTo(ref dst);
