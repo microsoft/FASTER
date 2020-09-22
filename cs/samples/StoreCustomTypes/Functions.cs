@@ -16,7 +16,7 @@ namespace StoreCustomTypes
         public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref MyContext ctx) => dst.value = value;
         public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref MyContext ctx) => dst.value = value;
 
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status)
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyContext ctx, Status status)
         {
             if (output.value.value == key.key)
                 Console.WriteLine("Success!");

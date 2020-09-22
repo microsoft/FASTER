@@ -21,7 +21,7 @@ namespace FASTER.core
         /// <param name="output"></param>
         /// <param name="ctx"></param>
         /// <param name="status"></param>
-        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status);
+        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Context ctx, Status status);
 
         /// <summary>
         /// Upsert completion
@@ -29,7 +29,7 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <param name="ctx"></param>
-        void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx);
+        void UpsertCompletionCallback(ref Key key, ref Value value, ref Context ctx);
 
         /// <summary>
         /// RMW completion
@@ -38,14 +38,14 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="ctx"></param>
         /// <param name="status"></param>
-        void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status);
+        void RMWCompletionCallback(ref Key key, ref Input input, ref Context ctx, Status status);
 
         /// <summary>
         /// Delete completion
         /// </summary>
         /// <param name="key"></param>
         /// <param name="ctx"></param>
-        void DeleteCompletionCallback(ref Key key, Context ctx);
+        void DeleteCompletionCallback(ref Key key, ref Context ctx);
 
         /// <summary>
         /// Checkpoint completion callback (called per client session)

@@ -13,19 +13,19 @@ namespace FASTER.benchmark
 {
     public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {
-        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx)
+        public void UpsertCompletionCallback(ref Key key, ref Value value, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref Key key, Empty ctx)
+        public void DeleteCompletionCallback(ref Key key, ref Empty ctx)
         {
         }
 

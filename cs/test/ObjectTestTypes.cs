@@ -111,22 +111,22 @@ namespace FASTER.test
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(key.key == output.value.value);
         }
 
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, Empty ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
+        public void DeleteCompletionCallback(ref MyKey key, ref Empty ctx)
         {
         }
 
@@ -179,7 +179,7 @@ namespace FASTER.test
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, ref int ctx, Status status)
         {
             if (ctx == 0)
             {
@@ -192,7 +192,7 @@ namespace FASTER.test
             }
         }
 
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, int ctx, Status status)
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref int ctx, Status status)
         {
             if (ctx == 0)
                 Assert.IsTrue(status == Status.OK);
@@ -200,11 +200,11 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.NOTFOUND);
         }
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, int ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, ref int ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref MyKey key, int ctx)
+        public void DeleteCompletionCallback(ref MyKey key, ref int ctx)
         {
         }
 
@@ -255,19 +255,19 @@ namespace FASTER.test
         {
         }
 
-        public void ReadCompletionCallback(ref int key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref int key, ref MyInput input, ref MyOutput output, ref Empty ctx, Status status)
         {
         }
 
-        public void RMWCompletionCallback(ref int key, ref MyInput input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref int key, ref MyInput input, ref Empty ctx, Status status)
         {
         }
 
-        public void UpsertCompletionCallback(ref int key, ref MyValue value, Empty ctx)
+        public void UpsertCompletionCallback(ref int key, ref MyValue value, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref int key, Empty ctx)
+        public void DeleteCompletionCallback(ref int key, ref Empty ctx)
         {
         }
 
@@ -324,11 +324,11 @@ namespace FASTER.test
 
     public class MyLargeFunctions : IFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
     {
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.value.value.Length; i++)
@@ -338,11 +338,11 @@ namespace FASTER.test
         }
 
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, Empty ctx)
+        public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
+        public void DeleteCompletionCallback(ref MyKey key, ref Empty ctx)
         {
         }
 

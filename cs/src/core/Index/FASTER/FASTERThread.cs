@@ -256,16 +256,16 @@ namespace FASTER.core
                     case OperationType.RMW:
                         fasterSession.RMWCompletionCallback(ref key,
                                                 ref pendingContext.input,
-                                                pendingContext.userContext, status);
+                                                ref pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
                         fasterSession.UpsertCompletionCallback(ref key,
                                                  ref pendingContext.value.Get(),
-                                                 pendingContext.userContext);
+                                                 ref pendingContext.userContext);
                         break;
                     case OperationType.DELETE:
                         fasterSession.DeleteCompletionCallback(ref key,
-                                                 pendingContext.userContext);
+                                                 ref pendingContext.userContext);
                         break;
                     default:
                         throw new FasterException("Operation type not allowed for retry");
@@ -373,14 +373,14 @@ namespace FASTER.core
                         fasterSession.ReadCompletionCallback(ref key,
                                                          ref pendingContext.input,
                                                          ref pendingContext.output,
-                                                         pendingContext.userContext,
+                                                         ref pendingContext.userContext,
                                                          status);
                     }
                     else
                     {
                         fasterSession.RMWCompletionCallback(ref key,
                                                         ref pendingContext.input,
-                                                        pendingContext.userContext,
+                                                        ref pendingContext.userContext,
                                                         status);
                     }
                 }
@@ -421,7 +421,7 @@ namespace FASTER.core
             fasterSession.ReadCompletionCallback(ref key,
                                              ref pendingContext.input,
                                              ref pendingContext.output,
-                                             pendingContext.userContext,
+                                             ref pendingContext.userContext,
                                              status);
 
             s.Item1 = status;

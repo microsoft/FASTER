@@ -102,12 +102,12 @@ namespace FASTER.test
 
     public class VLFunctions : IFunctions<Key, VLValue, Input, int[], Empty>
     {
-        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.Length; i++)
@@ -116,11 +116,11 @@ namespace FASTER.test
             }
         }
 
-        public void UpsertCompletionCallback(ref Key key, ref VLValue output, Empty ctx)
+        public void UpsertCompletionCallback(ref Key key, ref VLValue output, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref Key key, Empty ctx)
+        public void DeleteCompletionCallback(ref Key key, ref Empty ctx)
         {
         }
 
@@ -172,12 +172,12 @@ namespace FASTER.test
 
     public class VLFunctions2 : IFunctions<VLValue, VLValue, Input, int[], Empty>
     {
-        public void RMWCompletionCallback(ref VLValue key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref VLValue key, ref Input input, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.Length; i++)
@@ -186,11 +186,11 @@ namespace FASTER.test
             }
         }
 
-        public void UpsertCompletionCallback(ref VLValue key, ref VLValue output, Empty ctx)
+        public void UpsertCompletionCallback(ref VLValue key, ref VLValue output, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref VLValue key, Empty ctx)
+        public void DeleteCompletionCallback(ref VLValue key, ref Empty ctx)
         {
         }
 

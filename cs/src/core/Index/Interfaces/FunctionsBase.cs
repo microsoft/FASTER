@@ -28,10 +28,10 @@ namespace FASTER.core
         public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Context ctx) { }
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Context ctx) { return true; }
 
-        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
-        public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
-        public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
-        public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
+        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Context ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Context ctx, Status status) { }
+        public virtual void UpsertCompletionCallback(ref Key key, ref Value value, ref Context ctx) { }
+        public virtual void DeleteCompletionCallback(ref Key key, ref Context ctx) { }
         public virtual void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
@@ -58,10 +58,10 @@ namespace FASTER.core
         public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Context ctx) => newValue = merger(input, oldValue);
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Context ctx) { value = merger(input, value); return true; }
 
-        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
-        public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
-        public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
-        public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
+        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, ref Context ctx, Status status) { }
+        public override void RMWCompletionCallback(ref Key key, ref Value input, ref Context ctx, Status status) { }
+        public override void UpsertCompletionCallback(ref Key key, ref Value value, ref Context ctx) { }
+        public override void DeleteCompletionCallback(ref Key key, ref Context ctx) { }
         public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 

@@ -270,10 +270,10 @@ namespace FASTER.test.recovery.objects
             return true;
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status) => ctx.Populate(ref status, ref output);
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, MyContext ctx) { }
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, MyContext ctx, Status status) { }
-        public void DeleteCompletionCallback(ref MyKey key, MyContext ctx) { }
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyContext ctx, Status status) => ctx.Populate(ref status, ref output);
+        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, ref MyContext ctx) { }
+        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyContext ctx, Status status) { }
+        public void DeleteCompletionCallback(ref MyKey key, ref MyContext ctx) { }
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 }

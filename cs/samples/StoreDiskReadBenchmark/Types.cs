@@ -77,7 +77,7 @@ namespace StoreDiskReadBenchmark
         }
 
         // Completion callbacks
-        public override void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Empty ctx, Status status)
         {
             if (status != Status.OK || output.value.vfield1 != key.key)
             {

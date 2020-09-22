@@ -14,7 +14,7 @@ namespace StoreVarLenTypes
     public sealed class VarLenFunctions : FunctionsBase<VarLenType, VarLenType, int[], int[], Empty>
     {
         // Read completion callback
-        public override void ReadCompletionCallback(ref VarLenType key, ref int[] input, ref int[] output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref VarLenType key, ref int[] input, ref int[] output, ref Empty ctx, Status status)
         {
             if (status != Status.OK)
             {

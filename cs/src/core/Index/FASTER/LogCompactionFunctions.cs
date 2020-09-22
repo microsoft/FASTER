@@ -26,12 +26,12 @@ namespace FASTER.core
         public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue, ref Empty ctx) { }
         public void InitialUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) { }
         public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) => false;
-        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
-        public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
+        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, ref Empty ctx, Status status) { }
+        public void RMWCompletionCallback(ref Key key, ref Empty input, ref Empty ctx, Status status) { }
         public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst, ref Empty ctx) { }
         public void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx) { _functions.Copy(ref src, ref dst, _allocator.ValueLength); }
-        public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
-        public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
+        public void UpsertCompletionCallback(ref Key key, ref Value value, ref Empty ctx) { }
+        public void DeleteCompletionCallback(ref Key key, ref Empty ctx) { }
     }
 
     internal sealed class LogCompactFunctions<Key, Value, CompactionFunctions> : IFunctions<Key, Value, Empty, Empty, Empty>
@@ -50,12 +50,12 @@ namespace FASTER.core
         public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue, ref Empty ctx) { }
         public void InitialUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) { }
         public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value, ref Empty ctx) { return true; }
-        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
-        public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
+        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, ref Empty ctx, Status status) { }
+        public void RMWCompletionCallback(ref Key key, ref Empty input, ref Empty ctx, Status status) { }
         public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst, ref Empty ctx) { }
         public void SingleWriter(ref Key key, ref Value src, ref Value dst, ref Empty ctx) { _functions.Copy(ref src, ref dst, null); }
-        public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx) { }
-        public void DeleteCompletionCallback(ref Key key, Empty ctx) { }
+        public void UpsertCompletionCallback(ref Key key, ref Value value, ref Empty ctx) { }
+        public void DeleteCompletionCallback(ref Key key, ref Empty ctx) { }
     }
 
     internal unsafe struct DefaultVariableCompactionFunctions<Key, Value> : ICompactionFunctions<Key, Value>

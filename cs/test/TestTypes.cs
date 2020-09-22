@@ -54,23 +54,23 @@ namespace FASTER.test
 
     public class Functions : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
     {
-        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.vfield1 == key.kfield1);
             Assert.IsTrue(output.value.vfield2 == key.kfield2);
         }
 
-        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, Empty ctx)
+        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref KeyStruct key, Empty ctx)
+        public void DeleteCompletionCallback(ref KeyStruct key, ref Empty ctx)
         {
         }
 
@@ -125,12 +125,12 @@ namespace FASTER.test
 
     public class FunctionsCompaction : IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, int>
     {
-        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, int ctx, Status status)
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref int ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status)
+        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, ref int ctx, Status status)
         {
             if (ctx == 0)
             {
@@ -144,11 +144,11 @@ namespace FASTER.test
             }
         }
 
-        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, int ctx)
+        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, ref int ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref KeyStruct key, int ctx)
+        public void DeleteCompletionCallback(ref KeyStruct key, ref int ctx)
         {
         }
 
@@ -209,23 +209,23 @@ namespace FASTER.test
         public int ConcurrentWriterCallCount => _concurrentWriterCallCount;
         public int InPlaceUpdaterCallCount => _inPlaceUpdaterCallCount;
 
-        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.vfield1 == key.kfield1);
             Assert.IsTrue(output.value.vfield2 == key.kfield2);
         }
 
-        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, Empty ctx)
+        public void UpsertCompletionCallback(ref KeyStruct key, ref ValueStruct output, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref KeyStruct key, Empty ctx)
+        public void DeleteCompletionCallback(ref KeyStruct key, ref Empty ctx)
         {
         }
 

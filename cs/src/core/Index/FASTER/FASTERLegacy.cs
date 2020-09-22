@@ -344,9 +344,9 @@ namespace FASTER.core
                 _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref ctx);
             }
 
-            public void DeleteCompletionCallback(ref Key key, Context ctx)
+            public void DeleteCompletionCallback(ref Key key, ref Context ctx)
             {
-                _fasterKV._functions.DeleteCompletionCallback(ref key, ctx);
+                _fasterKV._functions.DeleteCompletionCallback(ref key, ref ctx);
             }
 
             public int GetInitialLength(ref Input input)
@@ -369,14 +369,14 @@ namespace FASTER.core
                 return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value, ref ctx);
             }
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, ref Context ctx, Status status)
             {
-                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ref ctx, status);
             }
 
-            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)
+            public void RMWCompletionCallback(ref Key key, ref Input input, ref Context ctx, Status status)
             {
-                _fasterKV._functions.RMWCompletionCallback(ref key, ref input, ctx, status);
+                _fasterKV._functions.RMWCompletionCallback(ref key, ref input, ref ctx, status);
             }
 
             public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref Context ctx)
@@ -397,9 +397,9 @@ namespace FASTER.core
             {
             }
 
-            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx)
+            public void UpsertCompletionCallback(ref Key key, ref Value value, ref Context ctx)
             {
-                _fasterKV._functions.UpsertCompletionCallback(ref key, ref value, ctx);
+                _fasterKV._functions.UpsertCompletionCallback(ref key, ref value, ref ctx);
             }
         }
     }

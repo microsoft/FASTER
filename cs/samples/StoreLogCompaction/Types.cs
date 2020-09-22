@@ -97,7 +97,7 @@ namespace StoreLogCompaction
             dst.value = value;
         }
 
-        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status)
+        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, ref CacheContext ctx, Status status)
         {
             if (ctx.type == 0)
             {

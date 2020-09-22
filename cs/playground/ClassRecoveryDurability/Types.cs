@@ -133,7 +133,7 @@ namespace ClassRecoveryDurablity
                 dst.value = value;
             }
 
-            public override void ReadCompletionCallback(ref StoreKey key, ref StoreInput input, ref StoreOutput output, StoreContext ctx, Status status)
+            public override void ReadCompletionCallback(ref StoreKey key, ref StoreInput input, ref StoreOutput output, ref StoreContext ctx, Status status)
             {
                 ctx.Populate(ref status, ref output);
             }

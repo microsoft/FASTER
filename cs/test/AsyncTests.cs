@@ -113,21 +113,21 @@ namespace FASTER.test.async
 
     public class SimpleFunctions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref AdId key, ref AdInput input, ref Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, ref Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.numClicks == key.adId);
         }
 
-        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
+        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, ref Empty ctx)
         {
         }
 
-        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
+        public void DeleteCompletionCallback(ref AdId key, ref Empty ctx)
         {
         }
 
