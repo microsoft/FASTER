@@ -132,8 +132,10 @@ namespace FASTER.core
                         {
                             Debug.Assert(_fasterKV.RelaxedCPR);
 
-                            _result = _fasterKV.InternalCompletePendingReadRequest(
-                                _clientSession.ctx, _clientSession.ctx, _clientSession.FasterSession, _diskRequest, _pendingContext);
+                            var status = _fasterKV.InternalCompletePendingRequestFromContext(_clientSession.ctx, _clientSession.ctx, _clientSession.FasterSession, _diskRequest, ref _pendingContext, true, out _);
+                            Debug.Assert(status != Status.PENDING);
+                            _result = (status, _pendingContext.output);
+                            _pendingContext.Dispose();
                         }
                         finally
                         {
@@ -198,51 +200,51 @@ namespace FASTER.core
             }
         }
 
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-            ref Key key, ref Input input, Context context = default, CancellationToken token = default)
+            ref Key key, ref Input input, Context context, long serialNo, CancellationToken token)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
+            var diskRequest = default(AsyncIOContext<Key, Value>);
+
             Output output = default;
-            OperationStatus internalStatus;
-            var nextSerialNum = clientSession.ctx.serialNum + 1;
+            
 
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
             try
             {
-            TryReadAgain:
+                OperationStatus internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
+                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+                Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 
-                internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, nextSerialNum);
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
                     return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output));
                 }
-
-                if (internalStatus == OperationStatus.CPR_SHIFT_DETECTED)
+                else
                 {
-                    SynchronizeEpoch(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession);
-                    goto TryReadAgain;
+                    var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out diskRequest);
+
+                    if (status != Status.PENDING)
+                        return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output));
                 }
             }
             finally
             {
-                clientSession.ctx.serialNum = nextSerialNum;
+                clientSession.ctx.serialNum = serialNo;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }
 
-            return SlowReadAsync(this, clientSession, pcontext, token);
+            return SlowReadAsync(this, clientSession, pcontext, diskRequest, token);
         }
 
         private static async ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> SlowReadAsync<Input, Output, Context, Functions>(
             FasterKV<Key, Value> @this,
             ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-            PendingContext<Input, Output, Context> pendingContext, CancellationToken token = default)
+            PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            var diskRequest = @this.ScheduleGetFromDisk(clientSession.ctx, ref pendingContext);
-            clientSession.ctx.ioPendingRequests.Add(pendingContext.id, pendingContext);
             clientSession.ctx.asyncPendingCount++;
             clientSession.ctx.pendingReads.Add();
 
@@ -268,6 +270,202 @@ namespace FASTER.core
 
             return new ReadAsyncResult<Input, Output, Context, Functions>(@this, clientSession, pendingContext, diskRequest);
         }
+
+        internal sealed class RmwAsyncInternal<Input, Output, Context, Functions>
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            const int Completed = 1;
+            const int Pending = 0;
+            ExceptionDispatchInfo _exception;
+            readonly FasterKV<Key, Value> _fasterKV;
+            readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+            PendingContext<Input, Output, Context> _pendingContext;
+            AsyncIOContext<Key, Value> _diskRequest;
+            int CompletionComputeStatus;
+
+            internal RmwAsyncInternal(FasterKV<Key, Value> fasterKV, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            {
+                _exception = default;
+                _fasterKV = fasterKV;
+                _clientSession = clientSession;
+                _pendingContext = pendingContext;
+                _diskRequest = diskRequest;
+                CompletionComputeStatus = Pending;
+            }
+
+            internal ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> CompleteRMWAsync(CancellationToken token = default)
+            {
+                Debug.Assert(_fasterKV.RelaxedCPR);
+
+                AsyncIOContext<Key, Value> newDiskRequest = default;
+
+                if (_diskRequest.asyncOperation != null
+                    && CompletionComputeStatus != Completed
+                    && Interlocked.CompareExchange(ref CompletionComputeStatus, Completed, Pending) == Pending)
+                {
+                    try
+                    {
+                        if (_clientSession.SupportAsync) _clientSession.UnsafeResumeThread();
+                        try
+                        {
+                            var status = _fasterKV.InternalCompletePendingRequestFromContext(_clientSession.ctx, _clientSession.ctx, _clientSession.FasterSession, _diskRequest, ref _pendingContext, true, out newDiskRequest);
+                            _pendingContext.Dispose();
+                            if (status != Status.PENDING)
+                                return new ValueTask<RmwAsyncResult<Input, Output, Context, Functions>>(new RmwAsyncResult<Input, Output, Context, Functions>(status, default));
+                        }
+                        finally
+                        {
+                            if (_clientSession.SupportAsync) _clientSession.UnsafeSuspendThread();
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        _exception = ExceptionDispatchInfo.Capture(e);
+                    }
+                    finally
+                    {
+                        _clientSession.ctx.ioPendingRequests.Remove(_pendingContext.id);
+                        _clientSession.ctx.asyncPendingCount--;
+                    }
+                }
+
+                if (_exception != default)
+                    _exception.Throw();
+
+                return SlowRmwAsync(_fasterKV, _clientSession, _pendingContext, newDiskRequest, token);
+            }
+        }
+
+        /// <summary>
+        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
+        /// </summary>
+        public struct RmwAsyncResult<Input, Output, Context, Functions>
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            internal readonly Status status;
+            internal readonly Output output;
+
+            internal readonly RmwAsyncInternal<Input, Output, Context, Functions> rmwAsyncInternal;
+
+            internal RmwAsyncResult(Status status, Output output)
+            {
+                this.status = status;
+                this.output = output;
+                this.rmwAsyncInternal = default;
+            }
+
+            internal RmwAsyncResult(
+                FasterKV<Key, Value> fasterKV,
+                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
+            {
+                status = Status.PENDING;
+                output = default;
+                rmwAsyncInternal = new RmwAsyncInternal<Input, Output, Context, Functions>(fasterKV, clientSession, pendingContext, diskRequest);
+            }
+
+            /// <summary>
+            /// Complete the RMW operation, issuing additional I/O if needed
+            /// </summary>
+            /// <returns>ValueTask for RMW result, user needs to await if status is Status.PENDING</returns>
+            public ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> CompleteRMWAsync(CancellationToken token = default)
+            {
+                if (status != Status.PENDING)
+                    return new ValueTask<RmwAsyncResult<Input, Output, Context, Functions>>(new RmwAsyncResult<Input, Output, Context, Functions>(status, default));
+
+                return rmwAsyncInternal.CompleteRMWAsync(token);
+            }
+
+            /// <summary>
+            /// Complete the RMW operation, issuing additional I/O synchronously if needed
+            /// </summary>
+            /// <returns>Status of RMW operation</returns>
+            public Status CompleteRMW()
+            {
+                if (status != Status.PENDING)
+                    return status;
+
+                var r = rmwAsyncInternal.CompleteRMWAsync().GetAwaiter().GetResult();
+                while (r.status == Status.PENDING)
+                    r = r.CompleteRMWAsync().GetAwaiter().GetResult();
+
+                return r.status;
+            }
+
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> RmwAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            ref Key key, ref Input input, Context context, long serialNo, CancellationToken token = default)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            var pcontext = default(PendingContext<Input, Output, Context>);
+            var diskRequest = default(AsyncIOContext<Key, Value>);
+
+            if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+            try
+            {
+                OperationStatus internalStatus;
+
+                do
+                    internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
+                while (internalStatus == OperationStatus.RETRY_NOW || internalStatus == OperationStatus.RETRY_LATER);
+
+                
+                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+                {
+                    return new ValueTask<RmwAsyncResult<Input, Output, Context, Functions>>(new RmwAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, default));
+                }
+                else
+                {
+                    var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out diskRequest);
+
+                    if (status != Status.PENDING)
+                        return new ValueTask<RmwAsyncResult<Input, Output, Context, Functions>>(new RmwAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, default));
+                }
+            }
+            finally
+            {
+                clientSession.ctx.serialNum = serialNo;
+                if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+            }
+
+            return SlowRmwAsync(this, clientSession, pcontext, diskRequest, token);
+        }
+
+        private static async ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> SlowRmwAsync<Input, Output, Context, Functions>(
+            FasterKV<Key, Value> @this,
+            ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            clientSession.ctx.asyncPendingCount++;
+            clientSession.ctx.pendingReads.Add();
+
+            try
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (@this.epoch.ThisInstanceProtected())
+                    throw new NotSupportedException("Async operations not supported over protected epoch");
+
+                diskRequest = await diskRequest.asyncOperation.Task;
+            }
+            catch
+            {
+                clientSession.ctx.ioPendingRequests.Remove(pendingContext.id);
+                clientSession.ctx.asyncPendingCount--;
+                throw;
+            }
+            finally
+            {
+                clientSession.ctx.pendingReads.Remove();
+            }
+
+            return new RmwAsyncResult<Input, Output, Context, Functions>(@this, clientSession, pendingContext, diskRequest);
+        }
+
+
 
         internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, int version, ConcurrentDictionary<string, CommitPoint> tokens)
         {

@@ -144,7 +144,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
-            return fht.ReadAsync(this, ref key, ref input, context, token);
+            return fht.ReadAsync(this, ref key, ref input, context, ctx.serialNum + 1, token);
         }
 
         /// <summary>
@@ -246,27 +246,12 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="context"></param>
-        /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
-        /// <returns></returns>
+        /// <returns>ValueTask for RMW result, user needs to await and then call CompleteRMWAsync on the result</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask RMWAsync(ref Key key, ref Input input, Context context = default, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context, Functions>> RMWAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
-            var status = RMW(ref key, ref input, context, ctx.serialNum + 1);
-
-            if (status == Status.OK && !waitForCommit)
-                return default;
-
-            return SlowRMWAsync(this, waitForCommit, status, token);
-        }
-
-        private static async ValueTask SlowRMWAsync(ClientSession<Key, Value, Input, Output, Context, Functions> @this, bool waitForCommit, Status status, CancellationToken token)
-        {
-
-            if (status == Status.PENDING)
-                await @this.CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await @this.WaitForCommitAsync(token);
+            return fht.RmwAsync(this, ref key, ref input, context, ctx.serialNum + 1, token);
         }
 
         /// <summary>

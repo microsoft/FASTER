@@ -458,7 +458,7 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -485,7 +485,7 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -511,7 +511,7 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
             sessionCtx.serialNum = serialNo;
@@ -541,7 +541,7 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, pcontext, fasterSession, internalStatus);
+                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
             sessionCtx.serialNum = serialNo;

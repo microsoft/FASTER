@@ -198,8 +198,11 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                await session.RMWAsync(ref key, ref input, Empty.Default);
-
+                var r = await session.RMWAsync(ref key, ref input, Empty.Default);
+                while (r.status == Status.PENDING)
+                {
+                    r = await r.CompleteRMWAsync();
+                }
             }
 
             // Update first 100 using RMW from storage
