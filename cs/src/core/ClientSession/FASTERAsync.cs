@@ -365,9 +365,10 @@ namespace FASTER.core
             }
 
             /// <summary>
-            /// Complete the RMW operation, issuing additional I/O if needed
+            /// Complete the RMW operation, issuing additional (rare) I/O asynchronously if needed.
+            /// It is usually preferable to use CompleteRMW instead of this.
             /// </summary>
-            /// <returns>ValueTask for RMW result, user needs to await if status is Status.PENDING</returns>
+            /// <returns>ValueTask for RMW result. User needs to await again if result status is Status.PENDING.</returns>
             public ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> CompleteRMWAsync(CancellationToken token = default)
             {
                 if (status != Status.PENDING)
@@ -377,7 +378,7 @@ namespace FASTER.core
             }
 
             /// <summary>
-            /// Complete the RMW operation, issuing additional I/O synchronously if needed
+            /// Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.
             /// </summary>
             /// <returns>Status of RMW operation</returns>
             public Status CompleteRMW()
@@ -385,10 +386,14 @@ namespace FASTER.core
                 if (status != Status.PENDING)
                     return status;
 
-                var r = rmwAsyncInternal.CompleteRMWAsync().GetAwaiter().GetResult();
+                var t = rmwAsyncInternal.CompleteRMWAsync();
+                if (t.IsCompleted)
+                    return t.Result.status;
+
+                // Handle rare case
+                var r = t.GetAwaiter().GetResult();
                 while (r.status == Status.PENDING)
                     r = r.CompleteRMWAsync().GetAwaiter().GetResult();
-
                 return r.status;
             }
 

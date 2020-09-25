@@ -201,7 +201,7 @@ namespace FASTER.test
                 var r = await session.RMWAsync(ref key, ref input, Empty.Default);
                 while (r.status == Status.PENDING)
                 {
-                    r = await r.CompleteRMWAsync();
+                    r = await r.CompleteRMWAsync(); // test async version of RMW completion
                 }
             }
 
@@ -210,7 +210,7 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                await session.RMWAsync(ref key, ref input, Empty.Default);
+                (await session.RMWAsync(ref key, ref input, Empty.Default)).CompleteRMW();
             }
 
             for (int i = 0; i < 2000; i++)
