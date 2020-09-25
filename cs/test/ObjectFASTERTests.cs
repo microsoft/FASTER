@@ -170,7 +170,7 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                await session.UpsertAsync(ref key, ref value, Empty.Default);
+                await session.UpsertAsync(ref key, ref value);
             }
 
             var key1 = new MyKey { key = 1989 };

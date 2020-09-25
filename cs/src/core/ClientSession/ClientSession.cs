@@ -170,31 +170,19 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Upsert operation
+        /// Async upsert operation, data remains uncommitted.
+        /// To ensure commit of upserted value, complete the upsert and then call WaitForCommitAsync.
+        /// UpsertAsync never actually goes async, but may do so in future.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
         /// <param name="context"></param>
-        /// <param name="waitForCommit"></param>
         /// <param name="token"></param>
-        /// <returns></returns>
+        /// <returns>ValueTask of operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask<Status> UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, CancellationToken token = default)
         {
-            var status = Upsert(ref key, ref desiredValue, context, ctx.serialNum + 1);
-
-            if (status == Status.OK && !waitForCommit)
-                return default;
-
-            return SlowUpsertAsync(this, waitForCommit, status, token);
-        }
-
-        private static async ValueTask SlowUpsertAsync(ClientSession<Key, Value, Input, Output, Context, Functions> @this, bool waitForCommit, Status status, CancellationToken token)
-        {
-            if (status == Status.PENDING)
-                await @this.CompletePendingAsync(waitForCommit, token);
-            else if (waitForCommit)
-                await @this.WaitForCommitAsync(token);
+            return fht.UpsertAsync(this, ref key, ref desiredValue, context, ctx.serialNum + 1, token);
         }
 
         /// <summary>

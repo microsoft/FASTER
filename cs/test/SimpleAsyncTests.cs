@@ -53,7 +53,7 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
             {
-                s1.Upsert(ref key, ref key);
+                await s1.UpsertAsync(ref key, ref key);
             }
 
             for (long key = 0; key < numOps; key++)

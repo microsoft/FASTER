@@ -207,9 +207,7 @@ namespace FASTER.core
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             var diskRequest = default(AsyncIOContext<Key, Value>);
-
             Output output = default;
-            
 
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
             try
@@ -227,7 +225,7 @@ namespace FASTER.core
                     var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out diskRequest);
 
                     if (status != Status.PENDING)
-                        return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output));
+                        return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>(status, output));
                 }
             }
             finally
@@ -426,7 +424,7 @@ namespace FASTER.core
                     var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out diskRequest);
 
                     if (status != Status.PENDING)
-                        return new ValueTask<RmwAsyncResult<Input, Output, Context, Functions>>(new RmwAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, default));
+                        return new ValueTask<RmwAsyncResult<Input, Output, Context, Functions>>(new RmwAsyncResult<Input, Output, Context, Functions>(status, default));
                 }
             }
             finally
@@ -471,27 +469,37 @@ namespace FASTER.core
         }
 
 
-
-        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, int version, ConcurrentDictionary<string, CommitPoint> tokens)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ValueTask<Status> UpsertAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+            ref Key key, ref Value value, Context context, long serialNo, CancellationToken token)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            lock (toCtx)
+            var pcontext = default(PendingContext<Input, Output, Context>);
+
+            if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
+            try
             {
-                if (toCtx.version < version)
+                OperationStatus internalStatus;
+                do
+                    internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
+                while (internalStatus == OperationStatus.RETRY_NOW);
+
+                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
-                    CopyContext(fromCtx, toCtx);
-                    if (toCtx.serialNum != -1)
-                    {
-                        tokens.TryAdd(toCtx.guid,
-                            new CommitPoint
-                            {
-                                UntilSerialNo = toCtx.serialNum,
-                                ExcludedSerialNos = toCtx.excludedSerialNos
-                            });
-                    }
-                    return true;
+                    return new ValueTask<Status>((Status)internalStatus);
+                }
+                else
+                {
+                    var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out _);
+                    Debug.Assert(status != Status.PENDING);
+                    return new ValueTask<Status>(status);
                 }
             }
-            return false;
+            finally
+            {
+                clientSession.ctx.serialNum = serialNo;
+                if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
+            }
         }
     }
 }

@@ -82,7 +82,8 @@ namespace StoreAsyncApi
 
                         var key = new CacheKey(rand.Next());
                         var value = new CacheValue(rand.Next());
-                        await session.UpsertAsync(ref key, ref value, context, true);
+                        await session.UpsertAsync(ref key, ref value, context);
+                        await session.WaitForCommitAsync();
 
                         Interlocked.Increment(ref numOps);
                     }
