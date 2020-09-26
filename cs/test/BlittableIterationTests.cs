@@ -67,7 +67,7 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = 2 * i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 1);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;
@@ -81,12 +81,11 @@ namespace FASTER.test
 
             Assert.IsTrue(count == totalRecords);
 
-
             for (int i = totalRecords/2; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;
@@ -103,7 +102,7 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;
@@ -120,7 +119,7 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Delete(ref key1, 0, 0);
+                session.Delete(ref key1, 0);
             }
 
             count = 0;
@@ -133,12 +132,11 @@ namespace FASTER.test
 
             Assert.IsTrue(count == totalRecords / 2);
 
-
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = 3 * i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 1);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;

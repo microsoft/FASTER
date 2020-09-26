@@ -242,7 +242,7 @@ namespace FASTER.core
             }
             else
             {
-                status = HandleOperationStatus(opCtx, currentCtx, pendingContext, fasterSession, internalStatus);
+                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, false, out _);
             }
 
             // If done, callback user code.
@@ -331,78 +331,41 @@ namespace FASTER.core
         {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out var pendingContext))
             {
-                ref Key key = ref pendingContext.key.Get();
-
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
-
-                OperationStatus internalStatus;
-                // Issue the continue command
-                if (pendingContext.type == OperationType.READ)
-                {
-                    internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx);
-                }
-                else
-                {
-                    internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
-                }
-
-                request.Dispose();
-
-                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
-
-                Status status;
-                // Handle operation status
-                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                {
-                    status = (Status)internalStatus;
-                }
-                else
-                {
-                    status = HandleOperationStatus(opCtx, currentCtx, pendingContext, fasterSession, internalStatus);
-                }
-
-                // If done, callback user code
-                if (status == Status.OK || status == Status.NOTFOUND)
-                {
-                    if (pendingContext.heldLatch == LatchOperation.Shared)
-                        ReleaseSharedLatch(key);
-
-                    if (pendingContext.type == OperationType.READ)
-                    {
-                        fasterSession.ReadCompletionCallback(ref key,
-                                                         ref pendingContext.input,
-                                                         ref pendingContext.output,
-                                                         pendingContext.userContext,
-                                                         status);
-                    }
-                    else
-                    {
-                        fasterSession.RMWCompletionCallback(ref key,
-                                                        ref pendingContext.input,
-                                                        pendingContext.userContext,
-                                                        status);
-                    }
-                }
+                InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
                 pendingContext.Dispose();
             }
         }
 
-        internal (Status, Output) InternalCompletePendingReadRequest<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx, 
-            FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession, 
-            AsyncIOContext<Key, Value> request, 
-            PendingContext<Input, Output, Context> pendingContext)
+        /// <summary>
+        /// Caller is expected to dispose pendingContext after this method completes
+        /// </summary>
+        internal Status InternalCompletePendingRequestFromContext<Input, Output, Context, FasterSession>(
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterSession fasterSession,
+            AsyncIOContext<Key, Value> request,
+            ref PendingContext<Input, Output, Context> pendingContext, bool asyncOp, out AsyncIOContext<Key, Value> newRequest)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            (Status, Output) s = default;
-
+            newRequest = default;
             ref Key key = ref pendingContext.key.Get();
+            OperationStatus internalStatus;
 
-            OperationStatus internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx);
+            // Issue the continue command
+            if (pendingContext.type == OperationType.READ)
+            {
+                internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx);
+            }
+            else
+            {
+                internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
+            }
 
             request.Dispose();
+
+            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
 
             Status status;
             // Handle operation status
@@ -412,23 +375,32 @@ namespace FASTER.core
             }
             else
             {
-                throw new Exception($"Unexpected {nameof(OperationStatus)} while reading => {internalStatus}");
+                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, out newRequest);
             }
 
-            if (pendingContext.heldLatch == LatchOperation.Shared)
-                ReleaseSharedLatch(key);
+            // If done, callback user code
+            if (status == Status.OK || status == Status.NOTFOUND)
+            {
+                if (pendingContext.heldLatch == LatchOperation.Shared)
+                    ReleaseSharedLatch(key);
 
-            fasterSession.ReadCompletionCallback(ref key,
-                                             ref pendingContext.input,
-                                             ref pendingContext.output,
-                                             pendingContext.userContext,
-                                             status);
-
-            s.Item1 = status;
-            s.Item2 = pendingContext.output;
-            pendingContext.Dispose();
-
-            return s;
+                if (pendingContext.type == OperationType.READ)
+                {
+                    fasterSession.ReadCompletionCallback(ref key,
+                                                     ref pendingContext.input,
+                                                     ref pendingContext.output,
+                                                     pendingContext.userContext,
+                                                     status);
+                }
+                else
+                {
+                    fasterSession.RMWCompletionCallback(ref key,
+                                                    ref pendingContext.input,
+                                                    pendingContext.userContext,
+                                                    status);
+                }
+            }
+            return status;
         }
         #endregion
     }

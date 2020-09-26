@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Resources;
 using System.Threading;
@@ -556,6 +557,28 @@ namespace FASTER.core
                 }
                 result.Free();
             }
+        }
+
+        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, int version, ConcurrentDictionary<string, CommitPoint> tokens)
+        {
+            lock (toCtx)
+            {
+                if (toCtx.version < version)
+                {
+                    CopyContext(fromCtx, toCtx);
+                    if (toCtx.serialNum != -1)
+                    {
+                        tokens.TryAdd(toCtx.guid,
+                            new CommitPoint
+                            {
+                                UntilSerialNo = toCtx.serialNum,
+                                ExcludedSerialNos = toCtx.excludedSerialNos
+                            });
+                    }
+                    return true;
+                }
+            }
+            return false;
         }
     }
 

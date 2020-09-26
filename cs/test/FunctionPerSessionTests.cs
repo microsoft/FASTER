@@ -137,20 +137,20 @@ namespace FASTER.test
                 var key = 101;
                 var input = 1000L;
 
-                await adderSession.RMWAsync(ref key, ref input);
-                await adderSession.RMWAsync(ref key, ref input);
-                await adderSession.RMWAsync(ref key, ref input);
+                (await adderSession.RMWAsync(ref key, ref input)).Complete();
+                (await adderSession.RMWAsync(ref key, ref input)).Complete();
+                (await adderSession.RMWAsync(ref key, ref input)).Complete();
 
                 Assert.AreEqual(1, _adder.InitialCount);
                 Assert.AreEqual(2, _adder.InPlaceCount);
 
                 var empty = default(Empty);
-                await removerSession.RMWAsync(ref key, ref empty);
+                (await removerSession.RMWAsync(ref key, ref empty)).Complete();
 
                 Assert.AreEqual(1, _remover.InPlaceCount);
 
                 var read = await readerSession.ReadAsync(ref key, ref empty);
-                var result = read.CompleteRead();
+                var result = read.Complete();
 
                 var actual = result.Item2;
                 Assert.AreEqual(2, actual.ReferenceCount);
@@ -158,9 +158,9 @@ namespace FASTER.test
 
                 _faster.Log.FlushAndEvict(true);
 
-                await removerSession.RMWAsync(ref key, ref empty);
+                (await removerSession.RMWAsync(ref key, ref empty)).Complete();
                 read = await readerSession.ReadAsync(ref key, ref empty);
-                result = read.CompleteRead();
+                result = read.Complete();
 
                 actual = result.Item2;
                 Assert.AreEqual(1, actual.ReferenceCount);

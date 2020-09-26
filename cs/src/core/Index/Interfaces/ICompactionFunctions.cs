@@ -10,7 +10,6 @@
         /// <summary>
         /// Checks if record in the faster log is logically deleted.
         /// If the record was deleted via <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.Delete(ref Key, Context, long)"/>
-        /// or <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.DeleteAsync(ref Key, Context, bool, System.Threading.CancellationToken)"/> 
         /// then this function is not called for such a record.
         /// </summary>
         /// <remarks>

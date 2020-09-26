@@ -58,7 +58,7 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             int count = 0;
@@ -77,7 +77,7 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = 2 * i };
-                session.Upsert(ref key1, ref value, 0, 1);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;
@@ -91,12 +91,11 @@ namespace FASTER.test
 
             Assert.IsTrue(count == totalRecords);
 
-
             for (int i = totalRecords / 2; i < totalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;
@@ -113,7 +112,7 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;
@@ -130,7 +129,7 @@ namespace FASTER.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Delete(ref key1, 0, 0);
+                session.Delete(ref key1, 0);
             }
 
             count = 0;
@@ -143,12 +142,11 @@ namespace FASTER.test
 
             Assert.IsTrue(count == totalRecords / 2);
 
-
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = 3 * i };
-                session.Upsert(ref key1, ref value, 0, 1);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             count = 0;
