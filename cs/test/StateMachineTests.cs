@@ -408,7 +408,7 @@ namespace FASTER.test.statemachine
                 // Completion callback should have been called once
                 Assert.IsTrue(f.checkpointCallbackExpectation == 0);
 
-                for (int key = 0; key < numOps; key++)
+                for (var key = s3.NextSerialNo; key < numOps; key++)
                 {
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
