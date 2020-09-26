@@ -140,7 +140,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="context"></param>
         /// <param name="token"></param>
-        /// <returns>ReadAsyncResult - call CompleteRead on the return value to complete the read operation</returns>
+        /// <returns>ReadAsyncResult - call Complete() on the return value to complete the read operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
@@ -180,7 +180,7 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns>ValueTask of operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<Status> UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, CancellationToken token = default)
+        internal ValueTask<Status> UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, CancellationToken token = default)
         {
             return fht.UpsertAsync(this, ref key, ref desiredValue, context, ctx.serialNum + 1, token);
         }
@@ -235,7 +235,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="context"></param>
         /// <param name="token"></param>
-        /// <returns>ValueTask for RMW result, user needs to await and then call CompleteRMWAsync on the result</returns>
+        /// <returns>ValueTask for RMW result, user needs to await and then call Complete() on the result</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context, Functions>> RMWAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
         {
@@ -512,12 +512,12 @@ namespace FASTER.core
             /// Complete the read operation, after any I/O is completed.
             /// </summary>
             /// <returns>The read result, or throws an exception if error encountered.</returns>
-            public (Status, Output) CompleteRead()
+            public (Status, Output) Complete()
             {
                 if (status != Status.PENDING)
                     return (status, output);
 
-                return readAsyncInternal.CompleteRead();
+                return readAsyncInternal.Complete();
             }
         }
 

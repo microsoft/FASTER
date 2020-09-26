@@ -53,14 +53,14 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
             {
-                await s1.UpsertAsync(ref key, ref key);
+                s1.Upsert(ref key, ref key);
             }
 
             for (long key = 0; key < numOps; key++)
             {
                 Status status;
                 long output = default;
-                (status, output) = (await s1.ReadAsync(ref key, ref output)).CompleteRead();
+                (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
                 Assert.IsTrue(status == Status.OK && output == key);
             }
         }
@@ -74,12 +74,12 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
             for (key = 0; key < numOps; key++)
             {
-                (await s1.RMWAsync(ref key, ref key)).CompleteRMW();
+                (await s1.RMWAsync(ref key, ref key)).Complete();
             }
 
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.ReadAsync(ref key, ref output)).CompleteRead();
+                (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
                 Assert.IsTrue(status == Status.OK && output == key);
             }
 
@@ -88,10 +88,10 @@ namespace FASTER.test.async
             var t1 = s1.RMWAsync(ref key, ref input);
             var t2 = s1.RMWAsync(ref key, ref input);
 
-            (await t1).CompleteRMW();
-            (await t2).CompleteRMW(); // should trigger RMW re-do
+            (await t1).Complete();
+            (await t2).Complete(); // should trigger RMW re-do
 
-            (status, output) = (await s1.ReadAsync(ref key, ref output)).CompleteRead();
+            (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
             Assert.IsTrue(status == Status.OK && output == key + input + input);
         }
     }

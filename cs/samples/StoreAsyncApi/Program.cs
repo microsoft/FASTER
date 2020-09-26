@@ -82,7 +82,7 @@ namespace StoreAsyncApi
 
                         var key = new CacheKey(rand.Next());
                         var value = new CacheValue(rand.Next());
-                        await session.UpsertAsync(ref key, ref value, context);
+                        session.Upsert(ref key, ref value, context);
                         await session.WaitForCommitAsync();
 
                         Interlocked.Increment(ref numOps);
@@ -104,7 +104,7 @@ namespace StoreAsyncApi
 
                     var key = new CacheKey(rand.Next());
                     var value = new CacheValue(rand.Next());
-                    await session.UpsertAsync(ref key, ref value, context);
+                    session.Upsert(ref key, ref value, context);
 
                     if (count++ % 100 == 0)
                     {

@@ -1501,7 +1501,7 @@ namespace FASTER.core
                 SynchronizeEpoch(opCtx, currentCtx, ref pendingContext, fasterSession);
             }
 
-            if (status == OperationStatus.CPR_SHIFT_DETECTED || (asyncOp && status == OperationStatus.RETRY_LATER))
+            if (status == OperationStatus.CPR_SHIFT_DETECTED || ((asyncOp || RelaxedCPR) && status == OperationStatus.RETRY_LATER))
             {
                 #region Retry as (v+1) Operation
                 var internalStatus = default(OperationStatus);
@@ -1535,7 +1535,9 @@ namespace FASTER.core
                             break;
                     }
                     Debug.Assert(internalStatus != OperationStatus.CPR_SHIFT_DETECTED);
-                } while (internalStatus == OperationStatus.RETRY_NOW || (asyncOp && internalStatus == OperationStatus.RETRY_LATER));
+                } while (internalStatus == OperationStatus.RETRY_NOW || ((asyncOp || RelaxedCPR) && internalStatus == OperationStatus.RETRY_LATER));
+                // Note that we spin in case of { async op + strict CPR } which is fine as this combination is rare/discouraged
+
                 status = internalStatus;
                 #endregion
             }

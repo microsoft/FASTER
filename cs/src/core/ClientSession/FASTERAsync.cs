@@ -118,7 +118,7 @@ namespace FASTER.core
                 CompletionComputeStatus = Pending;
             }
 
-            internal (Status, Output) CompleteRead()
+            internal (Status, Output) Complete()
             {
                 (Status, Output) _result = default;
                 if (_diskRequest.asyncOperation != null
@@ -191,12 +191,12 @@ namespace FASTER.core
             /// Complete the read operation, after any I/O is completed.
             /// </summary>
             /// <returns>The read result, or throws an exception if error encountered.</returns>
-            public (Status, Output) CompleteRead()
+            public (Status, Output) Complete()
             {
                 if (status != Status.PENDING)
                     return (status, output);
 
-                return readAsyncInternal.CompleteRead();
+                return readAsyncInternal.Complete();
             }
         }
 
@@ -291,7 +291,7 @@ namespace FASTER.core
                 CompletionComputeStatus = Pending;
             }
 
-            internal ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> CompleteRMWAsync(CancellationToken token = default)
+            internal ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> CompleteAsync(CancellationToken token = default)
             {
                 Debug.Assert(_fasterKV.RelaxedCPR);
 
@@ -364,34 +364,34 @@ namespace FASTER.core
 
             /// <summary>
             /// Complete the RMW operation, issuing additional (rare) I/O asynchronously if needed.
-            /// It is usually preferable to use CompleteRMW instead of this.
+            /// It is usually preferable to use Complete() instead of this.
             /// </summary>
             /// <returns>ValueTask for RMW result. User needs to await again if result status is Status.PENDING.</returns>
-            public ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> CompleteRMWAsync(CancellationToken token = default)
+            public ValueTask<RmwAsyncResult<Input, Output, Context, Functions>> CompleteAsync(CancellationToken token = default)
             {
                 if (status != Status.PENDING)
                     return new ValueTask<RmwAsyncResult<Input, Output, Context, Functions>>(new RmwAsyncResult<Input, Output, Context, Functions>(status, default));
 
-                return rmwAsyncInternal.CompleteRMWAsync(token);
+                return rmwAsyncInternal.CompleteAsync(token);
             }
 
             /// <summary>
             /// Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.
             /// </summary>
             /// <returns>Status of RMW operation</returns>
-            public Status CompleteRMW()
+            public Status Complete()
             {
                 if (status != Status.PENDING)
                     return status;
 
-                var t = rmwAsyncInternal.CompleteRMWAsync();
+                var t = rmwAsyncInternal.CompleteAsync();
                 if (t.IsCompleted)
                     return t.Result.status;
 
                 // Handle rare case
                 var r = t.GetAwaiter().GetResult();
                 while (r.status == Status.PENDING)
-                    r = r.CompleteRMWAsync().GetAwaiter().GetResult();
+                    r = r.CompleteAsync().GetAwaiter().GetResult();
                 return r.status;
             }
 
