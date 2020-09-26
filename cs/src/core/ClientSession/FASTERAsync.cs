@@ -469,40 +469,5 @@ namespace FASTER.core
 
             return new RmwAsyncResult<Input, Output, Context, Functions>(@this, clientSession, pendingContext, diskRequest);
         }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<Status> UpsertAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-            ref Key key, ref Value value, Context context, long serialNo, CancellationToken token)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-        {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-
-            if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
-            try
-            {
-                OperationStatus internalStatus;
-                do
-                    internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
-                while (internalStatus == OperationStatus.RETRY_NOW);
-
-                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                {
-                    return new ValueTask<Status>((Status)internalStatus);
-                }
-                else
-                {
-                    var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out _);
-                    Debug.Assert(status != Status.PENDING);
-                    return new ValueTask<Status>(status);
-                }
-            }
-            finally
-            {
-                Debug.Assert(serialNo >= clientSession.ctx.serialNum, "Operation serial numbers must be non-decreasing");
-                clientSession.ctx.serialNum = serialNo;
-                if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
-            }
-        }
     }
 }

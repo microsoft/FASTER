@@ -197,23 +197,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Async upsert operation, data remains uncommitted.
-        /// To ensure commit of upserted value, complete the upsert and then call WaitForCommitAsync.
-        /// UpsertAsync never actually goes async, but may do so in future.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="context"></param>
-        /// <param name="serialNo"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask of operation status</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<Status> UpsertAsync(ref Key key, ref Value desiredValue, Context context = default, long serialNo = 0, CancellationToken token = default)
-        {
-            return fht.UpsertAsync(this, ref key, ref desiredValue, context, serialNo, token);
-        }
-
-        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>
@@ -270,30 +253,6 @@ namespace FASTER.core
             {
                 if (SupportAsync) UnsafeSuspendThread();
             }
-        }
-
-        /// <summary>
-        /// Async delete operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="context"></param>
-        /// <param name="serialNo"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask DeleteAsync(ref Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
-        {
-            var status = Delete(ref key, context, serialNo);
-
-            if (status == Status.OK)
-                return default;
-
-            return SlowDeleteAsync(this, token);
-        }
-
-        private static async ValueTask SlowDeleteAsync(ClientSession<Key, Value, Input, Output, Context, Functions> @this, CancellationToken token)
-        {
-            await @this.CompletePendingAsync(false, token);
         }
 
         /// <summary>
