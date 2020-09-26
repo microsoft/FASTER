@@ -230,6 +230,7 @@ namespace FASTER.core
             }
             finally
             {
+                Debug.Assert(serialNo >= clientSession.ctx.serialNum, "Operation serial numbers must be non-decreasing");
                 clientSession.ctx.serialNum = serialNo;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }
@@ -429,6 +430,7 @@ namespace FASTER.core
             }
             finally
             {
+                Debug.Assert(serialNo >= clientSession.ctx.serialNum, "Operation serial numbers must be non-decreasing");
                 clientSession.ctx.serialNum = serialNo;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }
@@ -497,6 +499,7 @@ namespace FASTER.core
             }
             finally
             {
+                Debug.Assert(serialNo >= clientSession.ctx.serialNum, "Operation serial numbers must be non-decreasing");
                 clientSession.ctx.serialNum = serialNo;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }

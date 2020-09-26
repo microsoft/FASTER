@@ -58,9 +58,7 @@ namespace FASTER.test.async
 
             for (long key = 0; key < numOps; key++)
             {
-                Status status;
-                long output = default;
-                (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+                var (status, output) = (await s1.ReadAsync(ref key)).Complete();
                 Assert.IsTrue(status == Status.OK && output == key);
             }
         }
