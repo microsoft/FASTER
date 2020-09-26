@@ -140,10 +140,10 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         {
             AdInput inputArg = default;
             Output outputArg = default;
-            for (var key = fht.NextSerialNo; key < numOps; key++)
+            for (var key = 0; key < numOps; key++)
             {
                 inputArg.adId.adId = key;
-                var status = fht.Read(ref inputArg.adId, ref inputArg, ref outputArg, Empty.Default, key);
+                var status = fht.Read(ref inputArg.adId, ref inputArg, ref outputArg, Empty.Default, fht.SerialNo);
 
                 if (status == Status.PENDING)
                     fht.CompletePending(true);
