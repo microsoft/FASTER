@@ -1540,7 +1540,7 @@ namespace FASTER.core
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.record = default;
                 if (asyncOp)
-                    request.asyncOperation = new TaskCompletionSource<AsyncIOContext<Key, Value>>();
+                    request.asyncOperation = new TaskCompletionSource<AsyncIOContext<Key, Value>>(TaskCreationOptions.RunContinuationsAsynchronously);
                 else
                     request.callbackQueue = opCtx.readyResponses;
                 
