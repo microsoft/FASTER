@@ -191,7 +191,7 @@ namespace FASTER.core
                     }
                 }
                 Resume();
-                Suspend();
+                Release();
             }
         }
 
@@ -215,8 +215,9 @@ namespace FASTER.core
                         var trigger_action = drainList[i].action;
                         drainList[i].action = null;
                         drainList[i].epoch = int.MaxValue;
+                        Interlocked.Decrement(ref drainCount);
                         trigger_action();
-                        if (Interlocked.Decrement(ref drainCount) == 0) break;
+                        if (drainCount == 0) break;
                     }
                 }
             }
