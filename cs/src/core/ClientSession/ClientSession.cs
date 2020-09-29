@@ -90,6 +90,7 @@ namespace FASTER.core
         public void Dispose()
         {
             CompletePending(true);
+            fht.DisposeClientSession(ID);
 
             // Session runs on a single thread
             if (!SupportAsync)
@@ -131,15 +132,7 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Output output, Context userContext = default, long serialNo = 0)
         {
             Input input = default;
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            return this.Read(ref key, ref input, ref output, userContext, serialNo);
         }
 
         /// <summary>
@@ -155,6 +148,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
+            Debug.Assert(SupportAsync, "Session does not support async operations");
             return fht.ReadAsync(this, ref key, ref input, context, serialNo, token);
         }
 
@@ -231,6 +225,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context, Functions>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
+            Debug.Assert(SupportAsync, "Session does not support async operations");
             return fht.RmwAsync(this, ref key, ref input, context, serialNo, token);
         }
 

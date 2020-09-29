@@ -960,10 +960,20 @@ namespace FASTER.core
 
             #region Normal processing
 
-            // Record is in memory, try to update hash chain and completely elide record
-            // only if previous address points to invalid address
+            // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
+                // Apply tombstone bit to the record
+                hlog.GetInfo(physicalAddress).Tombstone = true;
+
+                if (WriteDefaultOnDelete)
+                {
+                    // Write default value. Ignore return value; the record is already marked
+                    Value v = default;
+                    fasterSession.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                }
+
+                // Try to update hash chain and completely elide record only if previous address points to invalid address
                 if (entry.Address == logicalAddress && hlog.GetInfo(physicalAddress).PreviousAddress < hlog.BeginAddress)
                 {
                     var updatedEntry = default(HashBucketEntry);
@@ -975,47 +985,19 @@ namespace FASTER.core
                     updatedEntry.Pending = entry.Pending;
                     updatedEntry.Tentative = false;
 
-                    if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
-                    {
-                        // Apply tombstone bit to the record
-                        hlog.GetInfo(physicalAddress).Tombstone = true;
-
-                        if (WriteDefaultOnDelete)
-                        {
-                            // Write default value
-                            // Ignore return value, the record is already marked
-                            Value v = default;
-                            fasterSession.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
-                        }
-
-                        status = OperationStatus.SUCCESS;
-                        goto LatchRelease; // Release shared latch (if acquired)
-                    }
-                }
-            }
-
-            // Mutable Region: Update the record in-place
-            if (logicalAddress >= hlog.ReadOnlyAddress)
-            {
-                hlog.GetInfo(physicalAddress).Tombstone = true;
-
-                if (WriteDefaultOnDelete)
-                {
-                    // Write default value
-                    // Ignore return value, the record is already marked
-                    Value v = default;
-                    fasterSession.ConcurrentWriter(ref hlog.GetKey(physicalAddress), ref v, ref hlog.GetValue(physicalAddress));
+                    // Ignore return value; this is a performance optimization to keep the hash table clean if we can
+                    Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
                 }
 
                 status = OperationStatus.SUCCESS;
                 goto LatchRelease; // Release shared latch (if acquired)
             }
 
-        // All other regions: Create a record in the mutable region
-        #endregion
+            // All other regions: Create a record in the mutable region
+            #endregion
 
-        #region Create new record in the mutable region
-        CreateNewRecord:
+            #region Create new record in the mutable region
+            CreateNewRecord:
             {
                 var value = default(Value);
                 // Immutable region or new record
