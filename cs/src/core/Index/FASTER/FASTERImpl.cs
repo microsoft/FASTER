@@ -703,15 +703,25 @@ namespace FASTER.core
         #region Create new record
         CreateNewRecord:
             {
+                if (logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone)
+                {
+                    if (!fasterSession.NeedCopyUpdate(ref key, ref input, ref hlog.GetValue(physicalAddress)))
+                    {
+                        status = OperationStatus.SUCCESS;
+                        goto LatchRelease;
+                    }
+                }
+
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
                                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
                                 hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
                 BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
-                               true, false, false,
-                               latestLogicalAddress);
+                                true, false, false,
+                                latestLogicalAddress);
                 hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+
                 if (logicalAddress < hlog.BeginAddress)
                 {
                     fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
@@ -1378,6 +1388,15 @@ namespace FASTER.core
                 }
 
                 #region Create record in mutable region
+
+                if ((request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
+                {
+                    if (!fasterSession.NeedCopyUpdate(ref key, ref pendingContext.input, ref hlog.GetContextRecordValue(ref request)))
+                    {
+                        return OperationStatus.SUCCESS;
+                    }
+                }
+
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
                     recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input, fasterSession);

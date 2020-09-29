@@ -64,6 +64,18 @@ namespace FASTER.core
         void InitialUpdater(ref Key key, ref Input input, ref Value value);
 
         /// <summary>
+        /// Whether we need to invoke copy-update for RMW
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="oldValue"></param>
+        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
+#if NETSTANDARD21            
+            => true
+#endif
+            ;
+
+        /// <summary>
         /// Copy-update for RMW
         /// </summary>
         /// <param name="key"></param>
