@@ -1,8 +1,25 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
 using System.Collections.Generic;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Lazy ref-get for given type (performs lazy allocation)
+    /// </summary>
+    /// <typeparam name="Value"></typeparam>
+    public struct LazyRef<Value>
+    {
+        /// <summary>
+        /// Get value ref (after allocating)
+        /// </summary>
+        /// <returns></returns>
+        public ref Value Get()
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     /// <summary>
     /// Callback functions to FASTER
     /// </summary>
@@ -70,6 +87,18 @@ namespace FASTER.core
         /// <param name="oldValue"></param>
         /// <param name="newValue"></param>
         void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue);
+
+
+        /// <summary>
+        /// Copy-update with conditional allocation for RMW. Return false
+        /// to fall through to normal CopyUpdate
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="oldValue"></param>
+        /// <param name="newValue"></param>
+        /// <returns></returns>
+        // bool ConditionalCopyUpdater(ref Key key, ref Input input, ref Value oldValue, LazyRef<Value> newValue);
 
         /// <summary>
         /// In-place update for RMW
