@@ -54,19 +54,19 @@ namespace FASTER.test
             var value1 = new RMWValue { value = 1 };
             var value2 = new RMWValue { value = 2 };
 
-            status = session.RMW(ref key, ref value1); // NOTFOUND + InitialUpdated
+            status = session.RMW(ref key, ref value1); // InitialUpdater + NOTFOUND
             Assert.IsTrue(status == Status.NOTFOUND);
             Assert.IsTrue(value1.flag); // InitialUpdater is called
 
-            status = session.RMW(ref key, ref value2); // OK + first InPlaceUpdated
+            status = session.RMW(ref key, ref value2); // InPlaceUpdater + OK
             Assert.IsTrue(status == Status.OK);
 
             fht.Log.Flush(true);
-            status = session.RMW(ref key, ref value2); // OK + CopyUpdater
+            status = session.RMW(ref key, ref value2); // NeedCopyUpdate + OK
             Assert.IsTrue(status == Status.OK);
 
             fht.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, Status.OK, 0); // PENDING + CopyUpdater + OK
+            status = session.RMW(ref key, ref value2, Status.OK, 0); // PENDING + NeedCopyUpdate + OK
             Assert.IsTrue(status == Status.PENDING);
             session.CompletePending(true);
 
@@ -80,7 +80,7 @@ namespace FASTER.test
             Assert.IsTrue(status == Status.OK);
             session.CompletePending(true);
             fht.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, Status.NOTFOUND, 0); // PENDING + InitialUpdated + NOTFOUND
+            status = session.RMW(ref key, ref value2, Status.NOTFOUND, 0); // PENDING + InitialUpdater + NOTFOUND
             Assert.IsTrue(status == Status.PENDING);
             session.CompletePending(true);
         }
@@ -108,7 +108,7 @@ namespace FASTER.test
         }
     }
 
-    internal class TryAddTestFunctions : SimpleFunctions<int, RMWValue, Status>
+    internal class TryAddTestFunctions : TryAddFunctions<int, RMWValue, Status>
     {
         public override void InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value)
         {
@@ -116,14 +116,10 @@ namespace FASTER.test
             base.InitialUpdater(ref key, ref input, ref value);
         }
 
-        public override bool NeedCopyUpdate(ref int key, ref RMWValue input, ref RMWValue oldValue) => false;
-
         public override void CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue)
         {
             Assert.Fail("CopyUpdater");
         }
-
-        public override bool InPlaceUpdater(ref int key, ref RMWValue input, ref RMWValue value) => false;
 
         public override void RMWCompletionCallback(ref int key, ref RMWValue input, Status ctx, Status status)
         {
