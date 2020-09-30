@@ -883,6 +883,9 @@ namespace FASTER.core
                 if (endAddress-startAddress > int.MaxValue)
                     throw new FasterException("Size of key-value exceeds max of 2GB: " + (endAddress - startAddress));
 
+                if (startAddress < 0)
+                    startAddress = 0;
+
                 AsyncGetFromDisk(startAddress, (int)(endAddress - startAddress), ctx, ctx.record);
                 return false;
             }
