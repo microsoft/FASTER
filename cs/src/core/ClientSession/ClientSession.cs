@@ -168,6 +168,21 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (Status, Output) Read(Key key, Context userContext = default, long serialNo = 0)
+        {
+            Input input = default;
+            Output output = default;
+            return (Read(ref key, ref input, ref output, userContext, serialNo), output);
+        }
+
+        /// <summary>
         /// Async read operation, may return uncommitted result
         /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
         /// </summary>
