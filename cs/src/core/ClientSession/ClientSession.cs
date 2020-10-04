@@ -124,6 +124,22 @@ namespace FASTER.core
         /// Read operation
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Read(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            output = default;
+            return Read(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key"></param>
         /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
@@ -132,7 +148,38 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Output output, Context userContext = default, long serialNo = 0)
         {
             Input input = default;
-            return this.Read(ref key, ref input, ref output, userContext, serialNo);
+            return Read(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Read(Key key, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            Input input = default;
+            output = default;
+            return Read(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (Status, Output) Read(Key key, Context userContext = default, long serialNo = 0)
+        {
+            Input input = default;
+            Output output = default;
+            return (Read(ref key, ref input, ref output, userContext, serialNo), output);
         }
 
         /// <summary>
@@ -157,12 +204,46 @@ namespace FASTER.core
         /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="context"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ReadAsyncResult - call Complete() on the return value to complete the read operation</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
+        {
+            Debug.Assert(SupportAsync, "Session does not support async operations");
+            return fht.ReadAsync(this, ref key, ref input, context, serialNo, token);
+        }
+
+
+        /// <summary>
+        /// Async read operation, may return uncommitted result
+        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
+        /// </summary>
+        /// <param name="key"></param>
         /// <param name="context"></param>
         /// <param name="serialNo"></param>
         /// <param name="token"></param>
         /// <returns>ReadAsyncResult - call Complete() on the return value to complete the read operation</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync(ref Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
+        {
+            Input input = default;
+            return fht.ReadAsync(this, ref key, ref input, context, serialNo, token);
+        }
+
+        /// <summary>
+        /// Async read operation, may return uncommitted result
+        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="context"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ReadAsyncResult - call Complete() on the return value to complete the read operation</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
             Input input = default;
             return fht.ReadAsync(this, ref key, ref input, context, serialNo, token);
@@ -191,6 +272,18 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(Key key, Value desiredValue, Context userContext = default, long serialNo = 0)
+            => Upsert(ref key, ref desiredValue, userContext, serialNo);
+
+        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>
@@ -213,6 +306,18 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// RMW operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status RMW(Key key, Input input, Context userContext = default, long serialNo = 0)
+            => RMW(ref key, ref input, userContext, serialNo);
+
+        /// <summary>
         /// Async RMW operation
         /// Await operation in session before issuing next one
         /// </summary>
@@ -228,6 +333,20 @@ namespace FASTER.core
             Debug.Assert(SupportAsync, "Session does not support async operations");
             return fht.RmwAsync(this, ref key, ref input, context, serialNo, token);
         }
+
+        /// <summary>
+        /// Async RMW operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="context"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for RMW result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context, Functions>> RMWAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
+            => RMWAsync(ref key, ref input, context, serialNo, token);
 
         /// <summary>
         /// Delete operation
@@ -249,6 +368,17 @@ namespace FASTER.core
                 if (SupportAsync) UnsafeSuspendThread();
             }
         }
+
+        /// <summary>
+        /// Delete operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Delete(Key key, Context userContext = default, long serialNo = 0)
+            => Delete(ref key, userContext, serialNo);
 
         /// <summary>
         /// Experimental feature
