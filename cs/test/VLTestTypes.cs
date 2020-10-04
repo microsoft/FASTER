@@ -107,7 +107,7 @@ namespace FASTER.test
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordInfo _)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.Length; i++)
@@ -177,7 +177,7 @@ namespace FASTER.test
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordInfo _)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.Length; i++)

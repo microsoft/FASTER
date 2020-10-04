@@ -26,7 +26,7 @@ namespace FASTER.core
         public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
         public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
         public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) => false;
-        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
+        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status, RecordInfo recordInfo) { }
         public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
         public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
         public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, _allocator.ValueLength); }
@@ -50,7 +50,7 @@ namespace FASTER.core
         public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
         public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
         public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) { return true; }
-        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status) { }
+        public void ReadCompletionCallback(ref Key key, ref Empty input, ref Empty output, Empty ctx, Status status, RecordInfo recordInfo) { }
         public void RMWCompletionCallback(ref Key key, ref Empty input, Empty ctx, Status status) { }
         public void SingleReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
         public void SingleWriter(ref Key key, ref Value src, ref Value dst) { _functions.Copy(ref src, ref dst, null); }

@@ -81,22 +81,44 @@ namespace FASTER.core
 
             #region Trace back for record in in-memory HybridLog
             HashBucketEntry entry = default;
-            var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+
+            long logicalAddress = sessionCtx.recordInfo.PreviousAddress;
+            var usePreviousAddress = logicalAddress != Constants.kInvalidAddress;
+            bool tagExists;
+            if (!usePreviousAddress)
+            {
+                tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+            }
+            else
+            { 
+                tagExists = logicalAddress >= hlog.BeginAddress;
+                entry.Address = logicalAddress;
+            }
+
             OperationStatus status;
-            long logicalAddress;
             if (tagExists)
             {
                 logicalAddress = entry.Address;
 
-                if (UseReadCache && ReadFromCache(ref key, ref logicalAddress, ref physicalAddress))
+                if (UseReadCache)
                 {
-                    if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
+                    // We don't let "read by address" use read cache
+                    if (usePreviousAddress)
                     {
-                        status = OperationStatus.CPR_SHIFT_DETECTED;
-                        goto CreatePendingContext; // Pivot thread
+                        SkipReadCache(ref logicalAddress);
                     }
-                    fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output);
-                    return OperationStatus.SUCCESS;
+                    else if (ReadFromCache(ref key, ref logicalAddress, ref physicalAddress))
+                    {
+                        if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
+                        {
+                            status = OperationStatus.CPR_SHIFT_DETECTED;
+                            goto CreatePendingContext; // Pivot thread
+                        }
+
+                        // This is not called when looking up by address, so we do not set session.Ctx.recordInfo.
+                        fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output);
+                        return OperationStatus.SUCCESS;
+                    }
                 }
 
                 if (logicalAddress >= hlog.HeadAddress)
@@ -121,7 +143,7 @@ namespace FASTER.core
             }
             #endregion
 
-            if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
+            if (sessionCtx.phase == Phase.PREPARE && !usePreviousAddress && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
             {
                 status = OperationStatus.CPR_SHIFT_DETECTED;
                 goto CreatePendingContext; // Pivot thread
@@ -132,6 +154,7 @@ namespace FASTER.core
             // Mutable region (even fuzzy region is included here)
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
+                sessionCtx.recordInfo = hlog.GetInfo(physicalAddress);
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                     return OperationStatus.NOTFOUND;
 
@@ -142,6 +165,7 @@ namespace FASTER.core
             // Immutable region
             else if (logicalAddress >= hlog.HeadAddress)
             {
+                sessionCtx.recordInfo = hlog.GetInfo(physicalAddress);
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                     return OperationStatus.NOTFOUND;
 

@@ -386,11 +386,14 @@ namespace FASTER.core
 
                 if (pendingContext.type == OperationType.READ)
                 {
+                    RecordInfo recordInfo;
+                    unsafe { recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
                     fasterSession.ReadCompletionCallback(ref key,
                                                      ref pendingContext.input,
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
-                                                     status);
+                                                     status,
+                                                     recordInfo);
                 }
                 else
                 {

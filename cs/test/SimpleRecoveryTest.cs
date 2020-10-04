@@ -259,7 +259,7 @@ namespace FASTER.test.recovery.sumstore.simple
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordInfo _)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.numClicks == key.adId);

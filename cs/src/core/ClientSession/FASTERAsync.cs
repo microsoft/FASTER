@@ -4,7 +4,6 @@
 #pragma warning disable 0162
 
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
@@ -107,6 +106,7 @@ namespace FASTER.core
             PendingContext<Input, Output, Context> _pendingContext;
             AsyncIOContext<Key, Value> _diskRequest;
             int CompletionComputeStatus;
+            internal RecordInfo _recordInfo;
 
             internal ReadAsyncInternal(FasterKV<Key, Value> fasterKV, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
             {
@@ -116,6 +116,7 @@ namespace FASTER.core
                 _pendingContext = pendingContext;
                 _diskRequest = diskRequest;
                 CompletionComputeStatus = Pending;
+                _recordInfo = default;
             }
 
             internal (Status, Output) Complete()
@@ -135,6 +136,7 @@ namespace FASTER.core
                             var status = _fasterKV.InternalCompletePendingRequestFromContext(_clientSession.ctx, _clientSession.ctx, _clientSession.FasterSession, _diskRequest, ref _pendingContext, true, out _);
                             Debug.Assert(status != Status.PENDING);
                             _result = (status, _pendingContext.output);
+                            unsafe { _recordInfo = _fasterKV.hlog.GetInfoFromBytePointer(_diskRequest.record.GetValidPointer()); }
                             _pendingContext.Dispose();
                         }
                         finally
@@ -157,6 +159,13 @@ namespace FASTER.core
                     _exception.Throw();
                 return _result;
             }
+
+            internal (Status, Output) Complete(out RecordInfo recordInfo)
+            {
+                var result = this.Complete();
+                recordInfo = _recordInfo;
+                return result;
+            }
         }
 
         /// <summary>
@@ -167,13 +176,15 @@ namespace FASTER.core
         {
             internal readonly Status status;
             internal readonly Output output;
+            readonly RecordInfo recordInfo;
 
             internal readonly ReadAsyncInternal<Input, Output, Context, Functions> readAsyncInternal;
 
-            internal ReadAsyncResult(Status status, Output output)
+            internal ReadAsyncResult(Status status, Output output, RecordInfo recordInfo)
             {
                 this.status = status;
                 this.output = output;
+                this.recordInfo = recordInfo;
                 this.readAsyncInternal = default;
             }
 
@@ -184,6 +195,7 @@ namespace FASTER.core
             {
                 status = Status.PENDING;
                 output = default;
+                this.recordInfo = default;
                 readAsyncInternal = new ReadAsyncInternal<Input, Output, Context, Functions>(fasterKV, clientSession, pendingContext, diskRequest);
             }
 
@@ -198,11 +210,26 @@ namespace FASTER.core
 
                 return readAsyncInternal.Complete();
             }
+
+            /// <summary>
+            /// Complete the read operation, after any I/O is completed.
+            /// </summary>
+            /// <returns>The read result and the previous address in the Read key's hash chain, or throws an exception if error encountered.</returns>
+            public (Status, Output) Complete(out RecordInfo recordInfo)
+            {
+                if (status != Status.PENDING)
+                {
+                    recordInfo = this.recordInfo;
+                    return (status, output);
+                }
+
+                return readAsyncInternal.Complete(out recordInfo);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-            ref Key key, ref Input input, Context context, long serialNo, CancellationToken token)
+            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
@@ -212,25 +239,27 @@ namespace FASTER.core
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
             try
             {
+                clientSession.ctx.recordInfo.PreviousAddress = startAddress;
                 OperationStatus internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output));
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output, clientSession.ctx.recordInfo));
                 }
                 else
                 {
                     var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out diskRequest);
 
                     if (status != Status.PENDING)
-                        return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>(status, output));
+                        return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>(status, output, clientSession.ctx.recordInfo));
                 }
             }
             finally
             {
                 Debug.Assert(serialNo >= clientSession.ctx.serialNum, "Operation serial numbers must be non-decreasing");
+                clientSession.ctx.recordInfo = default;
                 clientSession.ctx.serialNum = serialNo;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }

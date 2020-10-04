@@ -371,7 +371,12 @@ namespace FASTER.core
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
             {
-                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, default);
+            }
+
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
+            {
+                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordInfo);
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)

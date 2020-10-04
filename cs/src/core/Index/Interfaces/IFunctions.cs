@@ -22,7 +22,8 @@ namespace FASTER.core
         /// <param name="output"></param>
         /// <param name="ctx"></param>
         /// <param name="status"></param>
-        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status);
+        /// <param name="recordInfo"></param>
+        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo);
 
         /// <summary>
         /// Upsert completion

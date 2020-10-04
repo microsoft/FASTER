@@ -29,6 +29,7 @@ namespace FASTER.core
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) { return true; }
 
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) { }
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
@@ -59,6 +60,7 @@ namespace FASTER.core
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) { value = merger(input, value); return true; }
 
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
+        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo) { }
         public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
         public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         public override void DeleteCompletionCallback(ref Key key, Context ctx) { }

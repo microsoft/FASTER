@@ -102,6 +102,7 @@ namespace FASTER.core
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
             public int asyncPendingCount;
+            public RecordInfo recordInfo;
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 

@@ -111,7 +111,7 @@ namespace FASTER.test
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordInfo _)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(key.key == output.value.value);
@@ -179,7 +179,7 @@ namespace FASTER.test
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status, RecordInfo _)
         {
             if (ctx == 0)
             {
@@ -255,7 +255,7 @@ namespace FASTER.test
         {
         }
 
-        public void ReadCompletionCallback(ref int key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref int key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordInfo _)
         {
         }
 
@@ -328,7 +328,7 @@ namespace FASTER.test
         {
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordInfo _)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.value.value.Length; i++)
