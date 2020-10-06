@@ -128,7 +128,7 @@ class LocalFile {
     pages = new FullPageStatus[numPages];
 
     return file.Open(FileCreateDisposition::OpenOrCreate,
-                     flags, ioHandler, nullptr, size);
+                     flags, ioHandler, nullptr);
   }
 
   /// Closes the file.
