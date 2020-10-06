@@ -239,7 +239,11 @@ namespace FASTER.core
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
             try
             {
-                clientSession.ctx.recordInfo.PreviousAddress = startAddress;
+                if (startAddress != Constants.kInvalidAddress)
+                {
+                    clientSession.ctx.operationFlags = OperationFlags.ReadAddress;
+                    clientSession.ctx.recordInfo.PreviousAddress = startAddress;
+                }
                 OperationStatus internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
@@ -259,6 +263,7 @@ namespace FASTER.core
             finally
             {
                 Debug.Assert(serialNo >= clientSession.ctx.serialNum, "Operation serial numbers must be non-decreasing");
+                clientSession.ctx.operationFlags = OperationFlags.None;
                 clientSession.ctx.recordInfo = default;
                 clientSession.ctx.serialNum = serialNo;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();

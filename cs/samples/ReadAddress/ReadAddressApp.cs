@@ -21,7 +21,7 @@ namespace ReadAddress
         const string ReadCacheArg = "--readcache";
         static bool useReadCache = false;
         const string CheckpointsArg = "--checkpoints";
-        static bool useCheckpoints = false;
+        static bool useCheckpoints = true;
         const string RMWArg = "--rmw";
         static bool useRMW = false;
 
@@ -107,7 +107,7 @@ namespace ReadAddress
         private static void PopulateStore(FasterKV<Key, Value> store)
         {
             // Start session with FASTER
-            using var s = store.For(new CacheFunctions()).NewSession<CacheFunctions>();
+            using var s = store.For(new Functions()).NewSession<Functions>();
             Console.WriteLine($"Writing {numKeys} keys to FASTER", numKeys);
 
             Stopwatch sw = new Stopwatch();
@@ -118,7 +118,7 @@ namespace ReadAddress
                 // lap is used to illustrate the changing values
                 var lap = ii / keyMod;
 
-                if (lap != prevLap)
+                if (useCheckpoints && lap != prevLap)
                 {
                     store.TakeFullCheckpoint(out _, CheckpointType.FoldOver);
                     prevLap = lap;
@@ -144,7 +144,7 @@ namespace ReadAddress
         private static void ScanStore(FasterKV<Key, Value> store, int keyValue)
         {
             // Start session with FASTER
-            using var session = store.For(new CacheFunctions()).NewSession<CacheFunctions>();
+            using var session = store.For(new Functions()).NewSession<Functions>();
 
             Console.WriteLine($"Sync scanning records for key {keyValue}");
 
@@ -153,16 +153,18 @@ namespace ReadAddress
             var key = new Key(keyValue);
             RecordInfo recordInfo = default;
             var context = new Context();
-            while (true)
+            int version = int.MaxValue;
+            for (int lap = 9; /* tested in loop */; --lap)
             {
                 var status = session.Read(ref key, ref input, ref output, recordInfo.PreviousAddress, out recordInfo, context, serialNo: maxLap + 1);
                 if (status == Status.PENDING)
                 {
+                    // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
                     session.CompletePending(spinWait: true);
                     recordInfo = context.recordInfo;
                     status = context.status;
                 }
-                if (!ProcessResult(store, status, recordInfo, ref output))
+                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
                     break;
             }
         }
@@ -170,31 +172,34 @@ namespace ReadAddress
         private static async Task ScanStoreAsync(FasterKV<Key, Value> store, int keyValue, CancellationToken cancellationToken)
         {
             // Start session with FASTER
-            using var session = store.For(new CacheFunctions()).NewSession<CacheFunctions>();
+            using var session = store.For(new Functions()).NewSession<Functions>();
 
             Console.WriteLine($"Async scanning records for key {keyValue}");
 
             var input = default(Value);
             var key = new Key(keyValue);
             RecordInfo recordInfo = default;
-            var context = new Context();
-            while (true)
+            int version = int.MaxValue;
+            for (int lap = 9; /* tested in loop */; --lap)
             {
-                var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, context, serialNo: maxLap + 1, cancellationToken: cancellationToken);
+                var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1, cancellationToken: cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 var (status, output) = readAsyncResult.Complete(out recordInfo);
-                if (!ProcessResult(store, status, recordInfo, ref output))
+                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
                     break;
             }
         }
 
-        private static bool ProcessResult(FasterKV<Key, Value> store, Status status, RecordInfo recordInfo, ref Value output)
+        private static bool ProcessRecord(FasterKV<Key, Value> store, Status status, RecordInfo recordInfo, int lap, ref Value output, ref int previousVersion)
         {
-            Debug.Assert(status == Status.NOTFOUND == recordInfo.Tombstone);
+            Debug.Assert((status == Status.NOTFOUND) == recordInfo.Tombstone);
+            Debug.Assert((lap == deleteLap) == recordInfo.Tombstone);
             var value = recordInfo.Tombstone ? "<deleted>" : output.value.ToString();
+            Debug.Assert(previousVersion >= recordInfo.Version);
             Console.WriteLine($"  {value}; Version = {recordInfo.Version}; PrevAddress: {recordInfo.PreviousAddress}");
 
-            // Check for end of loop and process result
+            // Check for end of loop
+            previousVersion = recordInfo.Version;
             return recordInfo.PreviousAddress >= store.Log.BeginAddress;
         }
     }

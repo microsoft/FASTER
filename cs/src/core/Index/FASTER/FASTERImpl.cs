@@ -83,7 +83,7 @@ namespace FASTER.core
             HashBucketEntry entry = default;
 
             long logicalAddress = sessionCtx.recordInfo.PreviousAddress;
-            var usePreviousAddress = logicalAddress != Constants.kInvalidAddress;
+            var usePreviousAddress = sessionCtx.operationFlags.HasFlag(OperationFlags.ReadAddress);
             bool tagExists;
             if (!usePreviousAddress)
             {
@@ -222,6 +222,7 @@ namespace FASTER.core
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
+                pendingContext.operationFlags = sessionCtx.operationFlags;
             }
             #endregion
 
@@ -1202,7 +1203,7 @@ namespace FASTER.core
                 fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
 
-                if (CopyReadsToTail || UseReadCache)
+                if ((CopyReadsToTail || UseReadCache) && !pendingContext.operationFlags.HasFlag(OperationFlags.ReadAddress))
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx);
                 }

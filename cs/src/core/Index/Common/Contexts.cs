@@ -65,6 +65,13 @@ namespace FASTER.core
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+        [Flags]
+        internal enum OperationFlags : byte
+        {
+            None = 0,
+            ReadAddress = 0x01
+        }
+
         internal struct PendingContext<Input, Output, Context>
         {
             // User provided information
@@ -83,6 +90,7 @@ namespace FASTER.core
             internal long serialNum;
             internal HashBucketEntry entry;
             internal LatchOperation heldLatch;
+            internal OperationFlags operationFlags;
 
             public void Dispose()
             {
@@ -102,6 +110,8 @@ namespace FASTER.core
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
             public int asyncPendingCount;
+
+            internal OperationFlags operationFlags;
             public RecordInfo recordInfo;
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;

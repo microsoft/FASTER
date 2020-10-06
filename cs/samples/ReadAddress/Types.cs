@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using System.Threading;
 
 namespace ReadAddress
 {
@@ -10,6 +11,8 @@ namespace ReadAddress
         public long key;
 
         public Key(long first) => key = first;
+
+        public override string ToString() => key.ToString();
 
         internal class Comparer : IFasterEqualityComparer<Key>
         {
@@ -24,6 +27,8 @@ namespace ReadAddress
         public long value;
 
         public Value(long first) => value = first;
+
+        public override string ToString() => value.ToString();
     }
 
     public class Context
@@ -35,17 +40,21 @@ namespace ReadAddress
     /// <summary>
     /// Callback for FASTER operations
     /// </summary>
-    public class CacheFunctions : SimpleFunctions<Key, Value, Context>
+    public class Functions : SimpleFunctions<Key, Value, Context>
     {
         // Return false to force a chain of values.
         public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) => false;
 
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) => false;
 
+        // Track the recordInfo for its PreviousAddress.
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)
         {
-            ctx.recordInfo = recordInfo;
-            ctx.status = status;
+            if (!(ctx is null))
+            {
+                ctx.recordInfo = recordInfo;
+                ctx.status = status;
+            }
         }
     }
 }
