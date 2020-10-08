@@ -1059,7 +1059,6 @@ class StorageDevice {
     , unBuffered{ false }
     , deleteOnClose{ false }
     , ioHandler{ 8 }
-    , pendingTasks{ }
     , hLog{ localRoot, &ioHandler, &lEpoch, pendingTasks, 1,
             "UseDevelopmentStorage=true;" }
   {
@@ -1069,20 +1068,6 @@ class StorageDevice {
       throw std::runtime_error("Failed to open file for hybrid log");
     }
   }
-
-  /// Move constructor. Required when initializing FASTER.
-  ///
-  /// \param from
-  ///    The StorageDevice that has to be moved into the new object.
-  StorageDevice(StorageDevice&& from)
-    : localRoot{ std::move(from.localRoot) }
-    , epoch{ std::move(from.epoch) }
-    , unBuffered{ std::move(from.unBuffered) }
-    , deleteOnClose{ std::move(from.deleteOnClose) }
-    , ioHandler{ std::move(from.ioHandler) }
-    , pendingTasks{ std::move(from.pendingTasks) }
-    , hLog{ std::move(from.hLog) }
-  {}
 
   /// Disallow copy and assignment constructors.
   StorageDevice(const StorageDevice&) = delete;

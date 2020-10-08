@@ -21,9 +21,9 @@ TEST(StorageTest, OpenClose) {
 
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch;
-  auto disk = StorageDevice<handler_t, remote_t>("C:\\faster\\",
-                                                 epoch, 1,
-                                                 "UseDevelopmentStorage=true;");
+  StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
+                                          epoch, 1,
+                                          "UseDevelopmentStorage=true;");
 
   // Assert that the hybrid log closes fine.
   auto hLog = std::move(disk.log());
@@ -40,9 +40,9 @@ TEST(StorageTest, ReadWrite) {
 
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch;
-  auto disk = StorageDevice<handler_t, remote_t>("C:\\faster\\",
-                                                 epoch, 1,
-                                                 "UseDevelopmentStorage=true;");
+  StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
+                                          epoch, 1,
+                                          "UseDevelopmentStorage=true;");
 
   // Handle to the StorageFile holding the log.
   auto hLog = std::move(disk.log());
@@ -133,7 +133,9 @@ TEST(StorageTest, MultipleReadWrite) {
 
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch(1);
-  auto disk = StorageDevice<handler_t, remote_t>(epoch);
+  StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
+                                          epoch, 1,
+                                          "UseDevelopmentStorage=true;");
 
   // Handle to the StorageFile holding the log.
   auto hLog = std::move(disk.log());

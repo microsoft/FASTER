@@ -79,7 +79,7 @@ else()
   set (FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
   # Using blob storage. Link in appropriate libraries.
   if(USE_BLOBS)
-    set (FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} azurestorage cpprest)
+    set (FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} azurestorage cpprest boost_system crypto ssl)
   endif()
 endif()
 
@@ -91,7 +91,7 @@ else()
   set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
   # Using blob storage. Link in appropriate libraries.
   if(USE_BLOBS)
-   set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} azurestorage cpprest)
+   set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} azurestorage cpprest boost_system)
   endif()
 endif()
 
