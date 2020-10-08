@@ -60,7 +60,7 @@ namespace ReadAddress
             }
 
             var (store, log, path) = CreateStore();
-            PopulateStore(store);
+            await PopulateStore(store);
             
             const int keyToScan = 42;
             ScanStore(store, keyToScan);
@@ -104,7 +104,7 @@ namespace ReadAddress
             return (store, log, path);
         }
 
-        private static void PopulateStore(FasterKV<Key, Value> store)
+        private async static Task PopulateStore(FasterKV<Key, Value> store)
         {
             // Start session with FASTER
             using var s = store.For(new Functions()).NewSession<Functions>();
@@ -120,7 +120,7 @@ namespace ReadAddress
 
                 if (useCheckpoints && lap != prevLap)
                 {
-                    store.TakeFullCheckpoint(out _, CheckpointType.FoldOver);
+                    await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
                     prevLap = lap;
                 }
 

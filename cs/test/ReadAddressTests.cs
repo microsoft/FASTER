@@ -96,7 +96,7 @@ namespace FASTER.test.readaddress
             return (store, log);
         }
 
-        private static void PopulateStore(FasterKV<Key, Value> store, bool useRMW)
+        private async static Task PopulateStore(FasterKV<Key, Value> store, bool useRMW)
         {
             // Start session with FASTER
             using var s = store.For(new Functions()).NewSession<Functions>();
@@ -110,7 +110,7 @@ namespace FASTER.test.readaddress
 
                 if (lap != prevLap)
                 {
-                    store.TakeFullCheckpoint(out _, CheckpointType.FoldOver);
+                    await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
                     prevLap = lap;
                 }
 
@@ -152,7 +152,7 @@ namespace FASTER.test.readaddress
             var testDir = $"{TestContext.CurrentContext.TestDirectory}\\{TestContext.CurrentContext.Test.Name}";
 
             var (store, log) = CreateStore(useReadCache, copyReadsToTail, testDir);
-            PopulateStore(store, useRMW);
+            PopulateStore(store, useRMW).GetAwaiter().GetResult();
 
             using (var session = store.For(new Functions()).NewSession<Functions>())
             {
@@ -198,7 +198,7 @@ namespace FASTER.test.readaddress
             var testDir = $"{TestContext.CurrentContext.TestDirectory}\\{TestContext.CurrentContext.Test.Name}";
 
             var (store, log) = CreateStore(useReadCache, copyReadsToTail, testDir);
-            PopulateStore(store, useRMW);
+            await PopulateStore(store, useRMW);
 
             using (var session = store.For(new Functions()).NewSession<Functions>())
             {

@@ -239,32 +239,25 @@ namespace FASTER.core
             if (clientSession.SupportAsync) clientSession.UnsafeResumeThread();
             try
             {
-                if (startAddress != Constants.kInvalidAddress)
-                {
-                    clientSession.ctx.operationFlags = OperationFlags.ReadAddress;
-                    clientSession.ctx.recordInfo.PreviousAddress = startAddress;
-                }
-                OperationStatus internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
+                OperationStatus internalStatus = InternalRead(ref key, ref input, ref output, startAddress, ref context, ref pcontext, clientSession.FasterSession, clientSession.ctx, serialNo);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output, clientSession.ctx.recordInfo));
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>((Status)internalStatus, output, pcontext.recordInfo));
                 }
                 else
                 {
                     var status = HandleOperationStatus(clientSession.ctx, clientSession.ctx, ref pcontext, clientSession.FasterSession, internalStatus, true, out diskRequest);
 
                     if (status != Status.PENDING)
-                        return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>(status, output, clientSession.ctx.recordInfo));
+                        return new ValueTask<ReadAsyncResult<Input, Output, Context, Functions>>(new ReadAsyncResult<Input, Output, Context, Functions>(status, output, pcontext.recordInfo));
                 }
             }
             finally
             {
                 Debug.Assert(serialNo >= clientSession.ctx.serialNum, "Operation serial numbers must be non-decreasing");
-                clientSession.ctx.operationFlags = OperationFlags.None;
-                clientSession.ctx.recordInfo = default;
                 clientSession.ctx.serialNum = serialNo;
                 if (clientSession.SupportAsync) clientSession.UnsafeSuspendThread();
             }

@@ -31,6 +31,7 @@ namespace FASTER.core
         /// <param name="key">Key of the record.</param>
         /// <param name="input">Input required to compute output from value.</param>
         /// <param name="output">Location to store output computed from input and value.</param>
+        /// <param name="startAddress">If not Constants.kInvalidAddress, this is the address to start at instead of a hash table lookup</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
@@ -61,6 +62,7 @@ namespace FASTER.core
                                     ref Key key,
                                     ref Input input,
                                     ref Output output,
+                                    long startAddress,
                                     ref Context userContext,
                                     ref PendingContext<Input, Output, Context> pendingContext,
                                     Functions fasterSession,
@@ -82,20 +84,21 @@ namespace FASTER.core
             #region Trace back for record in in-memory HybridLog
             HashBucketEntry entry = default;
 
-            long logicalAddress = sessionCtx.recordInfo.PreviousAddress;
-            var usePreviousAddress = sessionCtx.operationFlags.HasFlag(OperationFlags.ReadAddress);
+            OperationStatus status;
+            long logicalAddress;
+            var usePreviousAddress = startAddress != Constants.kInvalidAddress;
             bool tagExists;
             if (!usePreviousAddress)
             {
                 tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
             }
             else
-            { 
+            {
+                logicalAddress = startAddress;
                 tagExists = logicalAddress >= hlog.BeginAddress;
                 entry.Address = logicalAddress;
             }
 
-            OperationStatus status;
             if (tagExists)
             {
                 logicalAddress = entry.Address;
@@ -149,13 +152,13 @@ namespace FASTER.core
                 goto CreatePendingContext; // Pivot thread
             }
 
-            #region Normal processing
+#region Normal processing
 
             // Mutable region (even fuzzy region is included here)
             if (logicalAddress >= hlog.SafeReadOnlyAddress)
             {
-                sessionCtx.recordInfo = hlog.GetInfo(physicalAddress);
-                if (hlog.GetInfo(physicalAddress).Tombstone)
+                pendingContext.recordInfo = hlog.GetInfo(physicalAddress);
+                if (pendingContext.recordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
                 fasterSession.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
@@ -165,8 +168,8 @@ namespace FASTER.core
             // Immutable region
             else if (logicalAddress >= hlog.HeadAddress)
             {
-                sessionCtx.recordInfo = hlog.GetInfo(physicalAddress);
-                if (hlog.GetInfo(physicalAddress).Tombstone)
+                pendingContext.recordInfo = hlog.GetInfo(physicalAddress);
+                if (pendingContext.recordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
                 fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output);
@@ -207,9 +210,9 @@ namespace FASTER.core
                 return OperationStatus.NOTFOUND;
             }
 
-        #endregion
+#endregion
 
-        #region Create pending context
+#region Create pending context
         CreatePendingContext:
             {
                 pendingContext.type = OperationType.READ;
@@ -222,15 +225,15 @@ namespace FASTER.core
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
-                pendingContext.operationFlags = sessionCtx.operationFlags;
+                pendingContext.recordInfo.PreviousAddress = startAddress;
             }
-            #endregion
+#endregion
 
             return status;
         }
-        #endregion
+#endregion
 
-        #region Upsert Operation
+#region Upsert Operation
 
         /// <summary>
         /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists 
@@ -286,7 +289,7 @@ namespace FASTER.core
             if (sessionCtx.phase != Phase.REST)
                 HeavyEnter(hash, sessionCtx, fasterSession);
 
-            #region Trace back for record in in-memory HybridLog
+#region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.Address;
@@ -308,7 +311,7 @@ namespace FASTER.core
                                         out physicalAddress);
                 }
             }
-            #endregion
+#endregion
 
             // Optimization for most common case
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
@@ -319,7 +322,7 @@ namespace FASTER.core
                 }
             }
 
-            #region Entry latch operation
+#region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
                 switch (sessionCtx.phase)
@@ -389,11 +392,11 @@ namespace FASTER.core
                         break;
                 }
             }
-            #endregion
+#endregion
 
             Debug.Assert(GetLatestRecordVersion(ref entry, sessionCtx.version) <= sessionCtx.version);
 
-            #region Normal processing
+#region Normal processing
 
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
@@ -406,9 +409,9 @@ namespace FASTER.core
             }
 
         // All other regions: Create a record in the mutable region
-        #endregion
+#endregion
 
-        #region Create new record in the mutable region
+#region Create new record in the mutable region
         CreateNewRecord:
             {
                 // Immutable region or new record
@@ -446,9 +449,9 @@ namespace FASTER.core
                     goto LatchRelease;
                 }
             }
-        #endregion
+#endregion
 
-        #region Create pending context
+#region Create pending context
         CreatePendingContext:
             {
                 pendingContext.type = OperationType.UPSERT;
@@ -460,9 +463,9 @@ namespace FASTER.core
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
             }
-        #endregion
+#endregion
 
-        #region Latch release
+#region Latch release
         LatchRelease:
             {
                 switch (latchOperation)
@@ -477,14 +480,14 @@ namespace FASTER.core
                         break;
                 }
             }
-            #endregion
+#endregion
 
             return status;
         }
 
-        #endregion
+#endregion
 
-        #region RMW Operation
+#region RMW Operation
 
         /// <summary>
         /// Read-Modify-Write Operation. Updates value of 'key' using 'input' and current value.
@@ -547,7 +550,7 @@ namespace FASTER.core
             if (sessionCtx.phase != Phase.REST)
                 HeavyEnter(hash, sessionCtx, fasterSession);
 
-            #region Trace back for record in in-memory HybridLog
+#region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.Address;
@@ -570,7 +573,7 @@ namespace FASTER.core
                                             out physicalAddress);
                 }
             }
-            #endregion
+#endregion
 
             // Optimization for the most common case
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
@@ -581,7 +584,7 @@ namespace FASTER.core
                 }
             }
 
-            #region Entry latch operation
+#region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
                 switch (sessionCtx.phase)
@@ -656,11 +659,11 @@ namespace FASTER.core
                         break;
                 }
             }
-            #endregion
+#endregion
 
             Debug.Assert(GetLatestRecordVersion(ref entry, sessionCtx.version) <= sessionCtx.version);
 
-            #region Normal processing
+#region Normal processing
 
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
@@ -723,9 +726,9 @@ namespace FASTER.core
                 goto CreateNewRecord;
             }
 
-        #endregion
+#endregion
 
-        #region Create new record
+#region Create new record
         CreateNewRecord:
             {
                 recordSize = (logicalAddress < hlog.BeginAddress) ?
@@ -788,9 +791,9 @@ namespace FASTER.core
                     goto LatchRelease;
                 }
             }
-        #endregion
+#endregion
 
-        #region Create failure context
+#region Create failure context
         CreateFailureContext:
             {
                 pendingContext.type = OperationType.RMW;
@@ -803,9 +806,9 @@ namespace FASTER.core
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
             }
-        #endregion
+#endregion
 
-        #region Latch release
+#region Latch release
         LatchRelease:
             {
                 switch (latchOperation)
@@ -820,14 +823,14 @@ namespace FASTER.core
                         break;
                 }
             }
-            #endregion
+#endregion
 
             return status;
         }
 
-        #endregion
+#endregion
 
-        #region Delete Operation
+#region Delete Operation
 
         /// <summary>
         /// Delete operation. Replaces the value corresponding to 'key' with tombstone.
@@ -882,7 +885,7 @@ namespace FASTER.core
             if (sessionCtx.phase != Phase.REST)
                 HeavyEnter(hash, sessionCtx, fasterSession);
 
-            #region Trace back for record in in-memory HybridLog
+#region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
             var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
             if (!tagExists)
@@ -907,9 +910,9 @@ namespace FASTER.core
                                         out physicalAddress);
                 }
             }
-            #endregion
+#endregion
 
-            #region Entry latch operation
+#region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
                 switch (sessionCtx.phase)
@@ -979,11 +982,11 @@ namespace FASTER.core
                         break;
                 }
             }
-            #endregion
+#endregion
 
             Debug.Assert(GetLatestRecordVersion(ref entry, sessionCtx.version) <= sessionCtx.version);
 
-            #region Normal processing
+#region Normal processing
 
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
@@ -1019,9 +1022,9 @@ namespace FASTER.core
             }
 
             // All other regions: Create a record in the mutable region
-            #endregion
+#endregion
 
-            #region Create new record in the mutable region
+#region Create new record in the mutable region
             CreateNewRecord:
             {
                 var value = default(Value);
@@ -1059,9 +1062,9 @@ namespace FASTER.core
                     goto LatchRelease;
                 }
             }
-        #endregion
+#endregion
 
-        #region Create pending context
+#region Create pending context
         CreatePendingContext:
             {
                 pendingContext.type = OperationType.DELETE;
@@ -1072,9 +1075,9 @@ namespace FASTER.core
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
             }
-        #endregion
+#endregion
 
-        #region Latch release
+#region Latch release
         LatchRelease:
             {
                 switch (latchOperation)
@@ -1089,14 +1092,14 @@ namespace FASTER.core
                         break;
                 }
             }
-            #endregion
+#endregion
 
             return status;
         }
 
-        #endregion
+#endregion
 
-        #region ContainsKeyInMemory
+#region ContainsKeyInMemory
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
@@ -1159,9 +1162,9 @@ namespace FASTER.core
                 return Status.NOTFOUND;
             }
         }
-        #endregion
+#endregion
 
-        #region Continue operations
+#region Continue operations
         /// <summary>
         /// Continue a pending read operation. Computes 'output' from 'input' and value corresponding to 'key'
         /// obtained from disk. Optionally, it copies the value to tail to serve future read/write requests quickly.
@@ -1203,7 +1206,7 @@ namespace FASTER.core
                 fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
 
-                if ((CopyReadsToTail || UseReadCache) && !pendingContext.operationFlags.HasFlag(OperationFlags.ReadAddress))
+                if (CopyReadsToTail || UseReadCache)
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx);
                 }
@@ -1241,7 +1244,7 @@ namespace FASTER.core
             var hash = comparer.GetHashCode64(ref pendingContext.key.Get());
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-            #region Trace back record in in-memory HybridLog
+#region Trace back record in in-memory HybridLog
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             logicalAddress = entry.word & Constants.kAddressMask;
@@ -1263,7 +1266,7 @@ namespace FASTER.core
                                             out physicalAddress);
                 }
             }
-            #endregion
+#endregion
 
             if (logicalAddress > pendingContext.entry.Address)
             {
@@ -1271,7 +1274,7 @@ namespace FASTER.core
                 return;
             }
 
-            #region Create new copy in mutable region
+#region Create new copy in mutable region
             physicalAddress = (long)request.record.GetValidPointer();
             recordSize = hlog.GetRecordSize(physicalAddress);
 
@@ -1319,7 +1322,7 @@ namespace FASTER.core
                 if (!UseReadCache) hlog.GetInfo(newPhysicalAddress).Invalid = true;
                 // We don't retry, just give up
             }
-            #endregion
+#endregion
         }
 
         /// <summary>
@@ -1371,7 +1374,7 @@ namespace FASTER.core
 
             while (true)
             {
-                #region Trace Back for Record on In-Memory HybridLog
+#region Trace Back for Record on In-Memory HybridLog
                 var entry = default(HashBucketEntry);
                 FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
                 logicalAddress = entry.Address;
@@ -1394,7 +1397,7 @@ namespace FASTER.core
                                                 out physicalAddress);
                     }
                 }
-                #endregion
+#endregion
 
                 var previousFirstRecordAddress = pendingContext.entry.Address;
                 if (logicalAddress > previousFirstRecordAddress)
@@ -1402,7 +1405,7 @@ namespace FASTER.core
                     break;
                 }
 
-                #region Create record in mutable region
+#region Create record in mutable region
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
                     recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input, fasterSession);
@@ -1453,7 +1456,7 @@ namespace FASTER.core
                 {
                     hlog.GetInfo(newPhysicalAddress).Invalid = true;
                 }
-                #endregion
+#endregion
             }
 
             OperationStatus internalStatus;
@@ -1510,7 +1513,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.CPR_SHIFT_DETECTED || ((asyncOp || RelaxedCPR) && status == OperationStatus.RETRY_LATER))
             {
-                #region Retry as (v+1) Operation
+#region Retry as (v+1) Operation
                 var internalStatus = default(OperationStatus);
                 do
                 {
@@ -1520,6 +1523,7 @@ namespace FASTER.core
                             internalStatus = InternalRead(ref pendingContext.key.Get(),
                                                           ref pendingContext.input,
                                                           ref pendingContext.output,
+                                                          pendingContext.recordInfo.PreviousAddress,
                                                           ref pendingContext.userContext,
                                                           ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                             break;
@@ -1546,7 +1550,7 @@ namespace FASTER.core
                 // Note that we spin in case of { async op + strict CPR } which is fine as this combination is rare/discouraged
 
                 status = internalStatus;
-                #endregion
+#endregion
             }
 
             if (status == OperationStatus.SUCCESS || status == OperationStatus.NOTFOUND)
@@ -1700,9 +1704,9 @@ namespace FASTER.core
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
         }
-        #endregion
+#endregion
 
-        #region Split Index
+#region Split Index
         private void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
@@ -1892,9 +1896,9 @@ namespace FASTER.core
             }
             return logicalAddress;
         }
-        #endregion
+#endregion
 
-        #region Read Cache
+#region Read Cache
         private bool ReadFromCache(ref Key key, ref long logicalAddress, ref long physicalAddress)
         {
             HashBucketEntry entry = default;
@@ -2035,6 +2039,6 @@ namespace FASTER.core
                     return defaultVersion;
             }
         }
-        #endregion
+#endregion
     }
 }

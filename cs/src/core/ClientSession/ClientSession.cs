@@ -202,19 +202,10 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                if (startAddress != Constants.kInvalidAddress)
-                {
-                    this.ctx.recordInfo.PreviousAddress = startAddress;
-                    this.ctx.operationFlags = FasterKV<Key, Value>.OperationFlags.ReadAddress;
-                }
-                var status = fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
-                recordInfo = this.ctx.recordInfo;
-                return status;
+                return fht.ContextRead(ref key, ref input, ref output, startAddress, out recordInfo, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                this.ctx.operationFlags = FasterKV<Key, Value>.OperationFlags.None;
-                this.ctx.recordInfo = default;
                 if (SupportAsync) UnsafeSuspendThread();
             }
         }
