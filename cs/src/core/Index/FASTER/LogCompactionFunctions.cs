@@ -23,6 +23,7 @@ namespace FASTER.core
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
         public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
         public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, _allocator.ValueLength); }
+        public bool NeedCopyUpdate(ref Key key, ref Empty input, ref Value oldValue) => true;
         public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
         public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
         public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) => false;
@@ -47,6 +48,7 @@ namespace FASTER.core
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
         public void ConcurrentReader(ref Key key, ref Empty input, ref Value value, ref Empty dst) { }
         public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { return _functions.CopyInPlace(ref src, ref dst, null); }
+        public bool NeedCopyUpdate(ref Key key, ref Empty input, ref Value oldValue) => true;
         public void CopyUpdater(ref Key key, ref Empty input, ref Value oldValue, ref Value newValue) { }
         public void InitialUpdater(ref Key key, ref Empty input, ref Value value) { }
         public bool InPlaceUpdater(ref Key key, ref Empty input, ref Value value) { return true; }

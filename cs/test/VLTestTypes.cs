@@ -165,6 +165,8 @@ namespace FASTER.test
             return true;
         }
 
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref VLValue oldValue) => true;
+
         public void CopyUpdater(ref Key key, ref Input input, ref VLValue oldValue, ref VLValue newValue)
         {
         }
@@ -234,6 +236,8 @@ namespace FASTER.test
         {
             return true;
         }
+
+        public bool NeedCopyUpdate(ref VLValue key, ref Input input, ref VLValue oldValue) => true;
 
         public void CopyUpdater(ref VLValue key, ref Input input, ref VLValue oldValue, ref VLValue newValue)
         {

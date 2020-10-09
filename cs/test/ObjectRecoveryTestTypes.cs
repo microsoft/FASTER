@@ -134,6 +134,8 @@ namespace FASTER.test.recovery.objectstore
             return true;
         }
 
+        public bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue) => true;
+
         public void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks.numClicks };

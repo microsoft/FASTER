@@ -10,7 +10,6 @@ using FASTER.core;
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -226,7 +225,7 @@ namespace FASTER.benchmark
 
         public unsafe void Run()
         {
-            // Native32.AffinitizeThreadShardedNuma((uint)0, 2);
+            Native32.AffinitizeThreadShardedNuma(0, 2);
 
             RandomGenerator rng = new RandomGenerator();
 
@@ -248,6 +247,7 @@ namespace FASTER.benchmark
             Stopwatch sw = new Stopwatch();
             if (kRestoreFromBackupForFastRestarts && kPeriodicCheckpointMilliseconds <= 0)
             {
+                Console.WriteLine("Recovering store for fast restart");
                 sw.Start();
                 store.Recover();
                 sw.Stop();
@@ -280,6 +280,7 @@ namespace FASTER.benchmark
 
             if (kBackupStoreForFastRestarts && kPeriodicCheckpointMilliseconds <= 0)
             {
+                Console.WriteLine("Checkpointing store for fast restart");
                 store.TakeFullCheckpoint(out _);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 Console.WriteLine("Completed checkpoint");

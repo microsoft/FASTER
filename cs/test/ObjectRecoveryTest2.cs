@@ -245,6 +245,7 @@ namespace FASTER.test.recovery.objects
     public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
         public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
+        public bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
         public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
