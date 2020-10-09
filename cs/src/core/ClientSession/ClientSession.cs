@@ -617,6 +617,9 @@ namespace FASTER.core
                 return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
             }
 
+            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
+                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
+
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
             {
                 _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);

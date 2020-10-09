@@ -88,6 +88,8 @@ namespace FASTER.test
             return true;
         }
 
+        public bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
+
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
         {
             newValue = new MyValue { value = oldValue.value + input.value };
@@ -155,6 +157,8 @@ namespace FASTER.test
             value.value += input.value;
             return true;
         }
+
+        public bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
 
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
         {
@@ -234,6 +238,8 @@ namespace FASTER.test
             value.value += input.value;
             return true;
         }
+
+        public bool NeedCopyUpdate(ref int key, ref MyInput input, ref MyValue oldValue) => true;
 
         public void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
         {
@@ -345,6 +351,8 @@ namespace FASTER.test
         public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
         {
         }
+
+        public bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyLargeValue oldValue) => true;
 
         public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue oldValue, ref MyLargeValue newValue)
         {

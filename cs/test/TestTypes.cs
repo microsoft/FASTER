@@ -116,6 +116,8 @@ namespace FASTER.test
             return true;
         }
 
+        public bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue) => true;
+
         public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
@@ -194,6 +196,8 @@ namespace FASTER.test
             return true;
         }
 
+        public bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue) => true;
+
         public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
@@ -269,6 +273,8 @@ namespace FASTER.test
             Interlocked.Increment(ref _inPlaceUpdaterCallCount);
             return false;
         }
+
+        public bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue) => true;
 
         public void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue)
         {

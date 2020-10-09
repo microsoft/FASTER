@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using System;
+using System.Data;
 using System.IO;
 
 namespace HelloWorld
@@ -71,6 +72,26 @@ namespace HelloWorld
 
             // End session
             session.Dispose();
+
+            // (4) Perform TryAdd using RMW
+            using (var tryAddSession = store.NewSession(new TryAddFunctions<long, long>()))
+            {
+                key = 3; input1 = 30; input2 = 31;
+
+                // First TryAdd - success; status should be NOTFOUND (does not already exist)
+                status = tryAddSession.RMW(ref key, ref input1);
+                
+                // Second TryAdd - failure; status should be OK (already exists)
+                var status2 = tryAddSession.RMW(ref key, ref input2);
+
+                // Read, result should be input1 (first TryAdd)
+                var status3 = session.Read(ref key, ref output);
+
+                if (status == Status.NOTFOUND && status2 == Status.OK && status3 == Status.OK && output == input1)
+                    Console.WriteLine("(4) Success!");
+                else
+                    Console.WriteLine("(3) Error!");
+            }
 
             // Dispose store
             store.Dispose();
