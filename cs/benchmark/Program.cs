@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using CommandLine;
+using System;
 
 namespace FASTER.benchmark
 {
@@ -19,6 +20,10 @@ namespace FASTER.benchmark
              HelpText = "0 = No sharding across NUMA sockets, 1 = Sharding across NUMA sockets")]
         public int NumaStyle { get; set; }
 
+        [Option('k', "backup", Required = false, Default = 0,
+             HelpText = "Enable Backup and Restore of FasterKV for fast test startup:\n0 = None\n1 = Recover FasterKV from Checkpoint\n2 = Checkpoint FasterKV if it was not Recovered\n3 = both")]
+        public int Backup { get; set; }
+
         [Option('r', "read_percent", Required = false, Default = 50,
          HelpText = "Percentage of reads (-1 for 100% read-modify-write")]
         public int ReadPercent { get; set; }
@@ -31,6 +36,11 @@ namespace FASTER.benchmark
     enum BenchmarkType : int
     {
         Ycsb, ConcurrentDictionaryYcsb
+    };
+
+    [Flags] enum BackupMode : int
+    {
+        None, Restore, Backukp, Both
     };
 
     public class Program
@@ -48,7 +58,7 @@ namespace FASTER.benchmark
 
             if (b == BenchmarkType.Ycsb)
             {
-                var test = new FASTER_YcsbBenchmark(options.ThreadCount, options.NumaStyle, options.Distribution, options.ReadPercent);
+                var test = new FASTER_YcsbBenchmark(options.ThreadCount, options.NumaStyle, options.Distribution, options.ReadPercent, options.Backup);
                 test.Run();
             }
             else if (b == BenchmarkType.ConcurrentDictionaryYcsb)
