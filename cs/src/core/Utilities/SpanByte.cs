@@ -101,6 +101,7 @@ namespace FASTER.core
     public struct SpanByteComparer : IFasterEqualityComparer<SpanByte>
     {
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe long GetHashCode64(ref SpanByte spanByte)
         {
             byte* ptr = (byte*)Unsafe.AsPointer(ref spanByte);
@@ -108,17 +109,14 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool Equals(ref SpanByte k1, ref SpanByte k2)
         {
-            if (k1.length != k2.length) return false;
-
-            byte* src = sizeof(int) + (byte*)Unsafe.AsPointer(ref k1);
-            byte* dst = sizeof(int) + (byte*)Unsafe.AsPointer(ref k2);
-
-            for (int i = 0; i < k1.length; i++)
-                if (*(src + i) != *(dst + i))
-                    return false;
-            return true;
+            return
+                new ReadOnlySpan<byte>(Unsafe.AsPointer(ref k1), k1.length + sizeof(int))
+                    .SequenceEqual(
+                new ReadOnlySpan<byte>(Unsafe.AsPointer(ref k2), k2.length + sizeof(int)));
         }
     }
 
