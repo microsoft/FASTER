@@ -252,17 +252,19 @@ namespace FASTER.benchmark
                 sw.Start();
                 try
                 {
+                    Console.WriteLine("Recovering FasterKV for fast restart");
                     store.Recover();
                     storeWasRecovered = true;
                 } catch (Exception)
                 {
-                    Console.WriteLine("Unable to recover prior store; loading from data");
+                    Console.WriteLine("Unable to recover prior store");
                 }
                 sw.Stop();
             }
             if (!storeWasRecovered)
             {
                 // Setup the store for the YCSB benchmark.
+                Console.WriteLine("Loading FasterKV from data");
                 for (int idx = 0; idx < threadCount; ++idx)
                 {
                     int x = idx;
@@ -288,6 +290,7 @@ namespace FASTER.benchmark
 
             if (!storeWasRecovered && this.backupMode.HasFlag(BackupMode.Backukp) && kPeriodicCheckpointMilliseconds <= 0)
             {
+                Console.WriteLine("Checkpointing FasterKV for fast restart");
                 store.TakeFullCheckpoint(out _);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 Console.WriteLine("Completed checkpoint");

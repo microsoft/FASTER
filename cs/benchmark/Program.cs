@@ -21,7 +21,11 @@ namespace FASTER.benchmark
         public int NumaStyle { get; set; }
 
         [Option('k', "backup", Required = false, Default = 0,
-             HelpText = "Enable Backup and Restore of FasterKV for fast test startup:\n0 = None\n1 = Recover FasterKV from Checkpoint\n2 = Checkpoint FasterKV if it was not Recovered\n3 = both")]
+             HelpText = "Enable Backup and Restore of FasterKV for fast test startup:" +
+                        "\n    0 = None; Populate FasterKV from data" +
+                        "\n    1 = Recover FasterKV from Checkpoint; if this fails, populate FasterKV from data" +
+                        "\n    2 = Checkpoint FasterKV (unless it was Recovered by option 1; if option 1 is not specified, this will overwrite an existing Checkpoint)" +
+                        "\n    3 = Both (Recover FasterKV if the Checkpoint is available, else populate FasterKV from data and Checkpoint it so it can be Restored in a subsequent run)")]
         public int Backup { get; set; }
 
         [Option('r', "read_percent", Required = false, Default = 50,
