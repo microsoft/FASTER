@@ -3,73 +3,72 @@
 
 using FASTER.core;
 using System;
+using System.Linq;
 
 namespace StoreVarLenTypes
 {
     public class Program
     {
-        // This sample represents an unsafe advanced use of FASTER to store and index variable
-        // length keys and/or values without a separate object log. The basic idea is to use 
-        // "ref struct" as a proxy for pointers to variable-sized memory in C#. These objects are
-        // placed contiguously in the single hybrid log, leading to efficient packing while
+        // This sample shows how our special type called SpanByte can be leverage to use FASTER
+        // with variable-length keys and/or values without a separate object log. SpanBytes can
+        // easily be created using pinned or fixed memory. A SpanByte is basically a sequence of
+        // bytes with a 4-byte integer length header that denotes the size of the payload.
+        //
+        // Underlying SpanByte is the use of "ref struct" as a proxy for pointers to variable-sized 
+        // memory in C# (we call these VariableLengthStructs).
+        //
+        // Objects are placed contiguously in a single log, leading to efficient packing while
         // avoiding the additional I/O (on reads and writes) that a separate object log entails.
-        // Users provide information on the actual length of the data underlying the types, by
-        // providing implementations for an IVariableLengthStruct<T> interface. Serializers are not
-        // required, as these are effectively value-types. One may provide safe APIs on top of 
-        // this raw functionality using, for example, Span<T> and Memory<T>.
+        // Serializers are not required, as these are effectively value-types.
 
-        static unsafe void Main()
+        static void Main()
         {
             // VarLen types do not need an object log
             var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
 
-            // Create store, you provide VariableLengthStructSettings for VarLen types
-            var store = new FasterKV<VarLenType, VarLenType>(
-                size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
-                comparer: new VarLenTypeComparer(),
-                variableLengthStructSettings: new VariableLengthStructSettings<VarLenType, VarLenType>
-                    { keyLength = new VarLenLength(), valueLength = new VarLenLength() }
-                );
-
+            // Create store
+            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
+            var store = new FasterKV<SpanByte, SpanByte>(
+                size: 1L << 20, 
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
+            
             // Create session
-            var s = store.For(new VarLenFunctions()).NewSession<VarLenFunctions>();
+            var s = store.For(new Functions()).NewSession<Functions>();
 
             Random r = new Random(100);
 
-            for (int i = 0; i < 5000; i++)
+            for (byte i = 0; i < 100; i++)
             {
-                var keylen = 2 + r.Next(10);
-                int* keyval = stackalloc int[keylen];
-                ref VarLenType key1 = ref *(VarLenType*)keyval;
-                key1.length = keylen;
-                for (int j = 1; j < keylen; j++)
-                    *(keyval + j) = i;
+                var keyLen = r.Next(1, 10);
+                Span<byte> keyData = stackalloc byte[keyLen + sizeof(int)];
+                keyData.Slice(sizeof(int)).Fill(i);
+                ref var key = ref SpanByte.FromFixedSpan(keyData);
 
-                var len = 2 + r.Next(10);
-                int* val = stackalloc int[len];
-                ref VarLenType value = ref *(VarLenType*)val;
-                for (int j = 0; j < len; j++)
-                    *(val + j) = len;
+                var valLen = r.Next(1, 10);
+                Span<byte> valueData = stackalloc byte[valLen + sizeof(int)];
+                valueData.Slice(sizeof(int)).Fill((byte)valLen);
+                ref var value = ref SpanByte.FromFixedSpan(valueData);
 
-                s.Upsert(ref key1, ref value);
+                s.Upsert(ref key, ref value);
             }
 
             bool success = true;
+            
             r = new Random(100);
-            for (int i = 0; i < 5000; i++)
+            for (byte i = 0; i < 100; i++)
             {
-                var keylen = 2 + r.Next(10);
-                int* keyval = stackalloc int[keylen];
-                ref VarLenType key1 = ref *(VarLenType*)keyval;
-                key1.length = keylen;
-                for (int j = 1; j < keylen; j++)
-                    *(keyval + j) = i;
+                var keyLen = r.Next(1, 10);
+                Span<byte> keyData = stackalloc byte[keyLen + sizeof(int)];
+                keyData.Slice(sizeof(int)).Fill(i);
+                ref var key = ref SpanByte.FromFixedSpan(keyData);
 
-                var len = 2 + r.Next(10);
+                byte[] output = default;
+                var status = s.Read(ref key, ref output);
 
-                int[] output = null;
-                var status = s.Read(ref key1, ref output);
+                var valLen = r.Next(1, 10);
+                Span<byte> expectedValueData = stackalloc byte[valLen + sizeof(int)];
+                expectedValueData.Slice(sizeof(int)).Fill((byte)valLen);
+                ref var expectedValue = ref SpanByte.FromFixedSpan(expectedValueData);
 
                 if (status == Status.PENDING)
                 {
@@ -77,30 +76,18 @@ namespace StoreVarLenTypes
                 }
                 else
                 {
-                    if ((status != Status.OK) || (output.Length != len))
+                    if ((status != Status.OK) || (!output.SequenceEqual(expectedValue.ToByteArray())))
                     {
                         success = false;
                         break;
                     }
-
-                    for (int j = 0; j < len; j++)
-                    {
-                        if (output[j] != len)
-                        {
-                            success = false;
-                            break;
-                        }
-                    }
                 }
             }
+
             if (success)
-            {
                 Console.WriteLine("Success!");
-            }
             else
-            {
                 Console.WriteLine("Error!");
-            }
 
             s.Dispose();
             store.Dispose();
