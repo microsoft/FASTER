@@ -48,7 +48,7 @@ namespace FASTER.core
     /// <typeparam name="T"></typeparam>
     internal class VarLenHeapContainer<T> : IHeapContainer<T>
     {
-        private SectorAlignedMemory mem;
+        readonly SectorAlignedMemory mem;
 
         public unsafe VarLenHeapContainer(ref T obj, IVariableLengthStruct<T> varLenStruct, SectorAlignedBufferPool pool)
         {
