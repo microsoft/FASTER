@@ -41,7 +41,7 @@ namespace FASTER.core
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
             bool supportAsync,
-            InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
         {
             this.fht = fht;
             this.ctx = ctx;
@@ -50,7 +50,7 @@ namespace FASTER.core
             LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
             FasterSession = new AsyncFasterSession(this);
 
-            this.variableLengthStruct = inputVariableLengthStructSettings?.valueLength;
+            this.variableLengthStruct = sessionVariableLengthStructSettings?.valueLength;
             if (this.variableLengthStruct == default)
             {
                 if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator)
@@ -65,7 +65,7 @@ namespace FASTER.core
                     Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
-            this.inputVariableLengthStruct = inputVariableLengthStructSettings?.inputLength;
+            this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;
 
             // Session runs on a single thread
             if (!supportAsync)

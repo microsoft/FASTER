@@ -42,12 +42,12 @@ namespace FASTER.core
             /// <param name="functions">Callback functions</param>
             /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
             /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-            /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+            /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+            public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
-                return _fasterKV.NewSession<Input, Output, Context, Functions>(functions, sessionId, threadAffinitized, inputVariableLengthStructSettings);
+                return _fasterKV.NewSession<Input, Output, Context, Functions>(functions, sessionId, threadAffinitized, sessionVariableLengthStructSettings);
             }
 
             /// <summary>
@@ -58,12 +58,12 @@ namespace FASTER.core
             /// <param name="sessionId">ID/name of previous session to resume</param>
             /// <param name="commitPoint">Prior commit point of durability for session</param>
             /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-            /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+            /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
-                return _fasterKV.ResumeSession<Input, Output, Context, Functions>(functions, sessionId, out commitPoint, threadAffinitized, inputVariableLengthStructSettings);
+                return _fasterKV.ResumeSession<Input, Output, Context, Functions>(functions, sessionId, out commitPoint, threadAffinitized, sessionVariableLengthStructSettings);
             }
 
             /// <summary>
@@ -71,15 +71,15 @@ namespace FASTER.core
             /// </summary>
             /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
             /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-            /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+            /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(string sessionId = null, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+            public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
                 if (_functions == null)
                     throw new FasterException("Functions not provided for session");
 
-                return _fasterKV.NewSession<Input, Output, Context, Functions>((Functions)_functions, sessionId, threadAffinitized, inputVariableLengthStructSettings);
+                return _fasterKV.NewSession<Input, Output, Context, Functions>((Functions)_functions, sessionId, threadAffinitized, sessionVariableLengthStructSettings);
             }
 
             /// <summary>
@@ -89,15 +89,15 @@ namespace FASTER.core
             /// <param name="sessionId">ID/name of previous session to resume</param>
             /// <param name="commitPoint">Prior commit point of durability for session</param>
             /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-            /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+            /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
                 if (_functions == null)
                     throw new FasterException("Functions not provided for session");
 
-                return _fasterKV.ResumeSession<Input, Output, Context, Functions>((Functions)_functions, sessionId, out commitPoint, threadAffinitized, inputVariableLengthStructSettings);
+                return _fasterKV.ResumeSession<Input, Output, Context, Functions>((Functions)_functions, sessionId, out commitPoint, threadAffinitized, sessionVariableLengthStructSettings);
             }
         }
 
@@ -132,11 +132,11 @@ namespace FASTER.core
         /// <param name="functions">Callback functions</param>
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-        /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> NewSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, string sessionId = null, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+        public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> NewSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
         {
-            return NewSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionId, threadAffinitized, inputVariableLengthStructSettings);
+            return NewSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionId, threadAffinitized, sessionVariableLengthStructSettings);
         }
 
         /// <summary>
@@ -145,9 +145,9 @@ namespace FASTER.core
         /// <param name="functions">Callback functions</param>
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-        /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+        public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (functions == null)
@@ -169,7 +169,7 @@ namespace FASTER.core
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<string, IClientSession>(), null);
 
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, !threadAffinitized, inputVariableLengthStructSettings);
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, !threadAffinitized, sessionVariableLengthStructSettings);
             lock (_activeSessions)
                 _activeSessions.Add(sessionId, session);
             return session;
@@ -184,11 +184,11 @@ namespace FASTER.core
         /// <param name="sessionId">ID/name of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-        /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+        public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
         {
-            return ResumeSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionId, out commitPoint, threadAffinitized, inputVariableLengthStructSettings);
+            return ResumeSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionId, out commitPoint, threadAffinitized, sessionVariableLengthStructSettings);
         }
 
         /// <summary>
@@ -199,10 +199,10 @@ namespace FASTER.core
         /// <param name="sessionId">ID/name of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
-        /// <param name="inputVariableLengthStructSettings">Input-specific variable-length struct settings</param>
+        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
 
-        public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
+        public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (functions == null)
@@ -216,7 +216,7 @@ namespace FASTER.core
                 throw new Exception($"Unable to find session {sessionId} to recover");
 
 
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, !threadAffinitized, inputVariableLengthStructSettings);
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, !threadAffinitized, sessionVariableLengthStructSettings);
 
             if (_activeSessions == null)
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<string, IClientSession>(), null);

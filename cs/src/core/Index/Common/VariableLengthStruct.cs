@@ -66,11 +66,11 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// Input-specific settings for variable length values
+    /// Session-specific settings for variable length structs
     /// </summary>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Input"></typeparam>
-    public class InputVariableLengthStructSettings<Value, Input>
+    public class SessionVariableLengthStructSettings<Value, Input>
     {
         /// <summary>
         /// Key length
