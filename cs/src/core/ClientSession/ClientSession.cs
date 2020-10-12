@@ -32,6 +32,7 @@ namespace FASTER.core
 
         internal readonly Functions functions;
         internal readonly IVariableLengthStruct<Value, Input> variableLengthStruct;
+        internal readonly IVariableLengthStruct<Input> inputVariableLengthStruct;
 
         internal readonly AsyncFasterSession FasterSession;
 
@@ -40,7 +41,7 @@ namespace FASTER.core
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
             bool supportAsync,
-            IVariableLengthStruct<Value, Input> variableLengthStruct)
+            InputVariableLengthStructSettings<Value, Input> inputVariableLengthStructSettings = null)
         {
             this.fht = fht;
             this.ctx = ctx;
@@ -49,7 +50,7 @@ namespace FASTER.core
             LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
             FasterSession = new AsyncFasterSession(this);
 
-            this.variableLengthStruct = variableLengthStruct;
+            this.variableLengthStruct = inputVariableLengthStructSettings?.valueLength;
             if (this.variableLengthStruct == default)
             {
                 if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator)
@@ -63,6 +64,8 @@ namespace FASTER.core
                 if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
                     Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
+
+            this.inputVariableLengthStruct = inputVariableLengthStructSettings?.inputLength;
 
             // Session runs on a single thread
             if (!supportAsync)
@@ -683,6 +686,14 @@ namespace FASTER.core
             public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx)
             {
                 _clientSession.functions.UpsertCompletionCallback(ref key, ref value, ctx);
+            }
+
+            public IHeapContainer<Input> GetHeapContainer(ref Input input)
+            {
+                if (_clientSession.inputVariableLengthStruct == default)
+                    return new StandardHeapContainer<Input>(ref input);
+
+                return new VarLenHeapContainer<Input>(ref input, _clientSession.inputVariableLengthStruct, _clientSession.fht.hlog.bufferPool);
             }
         }
     }

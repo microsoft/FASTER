@@ -190,7 +190,7 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.READ;
                 pendingContext.key = hlog.GetKeyContainer(ref key);
-                pendingContext.input = input;
+                pendingContext.input = fasterSession.GetHeapContainer(ref input);
                 pendingContext.output = output;
                 pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
@@ -780,7 +780,7 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.RMW;
                 pendingContext.key = hlog.GetKeyContainer(ref key);
-                pendingContext.input = input;
+                pendingContext.input = fasterSession.GetHeapContainer(ref input);
                 pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
@@ -1185,7 +1185,7 @@ namespace FASTER.core
                 if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input,
+                fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input.Get(),
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output);
 
                 if (CopyReadsToTail || UseReadCache)
@@ -1391,7 +1391,7 @@ namespace FASTER.core
 
                 if ((request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                 {
-                    if (!fasterSession.NeedCopyUpdate(ref key, ref pendingContext.input, ref hlog.GetContextRecordValue(ref request)))
+                    if (!fasterSession.NeedCopyUpdate(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request)))
                     {
                         return OperationStatus.SUCCESS;
                     }
@@ -1399,12 +1399,12 @@ namespace FASTER.core
 
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
-                    recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input, fasterSession);
+                    recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input.Get(), fasterSession);
                 }
                 else
                 {
                     physicalAddress = (long)request.record.GetValidPointer();
-                    recordSize = hlog.GetRecordSize(physicalAddress, ref pendingContext.input, fasterSession);
+                    recordSize = hlog.GetRecordSize(physicalAddress, ref pendingContext.input.Get(), fasterSession);
                 }
                 BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -1415,14 +1415,14 @@ namespace FASTER.core
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
                     fasterSession.InitialUpdater(ref key,
-                                             ref pendingContext.input,
+                                             ref pendingContext.input.Get(),
                                              ref hlog.GetValue(newPhysicalAddress));
                     status = OperationStatus.NOTFOUND;
                 }
                 else
                 {
                     fasterSession.CopyUpdater(ref key,
-                                          ref pendingContext.input,
+                                          ref pendingContext.input.Get(),
                                           ref hlog.GetContextRecordValue(ref request),
                                           ref hlog.GetValue(newPhysicalAddress));
                     status = OperationStatus.SUCCESS;
@@ -1452,7 +1452,7 @@ namespace FASTER.core
 
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
+                internalStatus = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
             while (internalStatus == OperationStatus.RETRY_NOW);
             return internalStatus;
         }
@@ -1512,7 +1512,7 @@ namespace FASTER.core
                     {
                         case OperationType.READ:
                             internalStatus = InternalRead(ref pendingContext.key.Get(),
-                                                          ref pendingContext.input,
+                                                          ref pendingContext.input.Get(),
                                                           ref pendingContext.output,
                                                           ref pendingContext.userContext,
                                                           ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
@@ -1530,7 +1530,7 @@ namespace FASTER.core
                             break;
                         case OperationType.RMW:
                             internalStatus = InternalRMW(ref pendingContext.key.Get(),
-                                                         ref pendingContext.input,
+                                                         ref pendingContext.input.Get(),
                                                          ref pendingContext.userContext,
                                                          ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                             break;
