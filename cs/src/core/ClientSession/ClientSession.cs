@@ -71,7 +71,7 @@ namespace FASTER.core
             {
                 inputVariableLengthStruct = new SpanByteLength() as IVariableLengthStruct<Input>;
             }
-
+            
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();
