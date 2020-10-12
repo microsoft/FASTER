@@ -67,6 +67,11 @@ namespace FASTER.core
 
             this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;
 
+            if (typeof(Input) == typeof(SpanByte) && inputVariableLengthStruct == default)
+            {
+                inputVariableLengthStruct = new SpanByteLength() as IVariableLengthStruct<Input>;
+            }
+
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();

@@ -9,10 +9,10 @@ namespace StoreVarLenTypes
     /// <summary>
     /// Callback functions for FASTER operations
     /// </summary>
-    public sealed class Functions : SpanByteFunctions<Empty>
+    public sealed class Functions : SpanByteFunctions_ByteArrayOutput<Empty>
     {
         // Read completion callback
-        public override void ReadCompletionCallback(ref SpanByte key, ref byte[] input, ref byte[] output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref byte[] output, Empty ctx, Status status)
         {
             if (status != Status.OK)
             {

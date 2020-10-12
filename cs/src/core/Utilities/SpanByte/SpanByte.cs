@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -25,6 +26,11 @@ namespace FASTER.core
         /// </summary>
         [FieldOffset(4)]
         public byte payload;
+
+        /// <summary>
+        /// Total size in bytes, including header
+        /// </summary>
+        public int TotalSize => length + sizeof(int);
 
         /// <summary>
         /// Get Span&lt;byte&gt; equivalent
@@ -66,11 +72,21 @@ namespace FASTER.core
             return ref FromFixedSpan(memory.Span);
         }
 
+        /// <summary>
+        /// View a pinned memory pointer of given total length as SpanByte
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <param name="totalLength"></param>
+        /// <returns></returns>
+        public static ref SpanByte FromPointer(byte* ptr, int totalLength)
+        {
+            *(int*)ptr = totalLength - sizeof(int);
+            return ref Unsafe.AsRef<SpanByte>(ptr);
+        }
 
         /// <summary>
-        /// Convert [length | payload] to byte array
+        /// Convert [length | payload] to new byte array
         /// </summary>
-        /// <param name="dst"></param>
         public byte[] ToByteArray()
         {
             var fullLength = length + sizeof(int);
@@ -85,7 +101,39 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Copy to another pre-allocated SpanByte
+        /// Convert [length | payload] to specified (disposable) memory owner
+        /// </summary>
+        public IMemoryOwner<byte> ToMemoryOwner(MemoryPool<byte> pool)
+        {
+            var fullLength = length + sizeof(int);
+            var dst = pool.Rent(fullLength);
+            AsReadOnlySpan().CopyTo(dst.Memory.Span);
+            return dst;
+        }
+
+        /// <summary>
+        /// Convert to SpanByteAndMemory wrapper
+        /// </summary>
+        /// <returns></returns>
+        public SpanByteAndMemory ToSpanByteAndMemory()
+        {
+            return new SpanByteAndMemory(ref this);
+        }
+
+        /// <summary>
+        /// Try to copy to given pre-allocated SpanByte, checking if space permits at destination SpanByte
+        /// </summary>
+        /// <param name="dst"></param>
+        public bool TryCopyTo(ref SpanByte dst)
+        {
+            var fullLength = length + sizeof(int);
+            if (dst.length < length) return false;
+            Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fullLength, fullLength);
+            return true;
+        }
+
+        /// <summary>
+        /// Blindly copy to given pre-allocated SpanByte, assuming sufficient space
         /// </summary>
         /// <param name="dst"></param>
         public void CopyTo(ref SpanByte dst)
@@ -93,5 +141,36 @@ namespace FASTER.core
             var fullLength = length + sizeof(int);
             Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fullLength, fullLength);
         }
+
+        /// <summary>
+        /// Copy to given SpanByteAndMemory
+        /// </summary>
+        /// <param name="dst"></param>
+        /// <param name="memoryPool"></param>
+        public void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        {
+            if (dst.IsSpanByte)
+            {
+                if (TryCopyTo(ref dst.SpanByte))
+                    return;
+                dst.ConvertToHeap();
+            }
+
+            dst.Memory = memoryPool.Rent(TotalSize);
+            fixed (byte* bp = dst.Memory.Memory.Span)
+                CopyTo(bp);
+        }
+
+
+        /// <summary>
+        /// Copy to given memory location via pointer
+        /// </summary>
+        /// <param name="dst"></param>
+        public void CopyTo(byte* dst)
+        {
+            var fullLength = length + sizeof(int);
+            Buffer.MemoryCopy(Unsafe.AsPointer(ref this), dst, fullLength, fullLength);
+        }
+
     }
 }

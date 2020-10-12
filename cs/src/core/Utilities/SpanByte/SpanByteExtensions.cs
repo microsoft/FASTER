@@ -16,6 +16,8 @@ namespace FASTER.core
         /// <param name="clientSession"></param>
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
         /// <returns></returns>
         public static Status Upsert<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, Span<byte> key, Span<byte> desiredValue, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
