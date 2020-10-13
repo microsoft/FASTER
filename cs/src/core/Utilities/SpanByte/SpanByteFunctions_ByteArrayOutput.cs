@@ -4,7 +4,7 @@
 namespace FASTER.core
 {
     /// <summary>
-    /// Callback functions for SpanByte with byte[] output
+    /// Callback functions for SpanByte with byte[] output, for SpanByte key, value, input
     /// </summary>
     public class SpanByteFunctions_ByteArrayOutput<Context> : SpanByteFunctions<byte[], Context>
     {

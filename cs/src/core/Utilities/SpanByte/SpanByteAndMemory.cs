@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 
@@ -31,6 +32,20 @@ namespace FASTER.core
         {
             stackPointer = null;
             Memory = memory;
+        }
+
+        /// <summary>
+        /// View a fixed Span&lt;byte&gt; as a SpanByteAndMemory
+        /// </summary>
+        /// <param name="span"></param>
+        /// <returns></returns>
+        public static SpanByteAndMemory FromFixedSpan(Span<byte> span)
+        {
+            fixed (byte* ptr = span)
+            {
+                *(int*)ptr = span.Length - sizeof(int);
+                return new SpanByteAndMemory { stackPointer = ptr };
+            }
         }
 
         /// <summary>

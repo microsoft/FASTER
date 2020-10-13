@@ -45,7 +45,7 @@ namespace FASTER.core
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
             fixed (byte* k = key)
-                return clientSession.Read(ref SpanByte.FromFixedSpan(key), ref input,ref output, userContext, serialNo);
+                return clientSession.Read(ref SpanByte.FromFixedSpan(key), ref input, ref output, userContext, serialNo);
         }
 
         /// <summary>

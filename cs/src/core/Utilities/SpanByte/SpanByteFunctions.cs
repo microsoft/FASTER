@@ -6,9 +6,9 @@ using System.Buffers;
 namespace FASTER.core
 {
     /// <summary>
-    /// Callback functions using StackHeapOutput, for SpanByte key, value, input
+    /// Callback functions for SpanByte key, value
     /// </summary>
-    public class SpanByteFunctions<Output, Context> : FunctionsBase<SpanByte, SpanByte, SpanByte, Output, Context>
+    public class SpanByteFunctions<Input, Output, Context> : FunctionsBase<SpanByte, SpanByte, Input, Output, Context>
     {
         /// <inheritdoc />
         public override void SingleWriter(ref SpanByte key, ref SpanByte src, ref SpanByte dst)
@@ -23,9 +23,17 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// Callback functions for SpanByte key, value, input
+    /// </summary>
+    /// <typeparam name="Output"></typeparam>
+    /// <typeparam name="Context"></typeparam>
+    public class SpanByteFunctions<Output, Context> : SpanByteFunctions<SpanByte, Output, Context>
+    {
+    }
 
     /// <summary>
-    /// Callback functions using StackHeapOutput, for SpanByte key, value, input
+    /// Callback functions using SpanByteAndMemory output, for SpanByte key, value, input
     /// </summary>
     public class SpanByteFunctions<Context> : SpanByteFunctions<SpanByteAndMemory, Context>
     {

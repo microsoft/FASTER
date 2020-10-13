@@ -85,6 +85,36 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Copy source bytes to the destination span, with a 4 byte length header in destination.
+        /// Destination should be at least source length + 4 bytes.
+        /// </summary>
+        /// <param name="source"></param>
+        /// <param name="destination"></param>
+        /// <returns>True if copy succeeds</returns>
+        public static unsafe bool Copy(ReadOnlySpan<byte> source, Span<byte> destination)
+        {
+            if (destination.Length >= source.Length + sizeof(int))
+            {
+                fixed (byte* dst = destination)
+                {
+                    *(int*)dst = source.Length;
+                    source.CopyTo(destination.Slice(sizeof(int)));
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Copy span contents as payload of this SpanByte, update this length to span length
+        /// </summary>
+        /// <param name="src"></param>
+        public void CopyFrom(ReadOnlySpan<byte> src)
+        {
+            length = src.Length;
+            src.CopyTo(AsSpan().Slice(sizeof(int)));
+        }
+
+        /// <summary>
         /// Convert [length | payload] to new byte array
         /// </summary>
         public byte[] ToByteArray()
