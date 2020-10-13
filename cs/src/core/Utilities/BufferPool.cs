@@ -142,7 +142,7 @@ namespace FASTER.core
             int r = 0; // r will be lg(v)
             while (true) // unroll for more speed...
             {
-                v = v >> 1;
+                v >>= 1;
                 if (v == 0) break;
                 r++;
             }

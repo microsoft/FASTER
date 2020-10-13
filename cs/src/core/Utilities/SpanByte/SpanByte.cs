@@ -71,7 +71,7 @@ namespace FASTER.core
             set { 
                 if (value) 
                 { 
-                    length = length | kTypeBitMask;
+                    length |= kTypeBitMask;
                     payload = IntPtr.Zero;
                 }
                 else
@@ -82,7 +82,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Get Span&lt;byte&gt; equivalent
+        /// Get Span&lt;byte&gt; for this SpanByte's payload
         /// </summary>
         /// <returns></returns>
         public Span<byte> AsSpan()
@@ -94,7 +94,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Get ReadOnlySpan&lt;byte&gt; equivalent
+        /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload
         /// </summary>
         /// <returns></returns>
         public ReadOnlySpan<byte> AsReadOnlySpan()
@@ -106,20 +106,66 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// View a fixed ReadOnlySpan&lt;byte&gt; as a SpanByte
+        /// Reinterpret a fixed ReadOnlySpan&lt;byte&gt; as a serialized SpanByte, adding length header as first 4 bytes
+        /// </summary>
+        /// <param name="span"></param>
+        /// <returns></returns>
+        public static ref SpanByte Reinterpret(ReadOnlySpan<byte> span)
+        {
+            fixed (byte* ptr = span)
+            {
+                *(int*)ptr = span.Length - sizeof(int);
+                return ref Unsafe.AsRef<SpanByte>(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Reinterpret a fixed ReadOnlySpan&lt;byte&gt; as a serialized SpanByte, without adding length header
+        /// </summary>
+        /// <param name="span"></param>
+        /// <returns></returns>
+        public static ref SpanByte ReinterpretWithoutLength(ReadOnlySpan<byte> span)
+        {
+            fixed (byte* ptr = span)
+            {
+                return ref Unsafe.AsRef<SpanByte>(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Reinterpret a fixed pointer as a serialized SpanByte
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <returns></returns>
+        public static ref SpanByte Reinterpret(byte* ptr)
+        {
+            return ref Unsafe.AsRef<SpanByte>(ptr);
+        }
+
+        /// <summary>
+        /// Reinterpret a fixed ref as a serialized SpanByte (leagth header needs to already be present)
+        /// </summary>
+        /// <returns></returns>
+        public static ref SpanByte Reinterpret<T>(ref T t)
+        {
+            return ref Unsafe.As<T, SpanByte>(ref t);
+        }
+
+        /// <summary>
+        /// Create a SpanByte around a fixed ReadOnlySpan&lt;byte&gt;
         /// </summary>
         /// <param name="span"></param>
         /// <returns></returns>
         public static SpanByte FromFixedSpan(ReadOnlySpan<byte> span)
         {
-            fixed (byte *ptr = span)
+            fixed (byte* ptr = span)
             {
                 return new SpanByte(span.Length, (IntPtr)ptr);
             }
         }
 
         /// <summary>
-        /// View a pinned Memory&lt;byte&gt; as a SpanByte
+        /// Create SpanByte around a pinned Memory&lt;byte&gt;
         /// </summary>
         /// <param name="memory"></param>
         /// <returns></returns>
@@ -129,7 +175,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// View a pinned memory pointer of given length as SpanByte
+        /// Create a SpanByte around a pinned memory pointer of given length
         /// </summary>
         /// <param name="ptr"></param>
         /// <param name="length"></param>
@@ -139,15 +185,6 @@ namespace FASTER.core
             return new SpanByte(length, (IntPtr)ptr);
         }
 
-        /// <summary>
-        /// View pinned memory pointer as a serialized SpanByte
-        /// </summary>
-        /// <param name="ptr"></param>
-        /// <returns></returns>
-        public static ref SpanByte FromSerializedPointer(byte* ptr)
-        {
-            return ref Unsafe.AsRef<SpanByte>(ptr);
-        }
 
         /// <summary>
         /// Convert payload to new byte array
