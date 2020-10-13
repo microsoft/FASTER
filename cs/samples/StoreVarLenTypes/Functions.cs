@@ -7,7 +7,8 @@ using System;
 namespace StoreVarLenTypes
 {
     /// <summary>
-    /// Callback functions for FASTER operations
+    /// Callback functions for FASTER operations. We use byte arrays as output for simplicity. To avoid byte array 
+    /// allocation, use SpanByteFunctions[Empty], which uses SpanByteMemory as output type.
     /// </summary>
     public sealed class Functions : SpanByteFunctions_ByteArrayOutput<Empty>
     {
@@ -20,9 +21,9 @@ namespace StoreVarLenTypes
                 return;
             }
 
-            for (int i = sizeof(int); i < output.Length; i++)
+            for (int i = 0; i < output.Length; i++)
             {
-                if (output[i] != output.Length)
+                if (output[i] != (byte)output.Length)
                 {
                     Console.WriteLine("Sample1: Error!");
                     return;

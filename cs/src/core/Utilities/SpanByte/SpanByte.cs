@@ -106,11 +106,11 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Reinterpret a fixed ReadOnlySpan&lt;byte&gt; as a serialized SpanByte, adding length header as first 4 bytes
+        /// Reinterpret a fixed Span&lt;byte&gt; as a serialized SpanByte. Automatically adds Span length to the first 4 bytes.
         /// </summary>
         /// <param name="span"></param>
         /// <returns></returns>
-        public static ref SpanByte Reinterpret(ReadOnlySpan<byte> span)
+        public static ref SpanByte Reinterpret(Span<byte> span)
         {
             fixed (byte* ptr = span)
             {
@@ -143,7 +143,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Reinterpret a fixed ref as a serialized SpanByte (leagth header needs to already be present)
+        /// Reinterpret a fixed ref as a serialized SpanByte (user needs to write the payload length to the first 4 bytes)
         /// </summary>
         /// <returns></returns>
         public static ref SpanByte Reinterpret<T>(ref T t)
@@ -152,7 +152,17 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Create a SpanByte around a fixed ReadOnlySpan&lt;byte&gt;
+        /// Create a SpanByte around a fixed Span&lt;byte&gt;. Warning: ensure the Span is fixed until operation returns.
+        /// </summary>
+        /// <param name="span"></param>
+        /// <returns></returns>
+        public static SpanByte FromFixedSpan(Span<byte> span)
+        {
+            return new SpanByte(span.Length, (IntPtr)Unsafe.AsPointer(ref span[0]));
+        }
+
+        /// <summary>
+        /// Create a SpanByte around a fixed ReadOnlySpan&lt;byte&gt;. Warning: ensure the Span is fixed until operation returns.
         /// </summary>
         /// <param name="span"></param>
         /// <returns></returns>
@@ -165,7 +175,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Create SpanByte around a pinned Memory&lt;byte&gt;
+        /// Create SpanByte around a pinned Memory&lt;byte&gt;. Warning: ensure the Memory is pinned until operation returns.
         /// </summary>
         /// <param name="memory"></param>
         /// <returns></returns>

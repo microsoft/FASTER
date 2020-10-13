@@ -30,20 +30,20 @@ namespace StoreVarLenTypes
             // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
             var store = new FasterKV<SpanByte, SpanByte>(
                 size: 1L << 20, 
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
             
             // Create session
             var s = store.For(new Functions()).NewSession<Functions>();
 
             Random r = new Random(100);
 
-            for (byte i = 0; i < 100; i++)
+            for (byte i = 0; i < 200; i++)
             {
-                var keyLen = r.Next(1, 10);
+                var keyLen = r.Next(1, 1000);
                 Span<byte> key = stackalloc byte[keyLen];
                 key.Fill(i);
 
-                var valLen = r.Next(1, 10);
+                var valLen = r.Next(1, 1000);
                 Span<byte> value = stackalloc byte[valLen];
                 value.Fill((byte)valLen);
 
@@ -54,16 +54,16 @@ namespace StoreVarLenTypes
             bool success = true;
             
             r = new Random(100);
-            for (byte i = 0; i < 100; i++)
+            for (byte i = 0; i < 200; i++)
             {
-                var keyLen = r.Next(1, 10);
+                var keyLen = r.Next(1,1000);
                 Span<byte> keyData = stackalloc byte[keyLen];
                 keyData.Fill(i);
 
                 // Option 2: Converting fixed Span<byte> to SpanByte
                 var status = s.Read(SpanByte.FromFixedSpan(keyData), out byte[] output);
 
-                var valLen = r.Next(1, 10);
+                var valLen = r.Next(1, 1000);
                 Span<byte> expectedValue = stackalloc byte[valLen];
                 expectedValue.Fill((byte)valLen);
 
