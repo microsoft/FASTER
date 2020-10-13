@@ -17,7 +17,13 @@ namespace FASTER.core
         /// <inheritdoc />
         public int GetLength(ref SpanByte t)
         {
-            return sizeof(int) + t.length;
+            return sizeof(int) + t.Length;
+        }
+
+        /// <inheritdoc />
+        public unsafe void Serialize(ref SpanByte source, void* destination)
+        {
+            source.CopyTo((byte*)destination);
         }
     }
 }

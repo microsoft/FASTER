@@ -106,7 +106,7 @@ namespace FASTER.core
 
         public static void WriteInfo(ref RecordInfo info, int checkpointVersion, bool final, bool tombstone, bool invalidBit, long previousAddress)
         {
-            info.word = default(long);
+            info.word = default;
             info.Final = final;
             info.Tombstone = tombstone;
             info.Invalid = invalidBit;

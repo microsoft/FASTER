@@ -12,16 +12,33 @@ namespace FASTER.core
     /// </summary>
     public unsafe struct SpanByteAndMemory : IHeapConvertible
     {
-        private void* stackPointer;
+        /// <summary>
+        /// Stack output as SpanByte
+        /// </summary>
+        public SpanByte SpanByte;
+
+        /// <summary>
+        /// Heap output as IMemoryOwner
+        /// </summary>
+        public IMemoryOwner<byte> Memory;
 
         /// <summary>
         /// Constructor using given SpanByte
         /// </summary>
         /// <param name="spanByte"></param>
-        public SpanByteAndMemory(ref SpanByte spanByte)
+        public SpanByteAndMemory(SpanByte spanByte)
         {
-            stackPointer = Unsafe.AsPointer(ref spanByte);
+            SpanByte = spanByte;
             Memory = default;
+        }
+
+        /// <summary>
+        /// Get length
+        /// </summary>
+        public int Length
+        {
+            get => SpanByte.Length;
+            set => SpanByte.Length = value;
         }
 
         /// <summary>
@@ -30,7 +47,8 @@ namespace FASTER.core
         /// <param name="memory"></param>
         public SpanByteAndMemory(IMemoryOwner<byte> memory)
         {
-            stackPointer = null;
+            SpanByte = default;
+            SpanByte.Invalid = true;
             Memory = memory;
         }
 
@@ -41,31 +59,18 @@ namespace FASTER.core
         /// <returns></returns>
         public static SpanByteAndMemory FromFixedSpan(Span<byte> span)
         {
-            fixed (byte* ptr = span)
-            {
-                *(int*)ptr = span.Length - sizeof(int);
-                return new SpanByteAndMemory { stackPointer = ptr };
-            }
+            return new SpanByteAndMemory { SpanByte = SpanByte.FromFixedSpan(span) };
         }
 
-        /// <summary>
-        /// Heap output as IMemoryOwner
-        /// </summary>
-        public IMemoryOwner<byte> Memory { get; set; }
-
-        /// <summary>
-        /// Stack output as SpanByte
-        /// </summary>
-        public ref SpanByte SpanByte => ref Unsafe.AsRef<SpanByte>(stackPointer);
 
         /// <summary>
         /// Convert to be used on heap (IMemoryOwner)
         /// </summary>
-        public void ConvertToHeap() { stackPointer = null; }
+        public void ConvertToHeap() { SpanByte.Invalid = true; }
 
         /// <summary>
         /// Is it allocated as SpanByte (on stack)?
         /// </summary>
-        public bool IsSpanByte => stackPointer != null;
+        public bool IsSpanByte => !SpanByte.Invalid;
     }
 }

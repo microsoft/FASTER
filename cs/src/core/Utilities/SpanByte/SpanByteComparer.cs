@@ -15,18 +15,23 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe long GetHashCode64(ref SpanByte spanByte)
         {
-            byte* ptr = (byte*)Unsafe.AsPointer(ref spanByte);
-            return Utility.HashBytes(ptr, (*(int*)ptr) + sizeof(int));
+            if (spanByte.Serialized)
+            {
+                byte* ptr = (byte*)Unsafe.AsPointer(ref spanByte);
+                return Utility.HashBytes(ptr + sizeof(int), *(int*)ptr);
+            }
+            else
+            {
+                byte* ptr = (byte*)spanByte.Pointer;
+                return Utility.HashBytes(ptr, spanByte.Length);
+            }
         }
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool Equals(ref SpanByte k1, ref SpanByte k2)
         {
-            return
-                new ReadOnlySpan<byte>(Unsafe.AsPointer(ref k1), k1.length + sizeof(int))
-                    .SequenceEqual(
-                new ReadOnlySpan<byte>(Unsafe.AsPointer(ref k2), k2.length + sizeof(int)));
+            return k1.AsReadOnlySpan().SequenceEqual(k2.AsReadOnlySpan());
         }
     }
 }

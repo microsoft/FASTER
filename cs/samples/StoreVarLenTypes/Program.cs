@@ -40,16 +40,15 @@ namespace StoreVarLenTypes
             for (byte i = 0; i < 100; i++)
             {
                 var keyLen = r.Next(1, 10);
-                Span<byte> keyData = stackalloc byte[keyLen + sizeof(int)];
-                keyData.Slice(sizeof(int)).Fill(i);
-                ref var key = ref SpanByte.FromFixedSpan(keyData);
+                Span<byte> key = stackalloc byte[keyLen];
+                key.Fill(i);
 
                 var valLen = r.Next(1, 10);
-                Span<byte> valueData = stackalloc byte[valLen + sizeof(int)];
-                valueData.Slice(sizeof(int)).Fill((byte)valLen);
-                ref var value = ref SpanByte.FromFixedSpan(valueData);
+                Span<byte> value = stackalloc byte[valLen];
+                value.Fill((byte)valLen);
 
-                s.Upsert(ref key, ref value);
+                // Option 1: Using overload for Span<byte>
+                s.Upsert(key, value);
             }
 
             bool success = true;
@@ -58,17 +57,15 @@ namespace StoreVarLenTypes
             for (byte i = 0; i < 100; i++)
             {
                 var keyLen = r.Next(1, 10);
-                Span<byte> keyData = stackalloc byte[keyLen + sizeof(int)];
-                keyData.Slice(sizeof(int)).Fill(i);
-                ref var key = ref SpanByte.FromFixedSpan(keyData);
+                Span<byte> keyData = stackalloc byte[keyLen];
+                keyData.Fill(i);
 
-                byte[] output = default;
-                var status = s.Read(ref key, ref output);
+                // Option 2: Converting fixed Span<byte> to SpanByte
+                var status = s.Read(SpanByte.FromFixedSpan(keyData), out byte[] output);
 
                 var valLen = r.Next(1, 10);
-                Span<byte> expectedValueData = stackalloc byte[valLen + sizeof(int)];
-                expectedValueData.Slice(sizeof(int)).Fill((byte)valLen);
-                ref var expectedValue = ref SpanByte.FromFixedSpan(expectedValueData);
+                Span<byte> expectedValue = stackalloc byte[valLen];
+                expectedValue.Fill((byte)valLen);
 
                 if (status == Status.PENDING)
                 {
@@ -76,7 +73,7 @@ namespace StoreVarLenTypes
                 }
                 else
                 {
-                    if ((status != Status.OK) || (!output.SequenceEqual(expectedValue.ToByteArray())))
+                    if ((status != Status.OK) || (!output.SequenceEqual(expectedValue.ToArray())))
                     {
                         success = false;
                         break;

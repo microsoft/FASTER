@@ -15,22 +15,71 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit)]
     public unsafe struct SpanByte
     {
+        const int kTypeBitMask = 1 << 31;
+
         /// <summary>
         /// Length of the payload
         /// </summary>
         [FieldOffset(0)]
-        public int length;
+        private int length;
 
         /// <summary>
         /// Start of payload
         /// </summary>
         [FieldOffset(4)]
-        public byte payload;
+        private IntPtr payload;
+
+        internal IntPtr Pointer => payload;
 
         /// <summary>
-        /// Total size in bytes, including header
+        /// Length of payload
         /// </summary>
-        public int TotalSize => length + sizeof(int);
+        public int Length
+        {
+            get { return length & ~kTypeBitMask; }
+            set { length = (length & kTypeBitMask) | value; }
+        }
+
+        /// <summary>
+        /// Format of structure
+        /// </summary>
+        public bool Serialized => (length & kTypeBitMask) == 0;
+
+        /// <summary>
+        /// Total serialized size in bytes, including header
+        /// </summary>
+        public int TotalSize => Length + sizeof(int);
+
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="length"></param>
+        /// <param name="payload"></param>
+        public SpanByte(int length, IntPtr payload)
+        {
+            this.length = length | kTypeBitMask;
+            this.payload = payload;
+        }
+
+        /// <summary>
+        /// Check or set struct as invalid
+        /// </summary>
+        public bool Invalid
+        {
+            get { return ((length & kTypeBitMask) != 0) && payload == IntPtr.Zero; }
+            set { 
+                if (value) 
+                { 
+                    length = length | kTypeBitMask;
+                    payload = IntPtr.Zero;
+                }
+                else
+                {
+                    if (Invalid) length = 0;
+                }
+            }
+        }
 
         /// <summary>
         /// Get Span&lt;byte&gt; equivalent
@@ -38,7 +87,10 @@ namespace FASTER.core
         /// <returns></returns>
         public Span<byte> AsSpan()
         {
-            return new Span<byte>(Unsafe.AsPointer(ref length), length + sizeof(int));
+            if (Serialized)
+                return new Span<byte>(Unsafe.AsPointer(ref payload), length);
+            else
+                return new Span<byte>((void*)payload, Length);
         }
 
         /// <summary>
@@ -47,19 +99,23 @@ namespace FASTER.core
         /// <returns></returns>
         public ReadOnlySpan<byte> AsReadOnlySpan()
         {
-            return new Span<byte>(Unsafe.AsPointer(ref length), length + sizeof(int));
+            if (Serialized)
+                return new ReadOnlySpan<byte>(Unsafe.AsPointer(ref payload), length);
+            else
+                return new ReadOnlySpan<byte>((void*)payload, Length);
         }
 
         /// <summary>
-        /// View a fixed Span&lt;byte&gt; as a SpanByte
+        /// View a fixed ReadOnlySpan&lt;byte&gt; as a SpanByte
         /// </summary>
         /// <param name="span"></param>
         /// <returns></returns>
-        public static ref SpanByte FromFixedSpan(Span<byte> span)
+        public static SpanByte FromFixedSpan(ReadOnlySpan<byte> span)
         {
-            var ptr = Unsafe.AsPointer(ref span[0]);
-            *(int*)ptr = span.Length - sizeof(int);
-            return ref Unsafe.AsRef<SpanByte>(ptr);
+            fixed (byte *ptr = span)
+            {
+                return new SpanByte(span.Length, (IntPtr)ptr);
+            }
         }
 
         /// <summary>
@@ -67,78 +123,48 @@ namespace FASTER.core
         /// </summary>
         /// <param name="memory"></param>
         /// <returns></returns>
-        public static ref SpanByte FromPinnedMemory(Memory<byte> memory)
+        public static SpanByte FromPinnedMemory(Memory<byte> memory)
         {
-            return ref FromFixedSpan(memory.Span);
+            return FromFixedSpan(memory.Span);
         }
 
         /// <summary>
-        /// View a pinned memory pointer of given total length as SpanByte
+        /// View a pinned memory pointer of given length as SpanByte
         /// </summary>
         /// <param name="ptr"></param>
-        /// <param name="totalLength"></param>
+        /// <param name="length"></param>
         /// <returns></returns>
-        public static ref SpanByte FromPointer(byte* ptr, int totalLength)
+        public static SpanByte FromPointer(byte* ptr, int length)
         {
-            *(int*)ptr = totalLength - sizeof(int);
+            return new SpanByte(length, (IntPtr)ptr);
+        }
+
+        /// <summary>
+        /// View pinned memory pointer as a serialized SpanByte
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <returns></returns>
+        public static ref SpanByte FromSerializedPointer(byte* ptr)
+        {
             return ref Unsafe.AsRef<SpanByte>(ptr);
         }
 
         /// <summary>
-        /// Copy source bytes to the destination span, with a 4 byte length header in destination.
-        /// Destination should be at least source length + 4 bytes.
-        /// </summary>
-        /// <param name="source"></param>
-        /// <param name="destination"></param>
-        /// <returns>True if copy succeeds</returns>
-        public static unsafe bool Copy(ReadOnlySpan<byte> source, Span<byte> destination)
-        {
-            if (destination.Length >= source.Length + sizeof(int))
-            {
-                fixed (byte* dst = destination)
-                {
-                    *(int*)dst = source.Length;
-                    source.CopyTo(destination.Slice(sizeof(int)));
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Copy span contents as payload of this SpanByte, update this length to span length
-        /// </summary>
-        /// <param name="src"></param>
-        public void CopyFrom(ReadOnlySpan<byte> src)
-        {
-            length = src.Length;
-            src.CopyTo(AsSpan().Slice(sizeof(int)));
-        }
-
-        /// <summary>
-        /// Convert [length | payload] to new byte array
+        /// Convert payload to new byte array
         /// </summary>
         public byte[] ToByteArray()
         {
-            var fullLength = length + sizeof(int);
-            var dst = new byte[fullLength];
-            byte* src = (byte*)Unsafe.AsPointer(ref this);
-            for (int i = 0; i < fullLength; i++)
-            {
-                dst[i] = *src;
-                src++;
-            }
-            return dst;
+            return AsReadOnlySpan().ToArray();
         }
 
         /// <summary>
-        /// Convert [length | payload] to specified (disposable) memory owner
+        /// Convert payload to specified (disposable) memory owner
         /// </summary>
-        public IMemoryOwner<byte> ToMemoryOwner(MemoryPool<byte> pool)
+        public (IMemoryOwner<byte> memory, int length) ToMemoryOwner(MemoryPool<byte> pool)
         {
-            var fullLength = length + sizeof(int);
-            var dst = pool.Rent(fullLength);
+            var dst = pool.Rent(Length);
             AsReadOnlySpan().CopyTo(dst.Memory.Span);
-            return dst;
+            return (dst, Length);
         }
 
         /// <summary>
@@ -147,7 +173,7 @@ namespace FASTER.core
         /// <returns></returns>
         public SpanByteAndMemory ToSpanByteAndMemory()
         {
-            return new SpanByteAndMemory(ref this);
+            return new SpanByteAndMemory(this);
         }
 
         /// <summary>
@@ -156,9 +182,8 @@ namespace FASTER.core
         /// <param name="dst"></param>
         public bool TryCopyTo(ref SpanByte dst)
         {
-            var fullLength = length + sizeof(int);
-            if (dst.length < length) return false;
-            Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fullLength, fullLength);
+            if (dst.Length < Length) return false;
+            CopyTo(ref dst);
             return true;
         }
 
@@ -168,8 +193,8 @@ namespace FASTER.core
         /// <param name="dst"></param>
         public void CopyTo(ref SpanByte dst)
         {
-            var fullLength = length + sizeof(int);
-            Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fullLength, fullLength);
+            dst.Length = Length;
+            AsReadOnlySpan().CopyTo(dst.AsSpan());
         }
 
         /// <summary>
@@ -187,20 +212,26 @@ namespace FASTER.core
             }
 
             dst.Memory = memoryPool.Rent(TotalSize);
-            fixed (byte* bp = dst.Memory.Memory.Span)
-                CopyTo(bp);
+            dst.Length = Length;
+            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
         }
-
 
         /// <summary>
-        /// Copy to given memory location via pointer
+        /// Copy serialized version to specified memory location
         /// </summary>
-        /// <param name="dst"></param>
-        public void CopyTo(byte* dst)
+        /// <param name="destination"></param>
+        public void CopyTo(byte* destination)
         {
-            var fullLength = length + sizeof(int);
-            Buffer.MemoryCopy(Unsafe.AsPointer(ref this), dst, fullLength, fullLength);
-        }
+            if (Serialized)
+            {
+                Buffer.MemoryCopy(Unsafe.AsPointer(ref this.length), destination, Length + sizeof(int), Length + sizeof(int));
+            }
+            else
+            {
+                *(int*)destination = Length;
+                Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
+            }
 
+        }
     }
 }

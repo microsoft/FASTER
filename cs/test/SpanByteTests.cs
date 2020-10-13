@@ -21,8 +21,6 @@ namespace FASTER.test
         [Test]
         public unsafe void SpanByteTest1()
         {
-            Span<byte> key = stackalloc byte[20];
-            Span<byte> value = stackalloc byte[20];
             Span<byte> output = stackalloc byte[20];
             SpanByte input = default;
 
@@ -34,16 +32,28 @@ namespace FASTER.test
 
             var s = fht.NewSession(new SpanByteFunctions<Empty>());
 
-            SpanByte.Copy(MemoryMarshal.Cast<char, byte>("key1".AsSpan()), key);
-            SpanByte.Copy(MemoryMarshal.Cast<char, byte>("value1".AsSpan()), value);
-            var output_ = SpanByteAndMemory.FromFixedSpan(output);
+            var key1 = MemoryMarshal.Cast<char, byte>("key1".AsSpan());
+            var value1 = MemoryMarshal.Cast<char, byte>("value1".AsSpan());
+            var output1 = SpanByteAndMemory.FromFixedSpan(output);
 
-            s.Upsert(key, value);
+            s.Upsert(key1, value1);
 
-            s.Read(key, ref input, ref output_);
+            s.Read(key1, ref input, ref output1);
 
-            Assert.IsTrue(output_.IsSpanByte);
-            Assert.IsTrue(output.SequenceEqual(value));
+            Assert.IsTrue(output1.IsSpanByte);
+            Assert.IsTrue(output1.SpanByte.AsReadOnlySpan().SequenceEqual(value1));
+
+            var key2 = MemoryMarshal.Cast<char, byte>("key2".AsSpan());
+            var value2 = MemoryMarshal.Cast<char, byte>("value2value2value2".AsSpan());
+            var output2 = SpanByteAndMemory.FromFixedSpan(output);
+
+            s.Upsert(key2, value2);
+
+            s.Read(key2, ref input, ref output2);
+
+            Assert.IsTrue(!output2.IsSpanByte);
+            Assert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
+
 
             s.Dispose();
             fht.Dispose();

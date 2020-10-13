@@ -19,12 +19,12 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
-        public static Status Upsert<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, Span<byte> key, Span<byte> desiredValue, Context userContext = default, long serialNo = 0)
+        public static Status Upsert<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
             fixed (byte* k = key)
             fixed (byte* v = desiredValue)
-                return clientSession.Upsert(ref SpanByte.FromFixedSpan(key), ref SpanByte.FromFixedSpan(desiredValue), userContext, serialNo);
+                return clientSession.Upsert(SpanByte.FromFixedSpan(key), SpanByte.FromFixedSpan(desiredValue), userContext, serialNo);
         }
 
         /// <summary>
@@ -41,11 +41,14 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
-        public static Status Read<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, Span<byte> key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
+        public static Status Read<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
             fixed (byte* k = key)
-                return clientSession.Read(ref SpanByte.FromFixedSpan(key), ref input, ref output, userContext, serialNo);
+            {
+                var _key = SpanByte.FromFixedSpan(key);
+                return clientSession.Read(ref _key, ref input, ref output, userContext, serialNo);
+            }
         }
 
         /// <summary>
@@ -61,11 +64,14 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
-        public static Status RMW<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, Span<byte> key, ref Input input, Context userContext = default, long serialNo = 0)
+        public static Status RMW<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, ref Input input, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
             fixed (byte* k = key)
-                return clientSession.RMW(ref SpanByte.FromFixedSpan(key), ref input, userContext, serialNo);
+            {
+                var _key = SpanByte.FromFixedSpan(key);
+                return clientSession.RMW(ref _key, ref input, userContext, serialNo);
+            }
         }
 
         /// <summary>
@@ -80,11 +86,14 @@ namespace FASTER.core
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
-        public static Status Delete<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, Span<byte> key, Context userContext = default, long serialNo = 0)
+        public static Status Delete<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
             fixed (byte* k = key)
-                return clientSession.Delete(ref SpanByte.FromFixedSpan(key), userContext, serialNo);
+            {
+                var _key = SpanByte.FromFixedSpan(key);
+                return clientSession.Delete(ref _key, userContext, serialNo);
+            }
         }
     }
 }
