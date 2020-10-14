@@ -159,20 +159,12 @@ namespace FASTER.core
 
         public override void ShallowCopy(ref Key src, ref Key dst)
         {
-            Buffer.MemoryCopy(
-                Unsafe.AsPointer(ref src),
-                Unsafe.AsPointer(ref dst),
-                KeyLength.GetLength(ref src),
-                KeyLength.GetLength(ref src));
+            KeyLength.Serialize(ref src, Unsafe.AsPointer(ref dst));
         }
 
         public override void ShallowCopy(ref Value src, ref Value dst)
         {
-            Buffer.MemoryCopy(
-                Unsafe.AsPointer(ref src),
-                Unsafe.AsPointer(ref dst),
-                ValueLength.GetLength(ref src),
-                ValueLength.GetLength(ref src));
+            ValueLength.Serialize(ref src, Unsafe.AsPointer(ref dst));
         }
 
         /// <summary>

@@ -54,7 +54,7 @@ namespace FASTER.core
         {
             var len = varLenStruct.GetLength(ref obj);
             mem = pool.Get(len);
-            Buffer.MemoryCopy(Unsafe.AsPointer(ref obj), mem.GetValidPointer(), len, len);
+            varLenStruct.Serialize(ref obj, mem.GetValidPointer());
         }
 
         public unsafe ref T Get()

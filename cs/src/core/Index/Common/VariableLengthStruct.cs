@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
+using System.Runtime.CompilerServices;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -23,6 +26,17 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         int GetInitialLength();
+
+        /// <summary>
+        /// Serialize to given memory location
+        /// </summary>
+        /// <param name="source"></param>
+        /// <param name="destination"></param>
+        unsafe void Serialize(ref T source, void* destination)
+#if NETSTANDARD21
+            => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source))
+#endif
+            ;
     }
 
     /// <summary>
@@ -45,6 +59,9 @@ namespace FASTER.core
         /// <param name="t"></param>
         /// <returns></returns>
         public int GetLength(ref T t) => size;
+
+        public unsafe void Serialize(ref T source, void* destination)
+            => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
     }
 
     /// <summary>
