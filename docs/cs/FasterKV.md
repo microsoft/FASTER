@@ -199,6 +199,12 @@ Unit tests are a useful resource to see how FASTER is used as well. They are in
 All these call be accessed through Visual Studio via the main FASTER.sln solution file at
 [/cs](https://github.com/Microsoft/FASTER/tree/master/cs).
 
+## Handling Variable Length Keys and Values
+
+There are two ways to handle variable length keys and values in FasterKV:
+
+* Use standard C# class types (e.g., `byte[]` and `string`) to store keys and values. This is easiest, but there are performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
+* Use `SpanByte` our wrapper struct concept, as your key and/or value type. `SpanByte` represents a simple sequence of bytes with a 4-byte (int) header that stores the length of the rest of the payload. `SpanByte` provides the highest performance for variable-length keys and values, and is compatible with pinned memory and `Span<byte>` inputs. Learn more about its use in the related PR [here](https://github.com/microsoft/FASTER/pull/349). `SpanByte` uses an underlying functionality we call _variable-length structs_, that you can use directly if `SpanByte` does not fit your needs, e.g., if you want to use only two bytes for the length header or want to store ints instead of bytes.
 
 ## Checkpointing and Recovery
 

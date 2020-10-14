@@ -48,13 +48,13 @@ namespace FASTER.core
     /// <typeparam name="T"></typeparam>
     internal class VarLenHeapContainer<T> : IHeapContainer<T>
     {
-        private SectorAlignedMemory mem;
+        readonly SectorAlignedMemory mem;
 
         public unsafe VarLenHeapContainer(ref T obj, IVariableLengthStruct<T> varLenStruct, SectorAlignedBufferPool pool)
         {
             var len = varLenStruct.GetLength(ref obj);
             mem = pool.Get(len);
-            Buffer.MemoryCopy(Unsafe.AsPointer(ref obj), mem.GetValidPointer(), len, len);
+            varLenStruct.Serialize(ref obj, mem.GetValidPointer());
         }
 
         public unsafe ref T Get()

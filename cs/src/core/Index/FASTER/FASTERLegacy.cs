@@ -409,6 +409,11 @@ namespace FASTER.core
             {
                 _fasterKV._functions.UpsertCompletionCallback(ref key, ref value, ctx);
             }
+
+            public IHeapContainer<Input> GetHeapContainer(ref Input input)
+            {
+                return new StandardHeapContainer<Input>(ref input);
+            }
         }
     }
 

@@ -38,6 +38,9 @@ namespace FASTER.test
         {
             return sizeof(long);
         }
+
+        public unsafe void Serialize(ref Key source, void* destination)
+            => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -58,6 +61,9 @@ namespace FASTER.test
         {
             return sizeof(int) * t.length;
         }
+
+        public unsafe void Serialize(ref VLValue source, void* destination)
+            => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
 
         public void ToIntArray(ref int[] dst)
         {

@@ -21,6 +21,9 @@ namespace FASTER.core
                 return new IntFasterEqualityComparer() as IFasterEqualityComparer<T>;
             else if (typeof(T) == typeof(Guid))
                 return new GuidFasterEqualityComparer() as IFasterEqualityComparer<T>;
+            else if (typeof(T) == typeof(SpanByte))
+                return new SpanByteComparer() as IFasterEqualityComparer<T>;
+
             else
             {
                 Debug.WriteLine("***WARNING*** Creating default FASTER key equality comparer based on potentially slow EqualityComparer<Key>.Default. To avoid this, provide a comparer (IFasterEqualityComparer<Key>) as an argument to FASTER's constructor, or make Key implement the interface IFasterEqualityComparer<Key>");

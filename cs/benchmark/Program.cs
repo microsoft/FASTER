@@ -39,7 +39,7 @@ namespace FASTER.benchmark
 
     enum BenchmarkType : int
     {
-        Ycsb, ConcurrentDictionaryYcsb
+        Ycsb, SpanByte, ConcurrentDictionaryYcsb
     };
 
     [Flags] enum BackupMode : int
@@ -63,6 +63,11 @@ namespace FASTER.benchmark
             if (b == BenchmarkType.Ycsb)
             {
                 var test = new FASTER_YcsbBenchmark(options.ThreadCount, options.NumaStyle, options.Distribution, options.ReadPercent, options.Backup);
+                test.Run();
+            }
+            else if (b == BenchmarkType.SpanByte)
+            {
+                var test = new FasterSpanByteYcsbBenchmark(options.ThreadCount, options.NumaStyle, options.Distribution, options.ReadPercent, options.Backup);
                 test.Run();
             }
             else if (b == BenchmarkType.ConcurrentDictionaryYcsb)

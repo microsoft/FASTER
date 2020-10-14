@@ -221,7 +221,7 @@ namespace FASTER.core
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
-                        internalStatus = InternalRMW(ref key, ref pendingContext.input, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                        internalStatus = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref key, ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
@@ -255,7 +255,7 @@ namespace FASTER.core
                 {
                     case OperationType.RMW:
                         fasterSession.RMWCompletionCallback(ref key,
-                                                ref pendingContext.input,
+                                                ref pendingContext.input.Get(),
                                                 pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
@@ -389,7 +389,7 @@ namespace FASTER.core
                     RecordInfo recordInfo;
                     unsafe { recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
                     fasterSession.ReadCompletionCallback(ref key,
-                                                     ref pendingContext.input,
+                                                     ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
@@ -398,7 +398,7 @@ namespace FASTER.core
                 else
                 {
                     fasterSession.RMWCompletionCallback(ref key,
-                                                    ref pendingContext.input,
+                                                    ref pendingContext.input.Get(),
                                                     pendingContext.userContext,
                                                     status);
                 }

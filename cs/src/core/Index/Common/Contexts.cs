@@ -71,7 +71,7 @@ namespace FASTER.core
             internal OperationType type;
             internal IHeapContainer<Key> key;
             internal IHeapContainer<Value> value;
-            internal Input input;
+            internal IHeapContainer<Input> input;
             internal Output output;
             internal Context userContext;
 

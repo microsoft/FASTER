@@ -21,5 +21,6 @@
     /// <typeparam name="Context"></typeparam>
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>, IFasterSession, IVariableLengthStruct<Value, Input>
     {
+        IHeapContainer<Input> GetHeapContainer(ref Input input);
     }
 }
