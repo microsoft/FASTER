@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace ReadAddress
 {
-    class ReadAddressApp
+    class VersionedReadApp
     {
         // Number of keys in store
         const int numKeys = 1000;

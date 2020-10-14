@@ -55,7 +55,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AzureBackedStore", "samples
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SecondaryReaderStore", "samples\SecondaryReaderStore\SecondaryReaderStore.csproj", "{EBE313E5-22D2-4C74-BA1F-16B60404B335}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReadAddress", "samples\ReadAddress\ReadAddress.csproj", "{33ED9E1B-1EF0-4984-A07A-7A26C205A446}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VersionedRead", "samples\ReadAddress\VersionedRead.csproj", "{33ED9E1B-1EF0-4984-A07A-7A26C205A446}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
