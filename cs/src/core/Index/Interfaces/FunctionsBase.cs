@@ -29,8 +29,12 @@ namespace FASTER.core
         public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) { return true; }
 
+        [Obsolete("Use ReadCompletionCallback(ref Key, ref Input, ref Output, Context, Status, RecordInfo)")]
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
-        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) { }
+        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
+#pragma warning disable CS0618 // Type or member is obsolete
+            => ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+#pragma warning restore CS0618 // Type or member is obsolete
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
@@ -60,8 +64,10 @@ namespace FASTER.core
         public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue) => newValue = merger(input, oldValue);
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) { value = merger(input, value); return true; }
 
-        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
-        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo) { }
+        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)
+#pragma warning disable CS0618 // Type or member is obsolete
+        => ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+#pragma warning restore CS0618 // Type or member is obsolete
         public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
         public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
