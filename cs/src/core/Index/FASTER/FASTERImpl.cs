@@ -146,7 +146,7 @@ namespace FASTER.core
             }
             #endregion
 
-            if (sessionCtx.phase == Phase.PREPARE && !usePreviousAddress && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
+            if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
             {
                 status = OperationStatus.CPR_SHIFT_DETECTED;
                 goto CreatePendingContext; // Pivot thread
@@ -180,11 +180,14 @@ namespace FASTER.core
             else if (logicalAddress >= hlog.BeginAddress)
             {
                 status = OperationStatus.RECORD_ON_DISK;
-
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
                     Debug.Assert(heldOperation != LatchOperation.Exclusive);
-                    if (heldOperation == LatchOperation.Shared || HashBucket.TryAcquireSharedLatch(bucket))
+                    if (usePreviousAddress)
+                    {
+                        Debug.Assert(heldOperation == LatchOperation.None);
+                    }
+                    else if (heldOperation == LatchOperation.Shared || HashBucket.TryAcquireSharedLatch(bucket))
                     {
                         heldOperation = LatchOperation.Shared;
                     }
@@ -1411,7 +1414,7 @@ namespace FASTER.core
                                                 out physicalAddress);
                     }
                 }
-                #endregion
+#endregion
 
                 var previousFirstRecordAddress = pendingContext.entry.Address;
                 if (logicalAddress > previousFirstRecordAddress)
@@ -1419,7 +1422,7 @@ namespace FASTER.core
                     break;
                 }
 
-                #region Create record in mutable region
+#region Create record in mutable region
 
                 if ((request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                 {
@@ -1489,9 +1492,9 @@ namespace FASTER.core
             return internalStatus;
         }
 
-        #endregion
+#endregion
 
-        #region Helper Functions
+#region Helper Functions
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
