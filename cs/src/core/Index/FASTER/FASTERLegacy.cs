@@ -372,7 +372,7 @@ namespace FASTER.core
                 return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value);
             }
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
             {
                 _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
             }

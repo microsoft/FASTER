@@ -390,7 +390,7 @@ namespace FASTER.core
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
-                                                     status);
+                                                     status, default);
                 }
                 else
                 {

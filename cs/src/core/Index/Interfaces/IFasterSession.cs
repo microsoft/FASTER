@@ -19,7 +19,7 @@
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    internal interface IFasterSession<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>, IFasterSession, IVariableLengthStruct<Value, Input>
+    internal interface IFasterSession<Key, Value, Input, Output, Context> : IAdvancedFunctions<Key, Value, Input, Output, Context>, IFasterSession, IVariableLengthStruct<Value, Input>
     {
         IHeapContainer<Input> GetHeapContainer(ref Input input);
     }

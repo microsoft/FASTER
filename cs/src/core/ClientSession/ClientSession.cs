@@ -658,7 +658,7 @@ namespace FASTER.core
                 return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
             }
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
             {
                 _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
