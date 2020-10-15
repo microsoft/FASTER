@@ -89,10 +89,6 @@ if(WIN32)
 set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_LINK_LIBS} rpcrt4 wsock32 Ws2_32)
 else()
   set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
-  # Using blob storage. Link in appropriate libraries.
-  if(USE_BLOBS)
-   set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} azurestorage cpprest boost_system)
-  endif()
 endif()
 
 #Function to automate building test binaries

@@ -1032,7 +1032,7 @@ class StorageDevice {
   ///    If set to true, files created by the device will be deleted by the
   ///    underlying operating system once closed.
   StorageDevice(const std::string& root, LightEpoch& lEpoch,
-                uint16_t id, const std::string& remote,
+                const std::string& remote, uint16_t id=1,
                 bool unBuffered=false, bool deleteOnClose=false)
     : localRoot{ FormatPath(root) }
     , epoch{ &lEpoch }
@@ -1042,10 +1042,25 @@ class StorageDevice {
     , hLog{ localRoot, &ioHandler, &lEpoch, pendingTasks, id, remote,
             1024, 302, 30 }
   {
+    pendingTasks = new tbb::concurrent_queue<task_t>[Thread::kMaxNumThreads];
+    if (pendingTasks == nullptr) {
+      logMessage(Lvl::ERROR,
+                 "Failed to allocated IO completion queues for Storage device");
+      throw std::runtime_error("Failed to open file for hybrid log");
+    }
+
     if (hLog.Open() != Status::Ok) {
       logMessage(Lvl::ERROR,
                  "Failed to open hybrid log file on Storage device");
       throw std::runtime_error("Failed to open file for hybrid log");
+    }
+  }
+
+  /// Destructor that will deallocate the IO completion queues for the remote
+  /// tier.
+  ~StorageDevice() {
+    if (pendingTasks != nullptr) {
+      delete pendingTasks;
     }
   }
 
@@ -1062,12 +1077,33 @@ class StorageDevice {
     , hLog{ localRoot, &ioHandler, &lEpoch, pendingTasks, 1,
             "UseDevelopmentStorage=true;" }
   {
+    pendingTasks = new tbb::concurrent_queue<task_t>[Thread::kMaxNumThreads];
+    if (pendingTasks == nullptr) {
+      logMessage(Lvl::ERROR,
+                 "Failed to allocated IO completion queues for Storage device");
+      throw std::runtime_error("Failed to open file for hybrid log");
+    }
+
     if (hLog.Open() != Status::Ok) {
       logMessage(Lvl::ERROR,
                  "Failed to open hybrid log file on Storage device");
       throw std::runtime_error("Failed to open file for hybrid log");
     }
   }
+
+  /// Move constructor. Required when initializing FASTER.
+  ///
+  /// \param from
+  ///    The StorageDevice that has to be moved into the new object.
+  StorageDevice(StorageDevice&& from)
+    : localRoot{ std::move(from.localRoot) }
+    , epoch{ std::move(from.epoch) }
+    , unBuffered{ std::move(from.unBuffered) }
+    , deleteOnClose{ std::move(from.deleteOnClose) }
+    , ioHandler{ std::move(from.ioHandler) }
+    , pendingTasks{ std::move(from.pendingTasks) }
+    , hLog{ std::move(from.hLog) }
+  {}
 
   /// Disallow copy and assignment constructors.
   StorageDevice(const StorageDevice&) = delete;
@@ -1207,9 +1243,9 @@ class StorageDevice {
   /// scheduled. Callbacks all for async IO operations execute here.
   handler_t ioHandler;
 
-  /// List of asynchronous reads to DFS that were successfully
+  /// List of asynchronous IOs to DFS that were successfully
   /// kicked off, but have not completed yet.
-  tbb::concurrent_queue<task_t> pendingTasks[Thread::kMaxNumThreads];
+  tbb::concurrent_queue<task_t>* pendingTasks;
 
   /// The file holding the HybridLog below the safe read only offset.
   log_file_t hLog;

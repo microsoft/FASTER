@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 #include "gtest/gtest.h"
 
 #include "core/alloc.h"
@@ -22,7 +25,7 @@ TEST(StorageTest, OpenClose) {
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch;
   StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
-                                          epoch, 1,
+                                          epoch,
                                           "UseDevelopmentStorage=true;");
 
   // Assert that the hybrid log closes fine.
@@ -41,7 +44,7 @@ TEST(StorageTest, ReadWrite) {
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch;
   StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
-                                          epoch, 1,
+                                          epoch,
                                           "UseDevelopmentStorage=true;");
 
   // Handle to the StorageFile holding the log.
@@ -134,7 +137,7 @@ TEST(StorageTest, MultipleReadWrite) {
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch(1);
   StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
-                                          epoch, 1,
+                                          epoch,
                                           "UseDevelopmentStorage=true;");
 
   // Handle to the StorageFile holding the log.

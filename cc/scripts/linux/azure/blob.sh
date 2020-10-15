@@ -1,6 +1,13 @@
 #!/bin/bash
 #
-# Installs all Azure related dependencies to run Sofaster with blob store.
+# Installs all Azure related dependencies to run the blob device.
+
+apt update && \
+    apt install --assume-yes cmake uuid-dev libboost-all-dev \
+    libboost-atomic-dev libboost-thread-dev libboost-system-dev \
+    libboost-date-time-dev libboost-regex-dev libboost-filesystem-dev \
+    libboost-random-dev libboost-chrono-dev libboost-serialization-dev \
+    libwebsocketpp-dev openssl libssl-dev ninja-build libxml2-dev g++-5
 
 CASABLANCA_VERSION="v2.10.14"
 
