@@ -50,8 +50,13 @@ namespace FASTER.benchmark
         readonly BackupMode backupMode;
         // ***
 
-        const long kInitCount = kUseSmallData ? 2500480 : 250000000;
-        const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
+        const long kInitCount_ = kUseSmallData ? 2500480 : 250000000;
+        const long kTxnCount_ = kUseSmallData ? 10000000 : 1000000000;
+
+        // Ensure sizes are aligned to chunk sizes
+        const long kInitCount = kChunkSize * (kInitCount_ / kChunkSize);
+        const long kTxnCount = kChunkSize * (kTxnCount_ / kChunkSize);
+
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
 
         const int kFileChunkSize = 4096;
@@ -517,6 +522,8 @@ namespace FASTER.benchmark
                     {
                         init_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
+                        if (count == kInitCount)
+                            break;
                     }
                     if (size == kFileChunkSize)
                         offset += kFileChunkSize;
@@ -557,6 +564,8 @@ namespace FASTER.benchmark
                     {
                         txn_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
+                        if (count == kTxnCount)
+                            break;
                     }
                     if (size == kFileChunkSize)
                         offset += kFileChunkSize;
