@@ -99,6 +99,9 @@ Reads are also transparently served from the appropriate tier too. This device i
 the remote tier, and we currently support [Azure blob storage](https://github.com/Microsoft/FASTER/tree/master/cc/src/device/azure.h).
 An example along with unit tests can be found under [FASTER/cc/test/blobs](https://github.com/Microsoft/FASTER/tree/master/cc/test/blobs).
 
-This device has been tested on Linux only. To compile the unit tests, pass in `-DUSE_BLOBS=ON`
+This device has been tested on Linux only. Dependencies (`cpprestsdk`, `azure-storage-cpp`)
+can be installed using the helper script at
+[FASTER/cc/scripts/linux/azure/blob.sh](https://github.com/Microsoft/FASTER/tree/master/cc/scripts/linux/azure/blob.sh).
+To compile the unit tests, pass in `-DUSE_BLOBS=ON`
 when generating build scripts with `cmake`. To run the unit tests, you will need an instance
 of [Azurite](https://github.com/Azure/Azurite) running.
