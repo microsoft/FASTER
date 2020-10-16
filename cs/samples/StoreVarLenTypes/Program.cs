@@ -120,7 +120,7 @@ namespace StoreVarLenTypes
 
             Random r = new Random(100);
 
-            for (byte i = 0; i < 1; i++)
+            for (byte i = 0; i < 100; i++)
             {
                 var keyLen = r.Next(1, 1000);
                 var key = new Memory<byte>(new byte[keyLen]);
@@ -132,20 +132,12 @@ namespace StoreVarLenTypes
 
                 // Option 1: Using overload for Span<byte>
                 s.Upsert(key, value);
-
-                var valLen2 = 2000;
-                var value2 = new Memory<byte>(new byte[valLen2]);
-                value.Span.Fill((byte)valLen2);
-
-                // Option 1: Using overload for Span<byte>
-                s.Upsert(key, value2);
-
             }
 
             bool success = true;
 
             r = new Random(100);
-            for (byte i = 0; i < 1; i++)
+            for (byte i = 0; i < 100; i++)
             {
                 var keyLen = r.Next(1, 1000);
                 var key = new Memory<byte>(new byte[keyLen]);
