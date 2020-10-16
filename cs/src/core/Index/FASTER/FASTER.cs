@@ -132,7 +132,7 @@ namespace FASTER.core
                 UseReadCache = true;
             }
 
-            if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
+            if ((Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>()) || (variableLengthStructSettings != null))
             {
                 var sbl = new SpanByteLength();
 

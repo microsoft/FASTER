@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -25,5 +27,11 @@ namespace FASTER.core
         {
             source.CopyTo((byte*)destination);
         }
+
+        /// <inheritdoc />
+        public unsafe ref SpanByte AsRef(void* source) => ref Unsafe.AsRef<SpanByte>(source);
+
+        /// <inheritdoc />
+        public unsafe ref SpanByte AsRef(void* source, void* dest) => ref Unsafe.AsRef<SpanByte>(source);
     }
 }

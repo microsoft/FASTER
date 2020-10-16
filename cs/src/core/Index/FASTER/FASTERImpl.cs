@@ -296,6 +296,7 @@ namespace FASTER.core
                 {
                     return OperationStatus.SUCCESS;
                 }
+                goto CreateNewRecord;
             }
 
             #region Entry latch operation
@@ -398,9 +399,9 @@ namespace FASTER.core
                                sessionCtx.version,
                                true, false, false,
                                latestLogicalAddress);
-                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+                hlog.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key, ref value,
-                                       ref hlog.GetValue(newPhysicalAddress));
+                                       ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + recordSize));
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;

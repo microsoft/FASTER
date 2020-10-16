@@ -37,6 +37,29 @@ namespace FASTER.core
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source))
 #endif
             ;
+
+        /// <summary>
+        /// Return serialized data as reference to T
+        /// </summary>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        unsafe ref T AsRef(void* source)
+#if NETSTANDARD21
+            => ref Unsafe.AsRef<T>(source)
+#endif
+            ;
+
+        /// <summary>
+        /// Return address range as reference to T
+        /// </summary>
+        /// <param name="source"></param>
+        /// <param name="end"></param>
+        /// <returns></returns>
+        unsafe ref T AsRef(void* source, void* end)
+#if NETSTANDARD21
+            => ref Unsafe.AsRef<T>(source)
+#endif
+            ;
     }
 
     /// <summary>
@@ -62,6 +85,9 @@ namespace FASTER.core
 
         public unsafe void Serialize(ref T source, void* destination)
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
+
+        public unsafe ref T AsRef(void* source) => ref Unsafe.AsRef<T>(source);
+        public unsafe ref T AsRef(void* source, void* dest) => ref Unsafe.AsRef<T>(source);
     }
 
     /// <summary>

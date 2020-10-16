@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using System;
+using System.Buffers;
 using System.Linq;
 
 namespace StoreVarLenTypes
@@ -22,6 +23,13 @@ namespace StoreVarLenTypes
         // Serializers are not required, as these are effectively value-types.
 
         static void Main()
+        {
+            MemoryByteSample();
+            SpanByteSample();
+            return;
+        }
+
+        static void SpanByteSample()
         {
             // VarLen types do not need an object log
             var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
@@ -78,6 +86,91 @@ namespace StoreVarLenTypes
                         success = false;
                         break;
                     }
+                }
+            }
+
+            if (success)
+                Console.WriteLine("Success!");
+            else
+                Console.WriteLine("Error!");
+
+            s.Dispose();
+            store.Dispose();
+            log.Dispose();
+
+            Console.WriteLine("Press <ENTER> to end");
+            Console.ReadLine();
+        }
+
+        static void MemoryByteSample()
+        {
+            // VarLen types do not need an object log
+            var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
+
+            // Create store
+            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
+            var store = new FasterKV<Memory<byte>, Memory<byte>>(
+                size: 1L << 20,
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 },
+                comparer: new MemoryComparer(),
+                variableLengthStructSettings: new VariableLengthStructSettings<Memory<byte>, Memory<byte>> { keyLength = new MemoryVarLenStruct(), valueLength = new MemoryVarLenStruct() });
+
+            // Create session
+            var s = store.For(new MemoryFunctions()).NewSession<MemoryFunctions>();
+
+            Random r = new Random(100);
+
+            for (byte i = 0; i < 1; i++)
+            {
+                var keyLen = r.Next(1, 1000);
+                var key = new Memory<byte>(new byte[keyLen]);
+                key.Span.Fill(i);
+
+                var valLen = r.Next(1, 1000);
+                var value = new Memory<byte>(new byte[valLen]);
+                value.Span.Fill((byte)valLen);
+
+                // Option 1: Using overload for Span<byte>
+                s.Upsert(key, value);
+
+                var valLen2 = 2000;
+                var value2 = new Memory<byte>(new byte[valLen2]);
+                value.Span.Fill((byte)valLen2);
+
+                // Option 1: Using overload for Span<byte>
+                s.Upsert(key, value2);
+
+            }
+
+            bool success = true;
+
+            r = new Random(100);
+            for (byte i = 0; i < 1; i++)
+            {
+                var keyLen = r.Next(1, 1000);
+                var key = new Memory<byte>(new byte[keyLen]);
+                key.Span.Fill(i);
+
+                // Option 2: Converting fixed Span<byte> to SpanByte
+                var status = s.Read(key, out var output);
+
+                var valLen = r.Next(1, 1000);
+                var expectedValue = new Memory<byte>(new byte[valLen]);
+                expectedValue.Span.Fill((byte)valLen);
+
+                if (status == Status.PENDING)
+                {
+                    s.CompletePending(true);
+                }
+                else
+                {
+                    if ((status != Status.OK) || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
+                    {
+                        output.Item1.Dispose();
+                        success = false;
+                        break;
+                    }
+                    output.Item1.Dispose();
                 }
             }
 

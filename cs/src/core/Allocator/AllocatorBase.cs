@@ -273,6 +273,14 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract ref Value GetValue(long physicalAddress);
         /// <summary>
+        /// Get value from address range
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <param name="endPhysicalAddress"></param>
+        /// <returns></returns>
+        public virtual ref Value GetValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
+
+        /// <summary>
         /// Get address info for key
         /// </summary>
         /// <param name="physicalAddress"></param>
@@ -1603,6 +1611,26 @@ namespace FASTER.core
         public virtual void ShallowCopy(ref Key src, ref Key dst)
         {
             dst = src;
+        }
+
+        /// <summary>
+        /// Serialize to log
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="physicalAddress"></param>
+        public virtual void Serialize(ref Key src, long physicalAddress)
+        {
+            GetKey(physicalAddress) = src;
+        }
+
+        /// <summary>
+        /// Serialize to log
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="physicalAddress"></param>
+        public virtual void Serialize(ref Value src, long physicalAddress)
+        {
+            GetValue(physicalAddress) = src;
         }
 
         /// <summary>

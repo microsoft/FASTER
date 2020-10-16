@@ -69,12 +69,17 @@ namespace FASTER.core
 
         public override ref Key GetKey(long physicalAddress)
         {
-            return ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
+            return ref KeyLength.AsRef((byte*)physicalAddress + RecordInfo.GetLength());
         }
 
         public override ref Value GetValue(long physicalAddress)
         {
-            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress));
+            return ref ValueLength.AsRef((byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress));
+        }
+
+        public override ref Value GetValue(long physicalAddress, long endPhysicalAddress)
+        {
+            return ref ValueLength.AsRef((byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress), (void*)endPhysicalAddress);
         }
 
         private int KeySize(long physicalAddress)
@@ -157,14 +162,24 @@ namespace FASTER.core
             return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
 
+        public override void Serialize(ref Key src, long physicalAddress)
+        {
+            KeyLength.Serialize(ref src, (byte*)physicalAddress + RecordInfo.GetLength());
+        }
+
+        public override void Serialize(ref Value src, long physicalAddress)
+        {
+            ValueLength.Serialize(ref src, (byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress));
+        }
+
         public override void ShallowCopy(ref Key src, ref Key dst)
         {
-            KeyLength.Serialize(ref src, Unsafe.AsPointer(ref dst));
+            throw new NotImplementedException();
         }
 
         public override void ShallowCopy(ref Value src, ref Value dst)
         {
-            ValueLength.Serialize(ref src, Unsafe.AsPointer(ref dst));
+            throw new NotImplementedException();
         }
 
         /// <summary>
