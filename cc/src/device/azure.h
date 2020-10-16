@@ -406,7 +406,7 @@ class BlobFile {
       ostream stream = rawptr_stream<uint8_t>::open_ostream(dest, len);
 
       // Kick off the async read and add it to the list of inprogress tasks.
-      pendingTasks[Thread::id() - 1].push(
+      pendingTasks->push(
         Task(blob.download_range_to_stream_async(stream,
         page, nPages * alignment), fContext, len, callback)
       );
@@ -485,7 +485,7 @@ class BlobFile {
 
       // Issue the asynchronous task and then add it to the list of
       // pending tasks.
-      pendingTasks[Thread::id() - 1].push(
+      pendingTasks->push(
         Task(blob.upload_pages_async(stream, page, ""), fContext,
           len, callback)
       );

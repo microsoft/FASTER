@@ -1039,28 +1039,13 @@ class StorageDevice {
     , unBuffered{ unBuffered }
     , deleteOnClose{ deleteOnClose }
     , ioHandler{ 8 }
-    , hLog{ localRoot, &ioHandler, &lEpoch, pendingTasks, id, remote,
+    , hLog{ localRoot, &ioHandler, &lEpoch, &pendingTasks, id, remote,
             1024, 302, 30 }
   {
-    pendingTasks = new tbb::concurrent_queue<task_t>[Thread::kMaxNumThreads];
-    if (pendingTasks == nullptr) {
-      logMessage(Lvl::ERROR,
-                 "Failed to allocated IO completion queues for Storage device");
-      throw std::runtime_error("Failed to open file for hybrid log");
-    }
-
     if (hLog.Open() != Status::Ok) {
       logMessage(Lvl::ERROR,
                  "Failed to open hybrid log file on Storage device");
       throw std::runtime_error("Failed to open file for hybrid log");
-    }
-  }
-
-  /// Destructor that will deallocate the IO completion queues for the remote
-  /// tier.
-  ~StorageDevice() {
-    if (pendingTasks != nullptr) {
-      delete pendingTasks;
     }
   }
 
@@ -1074,16 +1059,9 @@ class StorageDevice {
     , unBuffered{ false }
     , deleteOnClose{ false }
     , ioHandler{ 8 }
-    , hLog{ localRoot, &ioHandler, &lEpoch, pendingTasks, 1,
+    , hLog{ localRoot, &ioHandler, &lEpoch, &pendingTasks, 1,
             "UseDevelopmentStorage=true;" }
   {
-    pendingTasks = new tbb::concurrent_queue<task_t>[Thread::kMaxNumThreads];
-    if (pendingTasks == nullptr) {
-      logMessage(Lvl::ERROR,
-                 "Failed to allocated IO completion queues for Storage device");
-      throw std::runtime_error("Failed to open file for hybrid log");
-    }
-
     if (hLog.Open() != Status::Ok) {
       logMessage(Lvl::ERROR,
                  "Failed to open hybrid log file on Storage device");
@@ -1184,14 +1162,13 @@ class StorageDevice {
 
   /// Makes progress on any IO operations to local disk/SSD.
   bool TryComplete() {
-    auto idx = Thread::id() - 1;
-    for (auto i = 0; i < pendingTasks[idx].unsafe_size(); i++) {
+    for (auto i = 0; i < pendingTasks.unsafe_size(); i++) {
       // Try to read a task from the pending queue.
       task_t task;
-      if (!pendingTasks[idx].try_pop(task)) break;
+      if (!pendingTasks.try_pop(task)) break;
 
       // If the task has not completed yet, then enqueue it again.
-      if (!task.isReady()) pendingTasks[idx].push(task);
+      if (!task.isReady()) pendingTasks.push(task);
     }
 
     return ioHandler.TryComplete();
@@ -1200,7 +1177,7 @@ class StorageDevice {
   /// Complete all pending IO operations. Useful for testing.
   void CompletePending() {
     task_t task;
-    while (pendingTasks[Thread::id() - 1].try_pop(task)) task.wait();
+    while (pendingTasks.try_pop(task)) task.wait();
   }
 
   /// Returns a reference to the handler processing async IOs.
@@ -1245,7 +1222,7 @@ class StorageDevice {
 
   /// List of asynchronous IOs to DFS that were successfully
   /// kicked off, but have not completed yet.
-  tbb::concurrent_queue<task_t>* pendingTasks;
+  tbb::concurrent_queue<task_t> pendingTasks;
 
   /// The file holding the HybridLog below the safe read only offset.
   log_file_t hLog;

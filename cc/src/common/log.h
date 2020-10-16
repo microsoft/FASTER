@@ -14,8 +14,8 @@ enum class Lvl {
   ERROR = 2,
 };
 
-/// By default, only print INFO and ERROR log messages.
-#define LEVEL Lvl::INFO
+/// By default, only print ERROR log messages.
+#define LEVEL Lvl::ERROR
 
 /// Macro to add in the file and function name, and line number.
 #define logMessage(l, f, a...) logMsg(l, __LINE__, __func__, __FILE__, f, ##a)

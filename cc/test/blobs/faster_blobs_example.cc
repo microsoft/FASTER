@@ -31,8 +31,9 @@ TEST(FasterBlobs, Example) {
   using V = SimpleAtomicValue<uint8_t>;
   typedef FASTER::core::FasterKv<K, V, disk_t> faster_t;
 
-  faster_t store(128, 1073741824, "storage", 0.9, false,
-                 "UseDevelopmentStorage=true;");
+  std::string path = "storage"; // Filesystem path under which log will be stored.
+  std::string conn = "UseDevelopmentStorage=true;"; // Azure Blobs connection str.
+  faster_t store(128, 1073741824, path, 0.9, false, conn);
 }
 
 int main(int argc, char** argv) {

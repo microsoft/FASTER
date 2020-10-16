@@ -11,6 +11,8 @@
 #include "device/file_system_disk.h"
 #include "device/storage.h"
 
+#include "environment/file.h"
+
 using namespace FASTER::device;
 using namespace FASTER::environment;
 
@@ -24,7 +26,7 @@ TEST(StorageTest, OpenClose) {
 
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch;
-  StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
+  StorageDevice<handler_t, remote_t> disk(std::string(".") + kPathSeparator,
                                           epoch,
                                           "UseDevelopmentStorage=true;");
 
@@ -43,7 +45,7 @@ TEST(StorageTest, ReadWrite) {
 
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch;
-  StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
+  StorageDevice<handler_t, remote_t> disk(std::string(".") + kPathSeparator,
                                           epoch,
                                           "UseDevelopmentStorage=true;");
 
@@ -98,6 +100,7 @@ TEST(StorageTest, ReadWrite) {
   // Issue a write to the storage file.
   ASSERT_EQ(Status::Ok,
             hLog.WriteAsync(bytes, 0, num, acallback, ctxt));
+  while (!disk.TryComplete());
   disk.CompletePending();
 
   // Prepare a buffer to receive data into.
@@ -113,6 +116,7 @@ TEST(StorageTest, ReadWrite) {
   ASSERT_EQ(Status::Ok,
             hLog.ReadAsync(0, reinterpret_cast<void*>(rBuff), num,
                            acallback, context));
+  while (!disk.TryComplete());
   disk.CompletePending();
 
   /// Assert that what was read is the same as what was written.
@@ -136,7 +140,7 @@ TEST(StorageTest, MultipleReadWrite) {
 
   // Create a disk. The hybrid log file is implicitly opened here.
   LightEpoch epoch(1);
-  StorageDevice<handler_t, remote_t> disk("C:\\faster\\",
+  StorageDevice<handler_t, remote_t> disk(std::string(".") + kPathSeparator,
                                           epoch,
                                           "UseDevelopmentStorage=true;");
 
@@ -194,6 +198,7 @@ TEST(StorageTest, MultipleReadWrite) {
     // Issue a write to the storage file.
     ASSERT_EQ(Status::Ok, hLog.WriteAsync(bytes, addr * 512, num,
                                           acallback, ctxt));
+    while (!disk.TryComplete());
     disk.CompletePending();
   }
 
@@ -217,6 +222,7 @@ TEST(StorageTest, MultipleReadWrite) {
     ASSERT_EQ(Status::Ok,
               hLog.ReadAsync(src, reinterpret_cast<void*>(rBuff), num,
                              acallback, context));
+    while (!disk.TryComplete());
     disk.CompletePending();
 
     /// Assert that what was read is the same as what was written earlier.
