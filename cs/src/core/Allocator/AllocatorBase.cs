@@ -191,7 +191,7 @@ namespace FASTER.core
         /// <summary>
         /// Buffer pool
         /// </summary>
-        protected SectorAlignedBufferPool bufferPool;
+        internal SectorAlignedBufferPool bufferPool;
 
         /// <summary>
         /// Read cache

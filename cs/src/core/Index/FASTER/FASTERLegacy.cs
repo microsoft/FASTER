@@ -339,6 +339,9 @@ namespace FASTER.core
                 return _fasterKV._functions.ConcurrentWriter(ref key, ref src, ref dst);
             }
 
+            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
+                => _fasterKV._functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
+
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
             {
                 _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
@@ -400,6 +403,11 @@ namespace FASTER.core
             public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx)
             {
                 _fasterKV._functions.UpsertCompletionCallback(ref key, ref value, ctx);
+            }
+
+            public IHeapContainer<Input> GetHeapContainer(ref Input input)
+            {
+                return new StandardHeapContainer<Input>(ref input);
             }
         }
     }

@@ -134,6 +134,26 @@ namespace FASTER.core
 
             if (Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>())
             {
+                var sbl = new SpanByteLength();
+
+                if (typeof(Key) == typeof(SpanByte))
+                {
+                    if (variableLengthStructSettings == null)
+                        variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, SpanByte>() as VariableLengthStructSettings<Key, Value>;
+
+                    if (variableLengthStructSettings.keyLength == null)
+                        (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = sbl;
+                }
+
+                if (typeof(Value) == typeof(SpanByte))
+                {
+                    if (variableLengthStructSettings == null)
+                        variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, SpanByte>() as VariableLengthStructSettings<Key, Value>;
+
+                    if (variableLengthStructSettings.valueLength == null)
+                        (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = sbl;
+                }
+
                 if (variableLengthStructSettings != null)
                 {
                     hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,

@@ -16,7 +16,7 @@ using System.Threading;
 
 namespace FASTER.benchmark
 {
-    public class FASTER_YcsbBenchmark
+    public class FasterSpanByteYcsbBenchmark
     {
         public enum Op : ulong
         {
@@ -59,19 +59,22 @@ namespace FASTER.benchmark
 
         const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
 
+        public const int kKeySize = 16;
+        public const int kValueSize = 100;
+
         const int kFileChunkSize = 4096;
         const long kChunkSize = 640;
 
-        Key[] init_keys_;
+        KeySpanByte[] init_keys_;
 
-        Key[] txn_keys_;
+        KeySpanByte[] txn_keys_;
 
         long idx_ = 0;
 
         Input[] input_;
         readonly IDevice device;
 
-        readonly FasterKV<Key, Value> store;
+        readonly FasterKV<SpanByte, SpanByte> store;
 
         long total_ops_done = 0;
 
@@ -79,11 +82,11 @@ namespace FASTER.benchmark
         readonly int numaStyle;
         readonly string distribution;
         readonly int readPercent;
-        readonly Functions functions = new Functions();
+        readonly FunctionsSB functions = new FunctionsSB();
 
         volatile bool done = false;
 
-        public FASTER_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_, int backupOptions_)
+        public FasterSpanByteYcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_, int backupOptions_)
         {
             threadCount = threadCount_;
             numaStyle = numaStyle_;
@@ -109,11 +112,11 @@ namespace FASTER.benchmark
             device = Devices.CreateLogDevice(path + "hlog", preallocateFile: true);
 
             if (kSmallMemoryLog)
-                store = new FasterKV<Key, Value>
+                store = new FasterKV<SpanByte, SpanByte>
                     (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
             else
-                store = new FasterKV<Key, Value>
-                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
+                store = new FasterKV<SpanByte, SpanByte>
+                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
         }
 
         private void RunYcsb(int thread_idx)
@@ -129,9 +132,13 @@ namespace FASTER.benchmark
             sw.Start();
 
 
-            Value value = default;
-            Input input = default;
-            Output output = default;
+            Span<byte> value = stackalloc byte[kValueSize];
+            Span<byte> input = stackalloc byte[kValueSize];
+            Span<byte> output = stackalloc byte[kValueSize];
+
+            ref SpanByte _value = ref SpanByte.Reinterpret(value);
+            ref SpanByte _input = ref SpanByte.Reinterpret(input);
+            SpanByteAndMemory _output = SpanByteAndMemory.FromFixedSpan(output);
 
             long reads_done = 0;
             long writes_done = 0;
@@ -143,7 +150,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.For(functions).NewSession<Functions>(null, kAffinitizedSession);
+            var session = store.For(functions).NewSession<FunctionsSB>(null, kAffinitizedSession);
 
             while (!done)
             {
@@ -177,19 +184,19 @@ namespace FASTER.benchmark
                     {
                         case Op.Upsert:
                             {
-                                session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                                session.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default, 1);
                                 ++writes_done;
                                 break;
                             }
                         case Op.Read:
                             {
-                                session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                                session.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default, 1);
                                 ++reads_done;
                                 break;
                             }
                         case Op.ReadModifyWrite:
                             {
-                                session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                                session.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default, 1);
                                 ++writes_done;
                                 break;
                             }
@@ -381,7 +388,7 @@ namespace FASTER.benchmark
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            var session = store.For(functions).NewSession<Functions>(null, kAffinitizedSession);
+            var session = store.For(functions).NewSession<FunctionsSB>(null, kAffinitizedSession);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -390,7 +397,8 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            Value value = default;
+            Span<byte> value = stackalloc byte[kValueSize];
+            ref SpanByte _value = ref SpanByte.Reinterpret(value);
 
             for (long chunk_idx = Interlocked.Add(ref idx_, kChunkSize) - kChunkSize;
                 chunk_idx < kInitCount;
@@ -408,7 +416,7 @@ namespace FASTER.benchmark
                         }
                     }
 
-                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
+                    session.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default, 1);
                 }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -506,7 +514,7 @@ namespace FASTER.benchmark
                 FileShare.Read))
             {
                 Console.WriteLine("loading keys from " + init_filename + " into memory...");
-                init_keys_ = new Key[kInitCount];
+                init_keys_ = new KeySpanByte[kInitCount];
 
                 byte[] chunk = new byte[kFileChunkSize];
                 GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
@@ -520,6 +528,7 @@ namespace FASTER.benchmark
                     int size = stream.Read(chunk, 0, kFileChunkSize);
                     for (int idx = 0; idx < size; idx += 8)
                     {
+                        init_keys_[count].length = kKeySize - 4;
                         init_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
                         if (count == kInitCount)
@@ -551,7 +560,7 @@ namespace FASTER.benchmark
 
                 Console.WriteLine("loading txns from " + txn_filename + " into memory...");
 
-                txn_keys_ = new Key[kTxnCount];
+                txn_keys_ = new KeySpanByte[kTxnCount];
 
                 count = 0;
                 long offset = 0;
@@ -562,6 +571,7 @@ namespace FASTER.benchmark
                     int size = stream.Read(chunk, 0, kFileChunkSize);
                     for (int idx = 0; idx < size; idx += 8)
                     {
+                        txn_keys_[count].length = kKeySize - 4;
                         txn_keys_[count].value = *(long*)(chunk_ptr + idx);
                         ++count;
                         if (count == kTxnCount)
@@ -619,22 +629,22 @@ namespace FASTER.benchmark
         {
             Console.WriteLine("Loading synthetic data (uniform distribution)");
 
-            init_keys_ = new Key[kInitCount];
+            init_keys_ = new KeySpanByte[kInitCount];
             long val = 0;
             for (int idx = 0; idx < kInitCount; idx++)
             {
-                init_keys_[idx] = new Key { value = val++ };
+                init_keys_[idx] = new KeySpanByte { length = kKeySize - 4, value = val++ };
             }
 
             Console.WriteLine("loaded " + kInitCount + " keys.");
 
             RandomGenerator generator = new RandomGenerator();
 
-            txn_keys_ = new Key[kTxnCount];
+            txn_keys_ = new KeySpanByte[kTxnCount];
 
             for (int idx = 0; idx < kTxnCount; idx++)
             {
-                txn_keys_[idx] = new Key { value = (long)generator.Generate64(kInitCount) };
+                txn_keys_[idx] = new KeySpanByte { length = kKeySize - 4, value = (long)generator.Generate64(kInitCount) };
             }
 
             Console.WriteLine("loaded " + kTxnCount + " txns.");

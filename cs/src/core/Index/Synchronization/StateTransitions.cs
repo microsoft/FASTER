@@ -23,10 +23,10 @@ namespace FASTER.core
 
     internal enum Phase : int {
         IN_PROGRESS, 
-        WAIT_PENDING, 
-        WAIT_FLUSH, 
-        PERSISTENCE_CALLBACK, 
+        WAIT_PENDING,
         WAIT_INDEX_CHECKPOINT,
+        WAIT_FLUSH,
+        PERSISTENCE_CALLBACK, 
         REST,
         PREP_INDEX_CHECKPOINT, 
         PREPARE,

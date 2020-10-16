@@ -81,7 +81,8 @@ namespace StoreDiskReadBenchmark
         {
             if (status != Status.OK || output.value.vfield1 != key.key)
             {
-                throw new Exception("Wrong value found");
+                if (!Program.simultaneousReadWrite)
+                    throw new Exception("Wrong value found");
             }
         }
     }

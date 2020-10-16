@@ -38,6 +38,9 @@ namespace FASTER.test
         {
             return sizeof(long);
         }
+
+        public unsafe void Serialize(ref Key source, void* destination)
+            => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -58,6 +61,9 @@ namespace FASTER.test
         {
             return sizeof(int) * t.length;
         }
+
+        public unsafe void Serialize(ref VLValue source, void* destination)
+            => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
 
         public void ToIntArray(ref int[] dst)
         {
@@ -165,6 +171,8 @@ namespace FASTER.test
             return true;
         }
 
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref VLValue oldValue) => true;
+
         public void CopyUpdater(ref Key key, ref Input input, ref VLValue oldValue, ref VLValue newValue)
         {
         }
@@ -234,6 +242,8 @@ namespace FASTER.test
         {
             return true;
         }
+
+        public bool NeedCopyUpdate(ref VLValue key, ref Input input, ref VLValue oldValue) => true;
 
         public void CopyUpdater(ref VLValue key, ref Input input, ref VLValue oldValue, ref VLValue newValue)
         {
