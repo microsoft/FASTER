@@ -88,3 +88,17 @@ Sum-store, located in [FASTER/cc/playground/sum_store-dir](https://github.com/Mi
 checkpointing and recovery.
 
 There's a basic YCSB test driver in [FASTER/cc/benchmark-dir](https://github.com/Microsoft/FASTER/tree/master/cc/benchmark-dir).
+
+Remote Device
+===========
+
+The C++ version's persistent layer can be extended from local storage to a remote tier using the
+[`StorageDevice`](https://github.com/Microsoft/FASTER/tree/master/cc/src/device/storage.h). This
+device stores data across a set of files locally, and transparently flushes them to a remote tier.
+Reads are also transparently served from the appropriate tier too. This device is templated with
+the remote tier, and we currently support [Azure blob storage](https://github.com/Microsoft/FASTER/tree/master/cc/src/device/azure.h).
+An example along with unit tests can be found under [FASTER/cc/test/blobs](https://github.com/Microsoft/FASTER/tree/master/cc/test/blobs).
+
+This device has been tested on Linux only. To compile the unit tests, pass in `-DUSE_BLOBS=ON`
+when generating build scripts with `cmake`. To run the unit tests, you will need an instance
+of [Azurite](https://github.com/Azure/Azurite) running.
