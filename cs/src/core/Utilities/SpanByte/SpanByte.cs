@@ -240,6 +240,11 @@ namespace FASTER.core
         /// <param name="dst"></param>
         public void CopyTo(ref SpanByte dst)
         {
+            // Zero-fill extra space - needed so log scan does not see spurious data
+            if (dst.Length > Length)
+            {
+                dst.AsSpan().Slice(Length).Clear();
+            }
             dst.Length = Length;
             AsReadOnlySpan().CopyTo(dst.AsSpan());
         }
@@ -253,8 +258,12 @@ namespace FASTER.core
         {
             if (dst.IsSpanByte)
             {
-                if (TryCopyTo(ref dst.SpanByte))
+                if (dst.Length >= Length)
+                {
+                    dst.Length = Length;
+                    AsReadOnlySpan().CopyTo(dst.SpanByte.AsSpan());
                     return;
+                }
                 dst.ConvertToHeap();
             }
 
