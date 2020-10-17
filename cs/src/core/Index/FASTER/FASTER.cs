@@ -217,6 +217,22 @@ namespace FASTER.core
                 if (variableLengthStructSettings.keyLength == null)
                     (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = new SpanByteLength();
             }
+            else if (typeof(Key) == typeof(Memory<byte>))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Memory<byte>, Value>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.keyLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<Memory<byte>, Value>).keyLength = new MemoryVarLenStruct();
+            }
+            else if (typeof(Key) == typeof(ReadOnlyMemory<byte>))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<ReadOnlyMemory<byte>, Value>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.keyLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<ReadOnlyMemory<byte>, Value>).keyLength = new ReadOnlyMemoryVarLenStruct();
+            }
 
             if (typeof(Value) == typeof(SpanByte))
             {
@@ -226,23 +242,21 @@ namespace FASTER.core
                 if (variableLengthStructSettings.valueLength == null)
                     (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = new SpanByteLength();
             }
-
-            if (typeof(Key) == typeof(Memory<byte>))
-            {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Memory<byte>, Value>() as VariableLengthStructSettings<Key, Value>;
-
-                if (variableLengthStructSettings.keyLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<Memory<byte>, Value>).keyLength = new MemoryVarLenStruct();
-            }
-
-            if (typeof(Value) == typeof(Memory<byte>))
+            else if (typeof(Value) == typeof(Memory<byte>))
             {
                 if (variableLengthStructSettings == null)
                     variableLengthStructSettings = new VariableLengthStructSettings<Key, Memory<byte>>() as VariableLengthStructSettings<Key, Value>;
 
                 if (variableLengthStructSettings.valueLength == null)
                     (variableLengthStructSettings as VariableLengthStructSettings<Key, Memory<byte>>).valueLength = new MemoryVarLenStruct();
+            }
+            else if (typeof(Value) == typeof(ReadOnlyMemory<byte>))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, ReadOnlyMemory<byte>>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.valueLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<Key, ReadOnlyMemory<byte>>).valueLength = new ReadOnlyMemoryVarLenStruct();
             }
         }
 

@@ -11,21 +11,23 @@ namespace FASTER.core
     {
         public static IFasterEqualityComparer<T> Get<T>()
         {
-            if (typeof(T) == typeof(string))
+            var t = typeof(T);
+            if (t == typeof(string))
                 return new StringFasterEqualityComparer() as IFasterEqualityComparer<T>;
-            else if (typeof(T) == typeof(byte[]))
+            else if (t == typeof(byte[]))
                 return new ByteArrayFasterEqualityComparer() as IFasterEqualityComparer<T>;
-            else if (typeof(T) == typeof(long))
+            else if (t == typeof(long))
                 return new LongFasterEqualityComparer() as IFasterEqualityComparer<T>;
-            else if (typeof(T) == typeof(int))
+            else if (t == typeof(int))
                 return new IntFasterEqualityComparer() as IFasterEqualityComparer<T>;
-            else if (typeof(T) == typeof(Guid))
+            else if (t == typeof(Guid))
                 return new GuidFasterEqualityComparer() as IFasterEqualityComparer<T>;
-            else if (typeof(T) == typeof(SpanByte))
+            else if (t == typeof(SpanByte))
                 return new SpanByteComparer() as IFasterEqualityComparer<T>;
-            else if (typeof(T) == typeof(Memory<byte>))
+            else if (t == typeof(Memory<byte>))
                 return new MemoryComparer() as IFasterEqualityComparer<T>;
-
+            else if (t == typeof(ReadOnlyMemory<byte>))
+                return new ReadOnlyMemoryComparer() as IFasterEqualityComparer<T>;
             else
             {
                 Debug.WriteLine("***WARNING*** Creating default FASTER key equality comparer based on potentially slow EqualityComparer<Key>.Default. To avoid this, provide a comparer (IFasterEqualityComparer<Key>) as an argument to FASTER's constructor, or make Key implement the interface IFasterEqualityComparer<Key>");
