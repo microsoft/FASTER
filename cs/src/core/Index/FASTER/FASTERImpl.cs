@@ -512,7 +512,6 @@ namespace FASTER.core
                                    long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var recordSize = default(int);
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
@@ -1348,7 +1347,6 @@ namespace FASTER.core
                                     FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var recordSize = default(int);
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
@@ -1402,26 +1400,27 @@ namespace FASTER.core
                     }
                 }
 
+                int actualSize, allocatedSize;
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
-                    recordSize = hlog.GetInitialRecordSize(ref key, ref pendingContext.input.Get(), fasterSession);
+                    (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref pendingContext.input.Get(), fasterSession);
                 }
                 else
                 {
                     physicalAddress = (long)request.record.GetValidPointer();
-                    recordSize = hlog.GetRecordSize(physicalAddress, ref pendingContext.input.Get(), fasterSession);
+                    (actualSize, allocatedSize) = hlog.GetRecordSize(physicalAddress, ref pendingContext.input.Get(), fasterSession);
                 }
-                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
+                BlockAllocate(actualSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                                true, false, false,
                                latestLogicalAddress);
-                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+                hlog.Serialize(ref key, newPhysicalAddress);
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
                     fasterSession.InitialUpdater(ref key,
                                              ref pendingContext.input.Get(),
-                                             ref hlog.GetValue(newPhysicalAddress));
+                                             ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                     status = OperationStatus.NOTFOUND;
                 }
                 else
@@ -1429,7 +1428,7 @@ namespace FASTER.core
                     fasterSession.CopyUpdater(ref key,
                                           ref pendingContext.input.Get(),
                                           ref hlog.GetContextRecordValue(ref request),
-                                          ref hlog.GetValue(newPhysicalAddress));
+                                          ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                     status = OperationStatus.SUCCESS;
                 }
 

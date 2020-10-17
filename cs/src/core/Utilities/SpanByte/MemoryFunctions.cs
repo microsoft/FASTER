@@ -29,7 +29,11 @@ namespace FASTER.core
         ///<inheritdoc/>
         public override bool ConcurrentWriter(ref Memory<byte> key, ref Memory<byte> src, ref Memory<byte> dst)
         {
-            if (dst.Length < src.Length) return false;
+            // We can using the existing destination Memory<byte> if there is space, this 
+            // extension method adjusts the length header and zeroes out the extra space 
+            // on the FASTER log. The Memory<byte> reference's length itself is not updated
+            // as it is a read-only field.
+            if (!dst.ShrinkSerializedLength(src.Length)) return false;
             src.CopyTo(dst);
             return true;
         }
