@@ -49,9 +49,11 @@ namespace FASTER.core
     internal class VarLenHeapContainer<T> : IHeapContainer<T>
     {
         readonly SectorAlignedMemory mem;
+        readonly IVariableLengthStruct<T> varLenStruct;
 
         public unsafe VarLenHeapContainer(ref T obj, IVariableLengthStruct<T> varLenStruct, SectorAlignedBufferPool pool)
         {
+            this.varLenStruct = varLenStruct;
             var len = varLenStruct.GetLength(ref obj);
             mem = pool.Get(len);
             varLenStruct.Serialize(ref obj, mem.GetValidPointer());
@@ -59,7 +61,7 @@ namespace FASTER.core
 
         public unsafe ref T Get()
         {
-            return ref Unsafe.AsRef<T>(mem.GetValidPointer());
+            return ref varLenStruct.AsRef(mem.GetValidPointer());
         }
 
         public void Dispose()

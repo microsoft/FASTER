@@ -23,6 +23,8 @@ namespace FASTER.core
                 return new GuidFasterEqualityComparer() as IFasterEqualityComparer<T>;
             else if (typeof(T) == typeof(SpanByte))
                 return new SpanByteComparer() as IFasterEqualityComparer<T>;
+            else if (typeof(T) == typeof(Memory<byte>))
+                return new MemoryComparer() as IFasterEqualityComparer<T>;
 
             else
             {

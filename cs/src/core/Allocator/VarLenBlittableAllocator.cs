@@ -77,9 +77,10 @@ namespace FASTER.core
             return ref ValueLength.AsRef((byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress));
         }
 
-        public override ref Value GetValue(long physicalAddress, long endPhysicalAddress)
+        public override ref Value GetAllocatedValue(long physicalAddress, ref Value value)
         {
-            return ref ValueLength.AsRef((byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress), (void*)endPhysicalAddress);
+            var src = (byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress);
+            return ref ValueLength.AsRef(src, src + ValueLength.GetLength(ref value));
         }
 
         private int KeySize(long physicalAddress)
@@ -103,15 +104,17 @@ namespace FASTER.core
             return size;
         }
 
-        public override int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
         {
             ref var recordInfo = ref GetInfo(physicalAddress);
             if (recordInfo.IsNull())
-                return RecordInfo.GetLength();
+            {
+                var l = RecordInfo.GetLength();
+                return (l, l);
+            }
 
             var size = RecordInfo.GetLength() + KeySize(physicalAddress) + fasterSession.GetLength(ref GetValue(physicalAddress), ref input);
-            size = (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
-            return size;
+            return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
         public override int GetRequiredRecordSize(long physicalAddress, int availableBytes)
@@ -144,22 +147,22 @@ namespace FASTER.core
                 ValueLength.GetInitialLength();
         }
 
-        public override int GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
+        public override (int, int) GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
         {
             var actualSize = RecordInfo.GetLength() +
                 KeyLength.GetLength(ref key) +
                 fasterSession.GetInitialLength(ref input);
 
-            return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
+            return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
-        public override int GetRecordSize(ref Key key, ref Value value)
+        public override (int, int) GetRecordSize(ref Key key, ref Value value)
         {
             var actualSize = RecordInfo.GetLength() +
                 KeyLength.GetLength(ref key) +
                 ValueLength.GetLength(ref value);
 
-            return (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
+            return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
         public override void Serialize(ref Key src, long physicalAddress)

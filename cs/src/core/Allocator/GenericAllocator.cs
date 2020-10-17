@@ -150,9 +150,9 @@ namespace FASTER.core
             return recordSize;
         }
 
-        public override int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
         public override int GetAverageRecordSize()
@@ -160,14 +160,14 @@ namespace FASTER.core
             return recordSize;
         }
 
-        public override int GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+        public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
-        public override int GetRecordSize(ref Key key, ref Value value)
+        public override (int, int) GetRecordSize(ref Key key, ref Value value)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
         /// <summary>

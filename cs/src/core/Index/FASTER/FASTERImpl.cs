@@ -392,8 +392,8 @@ namespace FASTER.core
         CreateNewRecord:
             {
                 // Immutable region or new record
-                var recordSize = hlog.GetRecordSize(ref key, ref value);
-                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
+                var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
+                BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version,
@@ -401,7 +401,7 @@ namespace FASTER.core
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key, ref value,
-                                       ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + recordSize));
+                                       ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -717,33 +717,33 @@ namespace FASTER.core
                     }
                 }
 
-                recordSize = (logicalAddress < hlog.BeginAddress) ?
+                var (actualSize, allocatedSize) = (logicalAddress < hlog.BeginAddress) ?
                                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
                                 hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
-                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
+                BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
                                 true, false, false,
                                 latestLogicalAddress);
-                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+                hlog.Serialize(ref key, newPhysicalAddress);
 
                 if (logicalAddress < hlog.BeginAddress)
                 {
-                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                     status = OperationStatus.NOTFOUND;
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
                     if (hlog.GetInfo(physicalAddress).Tombstone)
                     {
-                        fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress));
+                        fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                         status = OperationStatus.NOTFOUND;
                     }
                     else
                     {
                         fasterSession.CopyUpdater(ref key, ref input,
                                                 ref hlog.GetValue(physicalAddress),
-                                                ref hlog.GetValue(newPhysicalAddress));
+                                                ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                         status = OperationStatus.SUCCESS;
                     }
                 }
@@ -1017,8 +1017,8 @@ namespace FASTER.core
                 var value = default(Value);
                 // Immutable region or new record
                 // Allocate default record size for tombstone
-                var recordSize = hlog.GetRecordSize(ref key, ref value);
-                BlockAllocate(recordSize, out long newLogicalAddress, sessionCtx, fasterSession);
+                var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
+                BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version,

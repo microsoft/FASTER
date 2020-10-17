@@ -111,16 +111,14 @@ namespace StoreVarLenTypes
             // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
             var store = new FasterKV<Memory<byte>, Memory<byte>>(
                 size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 },
-                comparer: new MemoryComparer(),
-                variableLengthStructSettings: new VariableLengthStructSettings<Memory<byte>, Memory<byte>> { keyLength = new MemoryVarLenStruct(), valueLength = new MemoryVarLenStruct() });
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
             // Create session
-            var s = store.For(new MemoryFunctions()).NewSession<MemoryFunctions>();
+            var s = store.For(new MyMemoryFunctions()).NewSession<MemoryFunctions>();
 
             Random r = new Random(100);
 
-            for (byte i = 0; i < 100; i++)
+            for (byte i = 0; i < 200; i++)
             {
                 var keyLen = r.Next(1, 1000);
                 var key = new Memory<byte>(new byte[keyLen]);
@@ -137,7 +135,7 @@ namespace StoreVarLenTypes
             bool success = true;
 
             r = new Random(100);
-            for (byte i = 0; i < 100; i++)
+            for (byte i = 0; i < 200; i++)
             {
                 var keyLen = r.Next(1, 1000);
                 var key = new Memory<byte>(new byte[keyLen]);

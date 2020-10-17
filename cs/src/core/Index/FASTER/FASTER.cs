@@ -132,69 +132,10 @@ namespace FASTER.core
                 UseReadCache = true;
             }
 
-            if ((Utility.IsBlittable<Key>() && Utility.IsBlittable<Value>()) || (variableLengthStructSettings != null))
-            {
-                var sbl = new SpanByteLength();
+            UpdateVarLen(ref variableLengthStructSettings);
 
-                if (typeof(Key) == typeof(SpanByte))
-                {
-                    if (variableLengthStructSettings == null)
-                        variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, SpanByte>() as VariableLengthStructSettings<Key, Value>;
-
-                    if (variableLengthStructSettings.keyLength == null)
-                        (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = sbl;
-                }
-
-                if (typeof(Value) == typeof(SpanByte))
-                {
-                    if (variableLengthStructSettings == null)
-                        variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, SpanByte>() as VariableLengthStructSettings<Key, Value>;
-
-                    if (variableLengthStructSettings.valueLength == null)
-                        (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = sbl;
-                }
-
-                if (variableLengthStructSettings != null)
-                {
-                    hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
-                        this.comparer, null, epoch);
-                    Log = new LogAccessor<Key, Value>(this, hlog);
-                    if (UseReadCache)
-                    {
-                        readcache = new VariableLengthBlittableAllocator<Key, Value>(
-                            new LogSettings
-                            {
-                                LogDevice = new NullDevice(),
-                                PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                                MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                                SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                                MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                            }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
-                        readcache.Initialize();
-                        ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                    }
-                }
-                else
-                {
-                    hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
-                    Log = new LogAccessor<Key, Value>(this, hlog);
-                    if (UseReadCache)
-                    {
-                        readcache = new BlittableAllocator<Key, Value>(
-                            new LogSettings
-                            {
-                                LogDevice = new NullDevice(),
-                                PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                                MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                                SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                                MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                            }, this.comparer, ReadCacheEvict, epoch);
-                        readcache.Initialize();
-                        ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                    }
-                }
-            }
-            else
+            if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength == null) ||
+                (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength == null))
             {
                 WriteDefaultOnDelete = true;
 
@@ -216,6 +157,45 @@ namespace FASTER.core
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
             }
+            else if (variableLengthStructSettings != null)
+            {
+                hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
+                    this.comparer, null, epoch);
+                Log = new LogAccessor<Key, Value>(this, hlog);
+                if (UseReadCache)
+                {
+                    readcache = new VariableLengthBlittableAllocator<Key, Value>(
+                        new LogSettings
+                        {
+                            LogDevice = new NullDevice(),
+                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
+                        }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
+                    readcache.Initialize();
+                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
+                }
+            }
+            else
+            {
+                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
+                Log = new LogAccessor<Key, Value>(this, hlog);
+                if (UseReadCache)
+                {
+                    readcache = new BlittableAllocator<Key, Value>(
+                        new LogSettings
+                        {
+                            LogDevice = new NullDevice(),
+                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
+                        }, this.comparer, ReadCacheEvict, epoch);
+                    readcache.Initialize();
+                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
+                }
+            }
 
             hlog.Initialize();
 
@@ -225,6 +205,45 @@ namespace FASTER.core
             systemState = default;
             systemState.phase = Phase.REST;
             systemState.version = 1;
+        }
+
+        private void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        {
+            if (typeof(Key) == typeof(SpanByte))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, Value>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.keyLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = new SpanByteLength();
+            }
+
+            if (typeof(Value) == typeof(SpanByte))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, SpanByte>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.valueLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = new SpanByteLength();
+            }
+
+            if (typeof(Key) == typeof(Memory<byte>))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Memory<byte>, Value>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.keyLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<Memory<byte>, Value>).keyLength = new MemoryVarLenStruct();
+            }
+
+            if (typeof(Value) == typeof(Memory<byte>))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Memory<byte>>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.valueLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<Key, Memory<byte>>).valueLength = new MemoryVarLenStruct();
+            }
         }
 
         /// <summary>

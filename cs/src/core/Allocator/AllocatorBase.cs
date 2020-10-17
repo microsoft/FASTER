@@ -307,7 +307,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public abstract (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
             where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
@@ -331,7 +331,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract int GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+        public abstract (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
             where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
@@ -340,7 +340,7 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public abstract int GetRecordSize(ref Key key, ref Value value);
+        public abstract (int, int) GetRecordSize(ref Key key, ref Value value);
 
         /// <summary>
         /// Allocate page
