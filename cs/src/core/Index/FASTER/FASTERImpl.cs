@@ -1410,7 +1410,7 @@ namespace FASTER.core
                     physicalAddress = (long)request.record.GetValidPointer();
                     (actualSize, allocatedSize) = hlog.GetRecordSize(physicalAddress, ref pendingContext.input.Get(), fasterSession);
                 }
-                BlockAllocate(actualSize, out long newLogicalAddress, sessionCtx, fasterSession);
+                BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                                true, false, false,
