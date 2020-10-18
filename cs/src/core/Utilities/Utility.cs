@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -35,6 +36,13 @@ namespace FASTER.core
         {
             T[] arr = new T[2];
             return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
+        }
+
+        internal static bool IsBlittableType(Type t)
+        {
+            var mi = typeof(Utility).GetMethod("IsBlittable", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.InvokeMethod);
+            var fooRef = mi.MakeGenericMethod(t);
+            return (bool)fooRef.Invoke(null, null);
         }
 
         /// <summary>

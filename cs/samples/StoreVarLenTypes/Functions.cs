@@ -37,7 +37,7 @@ namespace StoreVarLenTypes
     /// Callback functions for FASTER operations. We use byte arrays as output for simplicity. To avoid byte array 
     /// allocation, use SpanByteFunctions[Empty], which uses SpanByteMemory as output type.
     /// </summary>
-    public sealed class MyMemoryFunctions : MemoryFunctions<ReadOnlyMemory<byte>>
+    public sealed class MyMemoryFunctions : MemoryFunctions<ReadOnlyMemory<byte>, byte>
     {
         public MyMemoryFunctions(MemoryPool<byte> memoryPool = default)
             : base(memoryPool) { }

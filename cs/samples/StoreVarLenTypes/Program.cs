@@ -3,7 +3,6 @@
 
 using FASTER.core;
 using System;
-using System.Buffers;
 using System.Linq;
 
 namespace StoreVarLenTypes
@@ -26,79 +25,8 @@ namespace StoreVarLenTypes
         {
             MemoryByteSample();
             SpanByteSample();
-            return;
-        }
 
-        static void SpanByteSample()
-        {
-            // VarLen types do not need an object log
-            var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
-
-            // Create store
-            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
-            var store = new FasterKV<SpanByte, SpanByte>(
-                size: 1L << 20, 
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
-            
-            // Create session
-            var s = store.For(new Functions()).NewSession<Functions>();
-
-            Random r = new Random(100);
-
-            for (byte i = 0; i < 200; i++)
-            {
-                var keyLen = r.Next(1, 1000);
-                Span<byte> key = stackalloc byte[keyLen];
-                key.Fill(i);
-
-                var valLen = r.Next(1, 1000);
-                Span<byte> value = stackalloc byte[valLen];
-                value.Fill((byte)valLen);
-
-                // Option 1: Using overload for Span<byte>
-                s.Upsert(key, value);
-            }
-
-            bool success = true;
-            
-            r = new Random(100);
-            for (byte i = 0; i < 200; i++)
-            {
-                var keyLen = r.Next(1,1000);
-                Span<byte> keyData = stackalloc byte[keyLen];
-                keyData.Fill(i);
-
-                // Option 2: Converting fixed Span<byte> to SpanByte
-                var status = s.Read(SpanByte.FromFixedSpan(keyData), out byte[] output);
-
-                var valLen = r.Next(1, 1000);
-                Span<byte> expectedValue = stackalloc byte[valLen];
-                expectedValue.Fill((byte)valLen);
-
-                if (status == Status.PENDING)
-                {
-                    s.CompletePending(true);
-                }
-                else
-                {
-                    if ((status != Status.OK) || (!output.SequenceEqual(expectedValue.ToArray())))
-                    {
-                        success = false;
-                        break;
-                    }
-                }
-            }
-
-            if (success)
-                Console.WriteLine("Success!");
-            else
-                Console.WriteLine("Error!");
-
-            s.Dispose();
-            store.Dispose();
-            log.Dispose();
-
-            Console.WriteLine("Press <ENTER> to end");
+            Console.WriteLine("Press <ENTER>");
             Console.ReadLine();
         }
 
@@ -117,18 +45,19 @@ namespace StoreVarLenTypes
             var s = store.For(new MyMemoryFunctions()).NewSession<MyMemoryFunctions>();
 
             Random r = new Random(100);
+            var keyMem = new Memory<byte>(new byte[1000]);
+            var valueMem = new Memory<byte>(new byte[1000]);
 
             for (byte i = 0; i < 200; i++)
             {
                 var keyLen = r.Next(1, 1000);
-                var key = new Memory<byte>(new byte[keyLen]);
+                var key = keyMem.Slice(0, keyLen);
                 key.Span.Fill(i);
 
                 var valLen = r.Next(1, 1000);
-                var value = new Memory<byte>(new byte[valLen]);
+                var value = valueMem.Slice(0, valLen);
                 value.Span.Fill((byte)valLen);
 
-                // Option 1: Using overload for Span<byte>
                 s.Upsert(key, value);
             }
 
@@ -138,14 +67,13 @@ namespace StoreVarLenTypes
             for (byte i = 0; i < 200; i++)
             {
                 var keyLen = r.Next(1, 1000);
-                var key = new Memory<byte>(new byte[keyLen]);
+                var key = keyMem.Slice(0, keyLen);
                 key.Span.Fill(i);
 
-                // Option 2: Converting fixed Span<byte> to SpanByte
                 var status = s.Read(key, out var output);
 
                 var valLen = r.Next(1, 1000);
-                var expectedValue = new Memory<byte>(new byte[valLen]);
+                var expectedValue = valueMem.Slice(0, valLen);
                 expectedValue.Span.Fill((byte)valLen);
 
                 if (status == Status.PENDING)
@@ -172,9 +100,78 @@ namespace StoreVarLenTypes
             s.Dispose();
             store.Dispose();
             log.Dispose();
+        }
 
-            Console.WriteLine("Press <ENTER> to end");
-            Console.ReadLine();
+        static void SpanByteSample()
+        {
+            // VarLen types do not need an object log
+            var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
+
+            // Create store
+            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
+            var store = new FasterKV<SpanByte, SpanByte>(
+                size: 1L << 20,
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+
+            // Create session
+            var s = store.For(new Functions()).NewSession<Functions>();
+
+            Random r = new Random(100);
+            Span<byte> keyMem = stackalloc byte[1000];
+            Span<byte> valueMem = stackalloc byte[1000];
+
+            for (byte i = 0; i < 200; i++)
+            {
+                var keyLen = r.Next(1, 1000);
+                var key = keyMem.Slice(0, keyLen);
+                key.Fill(i);
+
+                var valLen = r.Next(1, 1000);
+                var value = valueMem.Slice(0, valLen);
+                value.Fill((byte)valLen);
+
+                // Option 1: Using overload for Span<byte>
+                s.Upsert(key, value);
+            }
+
+            bool success = true;
+
+            r = new Random(100);
+            for (byte i = 0; i < 200; i++)
+            {
+                var keyLen = r.Next(1, 1000);
+                Span<byte> key = keyMem.Slice(0, keyLen);
+                key.Fill(i);
+
+                // Option 2: Converting fixed Span<byte> to SpanByte
+                var status = s.Read(SpanByte.FromFixedSpan(key), out byte[] output);
+
+                var valLen = r.Next(1, 1000);
+                var expectedValue = valueMem.Slice(0, valLen);
+                expectedValue.Fill((byte)valLen);
+
+                if (status == Status.PENDING)
+                {
+                    s.CompletePending(true);
+                }
+                else
+                {
+                    if ((status != Status.OK) || (!output.SequenceEqual(expectedValue.ToArray())))
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+            }
+
+            if (success)
+                Console.WriteLine("Success!");
+            else
+                Console.WriteLine("Error!");
+
+            s.Dispose();
+            store.Dispose();
+            log.Dispose();
         }
     }
 }

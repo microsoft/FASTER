@@ -1,43 +1,48 @@
 ﻿
 using System;
+using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
     /// <summary>
-    /// FASTER comparer for Memory&lt;byte&gt;
+    /// FASTER comparer for Memory&lt;T&gt;, for unmanaged type T
     /// </summary>
-    public struct MemoryComparer : IFasterEqualityComparer<Memory<byte>>
+    public struct MemoryComparer<T> : IFasterEqualityComparer<Memory<T>>
+        where T : unmanaged
     {
         ///<inheritdoc/>
-        public unsafe long GetHashCode64(ref Memory<byte> k)
+        public unsafe long GetHashCode64(ref Memory<T> k)
         {
-            fixed (byte* ptr = k.Span)
-                return Utility.HashBytes(ptr, k.Length);
+            fixed (T* ptr = k.Span)
+                return Utility.HashBytes((byte*)ptr, k.Length*sizeof(T));
         }
 
         ///<inheritdoc/>
-        public unsafe bool Equals(ref Memory<byte> k1, ref Memory<byte> k2)
+        public unsafe bool Equals(ref Memory<T> k1, ref Memory<T> k2)
         {
-            return k1.Span.SequenceEqual(k2.Span);
+            return MemoryMarshal.Cast<T, byte>(k1.Span)
+                .SequenceEqual(MemoryMarshal.Cast<T, byte>(k2.Span));
         }
     }
 
     /// <summary>
-    /// FASTER comparer for Memory&lt;byte&gt;
+    /// FASTER comparer for ReadOnlyMemory&lt;T&gt;, for unmanaged type T
     /// </summary>
-    public struct ReadOnlyMemoryComparer : IFasterEqualityComparer<ReadOnlyMemory<byte>>
+    public struct ReadOnlyMemoryComparer<T> : IFasterEqualityComparer<ReadOnlyMemory<T>>
+        where T : unmanaged
     {
         ///<inheritdoc/>
-        public unsafe long GetHashCode64(ref ReadOnlyMemory<byte> k)
+        public unsafe long GetHashCode64(ref ReadOnlyMemory<T> k)
         {
-            fixed (byte* ptr = k.Span)
-                return Utility.HashBytes(ptr, k.Length);
+            fixed (T* ptr = k.Span)
+                return Utility.HashBytes((byte*)ptr, k.Length * sizeof(T));
         }
 
         ///<inheritdoc/>
-        public unsafe bool Equals(ref ReadOnlyMemory<byte> k1, ref ReadOnlyMemory<byte> k2)
+        public unsafe bool Equals(ref ReadOnlyMemory<T> k1, ref ReadOnlyMemory<T> k2)
         {
-            return k1.Span.SequenceEqual(k2.Span);
+            return MemoryMarshal.Cast<T, byte>(k1.Span)
+                .SequenceEqual(MemoryMarshal.Cast<T, byte>(k2.Span));
         }
     }
 }

@@ -5,29 +5,30 @@ using System.Buffers;
 namespace FASTER.core
 {
     /// <summary>
-    /// IFunctions implementation for Memory&lt;byte&gt; values
+    /// IFunctions implementation for Memory&lt;T&gt; values, for blittable (unmanaged) type T
     /// </summary>
-    public class MemoryFunctions<Key> : FunctionsBase<Key, Memory<byte>, Memory<byte>, (IMemoryOwner<byte>, int), Empty>
+    public class MemoryFunctions<Key, T> : FunctionsBase<Key, Memory<T>, Memory<T>, (IMemoryOwner<T>, int), Empty>
+        where T : unmanaged
     {
-        readonly MemoryPool<byte> memoryPool;
+        readonly MemoryPool<T> memoryPool;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        public MemoryFunctions(MemoryPool<byte> memoryPool = default)
+        public MemoryFunctions(MemoryPool<T> memoryPool = default)
         {
-            this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
+            this.memoryPool = memoryPool ?? MemoryPool<T>.Shared;
         }
 
         ///<inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Memory<byte> src, ref Memory<byte> dst)
+        public override void SingleWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst)
         {
             src.CopyTo(dst);
         }
 
         ///<inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Memory<byte> src, ref Memory<byte> dst)
+        public override bool ConcurrentWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst)
         {
             // We can using the existing destination Memory<byte> if there is space, this 
             // extension method adjusts the length header and zeroes out the extra space 
@@ -39,7 +40,7 @@ namespace FASTER.core
         }
 
         ///<inheritdoc/>
-        public override void SingleReader(ref Key key, ref Memory<byte> input, ref Memory<byte> value, ref (IMemoryOwner<byte>, int) dst)
+        public override void SingleReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
@@ -47,7 +48,7 @@ namespace FASTER.core
         }
 
         ///<inheritdoc/>
-        public override void ConcurrentReader(ref Key key, ref Memory<byte> input, ref Memory<byte> value, ref (IMemoryOwner<byte>, int) dst)
+        public override void ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;

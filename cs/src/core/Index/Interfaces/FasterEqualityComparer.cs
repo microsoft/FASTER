@@ -24,10 +24,18 @@ namespace FASTER.core
                 return new GuidFasterEqualityComparer() as IFasterEqualityComparer<T>;
             else if (t == typeof(SpanByte))
                 return new SpanByteComparer() as IFasterEqualityComparer<T>;
-            else if (t == typeof(Memory<byte>))
-                return new MemoryComparer() as IFasterEqualityComparer<T>;
-            else if (t == typeof(ReadOnlyMemory<byte>))
-                return new ReadOnlyMemoryComparer() as IFasterEqualityComparer<T>;
+            else if ((t.GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(t.GetGenericArguments()[0]))
+            {
+                var m = typeof(MemoryComparer<>).MakeGenericType(t.GetGenericArguments());
+                object o = Activator.CreateInstance(m);
+                return o as IFasterEqualityComparer<T>;
+            }
+            else if ((t.GetGenericTypeDefinition()== typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(t.GetGenericArguments()[0]))
+            {
+                var m = typeof(ReadOnlyMemoryComparer<>).MakeGenericType(t.GetGenericArguments());
+                object o = Activator.CreateInstance(m);
+                return o as IFasterEqualityComparer<T>;
+            }
             else
             {
                 Debug.WriteLine("***WARNING*** Creating default FASTER key equality comparer based on potentially slow EqualityComparer<Key>.Default. To avoid this, provide a comparer (IFasterEqualityComparer<Key>) as an argument to FASTER's constructor, or make Key implement the interface IFasterEqualityComparer<Key>");

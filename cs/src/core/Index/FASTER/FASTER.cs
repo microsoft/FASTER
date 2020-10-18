@@ -207,59 +207,6 @@ namespace FASTER.core
             systemState.version = 1;
         }
 
-        private void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
-        {
-            if (typeof(Key) == typeof(SpanByte))
-            {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, Value>() as VariableLengthStructSettings<Key, Value>;
-
-                if (variableLengthStructSettings.keyLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = new SpanByteLength();
-            }
-            else if (typeof(Key) == typeof(Memory<byte>))
-            {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Memory<byte>, Value>() as VariableLengthStructSettings<Key, Value>;
-
-                if (variableLengthStructSettings.keyLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<Memory<byte>, Value>).keyLength = new MemoryVarLenStruct();
-            }
-            else if (typeof(Key) == typeof(ReadOnlyMemory<byte>))
-            {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<ReadOnlyMemory<byte>, Value>() as VariableLengthStructSettings<Key, Value>;
-
-                if (variableLengthStructSettings.keyLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<ReadOnlyMemory<byte>, Value>).keyLength = new ReadOnlyMemoryVarLenStruct();
-            }
-
-            if (typeof(Value) == typeof(SpanByte))
-            {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, SpanByte>() as VariableLengthStructSettings<Key, Value>;
-
-                if (variableLengthStructSettings.valueLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = new SpanByteLength();
-            }
-            else if (typeof(Value) == typeof(Memory<byte>))
-            {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Memory<byte>>() as VariableLengthStructSettings<Key, Value>;
-
-                if (variableLengthStructSettings.valueLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<Key, Memory<byte>>).valueLength = new MemoryVarLenStruct();
-            }
-            else if (typeof(Value) == typeof(ReadOnlyMemory<byte>))
-            {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, ReadOnlyMemory<byte>>() as VariableLengthStructSettings<Key, Value>;
-
-                if (variableLengthStructSettings.valueLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<Key, ReadOnlyMemory<byte>>).valueLength = new ReadOnlyMemoryVarLenStruct();
-            }
-        }
-
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>
@@ -624,6 +571,75 @@ namespace FASTER.core
             readcache?.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
+        }
+
+        private void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        {
+            if (typeof(Key) == typeof(SpanByte))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, Value>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.keyLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = new SpanByteLength();
+            }
+            else if ((typeof(Key).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0]))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+
+                if (variableLengthStructSettings.keyLength == null)
+                {
+                    var m = typeof(MemoryVarLenStruct<>).MakeGenericType(typeof(Key).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStructSettings.keyLength = o as IVariableLengthStruct<Key>;
+                }
+            }
+            else if ((typeof(Key).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0]))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+
+                if (variableLengthStructSettings.keyLength == null)
+                {
+                    var m = typeof(ReadOnlyMemoryVarLenStruct<>).MakeGenericType(typeof(Key).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStructSettings.keyLength = o as IVariableLengthStruct<Key>;
+                }
+            }
+
+            if (typeof(Value) == typeof(SpanByte))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, SpanByte>() as VariableLengthStructSettings<Key, Value>;
+
+                if (variableLengthStructSettings.valueLength == null)
+                    (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = new SpanByteLength();
+            }
+            else if ((typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+
+                if (variableLengthStructSettings.valueLength == null)
+                {
+                    var m = typeof(MemoryVarLenStruct<>).MakeGenericType(typeof(Value).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStructSettings.valueLength = o as IVariableLengthStruct<Value>;
+                }
+            }
+            else if ((typeof(Value).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
+            {
+                if (variableLengthStructSettings == null)
+                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+
+                if (variableLengthStructSettings.valueLength == null)
+                {
+                    var m = typeof(ReadOnlyMemoryVarLenStruct<>).MakeGenericType(typeof(Value).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStructSettings.valueLength = o as IVariableLengthStruct<Value>;
+                }
+            }
         }
     }
 }

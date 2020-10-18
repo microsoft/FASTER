@@ -1,133 +1,136 @@
 ﻿
 using System;
+using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
     /// <summary>
-    /// IVariableLengthStruct implementation for Memory&lt;byte&gt;
+    /// IVariableLengthStruct implementation for Memory&lt;T&gt; where T is unmanaged
     /// </summary>
-    public class MemoryVarLenStruct : IVariableLengthStruct<Memory<byte>>
+    public class MemoryVarLenStruct<T> : IVariableLengthStruct<Memory<T>> where T : unmanaged
     {
         ///<inheritdoc/>
         public int GetInitialLength()
         {
-            return 2 * sizeof(int);
+            return sizeof(int);
         }
 
         ///<inheritdoc/>
-        public int GetLength(ref Memory<byte> t)
+        public unsafe int GetLength(ref Memory<T> t)
         {
-            return sizeof(int) + t.Length;
+            return sizeof(int) + t.Length*sizeof(T);
         }
 
         ///<inheritdoc/>
-        public unsafe void Serialize(ref Memory<byte> source, void* destination)
+        public unsafe void Serialize(ref Memory<T> source, void* destination)
         {
-            *(int*)destination = source.Length;
-            source.Span.CopyTo(new Span<byte>((byte*)destination + sizeof(int), source.Length));
+            *(int*)destination = source.Length*sizeof(T);
+            MemoryMarshal.Cast<T, byte>(source.Span)
+                .CopyTo(new Span<byte>((byte*)destination + sizeof(int), source.Length*sizeof(T)));
         }
 
         [ThreadStatic]
-        static UnmanagedMemoryManager<byte> manager;
+        static UnmanagedMemoryManager<T> manager;
 
         [ThreadStatic]
-        static Memory<byte>[] obj;
+        static Memory<T>[] obj;
 
         [ThreadStatic]
         static int count;
 
         ///<inheritdoc/>
-        public unsafe ref Memory<byte> AsRef(void* source)
+        public unsafe ref Memory<T> AsRef(void* source)
         {
             if (manager == null)
             {
-                manager = new UnmanagedMemoryManager<byte>();
-                obj = new Memory<byte>[4];
+                manager = new UnmanagedMemoryManager<T>();
+                obj = new Memory<T>[4];
             }
-            manager.SetDestination((byte*)source + sizeof(int), *(int*)source);
+            manager.SetDestination((T*)((byte*)source + sizeof(int)), (*(int*)source)/sizeof(T));
             count = (count + 1) % 4;
             obj[count] = manager.Memory;
             return ref obj[count];
         }
 
         ///<inheritdoc/>
-        public unsafe ref Memory<byte> AsRef(void* source, void* end)
+        public unsafe ref Memory<T> AsRef(void* source, void* end)
         {
             if (manager == null)
             {
-                manager = new UnmanagedMemoryManager<byte>();
-                obj = new Memory<byte>[4];
+                manager = new UnmanagedMemoryManager<T>();
+                obj = new Memory<T>[4];
             }
             int len = (int)end - (int)source - sizeof(int);
             *(int*)source = len;
-            manager.SetDestination((byte*)source + sizeof(int), len);
+            manager.SetDestination((T*)((byte*)source + sizeof(int)), len / sizeof(T));
             count = (count + 1) % 4;
             obj[count] = manager.Memory;
             return ref obj[count];
         }
     }
-
     /// <summary>
-    /// IVariableLengthStruct implementation for Memory&lt;byte&gt;
+    /// IVariableLengthStruct implementation for ReadOnlyMemory&lt;T&gt; where T is unmanaged
     /// </summary>
-    public class ReadOnlyMemoryVarLenStruct : IVariableLengthStruct<ReadOnlyMemory<byte>>
+    public class ReadOnlyMemoryVarLenStruct<T> : IVariableLengthStruct<ReadOnlyMemory<T>> where T : unmanaged
     {
         ///<inheritdoc/>
         public int GetInitialLength()
         {
-            return 2 * sizeof(int);
+            return sizeof(int);
         }
 
         ///<inheritdoc/>
-        public int GetLength(ref ReadOnlyMemory<byte> t)
+        public unsafe int GetLength(ref ReadOnlyMemory<T> t)
         {
-            return sizeof(int) + t.Length;
+            return sizeof(int) + t.Length * sizeof(T);
         }
 
         ///<inheritdoc/>
-        public unsafe void Serialize(ref ReadOnlyMemory<byte> source, void* destination)
+        public unsafe void Serialize(ref ReadOnlyMemory<T> source, void* destination)
         {
-            *(int*)destination = source.Length;
-            source.Span.CopyTo(new Span<byte>((byte*)destination + sizeof(int), source.Length));
+            *(int*)destination = source.Length * sizeof(T);
+            MemoryMarshal.Cast<T, byte>(source.Span)
+                .CopyTo(new Span<byte>((byte*)destination + sizeof(int), source.Length * sizeof(T)));
         }
 
         [ThreadStatic]
-        static UnmanagedMemoryManager<byte> manager;
+        static UnmanagedMemoryManager<T> manager;
 
         [ThreadStatic]
-        static ReadOnlyMemory<byte>[] obj;
+        static ReadOnlyMemory<T>[] obj;
 
         [ThreadStatic]
         static int count;
 
         ///<inheritdoc/>
-        public unsafe ref ReadOnlyMemory<byte> AsRef(void* source)
+        public unsafe ref ReadOnlyMemory<T> AsRef(void* source)
         {
             if (manager == null)
             {
-                manager = new UnmanagedMemoryManager<byte>();
-                obj = new ReadOnlyMemory<byte>[4];
+                manager = new UnmanagedMemoryManager<T>();
+                obj = new ReadOnlyMemory<T>[4];
             }
-            manager.SetDestination((byte*)source + sizeof(int), *(int*)source);
+            manager.SetDestination((T*)((byte*)source + sizeof(int)), (*(int*)source) / sizeof(T));
             count = (count + 1) % 4;
             obj[count] = manager.Memory;
             return ref obj[count];
         }
 
         ///<inheritdoc/>
-        public unsafe ref ReadOnlyMemory<byte> AsRef(void* source, void* end)
+        public unsafe ref ReadOnlyMemory<T> AsRef(void* source, void* end)
         {
             if (manager == null)
             {
-                manager = new UnmanagedMemoryManager<byte>();
-                obj = new ReadOnlyMemory<byte>[4];
+                manager = new UnmanagedMemoryManager<T>();
+                obj = new ReadOnlyMemory<T>[4];
             }
             int len = (int)end - (int)source - sizeof(int);
             *(int*)source = len;
-            manager.SetDestination((byte*)source + sizeof(int), len);
+            manager.SetDestination((T*)((byte*)source + sizeof(int)), len / sizeof(T));
             count = (count + 1) % 4;
             obj[count] = manager.Memory;
             return ref obj[count];
         }
     }
+
 }
