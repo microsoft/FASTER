@@ -168,7 +168,7 @@ namespace FASTER.test.readaddress
 
                     for (int lap = 9; /* tested in loop */; --lap)
                     {
-                        var status = session.Read(ref key, ref input, ref output, recordInfo.PreviousAddress, out recordInfo, context, serialNo: maxLap + 1);
+                        var status = session.Read(ref key, ref input, ref output, ref recordInfo, context, serialNo: maxLap + 1);
                         if (status == Status.PENDING)
                         {
                             // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
