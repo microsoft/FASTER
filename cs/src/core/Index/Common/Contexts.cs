@@ -83,6 +83,8 @@ namespace FASTER.core
             internal long serialNum;
             internal HashBucketEntry entry;
             internal LatchOperation heldLatch;
+
+            internal bool skipKeyVerification;
             internal RecordInfo recordInfo;
 
             public void Dispose()

@@ -118,7 +118,7 @@ namespace FASTER.core
                             goto CreatePendingContext; // Pivot thread
                         }
 
-                        // This is not called when looking up by address, so we do not set session.Ctx.recordInfo.
+                        // This is not called when looking up by address, so we do not set pendingContext.recordInfo.
                         fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output);
                         return OperationStatus.SUCCESS;
                     }
@@ -128,14 +128,21 @@ namespace FASTER.core
                 {
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
-                    if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                    if (!pendingContext.skipKeyVerification)
                     {
-                        logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
-                        TraceBackForKeyMatch(ref key,
-                                                logicalAddress,
-                                                hlog.HeadAddress,
-                                                out logicalAddress,
-                                                out physicalAddress);
+                        if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                        {
+                            logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                            TraceBackForKeyMatch(ref key,
+                                                    logicalAddress,
+                                                    hlog.HeadAddress,
+                                                    out logicalAddress,
+                                                    out physicalAddress);
+                        }
+                    } else
+                    {
+                        // If skipKeyVerification, we do not have the key in the call and must use the key from the record.
+                        key = ref hlog.GetKey(physicalAddress);
                     }
                 }
             }
@@ -219,7 +226,8 @@ namespace FASTER.core
         CreatePendingContext:
             {
                 pendingContext.type = OperationType.READ;
-                pendingContext.key = hlog.GetKeyContainer(ref key);
+                if (!pendingContext.skipKeyVerification)    // If this is true, we don't have a valid key
+                    pendingContext.key = hlog.GetKeyContainer(ref key);
                 pendingContext.input = fasterSession.GetHeapContainer(ref input);
                 pendingContext.output = output;
 

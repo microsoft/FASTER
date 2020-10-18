@@ -388,7 +388,9 @@ namespace FASTER.core
                 {
                     RecordInfo recordInfo;
                     unsafe { recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
-                    fasterSession.ReadCompletionCallback(ref key,
+
+                    // If skipKeyVerification, we do not have the key in the initial call and must use the key from the satisfied request.
+                    fasterSession.ReadCompletionCallback(ref pendingContext.skipKeyVerification ? ref hlog.GetContextRecordKey(ref request) : ref key,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,

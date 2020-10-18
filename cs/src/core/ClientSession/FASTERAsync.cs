@@ -229,10 +229,11 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context, Functions>> ReadAsync<Input, Output, Context, Functions>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token)
+            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token, bool noKey = false)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
+            pcontext.skipKeyVerification = noKey;
             var diskRequest = default(AsyncIOContext<Key, Value>);
             Output output = default;
 
