@@ -1221,7 +1221,6 @@ namespace FASTER.core
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
 
-            var recordSize = default(int);
             var bucket = default(HashBucket*);
             var slot = default(int);
             var logicalAddress = Constants.kInvalidAddress;
@@ -1262,32 +1261,32 @@ namespace FASTER.core
 
             #region Create new copy in mutable region
             physicalAddress = (long)request.record.GetValidPointer();
-            recordSize = hlog.GetRecordSize(physicalAddress);
+            var (actualSize, allocatedSize) = hlog.GetRecordSize(physicalAddress);
 
             long newLogicalAddress, newPhysicalAddress;
             if (UseReadCache)
             {
-                BlockAllocateReadCache(recordSize, out newLogicalAddress, currentCtx, fasterSession);
+                BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
                                     true, false, false,
                                     entry.Address);
-                readcache.ShallowCopy(ref pendingContext.key.Get(), ref readcache.GetKey(newPhysicalAddress));
+                readcache.Serialize(ref pendingContext.key.Get(), newPhysicalAddress);
                 fasterSession.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
-                                       ref readcache.GetValue(newPhysicalAddress));
+                                       ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
             }
             else
             {
-                BlockAllocate(recordSize, out newLogicalAddress, currentCtx, fasterSession);
+                BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                                true, false, false,
                                latestLogicalAddress);
-                hlog.ShallowCopy(ref pendingContext.key.Get(), ref hlog.GetKey(newPhysicalAddress));
+                hlog.Serialize(ref pendingContext.key.Get(), newPhysicalAddress);
                 fasterSession.SingleWriter(ref pendingContext.key.Get(),
                                        ref hlog.GetContextRecordValue(ref request),
-                                       ref hlog.GetValue(newPhysicalAddress));
+                                       ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
             }
 
 
@@ -1976,7 +1975,7 @@ namespace FASTER.core
             while (logicalAddress < toHeadAddress)
             {
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
-                var recordSize = readcache.GetRecordSize(physicalAddress);
+                var (actualSize, allocatedSize) = readcache.GetRecordSize(physicalAddress);
                 ref RecordInfo info = ref readcache.GetInfo(physicalAddress);
                 if (!info.Invalid)
                 {
@@ -2005,8 +2004,8 @@ namespace FASTER.core
                         }
                     }
                 }
-                logicalAddress += recordSize;
-                if ((logicalAddress & readcache.PageSizeMask) + recordSize > readcache.PageSize)
+                logicalAddress += allocatedSize;
+                if ((logicalAddress & readcache.PageSizeMask) + allocatedSize > readcache.PageSize)
                 {
                     logicalAddress = (1 + (logicalAddress >> readcache.LogPageSizeBits)) << readcache.LogPageSizeBits;
                     continue;

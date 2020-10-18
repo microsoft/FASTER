@@ -24,13 +24,13 @@ namespace FASTER.core
                 return new GuidFasterEqualityComparer() as IFasterEqualityComparer<T>;
             else if (t == typeof(SpanByte))
                 return new SpanByteComparer() as IFasterEqualityComparer<T>;
-            else if ((t.GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(t.GetGenericArguments()[0]))
+            else if (t.IsGenericType && (t.GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(t.GetGenericArguments()[0]))
             {
                 var m = typeof(MemoryComparer<>).MakeGenericType(t.GetGenericArguments());
                 object o = Activator.CreateInstance(m);
                 return o as IFasterEqualityComparer<T>;
             }
-            else if ((t.GetGenericTypeDefinition()== typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(t.GetGenericArguments()[0]))
+            else if (t.IsGenericType && (t.GetGenericTypeDefinition()== typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(t.GetGenericArguments()[0]))
             {
                 var m = typeof(ReadOnlyMemoryComparer<>).MakeGenericType(t.GetGenericArguments());
                 object o = Activator.CreateInstance(m);

@@ -298,7 +298,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
-        public abstract int GetRecordSize(long physicalAddress);
+        public abstract (int, int) GetRecordSize(long physicalAddress);
 
         /// <summary>
         /// Get record size

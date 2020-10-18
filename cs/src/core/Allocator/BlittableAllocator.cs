@@ -60,9 +60,9 @@ namespace FASTER.core
             return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
         }
 
-        public override int GetRecordSize(long physicalAddress)
+        public override (int, int) GetRecordSize(long physicalAddress)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
         public override (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
