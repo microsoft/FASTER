@@ -240,12 +240,17 @@ namespace FASTER.core
         /// <param name="dst"></param>
         public void CopyTo(ref SpanByte dst)
         {
+            // Zero-fill extra space - needed so log scan does not see spurious data
+            if (dst.Length > Length)
+            {
+                dst.AsSpan().Slice(Length).Clear();
+            }
             dst.Length = Length;
             AsReadOnlySpan().CopyTo(dst.AsSpan());
         }
 
         /// <summary>
-        /// Copy to given SpanByteAndMemory
+        /// Copy to given SpanByteAndMemory (only payload copied to actual span/memory)
         /// </summary>
         /// <param name="dst"></param>
         /// <param name="memoryPool"></param>
@@ -253,14 +258,46 @@ namespace FASTER.core
         {
             if (dst.IsSpanByte)
             {
-                if (TryCopyTo(ref dst.SpanByte))
+                if (dst.Length >= Length)
+                {
+                    dst.Length = Length;
+                    AsReadOnlySpan().CopyTo(dst.SpanByte.AsSpan());
                     return;
+                }
+                dst.ConvertToHeap();
+            }
+
+            dst.Memory = memoryPool.Rent(Length);
+            dst.Length = Length;
+            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
+        }
+
+        /// <summary>
+        /// Copy to given SpanByteAndMemory (header and payload copied to actual span/memory)
+        /// </summary>
+        /// <param name="dst"></param>
+        /// <param name="memoryPool"></param>
+        public void CopyWithHeaderTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        {
+            if (dst.IsSpanByte)
+            {
+                if (dst.Length >= TotalSize)
+                {
+                    dst.Length = TotalSize;
+                    var span = dst.SpanByte.AsSpan();
+                    fixed (byte* ptr = span)
+                        *(int*)ptr = Length;
+                    AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
+                    return;
+                }
                 dst.ConvertToHeap();
             }
 
             dst.Memory = memoryPool.Rent(TotalSize);
-            dst.Length = Length;
-            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
+            dst.Length = TotalSize;
+            fixed (byte* ptr = dst.Memory.Memory.Span)
+                *(int*)ptr = Length;
+            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
         }
 
         /// <summary>
