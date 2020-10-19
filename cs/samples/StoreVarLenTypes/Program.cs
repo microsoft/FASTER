@@ -7,29 +7,30 @@ using System.Linq;
 
 namespace StoreVarLenTypes
 {
+    /// <summary>
+    /// In these samples, we support variable-length keys and values with a single log using
+    /// (1) Memory&lt;T&gt; and ReadOnlyMemory&lt;T&gt; where T : unmanaged (e.g., byte, int, etc.)
+    /// (2) Our wrapper over Span&lt;byte&gt;, called SpanByte (details below)
+    ///
+    /// Objects are placed contiguously in a single log, leading to efficient packing while
+    /// avoiding the additional I/O (on reads and writes) that a separate object log entails.
+    /// Serializers are not required, as these are effectively in-place allocated.
+    /// </summary>
     public class Program
     {
-        // This sample shows how our special type called SpanByte can be leverage to use FASTER
-        // with variable-length keys and/or values without a separate object log. SpanBytes can
-        // easily be created using pinned or fixed memory. A SpanByte is basically a sequence of
-        // bytes with a 4-byte integer length header that denotes the size of the payload.
-        //
-        // Underlying SpanByte is the use of "ref struct" as a proxy for pointers to variable-sized 
-        // memory in C# (we call these VariableLengthStructs).
-        //
-        // Objects are placed contiguously in a single log, leading to efficient packing while
-        // avoiding the additional I/O (on reads and writes) that a separate object log entails.
-        // Serializers are not required, as these are effectively value-types.
-
         static void Main()
         {
             MemoryByteSample();
+            MemoryIntSample();
             SpanByteSample();
 
             Console.WriteLine("Press <ENTER>");
             Console.ReadLine();
         }
 
+        /// <summary>
+        /// Sample showing how to use FASTER with Memory&lt;byte&gt;
+        /// </summary>
         static void MemoryByteSample()
         {
             // VarLen types do not need an object log
@@ -42,7 +43,7 @@ namespace StoreVarLenTypes
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
             // Create session
-            var s = store.For(new MyMemoryFunctions()).NewSession<MyMemoryFunctions>();
+            var s = store.For(new MyMemoryFunctions<byte>()).NewSession<MyMemoryFunctions<byte>>();
 
             Random r = new Random(100);
             var keyMem = new Memory<byte>(new byte[1000]);
@@ -70,9 +71,10 @@ namespace StoreVarLenTypes
                 var key = keyMem.Slice(0, keyLen);
                 key.Span.Fill(i);
 
-                var status = s.Read(key, out var output);
-
                 var valLen = r.Next(1, 1000);
+
+                var status = s.Read(key, out var output, userContext: (byte)valLen);
+
                 var expectedValue = valueMem.Slice(0, valLen);
                 expectedValue.Span.Fill((byte)valLen);
 
@@ -102,6 +104,90 @@ namespace StoreVarLenTypes
             log.Dispose();
         }
 
+        /// <summary>
+        /// Sample showing how to use FASTER with Memory&lt;int&gt;
+        /// </summary>
+        static void MemoryIntSample()
+        {
+            // VarLen types do not need an object log
+            var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
+
+            // Create store
+            var store = new FasterKV<ReadOnlyMemory<int>, Memory<int>>(
+                size: 1L << 20,
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 16, PageSizeBits = 14 });
+
+            // Create session
+            var s = store.For(new MyMemoryFunctions<int>()).NewSession<MyMemoryFunctions<int>>();
+
+            Random r = new Random(100);
+            var keyMem = new Memory<int>(new int[1000]);
+            var valueMem = new Memory<int>(new int[1000]);
+
+            for (int i = 0; i < 2000; i++)
+            {
+                var keyLen = r.Next(1, 1000);
+                var key = keyMem.Slice(0, keyLen);
+                key.Span.Fill(i);
+
+                var valLen = r.Next(1, 1000);
+                var value = valueMem.Slice(0, valLen);
+                value.Span.Fill(valLen);
+
+                s.Upsert(key, value);
+            }
+
+            bool success = true;
+
+            r = new Random(100);
+            for (int i = 0; i < 2000; i++)
+            {
+                var keyLen = r.Next(1, 1000);
+                var key = keyMem.Slice(0, keyLen);
+                key.Span.Fill(i);
+
+                var valLen = r.Next(1, 1000);
+
+                var status = s.Read(key, out var output, userContext: valLen);
+
+                var expectedValue = valueMem.Slice(0, valLen);
+                expectedValue.Span.Fill(valLen);
+
+                if (status == Status.PENDING)
+                {
+                    s.CompletePending(true);
+                }
+                else
+                {
+                    if ((status != Status.OK) || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
+                    {
+                        output.Item1.Dispose();
+                        success = false;
+                        break;
+                    }
+                    output.Item1.Dispose();
+                }
+            }
+
+            if (success)
+                Console.WriteLine("Success!");
+            else
+                Console.WriteLine("Error!");
+
+            s.Dispose();
+            store.Dispose();
+            log.Dispose();
+        }
+
+        /// <summary>
+        /// This sample shows how our special type called SpanByte can be leverage to use FASTER
+        /// with variable-length keys and/or values without a separate object log. SpanBytes can
+        /// easily be created using pinned or fixed memory. A SpanByte is basically a sequence of
+        /// bytes with a 4-byte integer length header that denotes the size of the payload.
+        ///
+        /// Underlying SpanByte is the use of "ref struct" as a proxy for pointers to variable-sized 
+        /// memory in C# (we call these VariableLengthStructs).
+        /// </summary>
         static void SpanByteSample()
         {
             // VarLen types do not need an object log

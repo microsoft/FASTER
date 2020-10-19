@@ -7,7 +7,7 @@ namespace FASTER.core
     /// <summary>
     /// IFunctions implementation for Memory&lt;T&gt; values, for blittable (unmanaged) type T
     /// </summary>
-    public class MemoryFunctions<Key, T> : FunctionsBase<Key, Memory<T>, Memory<T>, (IMemoryOwner<T>, int), Empty>
+    public class MemoryFunctions<Key, T, Context> : FunctionsBase<Key, Memory<T>, Memory<T>, (IMemoryOwner<T>, int), Context>
         where T : unmanaged
     {
         readonly MemoryPool<T> memoryPool;
