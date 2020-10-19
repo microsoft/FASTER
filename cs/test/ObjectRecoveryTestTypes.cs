@@ -82,7 +82,7 @@ namespace FASTER.test.recovery.objectstore
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status, RecordInfo _)
+        public void ReadCompletionCallback(ref AdId key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 

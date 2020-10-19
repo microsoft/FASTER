@@ -40,7 +40,7 @@ namespace ReadAddress
     /// <summary>
     /// Callback for FASTER operations
     /// </summary>
-    public class Functions : SimpleFunctions<Key, Value, Context>
+    public class Functions : AdvancedSimpleFunctions<Key, Value, Context>
     {
         // Return false to force a chain of values.
         public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) => false;

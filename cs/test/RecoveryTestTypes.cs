@@ -50,7 +50,7 @@ namespace FASTER.test.recovery.sumstore
         {
         }
 
-        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordInfo _)
+        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
         }
 

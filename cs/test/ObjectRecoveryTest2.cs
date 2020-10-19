@@ -271,7 +271,7 @@ namespace FASTER.test.recovery.objects
             return true;
         }
 
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status, RecordInfo _) => ctx.Populate(ref status, ref output);
+        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status) => ctx.Populate(ref status, ref output);
         public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, MyContext ctx) { }
         public void RMWCompletionCallback(ref MyKey key, ref MyInput input, MyContext ctx, Status status) { }
         public void DeleteCompletionCallback(ref MyKey key, MyContext ctx) { }

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #pragma warning disable 0162
@@ -21,8 +21,8 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IClientSession<Key, Value, Input, Output, Context>
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+    public sealed class AdvancedClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IClientSession<Key, Value, Input, Output, Context>
+        where Functions : IAdvancedFunctions<Key, Value, Input, Output, Context>
     {
         private readonly FasterKV<Key, Value> fht;
 
@@ -36,7 +36,7 @@ namespace FASTER.core
 
         internal readonly AsyncFasterSession FasterSession;
 
-        internal ClientSession(
+        internal AdvancedClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
@@ -71,7 +71,7 @@ namespace FASTER.core
             {
                 inputVariableLengthStruct = new SpanByteLength() as IVariableLengthStruct<Input>;
             }
-            
+
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();
@@ -277,6 +277,7 @@ namespace FASTER.core
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
+
         /// <summary>
         /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
         /// </summary>
@@ -351,7 +352,7 @@ namespace FASTER.core
         {
             Debug.Assert(SupportAsync, "Session does not support async operations");
             Key key = default;
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, address, userContext, serialNo, cancellationToken, noKey:true);
+            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, address, userContext, serialNo, cancellationToken, noKey: true);
         }
 
         /// <summary>
@@ -659,9 +660,9 @@ namespace FASTER.core
         // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
         internal struct AsyncFasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            private readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+            private readonly AdvancedClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
 
-            public AsyncFasterSession(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+            public AsyncFasterSession(AdvancedClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
             {
                 _clientSession = clientSession;
             }
@@ -717,7 +718,7 @@ namespace FASTER.core
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
             {
-                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordInfo);
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)

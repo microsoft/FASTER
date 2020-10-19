@@ -128,7 +128,7 @@ namespace StoreDiskReadBenchmark
                 Input input = default;
                 int i = 0;
 
-                var tasks = new (long, ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Empty, MyFuncs>>)[readBatchSize];
+                var tasks = new (long, ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Empty>>)[readBatchSize];
                 while (true)
                 {
                     key = new Key(NumKeys * id + rand.Next(0, NumKeys));

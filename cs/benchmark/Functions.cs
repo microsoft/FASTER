@@ -17,7 +17,7 @@ namespace FASTER.benchmark
         {
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordInfo recordInfo)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 

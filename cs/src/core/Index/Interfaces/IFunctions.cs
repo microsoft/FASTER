@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-
 namespace FASTER.core
 {
     /// <summary>
@@ -23,8 +21,7 @@ namespace FASTER.core
         /// <param name="output"></param>
         /// <param name="ctx"></param>
         /// <param name="status"></param>
-        /// <param name="recordInfo"></param>
-        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo);
+        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status);
 
         /// <summary>
         /// Upsert completion

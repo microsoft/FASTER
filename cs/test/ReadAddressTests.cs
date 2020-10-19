@@ -64,7 +64,7 @@ namespace FASTER.test.readaddress
         /// <summary>
         /// Callback for FASTER operations
         /// </summary>
-        public class Functions : SimpleFunctions<Key, Value, Context>
+        public class Functions : AdvancedSimpleFunctions<Key, Value, Context>
         {
             public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst)
             {
