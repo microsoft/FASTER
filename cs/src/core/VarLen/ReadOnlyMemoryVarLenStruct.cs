@@ -24,10 +24,7 @@ namespace FASTER.core
         }
 
         [ThreadStatic]
-        static UnmanagedMemoryManager<T> manager;
-
-        [ThreadStatic]
-        static ReadOnlyMemory<T>[] obj;
+        static (UnmanagedMemoryManager<T>, ReadOnlyMemory<T>)[] manager;
 
         [ThreadStatic]
         static int count;
@@ -37,19 +34,20 @@ namespace FASTER.core
         {
             if (manager == null)
             {
-                manager = new UnmanagedMemoryManager<T>();
-                obj = new ReadOnlyMemory<T>[4];
+                manager = new (UnmanagedMemoryManager<T>, ReadOnlyMemory<T>)[4];
+                for (int i = 0; i < 4; i++) manager[i] = (new UnmanagedMemoryManager<T>(), default);
             }
-            manager.SetDestination((T*)((byte*)source + sizeof(int)), (*(int*)source) / sizeof(T));
             count = (count + 1) % 4;
-            obj[count] = manager.Memory;
-            return ref obj[count];
+            ref var cache = ref manager[count];
+            cache.Item1.SetDestination((T*)((byte*)source + sizeof(int)), (*(int*)source) / sizeof(T));
+            cache.Item2 = cache.Item1.Memory;
+            return ref cache.Item2;
         }
 
         ///<inheritdoc/>
         public unsafe void Initialize(void* source, void* end)
         {
-            *(int*)source = (int)end - (int)source - sizeof(int);
+            *(int*)source = (int)((long)end - (long)source) - sizeof(int);
         }
     }
 

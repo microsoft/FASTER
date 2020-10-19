@@ -25,4 +25,20 @@ namespace FASTER.core
         /// <inheritdoc />
         public unsafe void Initialize(void* source, void* dest) { }
     }
+
+    /// <summary>
+    /// IVariableLengthStruct for SpanByte value, specific to SpanByte input
+    /// </summary>
+    public struct SpanByteVarLenStructForSpanByteInput : IVariableLengthStruct<SpanByte, SpanByte>
+    {
+        /// <inheritdoc />
+        public int GetInitialLength(ref SpanByte input) => sizeof(int) + input.Length;
+
+        /// <summary>
+        /// Length of resulting object when doing RMW with given value and input. Here we set the length
+        /// to the max of input and old value lengths. You can provide a custom implementation for other cases.
+        /// </summary>
+        public int GetLength(ref SpanByte t, ref SpanByte input)
+            => sizeof(int) + (t.Length > input.Length ? t.Length : input.Length);
+    }
 }

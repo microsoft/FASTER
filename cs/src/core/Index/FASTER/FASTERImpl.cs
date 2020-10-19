@@ -558,6 +558,7 @@ namespace FASTER.core
                 {
                     return OperationStatus.SUCCESS;
                 }
+                goto CreateNewRecord;
             }
 
             #region Entry latch operation
