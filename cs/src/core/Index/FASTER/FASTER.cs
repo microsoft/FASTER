@@ -581,7 +581,7 @@ namespace FASTER.core
                     variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, Value>() as VariableLengthStructSettings<Key, Value>;
 
                 if (variableLengthStructSettings.keyLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = new SpanByteLength();
+                    (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = new SpanByteVarLenStruct();
             }
             else if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0]))
             {
@@ -614,7 +614,7 @@ namespace FASTER.core
                     variableLengthStructSettings = new VariableLengthStructSettings<Key, SpanByte>() as VariableLengthStructSettings<Key, Value>;
 
                 if (variableLengthStructSettings.valueLength == null)
-                    (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = new SpanByteLength();
+                    (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = new SpanByteVarLenStruct();
             }
             else if (typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
             {

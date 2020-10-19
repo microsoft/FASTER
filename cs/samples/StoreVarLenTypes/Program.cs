@@ -10,7 +10,7 @@ namespace StoreVarLenTypes
     /// <summary>
     /// In these samples, we support variable-length keys and values with a single log using
     /// (1) Memory&lt;T&gt; and ReadOnlyMemory&lt;T&gt; where T : unmanaged (e.g., byte, int, etc.)
-    /// (2) Our wrapper over Span&lt;byte&gt;, called SpanByte (details below)
+    /// (2) Our advanced wrapper over Span&lt;byte&gt;, called SpanByte (details below)
     ///
     /// Objects are placed contiguously in a single log, leading to efficient packing while
     /// avoiding the additional I/O (on reads and writes) that a separate object log entails.
@@ -20,8 +20,11 @@ namespace StoreVarLenTypes
     {
         static void Main()
         {
+            // Samples using Memory<T> over byte and int as key/value types
             MemoryByteSample();
             MemoryIntSample();
+
+            // Sample for advanced users; using SpanByte type
             SpanByteSample();
 
             Console.WriteLine("Press <ENTER>");
@@ -33,19 +36,21 @@ namespace StoreVarLenTypes
         /// </summary>
         static void MemoryByteSample()
         {
-            // VarLen types do not need an object log
+            // Memory<T> where T : unmanaged does not need an object log
             var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
 
-            // Create store
-            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
+            // Create store for Memory<byte> values. You can use any key type; we use ReadOnlyMemory<byte> here
             var store = new FasterKV<ReadOnlyMemory<byte>, Memory<byte>>(
                 size: 1L << 20,
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
-            // Create session
-            var s = store.For(new MyMemoryFunctions<byte>()).NewSession<MyMemoryFunctions<byte>>();
+            // Create session with Memory<byte> as Input, (IMemoryOwner<byte> memoryOwner, int length) as Output, 
+            // and byte as Context (to verify read result in callback)
+            var s = store.For(new CustomMemoryFunctions<byte>()).NewSession<CustomMemoryFunctions<byte>>();
 
             Random r = new Random(100);
+
+            // Allocate space for key and value operations
             var keyMem = new Memory<byte>(new byte[1000]);
             var valueMem = new Memory<byte>(new byte[1000]);
 
@@ -79,9 +84,7 @@ namespace StoreVarLenTypes
                 expectedValue.Span.Fill((byte)valLen);
 
                 if (status == Status.PENDING)
-                {
                     s.CompletePending(true);
-                }
                 else
                 {
                     if ((status != Status.OK) || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
@@ -109,18 +112,21 @@ namespace StoreVarLenTypes
         /// </summary>
         static void MemoryIntSample()
         {
-            // VarLen types do not need an object log
+            // Memory<T> where T : unmanaged does not need an object log
             var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
 
-            // Create store
+            // Create store for Memory<int> values. You can use any key type; we use ReadOnlyMemory<int> here
             var store = new FasterKV<ReadOnlyMemory<int>, Memory<int>>(
                 size: 1L << 20,
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 16, PageSizeBits = 14 });
 
-            // Create session
-            var s = store.For(new MyMemoryFunctions<int>()).NewSession<MyMemoryFunctions<int>>();
+            // Create session with Memory<int> as Input, (IMemoryOwner<int> memoryOwner, int length) as Output, 
+            // and int as Context (to verify read result in callback)
+            var s = store.For(new CustomMemoryFunctions<int>()).NewSession<CustomMemoryFunctions<int>>();
 
             Random r = new Random(100);
+
+            // Allocate space for key and value operations
             var keyMem = new Memory<int>(new int[1000]);
             var valueMem = new Memory<int>(new int[1000]);
 
@@ -154,9 +160,7 @@ namespace StoreVarLenTypes
                 expectedValue.Span.Fill(valLen);
 
                 if (status == Status.PENDING)
-                {
                     s.CompletePending(true);
-                }
                 else
                 {
                     if ((status != Status.OK) || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
@@ -200,7 +204,7 @@ namespace StoreVarLenTypes
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
             // Create session
-            var s = store.For(new Functions()).NewSession<Functions>();
+            var s = store.For(new CustomSpanByteFunctions()).NewSession<CustomSpanByteFunctions>();
 
             Random r = new Random(100);
             Span<byte> keyMem = stackalloc byte[1000];
@@ -229,10 +233,11 @@ namespace StoreVarLenTypes
                 Span<byte> key = keyMem.Slice(0, keyLen);
                 key.Fill(i);
 
-                // Option 2: Converting fixed Span<byte> to SpanByte
-                var status = s.Read(SpanByte.FromFixedSpan(key), out byte[] output);
-
                 var valLen = r.Next(1, 1000);
+
+                // Option 2: Converting fixed Span<byte> to SpanByte
+                var status = s.Read(SpanByte.FromFixedSpan(key), out byte[] output, userContext: (byte)valLen);
+
                 var expectedValue = valueMem.Slice(0, valLen);
                 expectedValue.Fill((byte)valLen);
 

@@ -80,7 +80,8 @@ namespace FASTER.core
         public override ref Value GetValue(long physicalAddress, long endAddress)
         {
             var src = (byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress);
-            return ref ValueLength.AsRef(src, (void*)endAddress);
+            ValueLength.Initialize(src, (void*)endAddress);
+            return ref ValueLength.AsRef(src);
         }
 
         private int KeySize(long physicalAddress)

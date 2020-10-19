@@ -69,7 +69,7 @@ namespace FASTER.core
 
             if (typeof(Input) == typeof(SpanByte) && inputVariableLengthStruct == default)
             {
-                inputVariableLengthStruct = new SpanByteLength() as IVariableLengthStruct<Input>;
+                inputVariableLengthStruct = new SpanByteVarLenStruct() as IVariableLengthStruct<Input>;
             }
             
             // Session runs on a single thread
