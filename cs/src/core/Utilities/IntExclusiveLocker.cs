@@ -3,7 +3,10 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    internal unsafe struct IntLocker
+    /// <summary>
+    /// Exclusive lock + marking using 2 MSB bits of int
+    /// </summary>
+    internal unsafe struct IntExclusiveLocker
     {
         public const int kLatchBitMask = 1 << 31;
         public const int kMarkBitMask = 1 << 30;

@@ -74,14 +74,23 @@ namespace FASTER.core
 
         public override ref Value GetValue(long physicalAddress)
         {
-            return ref ValueLength.AsRef((byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress));
+            return ref ValueLength.AsRef((byte*)ValueOffset(physicalAddress));
         }
 
         public override ref Value GetValue(long physicalAddress, long endAddress)
         {
-            var src = (byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress);
+            var src = (byte*)ValueOffset(physicalAddress);
             ValueLength.Initialize(src, (void*)endAddress);
             return ref ValueLength.AsRef(src);
+        }
+
+        private long ValueOffset(long physicalAddress)
+            => physicalAddress + RecordInfo.GetLength() + AlignedKeySize(physicalAddress);
+
+        private int AlignedKeySize(long physicalAddress)
+        {
+            int len = KeyLength.GetLength(ref GetKey(physicalAddress));
+            return (len + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
 
         private int KeySize(long physicalAddress)
@@ -103,7 +112,7 @@ namespace FASTER.core
                 return (l, l);
             }                
 
-            var size = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueSize(physicalAddress);
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
@@ -116,7 +125,7 @@ namespace FASTER.core
                 return (l, l);
             }
 
-            var size = RecordInfo.GetLength() + KeySize(physicalAddress) + fasterSession.GetLength(ref GetValue(physicalAddress), ref input);
+            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + fasterSession.GetLength(ref GetValue(physicalAddress), ref input);
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
@@ -130,14 +139,14 @@ namespace FASTER.core
             }
 
             // We need at least [record size] + [actual key size] + [average value size]
-            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueLength.GetInitialLength();
+            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueLength.GetInitialLength();
             if (availableBytes < reqBytes)
             {
                 return reqBytes;
             }
 
             // We need at least [record size] + [actual key size] + [actual value size]
-            reqBytes = RecordInfo.GetLength() + KeySize(physicalAddress) + ValueSize(physicalAddress);
+            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueSize(physicalAddress);
             reqBytes = (reqBytes + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
             return reqBytes;
         }
@@ -145,15 +154,14 @@ namespace FASTER.core
         public override int GetAverageRecordSize()
         {
             return RecordInfo.GetLength() +
-                kRecordAlignment +
-                KeyLength.GetInitialLength() +
-                ValueLength.GetInitialLength();
+                ((KeyLength.GetInitialLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
+                ((ValueLength.GetInitialLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
         public override (int, int) GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
         {
             var actualSize = RecordInfo.GetLength() +
-                KeyLength.GetLength(ref key) +
+                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
                 fasterSession.GetInitialLength(ref input);
 
             return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
@@ -162,7 +170,7 @@ namespace FASTER.core
         public override (int, int) GetRecordSize(ref Key key, ref Value value)
         {
             var actualSize = RecordInfo.GetLength() +
-                KeyLength.GetLength(ref key) +
+                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
                 ValueLength.GetLength(ref value);
 
             return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
@@ -175,7 +183,7 @@ namespace FASTER.core
 
         public override void Serialize(ref Value src, long physicalAddress)
         {
-            ValueLength.Serialize(ref src, (byte*)physicalAddress + RecordInfo.GetLength() + KeySize(physicalAddress));
+            ValueLength.Serialize(ref src, (byte*)ValueOffset(physicalAddress));
         }
 
         public override void ShallowCopy(ref Key src, ref Key dst)
