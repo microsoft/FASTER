@@ -16,14 +16,27 @@ namespace FASTER.core
 
         /// <summary>
         /// Start a new client session with FASTER.
+        /// For performance reasons, please use FasterKV&lt;Key, Value&gt;.For(functions).NewSession&lt;Functions&gt;(...) instead of this overload.
         /// </summary>
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>;
+        ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> NewSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
+                string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
+
+        /// <summary>
+        /// Start a new advanced client session with FASTER.
+        /// For performance reasons, please use FasterKV&lt;Key, Value&gt;.For(functions).NewSession&lt;Functions&gt;(...) instead of this overload.
+        /// </summary>
+        /// <param name="functions">Callback functions</param>
+        /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
+        /// <returns>Session instance</returns>
+        public AdvancedClientSession<Key, Value, Input, Output, Context, IAdvancedFunctions<Key, Value, Input, Output, Context>> NewSession<Input, Output, Context>(IAdvancedFunctions<Key, Value, Input, Output, Context> functions,
+                string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
 
         /// <summary>
         /// Resume (continue) prior client session with FASTER, used during
@@ -35,8 +48,21 @@ namespace FASTER.core
         /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>;
+        ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
+                string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
+
+        /// <summary>
+        /// Resume (continue) prior client session with FASTER using advanced functions; used during recovery from failure.
+        /// For performance reasons this overload is not recommended if functions is value type (struct).
+        /// </summary>
+        /// <param name="functions">Callback functions</param>
+        /// <param name="sessionId">ID/name of previous session to resume</param>
+        /// <param name="commitPoint">Prior commit point of durability for session</param>
+        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
+        /// <returns>Session instance</returns>
+        public AdvancedClientSession<Key, Value, Input, Output, Context, IAdvancedFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IAdvancedFunctions<Key, Value, Input, Output, Context> functions,
+                string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
 
         #endregion
 

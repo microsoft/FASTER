@@ -358,7 +358,7 @@ namespace FASTER.test.statemachine
 
             NumClicks value;
 
-            s1 = fht1.For<NumClicks, NumClicks, Empty>().NewSession(f, "foo", threadAffinitized: true);
+            s1 = fht1.For(f).NewSession<SimpleFunctions>("foo", threadAffinitized: true);
 
             for (int key = 0; key < numOps; key++)
             {
@@ -370,7 +370,7 @@ namespace FASTER.test.statemachine
             fht1.Log.ShiftReadOnlyAddress(fht1.Log.TailAddress, true);
 
             // Start affinitized session s2 on another thread for testing
-            s2 = fht1.For<NumClicks, NumClicks, Empty>().CreateThreadSession(f, threadAffinized: true);
+            s2 = fht1.For(f).CreateThreadSession(f, threadAffinized: true);
 
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
