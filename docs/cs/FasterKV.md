@@ -233,82 +233,76 @@ During recovery, sessions can continue using `ResumeSession` invoked with the sa
 sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted 
 operations since that point.
 
-With async session operations on FASTER, one may optionally set a boolean parameter `waitForCommit` in the calls. When set, the async 
-call completes only after the operation is made persistent by an asynchronous checkpoint. The user is responsible for performing the 
-checkpoint asynchronously. An async upsert which returns only after the upsert is made durable, is shown below:
-
-```cs
-await session.UpsertAsync(key, value, waitForCommit: true);
-```
+With async session operations on FASTER, operations return as soon as they complete, before commit. In order to wait for commit,
+you simply issue an `await session.WaitForCommitAsync()` call. The call completes only after the operation is made persistent by
+an asynchronous commit (checkpoint). The user is responsible for initiating the checkpoint asynchronously.
 
 Below, we show a simple recovery example with asynchronous checkpointing.
 
 ```Csharp
-public class PersistenceExample 
+public class PersistenceExample
 {
-  private FasterKV<long, long, long, long, Empty, Funcs> fht;
-  private IDevice log;
-  
-  public PersistenceExample() 
-  {
-    log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-    fht = new FasterKV<long, long, long, long, Empty, Funcs>
-    (1L << 20, new Funcs(), new LogSettings { LogDevice = log });
-  }
-  
-  public void Run()
-  {
-    IssuePeriodicCheckpoints();
-    RunSession();
-  }
-  
-  public void Continue()
-  {
-    fht.Recover();
-    IssuePeriodicCheckpoints();
-    ContinueSession();
-  }
-  
-  /* Helper Functions */
-  private void RunSession() 
-  {
-    using var session = fht.NewSession("s1");
-    long seq = 0; // sequence identifier
-    
-    long key = 1, input = 10;
-    while(true) 
+    private FasterKV<long, long> fht;
+    private IDevice log;
+
+    public PersistenceExample()
     {
-      key = (seq % 1L << 20);
-      session.RMW(ref key, ref input, Empty.Default, seq++);
+        log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
+        fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
     }
-  }
-  
-  private void ContinueSession() 
-  {
-    using var session = fht.ResumeSession("s1", out CommitPoint cp); // recovered session
-    var seq = cp.UntilSerialNo + 1;
-    
-    long key = 1, input = 10;
-    while(true) 
+
+    public void Run()
     {
-      key = (seq % 1L << 20);
-      session.RMW(ref key, ref input, Empty.Default, seq++);
+        IssuePeriodicCheckpoints();
+        RunSession();
     }
-  }
-  
-  private void IssuePeriodicCheckpoints()
-  {
-    var t = new Thread(() => 
+
+    public void Continue()
     {
-      while(true) 
-      {
-        Thread.Sleep(10000);
-        fht.TakeFullCheckpoint(out Guid token);
-        fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
-      }
-    });
-    t.Start();
-  }
+        fht.Recover();
+        IssuePeriodicCheckpoints();
+        ContinueSession();
+    }
+
+    /* Helper Functions */
+    private void RunSession()
+    {
+        using var session = fht.NewSession(new SimpleFunctions<long, long>(), "s1");
+        long seq = 0; // sequence identifier
+
+        long key = 1, input = 10;
+        while (true)
+        {
+            key = (seq % 1L << 20);
+            session.RMW(ref key, ref input, Empty.Default, seq++);
+        }
+    }
+
+    private void ContinueSession()
+    {
+        using var session = fht.ResumeSession(new SimpleFunctions<long, long>(), "s1", out CommitPoint cp); // recovered session
+        var seq = cp.UntilSerialNo + 1;
+
+        long key = 1, input = 10;
+        while (true)
+        {
+            key = (seq % 1L << 20);
+            session.RMW(ref key, ref input, Empty.Default, seq++);
+        }
+    }
+
+    private void IssuePeriodicCheckpoints()
+    {
+        var t = new Thread(() =>
+        {
+            while (true)
+            {
+                Thread.Sleep(10000);
+                (_, _) = fht.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
+            }
+        });
+        t.Start();
+    }
 }
 ```
 
