@@ -145,14 +145,14 @@ namespace FASTER.core
             return ref values[pageIndex][offset / recordSize].value;
         }
 
-        public override int GetRecordSize(long physicalAddress)
+        public override (int, int) GetRecordSize(long physicalAddress)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
-        public override int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
         public override int GetAverageRecordSize()
@@ -160,14 +160,14 @@ namespace FASTER.core
             return recordSize;
         }
 
-        public override int GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+        public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
-        public override int GetRecordSize(ref Key key, ref Value value)
+        public override (int, int) GetRecordSize(ref Key key, ref Value value)
         {
-            return recordSize;
+            return (recordSize, recordSize);
         }
 
         /// <summary>
@@ -760,7 +760,7 @@ namespace FASTER.core
                         }
                     }
                 }
-                ptr += GetRecordSize(ptr);
+                ptr += GetRecordSize(ptr).Item2;
             }
             if (KeyHasObjects())
             {
@@ -825,7 +825,7 @@ namespace FASTER.core
                         if (addr > maxObjAddress) maxObjAddress = addr;
                     }
                 }
-                ptr += GetRecordSize(ptr);
+                ptr += GetRecordSize(ptr).Item2;
             }
 
             // Handle the case where no objects are to be written

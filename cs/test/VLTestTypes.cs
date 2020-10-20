@@ -41,6 +41,9 @@ namespace FASTER.test
 
         public unsafe void Serialize(ref Key source, void* destination)
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
+
+        public unsafe ref Key AsRef(void* source) => ref Unsafe.AsRef<Key>(source);
+        public unsafe void Initialize(void* source, void* dest) { }
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -64,6 +67,9 @@ namespace FASTER.test
 
         public unsafe void Serialize(ref VLValue source, void* destination)
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
+
+        public unsafe ref VLValue AsRef(void* source) => ref Unsafe.AsRef<VLValue>(source);
+        public unsafe void Initialize(void* source, void* dest) { }
 
         public void ToIntArray(ref int[] dst)
         {
