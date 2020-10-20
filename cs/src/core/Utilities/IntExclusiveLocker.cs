@@ -8,8 +8,8 @@ namespace FASTER.core
     /// </summary>
     internal unsafe struct IntExclusiveLocker
     {
-        public const int kLatchBitMask = 1 << 31;
-        public const int kMarkBitMask = 1 << 30;
+        const int kLatchBitMask = 1 << 31;
+        const int kMarkBitMask = 1 << 30;
         public const int kHeaderMask = 3 << 30;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
