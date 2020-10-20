@@ -41,8 +41,11 @@ for more details. We also have a detailed analysis of C# FASTER KV performance i
 C# and C++ versions of FASTER are very similar. FASTER Log is also extremely fast, capable of saturating modern
 NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded setting.
 
+:new: We not support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
+a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
+
 :new: We now support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](docs/cs/README.md) for more information. Also, check out the 
-samples in the playground located [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground).
+samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
 
 # Getting Started
 
@@ -55,7 +58,7 @@ samples in the playground located [here](https://github.com/Microsoft/FASTER/tre
 * NuGet binary feed:
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
-
+* Samples: [github](https://github.com/Microsoft/FASTER/tree/master/cs/samples)
 
 # Build and Test
 
