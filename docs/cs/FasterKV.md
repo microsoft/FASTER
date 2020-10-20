@@ -26,6 +26,7 @@ Table of Contents
 * [Basic Concepts](#basic-concepts)
 * [Quick End-to-End Sample](#quick-end-to-end-sample)
 * [More Examples](#more-examples)
+* [Handling Variable Length Keys and Values](#handling-variable-length-keys-and-values)
 * [Checkpointing and Recovery](#checkpointing-and-recovery)
 
 ## Getting FASTER
@@ -203,8 +204,15 @@ All these call be accessed through Visual Studio via the main FASTER.sln solutio
 
 There are two ways to handle variable length keys and values in FasterKV:
 
-* Use standard C# class types (e.g., `byte[]` and `string`) to store keys and values. This is easiest, but there are performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
-* Use `SpanByte` our wrapper struct concept, as your key and/or value type. `SpanByte` represents a simple sequence of bytes with a 4-byte (int) header that stores the length of the rest of the payload. `SpanByte` provides the highest performance for variable-length keys and values, and is compatible with pinned memory and `Span<byte>` inputs. Learn more about its use in the related PR [here](https://github.com/microsoft/FASTER/pull/349). `SpanByte` uses an underlying functionality we call _variable-length structs_, that you can use directly if `SpanByte` does not fit your needs, e.g., if you want to use only two bytes for the length header or want to store ints instead of bytes.
+* Use standard C# class types (e.g., `byte[]`, `string`, and `class` objects) to store keys and values. This is easiest, but there are performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
+
+* Use `Memory<byte>` or more generally, `Memory<T> where T : unmanaged` as your value and input type, and `ReadOnlyMemory<T> where T : unmanaged` or `Memory<T> where T : unmanaged` as the key type. This will work out of the box and store the keys and values on the main FasterKV log (no object log required). Your `IFunctions` implementation can use or extend the default supplied base class called [MemoryFunctions](https://github.com/microsoft/FASTER/blob/master/cs/src/core/VarLen/MemoryFunctions.cs).
+
+* Use `SpanByte` our wrapper struct concept, as your key and/or value type. `SpanByte` represents a simple sequence of bytes with a 4-byte (int) header that stores the length of the rest of the payload. `SpanByte` provides the highest performance for variable-length keys and values, and is compatible with pinned memory and `Span<byte>` inputs. Learn more about its use in the related PR [here](https://github.com/microsoft/FASTER/pull/349).
+
+* Our support for `Memory<T> where T : unmanaged` and `SpanByte` both use an underlying functionality that we call _variable-length structs_, that you can use directly if `SpanByte` does not fit your needs, e.g., if you want to use only two bytes for the length header or want to store ints instead of bytes. You do this by specifying `VariableLengthStructSettings` during FasterKV construction, and `SessionVariableLengthStructSettings` during session creation.
+
+* Check out the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes).
 
 ## Checkpointing and Recovery
 
