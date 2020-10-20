@@ -15,15 +15,17 @@ namespace FASTER.core
         void AtomicSwitch(int version);
     }
 
+#if DEBUG
     /// <summary>
-    /// Public interface for a client session.
+    /// Public interface for a client session. DEBUG-only because clients should prefer concrete types rather than interfaces, for performance reasons;
+    /// but this ensures consistency across IClientSession and IAdvancedClientSession.
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface IClientSession<Key, Value, Input, Output, Context> : IDisposable
+    public interface IClientSession<Key, Value, Input, Output, Context>
     {
         /// <summary>
         /// Get session ID
@@ -309,5 +311,6 @@ namespace FASTER.core
         /// <returns></returns>
         public ValueTask WaitForCommitAsync(CancellationToken token = default);
     }
+#endif
 }
 

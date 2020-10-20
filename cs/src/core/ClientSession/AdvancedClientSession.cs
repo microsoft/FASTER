@@ -21,7 +21,10 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public sealed class AdvancedClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IClientSession<Key, Value, Input, Output, Context>
+    public sealed class AdvancedClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
+#if DEBUG
+        , IClientSession<Key, Value, Input, Output, Context>
+#endif
         where Functions : IAdvancedFunctions<Key, Value, Input, Output, Context>
     {
         private readonly FasterKV<Key, Value> fht;
