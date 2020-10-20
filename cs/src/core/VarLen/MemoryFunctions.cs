@@ -11,14 +11,17 @@ namespace FASTER.core
         where T : unmanaged
     {
         readonly MemoryPool<T> memoryPool;
+        readonly bool locking;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        public MemoryFunctions(MemoryPool<T> memoryPool = default)
+        /// <param name="locking">Whether we lock values before concurrent operations (implemented using a spin lock on length header bit)</param>
+        public MemoryFunctions(MemoryPool<T> memoryPool = default, bool locking = false)
         {
             this.memoryPool = memoryPool ?? MemoryPool<T>.Shared;
+            this.locking = locking;
         }
 
         /// <inheritdoc/>
@@ -30,8 +33,15 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override bool ConcurrentWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst)
         {
+            if (locking) dst.SpinLock();
+
             // We can write the source (src) data to the existing destination (dst) in-place, only if there is sufficient space
-            if (dst.Length < src.Length) return false;
+            if (dst.Length < src.Length || dst.IsMarkedReadOnly())
+            {
+                dst.MarkReadOnly();
+                if (locking) dst.Unlock();
+                return false;
+            }
 
             // Option 1: write the source data, leaving the destination size unchanged. You will need
             // to mange the actual space used by the value if you stop here.
@@ -42,8 +52,14 @@ namespace FASTER.core
 
             // We can adjust the length header on the serialized log, if we wish to, using
             // our provided extension method. This method will also zero out the extra space.
-            if (!dst.ShrinkSerializedLength(src.Length)) return false;
-            
+            if (!dst.ShrinkSerializedLength(src.Length))
+            {
+                dst.MarkReadOnly();
+                if (locking) dst.Unlock();
+                return false;
+            }
+
+            if (locking) dst.Unlock();
             return true;
         }
 
@@ -58,9 +74,11 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override void ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
         {
+            if (locking) value.SpinLock();
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
             value.CopyTo(dst.Item1.Memory);
+            if (locking) value.Unlock();
         }
 
         /// <inheritdoc/>
@@ -78,8 +96,15 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value)
         {
-            if (value.Length < input.Length) return false;
+            if (locking) value.SpinLock();
+            if (value.Length < input.Length || value.IsMarkedReadOnly())
+            {
+                value.MarkReadOnly();
+                if (locking) value.Unlock();
+                return false;
+            }
             input.CopyTo(value);
+            if (locking) value.Unlock();
             return true;
         }
     }

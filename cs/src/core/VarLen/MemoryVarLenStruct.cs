@@ -39,7 +39,8 @@ namespace FASTER.core
             }
             count = (count + 1) % 4;
             ref var cache = ref refCache[count];
-            cache.Item1.SetDestination((T*)((byte*)source + sizeof(int)), (*(int*)source) / sizeof(T));
+            var len = (*(int*)source) & ~IntLocker.kHeaderMask;
+            cache.Item1.SetDestination((T*)((byte*)source + sizeof(int)),  len / sizeof(T));
             cache.Item2 = cache.Item1.Memory;
             return ref cache.Item2;
         }
