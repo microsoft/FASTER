@@ -35,7 +35,8 @@ namespace FASTER.core
         {
             if (locking) dst.SpinLock();
 
-            // We can write the source (src) data to the existing destination (dst) in-place, only if there is sufficient space
+            // We can write the source (src) data to the existing destination (dst) in-place, 
+            // only if there is sufficient space
             if (dst.Length < src.Length || dst.IsMarkedReadOnly())
             {
                 dst.MarkReadOnly();
@@ -47,17 +48,9 @@ namespace FASTER.core
             // to mange the actual space used by the value if you stop here.
             src.CopyTo(dst);
 
-            // Zero-out the extra space in destination, if needed, by uncommenting below:
-            // dst.Span.Slice(src.Length).Fill(default);
-
-            // We can adjust the length header on the serialized log, if we wish to, using
-            // our provided extension method. This method will also zero out the extra space.
-            if (!dst.ShrinkSerializedLength(src.Length))
-            {
-                dst.MarkReadOnly();
-                if (locking) dst.Unlock();
-                return false;
-            }
+            // We can adjust the length header on the serialized log, if we wish to.
+            // This method will also zero out the extra space to retain log scan correctness.
+            dst.ShrinkSerializedLength(src.Length);
 
             if (locking) dst.Unlock();
             return true;
@@ -96,16 +89,8 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value)
         {
-            if (locking) value.SpinLock();
-            if (value.Length < input.Length || value.IsMarkedReadOnly())
-            {
-                value.MarkReadOnly();
-                if (locking) value.Unlock();
-                return false;
-            }
-            input.CopyTo(value);
-            if (locking) value.Unlock();
-            return true;
+            // The default implementation of IPU simply writes input to destination, if there is space
+            return ConcurrentWriter(ref key, ref input, ref value);
         }
     }
 }

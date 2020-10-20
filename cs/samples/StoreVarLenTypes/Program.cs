@@ -204,9 +204,11 @@ namespace StoreVarLenTypes
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
             // Create session
-            var s = store.For(new CustomSpanByteFunctions()).NewSession<CustomSpanByteFunctions>();
+            var s = store.For(new CustomSpanByteFunctions(locking: false)).NewSession<CustomSpanByteFunctions>();
 
             Random r = new Random(100);
+
+            // stackalloc implies fixed, so it can be used directly with SpanByte
             Span<byte> keyMem = stackalloc byte[1000];
             Span<byte> valueMem = stackalloc byte[1000];
 

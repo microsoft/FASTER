@@ -23,7 +23,7 @@ namespace FASTER.core
         public unsafe ref SpanByte AsRef(void* source) => ref Unsafe.AsRef<SpanByte>(source);
 
         /// <inheritdoc />
-        public unsafe void Initialize(void* source, void* dest) { }
+        public unsafe void Initialize(void* source, void* dest) { *(int*)source = (int)((byte*)dest - (byte*)source) - sizeof(int); }
     }
 
     /// <summary>
