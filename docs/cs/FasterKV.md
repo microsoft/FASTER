@@ -26,6 +26,7 @@ Table of Contents
 * [Basic Concepts](#basic-concepts)
 * [Quick End-to-End Sample](#quick-end-to-end-sample)
 * [More Examples](#more-examples)
+* [Handling Variable Length Keys and Values](#handling-variable-length-keys-and-values)
 * [Checkpointing and Recovery](#checkpointing-and-recovery)
 
 ## Getting FASTER
@@ -203,8 +204,15 @@ All these call be accessed through Visual Studio via the main FASTER.sln solutio
 
 There are two ways to handle variable length keys and values in FasterKV:
 
-* Use standard C# class types (e.g., `byte[]` and `string`) to store keys and values. This is easiest, but there are performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
-* Use `SpanByte` our wrapper struct concept, as your key and/or value type. `SpanByte` represents a simple sequence of bytes with a 4-byte (int) header that stores the length of the rest of the payload. `SpanByte` provides the highest performance for variable-length keys and values, and is compatible with pinned memory and `Span<byte>` inputs. Learn more about its use in the related PR [here](https://github.com/microsoft/FASTER/pull/349). `SpanByte` uses an underlying functionality we call _variable-length structs_, that you can use directly if `SpanByte` does not fit your needs, e.g., if you want to use only two bytes for the length header or want to store ints instead of bytes.
+* Use standard C# class types (e.g., `byte[]`, `string`, and `class` objects) to store keys and values. This is easiest, but there are performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
+
+* Use `Memory<byte>` or more generally, `Memory<T> where T : unmanaged` as your value and input type, and `ReadOnlyMemory<T> where T : unmanaged` or `Memory<T> where T : unmanaged` as the key type. This will work out of the box and store the keys and values on the main FasterKV log (no object log required). Your `IFunctions` implementation can use or extend the default supplied base class called [MemoryFunctions](https://github.com/microsoft/FASTER/blob/master/cs/src/core/VarLen/MemoryFunctions.cs).
+
+* Use `SpanByte` our wrapper struct concept, as your key and/or value type. `SpanByte` represents a simple sequence of bytes with a 4-byte (int) header that stores the length of the rest of the payload. `SpanByte` provides the highest performance for variable-length keys and values, and is compatible with pinned memory and `Span<byte>` inputs. Learn more about its use in the related PR [here](https://github.com/microsoft/FASTER/pull/349).
+
+* Our support for `Memory<T> where T : unmanaged` and `SpanByte` both use an underlying functionality that we call _variable-length structs_, that you can use directly if `SpanByte` does not fit your needs, e.g., if you want to use only two bytes for the length header or want to store ints instead of bytes. You do this by specifying `VariableLengthStructSettings` during FasterKV construction, and `SessionVariableLengthStructSettings` during session creation.
+
+* Check out the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes).
 
 ## Checkpointing and Recovery
 
@@ -225,82 +233,76 @@ During recovery, sessions can continue using `ResumeSession` invoked with the sa
 sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted 
 operations since that point.
 
-With async session operations on FASTER, one may optionally set a boolean parameter `waitForCommit` in the calls. When set, the async 
-call completes only after the operation is made persistent by an asynchronous checkpoint. The user is responsible for performing the 
-checkpoint asynchronously. An async upsert which returns only after the upsert is made durable, is shown below:
-
-```cs
-await session.UpsertAsync(key, value, waitForCommit: true);
-```
+With async session operations on FASTER, operations return as soon as they complete, before commit. In order to wait for commit,
+you simply issue an `await session.WaitForCommitAsync()` call. The call completes only after the operation is made persistent by
+an asynchronous commit (checkpoint). The user is responsible for initiating the checkpoint asynchronously.
 
 Below, we show a simple recovery example with asynchronous checkpointing.
 
 ```Csharp
-public class PersistenceExample 
+public class PersistenceExample
 {
-  private FasterKV<long, long, long, long, Empty, Funcs> fht;
-  private IDevice log;
-  
-  public PersistenceExample() 
-  {
-    log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-    fht = new FasterKV<long, long, long, long, Empty, Funcs>
-    (1L << 20, new Funcs(), new LogSettings { LogDevice = log });
-  }
-  
-  public void Run()
-  {
-    IssuePeriodicCheckpoints();
-    RunSession();
-  }
-  
-  public void Continue()
-  {
-    fht.Recover();
-    IssuePeriodicCheckpoints();
-    ContinueSession();
-  }
-  
-  /* Helper Functions */
-  private void RunSession() 
-  {
-    using var session = fht.NewSession("s1");
-    long seq = 0; // sequence identifier
-    
-    long key = 1, input = 10;
-    while(true) 
+    private FasterKV<long, long> fht;
+    private IDevice log;
+
+    public PersistenceExample()
     {
-      key = (seq % 1L << 20);
-      session.RMW(ref key, ref input, Empty.Default, seq++);
+        log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
+        fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
     }
-  }
-  
-  private void ContinueSession() 
-  {
-    using var session = fht.ResumeSession("s1", out CommitPoint cp); // recovered session
-    var seq = cp.UntilSerialNo + 1;
-    
-    long key = 1, input = 10;
-    while(true) 
+
+    public void Run()
     {
-      key = (seq % 1L << 20);
-      session.RMW(ref key, ref input, Empty.Default, seq++);
+        IssuePeriodicCheckpoints();
+        RunSession();
     }
-  }
-  
-  private void IssuePeriodicCheckpoints()
-  {
-    var t = new Thread(() => 
+
+    public void Continue()
     {
-      while(true) 
-      {
-        Thread.Sleep(10000);
-        fht.TakeFullCheckpoint(out Guid token);
-        fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
-      }
-    });
-    t.Start();
-  }
+        fht.Recover();
+        IssuePeriodicCheckpoints();
+        ContinueSession();
+    }
+
+    /* Helper Functions */
+    private void RunSession()
+    {
+        using var session = fht.NewSession(new SimpleFunctions<long, long>(), "s1");
+        long seq = 0; // sequence identifier
+
+        long key = 1, input = 10;
+        while (true)
+        {
+            key = (seq % 1L << 20);
+            session.RMW(ref key, ref input, Empty.Default, seq++);
+        }
+    }
+
+    private void ContinueSession()
+    {
+        using var session = fht.ResumeSession(new SimpleFunctions<long, long>(), "s1", out CommitPoint cp); // recovered session
+        var seq = cp.UntilSerialNo + 1;
+
+        long key = 1, input = 10;
+        while (true)
+        {
+            key = (seq % 1L << 20);
+            session.RMW(ref key, ref input, Empty.Default, seq++);
+        }
+    }
+
+    private void IssuePeriodicCheckpoints()
+    {
+        var t = new Thread(() =>
+        {
+            while (true)
+            {
+                Thread.Sleep(10000);
+                (_, _) = fht.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
+            }
+        });
+        t.Start();
+    }
 }
 ```
 

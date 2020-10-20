@@ -53,7 +53,9 @@ namespace FASTER.core
             this.variableLengthStruct = sessionVariableLengthStructSettings?.valueLength;
             if (this.variableLengthStruct == default)
             {
-                if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator)
+                UpdateVarlen(ref this.variableLengthStruct);
+
+                if ((this.variableLengthStruct == default) && (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator))
                 {
                     Debug.WriteLine("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
                     this.variableLengthStruct = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
@@ -67,14 +69,55 @@ namespace FASTER.core
 
             this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;
 
-            if (typeof(Input) == typeof(SpanByte) && inputVariableLengthStruct == default)
+            if (inputVariableLengthStruct == default)
             {
-                inputVariableLengthStruct = new SpanByteLength() as IVariableLengthStruct<Input>;
+                if (typeof(Input) == typeof(SpanByte))
+                {
+                    inputVariableLengthStruct = new SpanByteVarLenStruct() as IVariableLengthStruct<Input>;
+                }
+                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Input).GetGenericArguments()[0]))
+                {
+                    var m = typeof(MemoryVarLenStruct<>).MakeGenericType(typeof(Input).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    inputVariableLengthStruct = o as IVariableLengthStruct<Input>;
+                }
+                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Input).GetGenericArguments()[0]))
+                {
+                    var m = typeof(ReadOnlyMemoryVarLenStruct<>).MakeGenericType(typeof(Input).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    inputVariableLengthStruct = o as IVariableLengthStruct<Input>;
+                }
             }
-            
+
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();
+        }
+
+        private void UpdateVarlen(ref IVariableLengthStruct<Value, Input> variableLengthStruct)
+        {
+            if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+                return;
+
+            if (typeof(Value) == typeof(SpanByte) && typeof(Input) == typeof(SpanByte))
+            {
+                variableLengthStruct = new SpanByteVarLenStructForSpanByteInput() as IVariableLengthStruct<Value, Input>;
+            }
+            else if (typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
+            {
+                if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(Memory<>)) && typeof(Input).GetGenericArguments()[0] == typeof(Value).GetGenericArguments()[0])
+                {
+                    var m = typeof(MemoryVarLenStructForMemoryInput<>).MakeGenericType(typeof(Value).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStruct = o as IVariableLengthStruct<Value, Input>;
+                }
+                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && typeof(Input).GetGenericArguments()[0] == typeof(Value).GetGenericArguments()[0])
+                {
+                    var m = typeof(MemoryVarLenStructForReadOnlyMemoryInput<>).MakeGenericType(typeof(Value).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStruct = o as IVariableLengthStruct<Value, Input>;
+                }
+            }
         }
 
         /// <summary>
