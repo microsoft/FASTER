@@ -602,46 +602,6 @@ namespace FASTER.core
             fht.AtomicSwitch(ctx, ctx.prevCtx, version, fht._hybridLogCheckpoint.info.checkpointTokens);
         }
 
-        /// <summary>
-        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
-        /// </summary>
-        public struct ReadAsyncResult
-        {
-            readonly Status status;
-            readonly Output output;
-
-            readonly FasterKV<Key, Value>.ReadAsyncInternal<Input, Output, Context, Functions> readAsyncInternal;
-
-            internal ReadAsyncResult(Status status, Output output)
-            {
-                this.status = status;
-                this.output = output;
-                readAsyncInternal = default;
-            }
-
-            internal ReadAsyncResult(
-                FasterKV<Key, Value> fasterKV,
-                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                FasterKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
-            {
-                status = Status.PENDING;
-                output = default;
-                readAsyncInternal = new FasterKV<Key, Value>.ReadAsyncInternal<Input, Output, Context, Functions>(fasterKV, clientSession, pendingContext, diskRequest);
-            }
-
-            /// <summary>
-            /// Complete the read operation, after any I/O is completed.
-            /// </summary>
-            /// <returns>The read result, or throws an exception if error encountered.</returns>
-            public (Status, Output) Complete()
-            {
-                if (status != Status.PENDING)
-                    return (status, output);
-
-                return readAsyncInternal.Complete();
-            }
-        }
-
         // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
         internal struct AsyncFasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
