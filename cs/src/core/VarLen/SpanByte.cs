@@ -15,7 +15,9 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit)]
     public unsafe struct SpanByte
     {
-        const int kTypeBitMask = 1 << 31;
+        // Byte #30 and #31 are used for read-only and lock respectively
+        const int kTypeBitMask = 1 << 29;
+        const int kHeaderMask = 7 << 29;
 
         /// <summary>
         /// Length of the payload
@@ -36,8 +38,8 @@ namespace FASTER.core
         /// </summary>
         public int Length
         {
-            get { return length & ~kTypeBitMask; }
-            set { length = (length & kTypeBitMask) | value; }
+            get { return length & ~kHeaderMask; }
+            set { length = (length & kHeaderMask) | value; }
         }
 
         /// <summary>
@@ -88,7 +90,7 @@ namespace FASTER.core
         public Span<byte> AsSpan()
         {
             if (Serialized)
-                return new Span<byte>(Unsafe.AsPointer(ref payload), length);
+                return new Span<byte>(Unsafe.AsPointer(ref payload), Length);
             else
                 return new Span<byte>((void*)payload, Length);
         }
@@ -100,7 +102,7 @@ namespace FASTER.core
         public ReadOnlySpan<byte> AsReadOnlySpan()
         {
             if (Serialized)
-                return new ReadOnlySpan<byte>(Unsafe.AsPointer(ref payload), length);
+                return new ReadOnlySpan<byte>(Unsafe.AsPointer(ref payload), Length);
             else
                 return new ReadOnlySpan<byte>((void*)payload, Length);
         }
@@ -235,13 +237,33 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Blindly copy to given pre-allocated SpanByte, assuming sufficient space
+        /// Blindly copy to given pre-allocated SpanByte, assuming sufficient space.
+        /// Does not change length of destination.
         /// </summary>
         /// <param name="dst"></param>
         public void CopyTo(ref SpanByte dst)
         {
-            dst.Length = Length;
             AsReadOnlySpan().CopyTo(dst.AsSpan());
+        }
+
+        /// <summary>
+        /// Shrink the length header of the in-place allocated buffer on
+        /// FASTER hybrid log, pointed to by the given SpanByte.
+        /// Zeroes out the extra space to retain log scan correctness.
+        /// </summary>
+        /// <param name="newLength"></param>
+        /// <returns></returns>
+        public bool ShrinkSerializedLength(int newLength)
+        {
+            if (newLength > Length) return false;
+
+            // Zero-fill extra space - needed so log scan does not see spurious data
+            if (newLength < Length)
+            {
+                AsSpan().Slice(newLength).Clear();
+                Length = newLength;
+            }
+            return true;
         }
 
         /// <summary>
@@ -253,8 +275,12 @@ namespace FASTER.core
         {
             if (dst.IsSpanByte)
             {
-                if (TryCopyTo(ref dst.SpanByte))
+                if (dst.Length >= Length)
+                {
+                    dst.Length = Length;
+                    AsReadOnlySpan().CopyTo(dst.SpanByte.AsSpan());
                     return;
+                }
                 dst.ConvertToHeap();
             }
 
@@ -297,16 +323,37 @@ namespace FASTER.core
         /// <param name="destination"></param>
         public void CopyTo(byte* destination)
         {
+            *(int*)destination = Length;
             if (Serialized)
             {
-                Buffer.MemoryCopy(Unsafe.AsPointer(ref this.length), destination, Length + sizeof(int), Length + sizeof(int));
+                Buffer.MemoryCopy(Unsafe.AsPointer(ref payload), destination + sizeof(int), Length, Length);
             }
             else
             {
-                *(int*)destination = Length;
                 Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
             }
-
         }
+
+        /// <summary>
+        /// Lock SpanByte, using 2 most significant bits from the length header
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SpinLock() => IntExclusiveLocker.SpinLock(ref length);
+
+        /// <summary>
+        /// Unlock SpanByte, using 2 most significant bits from the length header
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Unlock() => IntExclusiveLocker.Unlock(ref length);
+
+        /// <summary>
+        /// Mark SpanByte as read-only, using 2 most significant bits from the length header
+        /// </summary>
+        public void MarkReadOnly() => IntExclusiveLocker.Mark(ref length);
+
+        /// <summary>
+        /// Check if SpanByte is marked as read-only, using 2 most significant bits from the length header
+        /// </summary>
+        public bool IsMarkedReadOnly() => IntExclusiveLocker.IsMarked(ref length);
     }
 }
