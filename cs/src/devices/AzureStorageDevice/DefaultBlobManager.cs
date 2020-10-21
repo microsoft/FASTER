@@ -106,34 +106,33 @@ namespace FASTER.devices
         }
 
         /// <inheritdoc />
-        public BlobRequestOptions GetBlobRequestOptions()
-        {
-            if (underLease)
-            {
-                return new BlobRequestOptions()
-                {
-                    RetryPolicy = default, // Device handles retries explicitly
-                    NetworkTimeout = TimeSpan.FromSeconds(30),
-                    ServerTimeout = TimeSpan.FromSeconds(20),
-                    MaximumExecutionTime = TimeSpan.FromSeconds(30),
-                };
-            }
-            else
-            {
-                return new BlobRequestOptions()
-                {
-                    RetryPolicy = new ExponentialRetry(TimeSpan.FromSeconds(2), MaxRetries),
-                    NetworkTimeout = TimeSpan.FromSeconds(120),
-                    ServerTimeout = TimeSpan.FromSeconds(120),
-                    MaximumExecutionTime = TimeSpan.FromSeconds(120),
-                };
-            }
-        }
-
-        /// <inheritdoc />
         public void HandleBlobError(string where, string message, string blobName, Exception e, bool isFatal)
         {
             HandleError(where, $"Encountered storage exception for blob {blobName}", e, isFatal);
+        }
+
+        /// <inheritdoc />
+        public BlobRequestOptions GetBlobRequestOptionsWithoutRetry()
+        {
+            return new BlobRequestOptions()
+            {
+                RetryPolicy = default, // Device handles retries explicitly
+                NetworkTimeout = TimeSpan.FromSeconds(30),
+                ServerTimeout = TimeSpan.FromSeconds(20),
+                MaximumExecutionTime = TimeSpan.FromSeconds(30),
+            };
+        }
+
+        /// <inheritdoc />
+        public BlobRequestOptions GetBlobRequestOptionsWithRetry()
+        {
+            return new BlobRequestOptions()
+            {
+                RetryPolicy = new ExponentialRetry(TimeSpan.FromSeconds(2), MaxRetries),
+                NetworkTimeout = TimeSpan.FromSeconds(120),
+                ServerTimeout = TimeSpan.FromSeconds(120),
+                MaximumExecutionTime = TimeSpan.FromSeconds(120),
+            };
         }
 
         private async Task AcquireOwnership()
@@ -149,7 +148,7 @@ namespace FASTER.devices
                     newLeaseTimer.Restart();
 
                     this.leaseId = await this.leaseBlob.AcquireLeaseAsync(LeaseDuration, null,
-                        accessCondition: null, options: this.GetBlobRequestOptions(), operationContext: null, this.CancellationToken)
+                        accessCondition: null, options: this.GetBlobRequestOptionsWithRetry(), operationContext: null, this.CancellationToken)
                         .ConfigureAwait(ConfigureAwaitForStorage);
 
                     this.leaseTimer = newLeaseTimer;
@@ -275,7 +274,7 @@ namespace FASTER.devices
                     AccessCondition acc = new AccessCondition() { LeaseId = this.leaseId };
 
                     await this.leaseBlob.ReleaseLeaseAsync(accessCondition: acc,
-                        options: this.GetBlobRequestOptions(), operationContext: null, cancellationToken: this.CancellationToken)
+                        options: this.GetBlobRequestOptionsWithRetry(), operationContext: null, cancellationToken: this.CancellationToken)
                         .ConfigureAwait(ConfigureAwaitForStorage);
                 }
                 catch (OperationCanceledException)

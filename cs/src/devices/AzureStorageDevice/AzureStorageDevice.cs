@@ -24,7 +24,8 @@ namespace FASTER.devices
         private readonly string blobName;
         private readonly bool underLease;
 
-        internal BlobRequestOptions BlobRequestOptions { get; private set; }
+        internal BlobRequestOptions BlobRequestOptionsWithoutRetry { get; private set; }
+        internal BlobRequestOptions BlobRequestOptionsWithRetry { get; private set; }
 
         // Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
         private const long MAX_BLOB_SIZE = (long)(2 * 10e8);
@@ -61,7 +62,8 @@ namespace FASTER.devices
             this.deleteOnClose = deleteOnClose;
 
             this.BlobManager = blobManager ?? new DefaultBlobManager(this.underLease, this.blobDirectory);
-            this.BlobRequestOptions = BlobManager.GetBlobRequestOptions();
+            this.BlobRequestOptionsWithoutRetry = BlobManager.GetBlobRequestOptionsWithoutRetry();
+            this.BlobRequestOptionsWithRetry = BlobManager.GetBlobRequestOptionsWithRetry();
 
             StartAsync().Wait();
         }
@@ -95,7 +97,8 @@ namespace FASTER.devices
             this.deleteOnClose = deleteOnClose;
 
             this.BlobManager = blobManager ?? new DefaultBlobManager(this.underLease, this.blobDirectory);
-            this.BlobRequestOptions = BlobManager.GetBlobRequestOptions();
+            this.BlobRequestOptionsWithoutRetry = BlobManager.GetBlobRequestOptionsWithoutRetry();
+            this.BlobRequestOptionsWithRetry = BlobManager.GetBlobRequestOptionsWithRetry();
 
             StartAsync().Wait();
         }
@@ -115,7 +118,7 @@ namespace FASTER.devices
                     await this.BlobManager.ConfirmLeaseAsync().ConfigureAwait(false);
                 }
                 var response = await this.blobDirectory.ListBlobsSegmentedAsync(useFlatBlobListing: false, blobListingDetails: BlobListingDetails.None, maxResults: 1000,
-                    currentToken: continuationToken, options: this.BlobRequestOptions, operationContext: null)
+                    currentToken: continuationToken, options: this.BlobRequestOptionsWithRetry, operationContext: null)
                     .ConfigureAwait(BlobManager.ConfigureAwaitForStorage);
 
                 foreach (IListBlobItem item in response.Results)
@@ -244,7 +247,7 @@ namespace FASTER.devices
                         if (length > 0)
                         {
                             await blob.WritePagesAsync(stream, destinationAddress + offset,
-                                contentChecksum: null, accessCondition: null, options: this.BlobRequestOptions, operationContext: null, cancellationToken: this.BlobManager.CancellationToken)
+                                contentChecksum: null, accessCondition: null, options: this.BlobRequestOptionsWithoutRetry, operationContext: null, cancellationToken: this.BlobManager.CancellationToken)
                                 .ConfigureAwait(BlobManager.ConfigureAwaitForStorage);
                         }
                         break;
@@ -301,7 +304,7 @@ namespace FASTER.devices
                         if (readLength > 0)
                         {
                             await blob.DownloadRangeToStreamAsync(stream, sourceAddress, readLength,
-                                 accessCondition: null, options: this.BlobRequestOptions, operationContext: null, cancellationToken: this.BlobManager.CancellationToken)
+                                 accessCondition: null, options: this.BlobRequestOptionsWithoutRetry, operationContext: null, cancellationToken: this.BlobManager.CancellationToken)
                                 .ConfigureAwait(BlobManager.ConfigureAwaitForStorage);
                         }
 

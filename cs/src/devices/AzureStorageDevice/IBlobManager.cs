@@ -14,10 +14,16 @@ namespace FASTER.devices
     public interface IBlobManager
     {
         /// <summary>
-        /// Get blob request options
+        /// Get blob request options (default)
         /// </summary>
         /// <returns></returns>
-        BlobRequestOptions GetBlobRequestOptions();
+        BlobRequestOptions GetBlobRequestOptionsWithoutRetry();
+
+        /// <summary>
+        /// Get blob request options (with retry)
+        /// </summary>
+        /// <returns></returns>
+        BlobRequestOptions GetBlobRequestOptionsWithRetry();
 
         /// <summary>
         /// Cancellation token for blob operations
