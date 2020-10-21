@@ -17,20 +17,23 @@ namespace FASTER.devices
     /// </summary>
     public class DefaultBlobManager : IBlobManager
     {
-        private readonly CancellationTokenSource cts;
-        private readonly bool underLease;
-        private string leaseId;
+        readonly CancellationTokenSource cts;
+        readonly bool underLease;
+        string leaseId;
 
-        private readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(45); // max time the lease stays after unclean shutdown
-        private readonly TimeSpan LeaseRenewal = TimeSpan.FromSeconds(30); // how often we renew the lease
-        private readonly TimeSpan LeaseSafetyBuffer = TimeSpan.FromSeconds(10); // how much time we want left on the lease before issuing a protected access
-        private volatile Stopwatch leaseTimer;
-        private Task LeaseMaintenanceLoopTask = Task.CompletedTask;
-        private volatile Task NextLeaseRenewalTask = Task.CompletedTask;
+        readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(45); // max time the lease stays after unclean shutdown
+        readonly TimeSpan LeaseRenewal = TimeSpan.FromSeconds(30); // how often we renew the lease
+        readonly TimeSpan LeaseSafetyBuffer = TimeSpan.FromSeconds(10); // how much time we want left on the lease before issuing a protected access
+        volatile Stopwatch leaseTimer;
+        Task LeaseMaintenanceLoopTask = Task.CompletedTask;
+        volatile Task NextLeaseRenewalTask = Task.CompletedTask;
 
         private readonly CloudBlobDirectory leaseDirectory;
         private const string LeaseBlobName = "lease";
         private CloudBlockBlob leaseBlob;
+
+        static SemaphoreSlim AsynchronousStorageReadMaxConcurrency = new SemaphoreSlim(Environment.ProcessorCount * 25);
+        static SemaphoreSlim AsynchronousStorageWriteMaxConcurrency = new SemaphoreSlim(Environment.ProcessorCount * 25);
 
         /// <summary>
         /// Create instance of blob manager
@@ -57,7 +60,7 @@ namespace FASTER.devices
         private async Task StartAsync()
         {
             this.leaseBlob = this.leaseDirectory.GetBlockBlobReference(LeaseBlobName);
-            await this.AcquireOwnership().ConfigureAwait(false);
+            await this.AcquireOwnership();
         }
 
         /// <summary>
@@ -67,11 +70,23 @@ namespace FASTER.devices
         public async Task StopAsync()
         {
             this.cts.Cancel(); // has no effect if already cancelled
-            await this.LeaseMaintenanceLoopTask.ConfigureAwait(false); // wait for loop to terminate cleanly
+            await this.LeaseMaintenanceLoopTask; // wait for loop to terminate cleanly
         }
 
         /// <inheritdoc />
         public CancellationToken CancellationToken => cts.Token;
+
+        /// <inheritdoc />
+        public SemaphoreSlim AsyncStorageReadMaxConcurrency => AsynchronousStorageReadMaxConcurrency;
+
+        /// <inheritdoc />
+        public SemaphoreSlim AsyncStorageWriteMaxConcurrency => AsynchronousStorageWriteMaxConcurrency;
+
+        /// <inheritdoc />
+        public int MaxRetries => 5;
+
+        /// <inheritdoc />
+        public bool ConfigureAwaitForStorage => true;
 
         /// <inheritdoc />
         public async ValueTask ConfirmLeaseAsync()
@@ -97,16 +112,20 @@ namespace FASTER.devices
             {
                 return new BlobRequestOptions()
                 {
-                    RetryPolicy = new LinearRetry(TimeSpan.FromSeconds(2), 2),
-                    NetworkTimeout = TimeSpan.FromSeconds(50),
+                    RetryPolicy = default, // Device handles retries explicitly
+                    NetworkTimeout = TimeSpan.FromSeconds(30),
+                    ServerTimeout = TimeSpan.FromSeconds(20),
+                    MaximumExecutionTime = TimeSpan.FromSeconds(30),
                 };
             }
             else
             {
                 return new BlobRequestOptions()
                 {
-                    RetryPolicy = new ExponentialRetry(TimeSpan.FromSeconds(4), 4),
-                    NetworkTimeout = TimeSpan.FromSeconds(50),
+                    RetryPolicy = new ExponentialRetry(TimeSpan.FromSeconds(2), MaxRetries),
+                    NetworkTimeout = TimeSpan.FromSeconds(120),
+                    ServerTimeout = TimeSpan.FromSeconds(120),
+                    MaximumExecutionTime = TimeSpan.FromSeconds(120),
                 };
             }
         }
@@ -130,7 +149,8 @@ namespace FASTER.devices
                     newLeaseTimer.Restart();
 
                     this.leaseId = await this.leaseBlob.AcquireLeaseAsync(LeaseDuration, null,
-                        accessCondition: null, options: this.GetBlobRequestOptions(), operationContext: null, this.CancellationToken).ConfigureAwait(false);
+                        accessCondition: null, options: this.GetBlobRequestOptions(), operationContext: null, this.CancellationToken)
+                        .ConfigureAwait(ConfigureAwaitForStorage);
 
                     this.leaseTimer = newLeaseTimer;
                     this.LeaseMaintenanceLoopTask = Task.Run(() => this.MaintenanceLoopAsync());
@@ -153,7 +173,8 @@ namespace FASTER.devices
                     {
                         // Create blob with empty content, then try again
                         Debug.WriteLine("Creating commit blob");
-                        await this.leaseBlob.UploadFromByteArrayAsync(Array.Empty<byte>(), 0, 0).ConfigureAwait(false);
+                        await this.leaseBlob.UploadFromByteArrayAsync(Array.Empty<byte>(), 0, 0)
+                            .ConfigureAwait(ConfigureAwaitForStorage);
                         continue;
                     }
                     catch (StorageException ex2) when (LeaseConflictOrExpired(ex2))
@@ -190,8 +211,13 @@ namespace FASTER.devices
                 AccessCondition acc = new AccessCondition() { LeaseId = this.leaseId };
                 var nextLeaseTimer = new Stopwatch();
                 nextLeaseTimer.Start();
-                await this.leaseBlob.RenewLeaseAsync(acc, this.CancellationToken).ConfigureAwait(false);
+                await this.leaseBlob.RenewLeaseAsync(acc, this.CancellationToken)
+                    .ConfigureAwait(ConfigureAwaitForStorage);
                 this.leaseTimer = nextLeaseTimer;
+            }
+            catch (OperationCanceledException)
+            {
+                // o.k. during termination or shutdown
             }
             catch (Exception)
             {
@@ -249,7 +275,8 @@ namespace FASTER.devices
                     AccessCondition acc = new AccessCondition() { LeaseId = this.leaseId };
 
                     await this.leaseBlob.ReleaseLeaseAsync(accessCondition: acc,
-                        options: this.GetBlobRequestOptions(), operationContext: null, cancellationToken: this.CancellationToken).ConfigureAwait(false);
+                        options: this.GetBlobRequestOptions(), operationContext: null, cancellationToken: this.CancellationToken)
+                        .ConfigureAwait(ConfigureAwaitForStorage);
                 }
                 catch (OperationCanceledException)
                 {

@@ -39,5 +39,25 @@ namespace FASTER.devices
         /// </summary>
         /// <returns></returns>
         ValueTask ConfirmLeaseAsync();
+
+        /// <summary>
+        /// Max concurrency on async storage read
+        /// </summary>
+        SemaphoreSlim AsyncStorageReadMaxConcurrency { get; }
+
+        /// <summary>
+        /// Max concurrency on async storage write
+        /// </summary>
+        SemaphoreSlim AsyncStorageWriteMaxConcurrency { get; }
+
+        /// <summary>
+        /// Max retries
+        /// </summary>
+        int MaxRetries { get; }
+
+        /// <summary>
+        /// Configure await for storage
+        /// </summary>
+        bool ConfigureAwaitForStorage { get; }
     }
 }
