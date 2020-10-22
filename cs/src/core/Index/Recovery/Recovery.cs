@@ -519,7 +519,7 @@ namespace FASTER.core
                         }
                     }
                 }
-                pointer += hlog.GetRecordSize(recordStart);
+                pointer += hlog.GetRecordSize(recordStart).Item2;
             }
 
             return touched;

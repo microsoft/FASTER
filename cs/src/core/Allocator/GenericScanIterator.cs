@@ -45,7 +45,7 @@ namespace FASTER.core
 
             this.endAddress = endAddress;
 
-            recordSize = hlog.GetRecordSize(0);
+            recordSize = hlog.GetRecordSize(0).Item2;
             currentAddress = -1;
             nextAddress = beginAddress;
 

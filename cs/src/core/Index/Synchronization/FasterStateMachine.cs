@@ -202,8 +202,9 @@ namespace FASTER.core
             {
                 Debug.Assert(
                     (threadState.version < targetState.version) ||
-                    (threadState.version == targetState.version && threadState.phase <= targetState.phase)
-                    );
+                       (threadState.version == targetState.version && 
+                       (threadState.phase <= targetState.phase || currentTask is IndexSnapshotStateMachine)
+                    ));
 
                 currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, valueTasks, token);
 

@@ -53,7 +53,9 @@ namespace FASTER.core
             this.variableLengthStruct = sessionVariableLengthStructSettings?.valueLength;
             if (this.variableLengthStruct == default)
             {
-                if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator)
+                UpdateVarlen(ref this.variableLengthStruct);
+
+                if ((this.variableLengthStruct == default) && (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator))
                 {
                     Debug.WriteLine("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
                     this.variableLengthStruct = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
@@ -67,14 +69,55 @@ namespace FASTER.core
 
             this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;
 
-            if (typeof(Input) == typeof(SpanByte) && inputVariableLengthStruct == default)
+            if (inputVariableLengthStruct == default)
             {
-                inputVariableLengthStruct = new SpanByteLength() as IVariableLengthStruct<Input>;
+                if (typeof(Input) == typeof(SpanByte))
+                {
+                    inputVariableLengthStruct = new SpanByteVarLenStruct() as IVariableLengthStruct<Input>;
+                }
+                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Input).GetGenericArguments()[0]))
+                {
+                    var m = typeof(MemoryVarLenStruct<>).MakeGenericType(typeof(Input).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    inputVariableLengthStruct = o as IVariableLengthStruct<Input>;
+                }
+                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Input).GetGenericArguments()[0]))
+                {
+                    var m = typeof(ReadOnlyMemoryVarLenStruct<>).MakeGenericType(typeof(Input).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    inputVariableLengthStruct = o as IVariableLengthStruct<Input>;
+                }
             }
-            
+
             // Session runs on a single thread
             if (!supportAsync)
                 UnsafeResumeThread();
+        }
+
+        private void UpdateVarlen(ref IVariableLengthStruct<Value, Input> variableLengthStruct)
+        {
+            if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+                return;
+
+            if (typeof(Value) == typeof(SpanByte) && typeof(Input) == typeof(SpanByte))
+            {
+                variableLengthStruct = new SpanByteVarLenStructForSpanByteInput() as IVariableLengthStruct<Value, Input>;
+            }
+            else if (typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
+            {
+                if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(Memory<>)) && typeof(Input).GetGenericArguments()[0] == typeof(Value).GetGenericArguments()[0])
+                {
+                    var m = typeof(MemoryVarLenStructForMemoryInput<>).MakeGenericType(typeof(Value).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStruct = o as IVariableLengthStruct<Value, Input>;
+                }
+                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && typeof(Input).GetGenericArguments()[0] == typeof(Value).GetGenericArguments()[0])
+                {
+                    var m = typeof(MemoryVarLenStructForReadOnlyMemoryInput<>).MakeGenericType(typeof(Value).GetGenericArguments());
+                    object o = Activator.CreateInstance(m);
+                    variableLengthStruct = o as IVariableLengthStruct<Value, Input>;
+                }
+            }
         }
 
         /// <summary>
@@ -557,46 +600,6 @@ namespace FASTER.core
         void IClientSession.AtomicSwitch(int version)
         {
             fht.AtomicSwitch(ctx, ctx.prevCtx, version, fht._hybridLogCheckpoint.info.checkpointTokens);
-        }
-
-        /// <summary>
-        /// State storage for the completion of an async Read, or the result if the read was completed synchronously
-        /// </summary>
-        public struct ReadAsyncResult
-        {
-            readonly Status status;
-            readonly Output output;
-
-            readonly FasterKV<Key, Value>.ReadAsyncInternal<Input, Output, Context, Functions> readAsyncInternal;
-
-            internal ReadAsyncResult(Status status, Output output)
-            {
-                this.status = status;
-                this.output = output;
-                readAsyncInternal = default;
-            }
-
-            internal ReadAsyncResult(
-                FasterKV<Key, Value> fasterKV,
-                ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                FasterKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
-            {
-                status = Status.PENDING;
-                output = default;
-                readAsyncInternal = new FasterKV<Key, Value>.ReadAsyncInternal<Input, Output, Context, Functions>(fasterKV, clientSession, pendingContext, diskRequest);
-            }
-
-            /// <summary>
-            /// Complete the read operation, after any I/O is completed.
-            /// </summary>
-            /// <returns>The read result, or throws an exception if error encountered.</returns>
-            public (Status, Output) Complete()
-            {
-                if (status != Status.PENDING)
-                    return (status, output);
-
-                return readAsyncInternal.Complete();
-            }
         }
 
         // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)

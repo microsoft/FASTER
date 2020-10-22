@@ -41,30 +41,4 @@ namespace FASTER.core
 
         public void Dispose() { }
     }
-
-    /// <summary>
-    /// Heap container for variable length structs
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    internal class VarLenHeapContainer<T> : IHeapContainer<T>
-    {
-        readonly SectorAlignedMemory mem;
-
-        public unsafe VarLenHeapContainer(ref T obj, IVariableLengthStruct<T> varLenStruct, SectorAlignedBufferPool pool)
-        {
-            var len = varLenStruct.GetLength(ref obj);
-            mem = pool.Get(len);
-            varLenStruct.Serialize(ref obj, mem.GetValidPointer());
-        }
-
-        public unsafe ref T Get()
-        {
-            return ref Unsafe.AsRef<T>(mem.GetValidPointer());
-        }
-
-        public void Dispose()
-        {
-            mem.Return();
-        }
-    }
 }
