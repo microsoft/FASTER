@@ -7,18 +7,20 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+#include <chrono>
+
 /// Defines the type of log messages supported by the system.
 enum class Lvl {
   DEBUG = 0,
   INFO  = 1,
-  ERROR = 2,
+  ERR = 2,
 };
 
 /// By default, only print ERROR log messages.
-#define LEVEL Lvl::ERROR
+#define LEVEL Lvl::INFO
 
 /// Macro to add in the file and function name, and line number.
-#define logMessage(l, f, a...) logMsg(l, __LINE__, __func__, __FILE__, f, ##a)
+#define logMessage(l, f, ...) logMsg(l, __LINE__, __func__, __FILE__, f, __VA_ARGS__)
 
 /// Prints out a message with the current timestamp and code location.
 inline void logMsg(Lvl level, int line, const char* func,
@@ -27,8 +29,7 @@ inline void logMsg(Lvl level, int line, const char* func,
   // Do not print messages below the current level.
   if (level < static_cast<Lvl>(LEVEL)) return;
 
-  struct timespec now;
-  clock_gettime(CLOCK_REALTIME, &now);
+  auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
 
   va_list argptr;
   va_start(argptr, fmt);
@@ -50,7 +51,8 @@ inline void logMsg(Lvl level, int line, const char* func,
   }
 
   fprintf(stderr, "[%010lu.%09lu]::%s::%s:%s:%d:: %s\n",
-          now.tv_sec, now.tv_nsec,
+          (unsigned long) std::chrono::duration_cast<std::chrono::seconds>(now).count(),
+          (unsigned long) std::chrono::duration_cast<std::chrono::nanoseconds>(now).count(),
           l.c_str(), file, func, line, buffer);
 
   va_end(argptr);

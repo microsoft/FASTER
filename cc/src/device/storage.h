@@ -6,7 +6,28 @@
 #include <string>
 #include <experimental/filesystem>
 
+#ifdef _WIN32
+
+#include <concurrent_unordered_map.h>
+template <typename K, typename V>
+using concurrent_unordered_map = concurrency::concurrent_unordered_map<K, V>;
+
+#include <concurrent_queue.h>
+template <typename T>
+using concurrent_queue = concurrency::concurrent_queue<T>;
+
+#else
+
 #include "tbb/concurrent_unordered_map.h"
+template <typename K, typename V>
+using concurrent_unordered_map = tbb::concurrent_unordered_map<K, V>;
+
+#include "tbb/concurrent_queue.h"
+template <typename T>
+using concurrent_queue = tbb::concurrent_queue<T>;
+using namespace tbb;
+
+#endif
 
 #include "file_system_disk.h"
 
@@ -19,7 +40,6 @@
 
 #include "environment/file.h"
 
-using namespace concurrency;
 using namespace FASTER::core;
 using namespace FASTER::environment;
 
@@ -352,12 +372,12 @@ class StorageFile {
   ///    Logarithm base 2 of the size of each local file the log is split
   ///    across.
   StorageFile(std::string fileName, handler_t* ioHandler, LightEpoch* epoch,
-              tbb::concurrent_queue<task_t>* pendingTasks,
+              concurrent_queue<task_t>* pendingTasks,
               uint16_t id, const std::string& dfs,
               uint64_t numFiles=16, uint64_t distance=8, uint64_t bits=9)
     : localFiles()
     , safeRemoteOffset(0)
-    , remote(dfs.c_str(), pendingTasks, id)
+    , remote(utility::conversions::to_string_t(dfs).c_str(), pendingTasks, id)
     , remoteOffset(0)
     , remoteFlushed(0)
     , tailFile(0)
@@ -449,7 +469,7 @@ class StorageFile {
     LocalFile<handler_t, remote_t>* tail =
                 new LocalFile<handler_t, remote_t>(name, ioHandler, kFileSize);
     if (tail->Open() != Status::Ok) {
-      logMessage(Lvl::ERROR, "Failed to open local file %s", name.c_str());
+      logMessage(Lvl::ERR, "Failed to open local file %s", name.c_str());
       return Status::Aborted;
     }
 
@@ -467,14 +487,14 @@ class StorageFile {
     // First close all local files. If any fail, return an error.
     for (auto& file : localFiles) {
       if (file.second->Close() != Status::Ok) {
-        logMessage(Lvl::ERROR, "Failed to close local file %s",
+        logMessage(Lvl::ERR, "Failed to close local file %s",
                    baseName + std::to_string(file.first) + ".log");
         return Status::Aborted;
       }
 
       // Delete all LocalFile instances.
       if (file.second->Delete() != Status::Ok) {
-        logMessage(Lvl::ERROR, "Failed to delete local file %s",
+        logMessage(Lvl::ERR, "Failed to delete local file %s",
                    baseName + std::to_string(file.first) + ".log");
         return Status::Aborted;
       }
@@ -497,7 +517,7 @@ class StorageFile {
     // First delete all local files. If any fail, return an error.
     for (auto& file : localFiles) {
       if (file.second->Delete() != Status::Ok) {
-        logMessage(Lvl::ERROR, "Failed to delete local file %s",
+        logMessage(Lvl::ERR, "Failed to delete local file %s",
                    baseName + std::to_string(file->first) + ".log");
         return Status::Aborted;
       }
@@ -607,7 +627,7 @@ class StorageFile {
                                     std::to_string(newTail.control()) + ".log",
                                     ioHandler, kFileSize);
       if (local->Open() != Status::Ok) {
-        logMessage(Lvl::ERROR,
+        logMessage(Lvl::ERR,
                    "Write required opening of new file %s which failed",
                    baseName + std::to_string(newTail.control()) + ".log");
         return Status::Aborted;
@@ -627,7 +647,7 @@ class StorageFile {
     Status lRes = handle->second->WriteAsync(source, dest & (kFileSize - 1),
                                              length, callback, context);
     if (lRes != Status::Ok) {
-      logMessage(Lvl::ERROR,
+      logMessage(Lvl::ERR,
                  "Failed to write %lu B to address %lu within file %s",
                  length, dest, baseName + std::to_string(handle->first) +
                  ".log");
@@ -781,7 +801,7 @@ class StorageFile {
                             context->untilAddress, context->dest,
                             context->data);
       context->storageFile->remote.WriteAsync(
-                            reinterpret_cast<uint8_t*>(context->data), len,
+                            reinterpret_cast<uint8_t*>(context->data), (uint32_t) len,
                             context->dest, Flush, f);
       return;
     }
@@ -1043,7 +1063,7 @@ class StorageDevice {
             1024, 302, 30 }
   {
     if (hLog.Open() != Status::Ok) {
-      logMessage(Lvl::ERROR,
+      logMessage(Lvl::ERR,
                  "Failed to open hybrid log file on Storage device");
       throw std::runtime_error("Failed to open file for hybrid log");
     }
@@ -1063,7 +1083,7 @@ class StorageDevice {
             "UseDevelopmentStorage=true;" }
   {
     if (hLog.Open() != Status::Ok) {
-      logMessage(Lvl::ERROR,
+      logMessage(Lvl::ERR,
                  "Failed to open hybrid log file on Storage device");
       throw std::runtime_error("Failed to open file for hybrid log");
     }
@@ -1222,7 +1242,7 @@ class StorageDevice {
 
   /// List of asynchronous IOs to DFS that were successfully
   /// kicked off, but have not completed yet.
-  tbb::concurrent_queue<task_t> pendingTasks;
+  concurrent_queue<task_t> pendingTasks;
 
   /// The file holding the HybridLog below the safe read only offset.
   log_file_t hLog;

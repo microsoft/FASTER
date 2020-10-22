@@ -10,7 +10,20 @@
 #include "device/azure.h"
 #include "device/null_disk.h"
 
+#ifdef _WIN32
+
+#include <concurrent_queue.h>
+template <typename T>
+using concurrent_queue = concurrency::concurrent_queue<T>;
+
+#else
+
 #include "tbb/concurrent_queue.h"
+template <typename T>
+using concurrent_queue = tbb::concurrent_queue<T>;
+using namespace tbb;
+
+#endif
 
 using namespace FASTER::device;
 
@@ -66,7 +79,7 @@ TEST(AzureBlobs, ReadWrite) {
   Context ctxt;
 
   /// BlobFile to be tested.
-  tbb::concurrent_queue<BlobFile::Task> tasks;
+  concurrent_queue<BlobFile::Task> tasks;
   BlobFile remoteFile(tasks);
 
   /// Data to be written to blob storage. A simple byte array will suffice.

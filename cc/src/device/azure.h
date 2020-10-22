@@ -5,9 +5,20 @@
 #include <memory>
 #include <algorithm>
 
+#ifdef _WIN32
+
+#include <concurrent_queue.h>
+template <typename T>
+using concurrent_queue = concurrency::concurrent_queue<T>;
+
+#else
+
 #include "tbb/concurrent_queue.h"
-#include "tbb/concurrent_vector.h"
-#include "tbb/concurrent_unordered_map.h"
+template <typename T>
+using concurrent_queue = tbb::concurrent_queue<T>;
+using namespace tbb;
+
+#endif
 
 #include <was/storage_account.h>
 #include <was/blob.h>
@@ -20,9 +31,7 @@
 #include "common/log.h"
 
 using namespace azure::storage;
-using namespace concurrency;
 using namespace concurrency::streams;
-using namespace tbb;
 
 using namespace FASTER::core;
 
@@ -57,8 +66,8 @@ class BlobFile {
   ///    8 Tera Bytes.
   /// \param deleteOnClose
   ///    If true, the "file" is deleted once closed.
-  BlobFile(const char* connection,
-           tbb::concurrent_queue<Task>* queue,
+  BlobFile(const wchar_t* connection,
+           concurrent_queue<Task>* queue,
            uint16_t id=1, uint64_t blobSize=((uint64_t)1 << 40),
            bool deleteOnClose=true)
     : conn(connection)
@@ -75,8 +84,8 @@ class BlobFile {
   ///
   /// \param queue
   ///    Queue on which to enqueue asynchronous IOs.
-  BlobFile(tbb::concurrent_queue<Task>& queue)
-    : conn("UseDevelopmentStorage=true;")
+  BlobFile(concurrent_queue<Task>& queue)
+    : conn(L"UseDevelopmentStorage=true;")
     , account()
     , client()
     , id(std::to_string((unsigned long)1))
@@ -88,7 +97,7 @@ class BlobFile {
 
   /// Default constructor.
   BlobFile()
-    : conn("UseDevelopmentStorage=true;")
+    : conn(L"UseDevelopmentStorage=true;")
     , account()
     , client()
     , id(std::to_string((unsigned long)1))
@@ -147,7 +156,8 @@ class BlobFile {
 
       // Next, create a container for the file.
       cloud_blob_container container =
-          client.get_container_reference("sofaster" + id);
+          client.get_container_reference(
+              utility::conversions::to_string_t("sofaster" + id));
 
       // Create the container if it does not exist already.
       if (!container.exists()) {
@@ -161,14 +171,16 @@ class BlobFile {
       // Create enough blobs within the container to hold FASTER's entire
       // logical address space. Save references to these blobs for future
       // read/write operations. Blob store restricts me to 1 TB.
-      uint64_t limit = 1UL << 40;
-      uint64_t maxBlobs = std::min(limit, (1UL << lBits)) / (blobMask + 1);
+      uint64_t limit = ((uint64_t) 1) << 40;
+      uint64_t maxBlobs = std::min(limit,
+                                   ((uint64_t) 1 << lBits)) / (blobMask + 1);
       logMessage(Lvl::INFO,
                  "Creating %lu blobs under container sofaster%s", maxBlobs,
                  id.c_str());
       for (uint64_t blob = 0; blob < maxBlobs; blob++) {
         cloud_page_blob pBlob =
-            container.get_page_blob_reference(std::to_string((long)blob));
+            container.get_page_blob_reference(
+                utility::conversions::to_string_t(std::to_string((long)blob)));
         pBlob.create(blobMask + 1);
         logMessage(Lvl::INFO, "Created blob %lu of size %lu GB",
                    blob, (blobMask + 1) / (1 << 30));
@@ -177,13 +189,13 @@ class BlobFile {
       return Status::Ok;
     } catch (const storage_exception& e) {
       // Azure can throw exceptions if arguments are invalid.
-      logMessage(Lvl::ERROR, "Received exception from blob store: %s",
+      logMessage(Lvl::ERR, "Received exception from blob store: %s",
                  e.what());
 
       // Print out an extended error message too.
       storage_extended_error err = e.result().extended_error();
       if (!err.message().empty()) {
-        logMessage(Lvl::ERROR, "Extended error message: %s",
+        logMessage(Lvl::ERR, "Extended error message: %s",
                    err.message().c_str());
       }
 
@@ -212,17 +224,18 @@ class BlobFile {
     try {
       // Delete the container and all blobs within.
       cloud_blob_container container =
-          client.get_container_reference("sofaster" + id);
+          client.get_container_reference(
+              utility::conversions::to_string_t("sofaster" + id));
       container.delete_container();
     } catch (const storage_exception& e) {
       // Azure can throw exceptions if arguments are invalid.
-      logMessage(Lvl::ERROR, "Failed to delete remote tier: %s",
+      logMessage(Lvl::ERR, "Failed to delete remote tier: %s",
                  e.what());
 
       // Print out an extended error message too.
       storage_extended_error err = e.result().extended_error();
       if (!err.message().empty()) {
-        logMessage(Lvl::ERROR, "Extended error message: %s",
+        logMessage(Lvl::ERR, "Extended error message: %s",
                    err.message().c_str());
       }
 
@@ -387,9 +400,11 @@ class BlobFile {
       // the blob to be looked up.
       uint64_t blobNum = source / (blobMask + 1);
       cloud_blob_container container =
-          client.get_container_reference("sofaster" + id);
+          client.get_container_reference(
+              utility::conversions::to_string_t("sofaster" + id));
       cloud_page_blob blob =
-          container.get_page_blob_reference(std::to_string((long)blobNum));
+          container.get_page_blob_reference(
+              utility::conversions::to_string_t(std::to_string((long)blobNum)));
 
       // Next, get the page number within the blob. Using the blobMask
       // gives us a byte offset within the blob. This then needs to be
@@ -412,14 +427,14 @@ class BlobFile {
       );
     } catch (const storage_exception& e) {
       // Azure can throw exceptions if arguments are invalid.
-      logMessage(Lvl::ERROR,
+      logMessage(Lvl::ERR,
                  "Failed to read %lu bytes at address %lu from dfs: %s",
                  len, source, e.what());
 
       // Print out an extended error message too.
       storage_extended_error err = e.result().extended_error();
       if (!err.message().empty()) {
-        logMessage(Lvl::ERROR, "Extended error message: %s",
+        logMessage(Lvl::ERR, "Extended error message: %s",
                    err.message().c_str());
       }
 
@@ -457,7 +472,7 @@ class BlobFile {
     // Reject writes that are larger than 4 MB (Blob storage limitation),
     // and writes to addresses that are not aligned to 512 Bytes.
     if (len > (uint64_t)(4 << 20) || (dest & (alignment - 1)) != 0) {
-      logMessage(Lvl::ERROR,
+      logMessage(Lvl::ERR,
                  "Bad alignment when writing %lu B to address %lu on dfs",
                  len, dest);
       return Status::Aborted;
@@ -469,9 +484,11 @@ class BlobFile {
       // identifier for the blob to lookup.
       uint64_t blobNum = dest / (blobMask + 1);
       cloud_blob_container container =
-          client.get_container_reference("sofaster" + this->id);
+          client.get_container_reference(
+              utility::conversions::to_string_t("sofaster" + this->id));
       cloud_page_blob blob =
-          container.get_page_blob_reference(std::to_string((long)blobNum));
+          container.get_page_blob_reference(
+              utility::conversions::to_string_t(std::to_string((long)blobNum)));
 
 
       // Next, get the page number within the blob. Using the blobMask
@@ -486,19 +503,19 @@ class BlobFile {
       // Issue the asynchronous task and then add it to the list of
       // pending tasks.
       pendingTasks->push(
-        Task(blob.upload_pages_async(stream, page, ""), fContext,
+        Task(blob.upload_pages_async(stream, page, L""), fContext,
           len, callback)
       );
     } catch (const storage_exception& e) {
       // Azure can throw exceptions if arguments are invalid.
-      logMessage(Lvl::ERROR,
+      logMessage(Lvl::ERR,
                  "Failed to write %lu bytes to address %lu on dfs: %s",
                  len, dest, e.what());
 
       // Print out an extended error message too.
       storage_extended_error err = e.result().extended_error();
       if (!err.message().empty()) {
-        logMessage(Lvl::ERROR, "Extended error message: %s",
+        logMessage(Lvl::ERR, "Extended error message: %s",
                    err.message().c_str());
       }
 
@@ -539,7 +556,7 @@ class BlobFile {
 
   /// List of asynchronous reads to blob storage that were successfully
   /// kicked off, but have not completed yet.
-  tbb::concurrent_queue<Task>* pendingTasks;
+  concurrent_queue<Task>* pendingTasks;
 
   /// If true, all blobs are deleted on Azure blob store when this "file"
   /// is closed.

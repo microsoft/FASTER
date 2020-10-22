@@ -11,6 +11,8 @@
 #include "device/file_system_disk.h"
 #include "device/storage.h"
 
+#include "environment/file.h"
+
 #include "../test_types.h"
 
 using namespace FASTER::core;
@@ -31,7 +33,7 @@ TEST(FasterBlobs, Example) {
   using V = SimpleAtomicValue<uint8_t>;
   typedef FASTER::core::FasterKv<K, V, disk_t> faster_t;
 
-  std::string path = "storage"; // Filesystem path under which log will be stored.
+  std::string path = std::string(".") + kPathSeparator; // Filesystem path under which log will be stored.
   std::string conn = "UseDevelopmentStorage=true;"; // Azure Blobs connection str.
   faster_t store(128, 1073741824, path, 0.9, false, conn);
 }
