@@ -228,6 +228,9 @@ jobs:
   - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
     displayName: 'Start Storage Emulator'
 
-  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "azure_test"'
+  - script: |
+      ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "azure_test"
+      ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "storage_test"
+      ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "faster_blobs_example"
     workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
