@@ -94,6 +94,49 @@ namespace FASTER.core
         }
     }
 
+    internal unsafe struct DefaultReadOnlyMemoryCompactionFunctions<T> : ICompactionFunctions<ReadOnlyMemory<T>, Memory<T>> where T : unmanaged
+    {
+        public void Copy(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            src.CopyTo(dst);
+        }
+
+        public bool CopyInPlace(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            if (src.Length > dst.Length) return false;
+            src.CopyTo(dst);
+            dst.ShrinkSerializedLength(src.Length);
+            return true;
+        }
+
+        public bool IsDeleted(in ReadOnlyMemory<T> key, in Memory<T> value)
+        {
+            return false;
+        }
+    }
+
+    internal unsafe struct DefaultMemoryCompactionFunctions<T> : ICompactionFunctions<Memory<T>, Memory<T>> where T : unmanaged
+    {
+        public void Copy(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            src.CopyTo(dst);
+        }
+
+        public bool CopyInPlace(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            if (src.Length > dst.Length) return false;
+            src.CopyTo(dst);
+            dst.ShrinkSerializedLength(src.Length);
+            return true;
+        }
+
+        public bool IsDeleted(in Memory<T> key, in Memory<T> value)
+        {
+            return false;
+        }
+    }
+
+
     internal struct DefaultCompactionFunctions<Key, Value> : ICompactionFunctions<Key, Value>
     {
         public void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)

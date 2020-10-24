@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -203,14 +204,31 @@ namespace FASTER.core
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
-                var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
+                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
                 {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
+                    MethodInfo method = GetType().GetMethod("CompactReadOnly", BindingFlags.NonPublic | BindingFlags.Instance);
+                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
+                    generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
+                }
+                else if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
+                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
+                {
+                    MethodInfo method = GetType().GetMethod("CompactMemory", BindingFlags.NonPublic | BindingFlags.Instance);
+                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
+                    generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
+                }
+                else
+                {
+                    var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
+                    var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                    {
+                        keyLength = varLen.KeyLength,
+                        valueLength = varLen.ValueLength,
+                    };
 
-                Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                    Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                }
             }
             else
             {
@@ -335,5 +353,38 @@ namespace FASTER.core
                 }
             }
         }
+
+#pragma warning disable IDE0051 // Remove unused private members
+        private void CompactReadOnly<T>(long untilAddress, bool shiftBeginAddress) where T : unmanaged
+        {
+            if (allocator is VariableLengthBlittableAllocator<ReadOnlyMemory<T>, Memory<T>> varLen)
+            {
+                var functions = new LogVariableCompactFunctions<ReadOnlyMemory<T>, Memory<T>, DefaultReadOnlyMemoryCompactionFunctions<T>>(varLen, default);
+                var variableLengthStructSettings = new VariableLengthStructSettings<ReadOnlyMemory<T>, Memory<T>>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
+
+                (this as LogAccessor<ReadOnlyMemory<T>, Memory<T>>).Compact(functions, default(DefaultReadOnlyMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+            }
+        }
+
+        private void CompactMemory<T>(long untilAddress, bool shiftBeginAddress)
+            where T : unmanaged
+        {
+            if (allocator is VariableLengthBlittableAllocator<Memory<T>, Memory<T>> varLen)
+            {
+                var functions = new LogVariableCompactFunctions<Memory<T>, Memory<T>, DefaultMemoryCompactionFunctions<T>>(varLen, default);
+                var variableLengthStructSettings = new VariableLengthStructSettings<Memory<T>, Memory<T>>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
+
+                (this as LogAccessor<Memory<T>, Memory<T>>).Compact(functions, default(DefaultMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+            }
+        }
+#pragma warning restore IDE0051 // Remove unused private members
     }
 }
