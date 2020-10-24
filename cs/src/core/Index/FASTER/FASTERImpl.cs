@@ -1024,7 +1024,7 @@ namespace FASTER.core
                                sessionCtx.version,
                                true, true, false,
                                latestLogicalAddress);
-                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+                hlog.Serialize(ref key, newPhysicalAddress);
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
