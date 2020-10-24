@@ -35,7 +35,7 @@ namespace FASTER.devices
         // we use an even smaller value to improve retry/timeout behavior in highly contended situations
         private const uint MAX_UPLOAD_SIZE = 1024 * 1024;
 
-        private const long MAX_PAGEBLOB_SIZE = 512L * 1024 * 1024 * 1024; // set this at 512 GB
+        private const long MAX_PAGEBLOB_SIZE = 2L * 1024 * 1024 * 1024; // set this at 2 GB
 
         // Whether blob files are deleted on close
         private readonly bool deleteOnClose;
