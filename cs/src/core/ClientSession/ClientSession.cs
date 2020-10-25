@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -586,18 +584,18 @@ namespace FASTER.core
         /// ensures that records written to the tail during compaction are first made stable.</param>
         public void Compact(long untilAddress, bool shiftBeginAddress)
         {
-            Compact(default(DefaultCompactionFunctions<Key, Value>), untilAddress, shiftBeginAddress);
+            Compact(untilAddress, shiftBeginAddress, default(DefaultCompactionFunctions<Key, Value>));
         }
 
         /// <summary>
         /// Compact the log until specified address using current session, moving active records to the tail of the log.
         /// </summary>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
+        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
-        public void Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress, bool shiftBeginAddress)
+        public void Compact<CompactionFunctions>(long untilAddress, bool shiftBeginAddress, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             if (!SupportAsync)
