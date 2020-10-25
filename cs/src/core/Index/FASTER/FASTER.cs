@@ -1,12 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-#pragma warning disable 0162
 
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,7 +36,7 @@ namespace FASTER.core
         internal void UseRelaxedCPR() => RelaxedCPR = true;
 
         /// <summary>
-        /// Number of used entries in hash index
+        /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
         /// </summary>
         public long EntryCount => GetEntryCount();
 
@@ -640,6 +640,91 @@ namespace FASTER.core
                     variableLengthStructSettings.valueLength = o as IVariableLengthStruct<Value>;
                 }
             }
+        }
+
+        /// <summary>
+        /// Total number of valid entries in hash table
+        /// </summary>
+        /// <returns></returns>
+        private unsafe long GetEntryCount()
+        {
+            var version = resizeInfo.version;
+            var table_size_ = state[version].size;
+            var ptable_ = state[version].tableAligned;
+            long total_entry_count = 0;
+            long beginAddress = hlog.BeginAddress;
+
+            for (long bucket = 0; bucket < table_size_; ++bucket)
+            {
+                HashBucket b = *(ptable_ + bucket);
+                while (true)
+                {
+                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
+                        if (b.bucket_entries[bucket_entry] >= beginAddress)
+                            ++total_entry_count;
+                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
+                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                }
+            }
+            return total_entry_count;
+        }
+
+        private unsafe string DumpDistributionInternal(int version)
+        {
+            var table_size_ = state[version].size;
+            var ptable_ = state[version].tableAligned;
+            long total_record_count = 0;
+            long beginAddress = hlog.BeginAddress;
+            Dictionary<int, long> histogram = new Dictionary<int, long>();
+
+            for (long bucket = 0; bucket < table_size_; ++bucket)
+            {
+                List<int> tags = new List<int>();
+                int cnt = 0;
+                HashBucket b = *(ptable_ + bucket);
+                while (true)
+                {
+                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
+                    {
+                        if (b.bucket_entries[bucket_entry] >= beginAddress)
+                        {
+                            var x = default(HashBucketEntry);
+                            x.word = b.bucket_entries[bucket_entry];
+                            if (tags.Contains(x.Tag) && !x.Tentative)
+                                throw new FasterException("Duplicate tag found in index");
+                            tags.Add(x.Tag);
+                            ++cnt;
+                            ++total_record_count;
+                        }
+                    }
+                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
+                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                }
+
+                if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;
+                histogram[cnt]++;
+            }
+
+            var distribution =
+                $"Number of hash buckets: {{{table_size_}}}\n" +
+                $"Total distinct hash-table entry count: {{{total_record_count}}}\n" +
+                $"Average #entries per hash bucket: {{{total_record_count / (double)table_size_:0.00}}}\n" +
+                $"Histogram of #entries per bucket:\n";
+
+            foreach (var kvp in histogram.OrderBy(e => e.Key))
+            {
+                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+            }
+
+            return distribution;
+        }
+
+        /// <summary>
+        /// Dumps the distribution of each non-empty bucket in the hash table.
+        /// </summary>
+        public string DumpDistribution()
+        {
+            return DumpDistributionInternal(resizeInfo.version);
         }
     }
 }

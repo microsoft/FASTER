@@ -42,7 +42,12 @@
         /// <param name="dst">Managed pointer to uninitialized value at destination</param>
         /// <param name="valueLength">[Can be null] Variable length struct functions</param>
         /// <returns></returns>
-        void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength);
+        void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
+#if NETSTANDARD21
+            { }
+#else
+            ;
+#endif
 
         /// <summary>
         /// Copies a value from <paramref name="src"/> to <paramref name="dst"/>.
@@ -58,6 +63,10 @@
         /// False - if a new record needs to be allocated. In this case <see cref="ICompactionFunctions{Key, Value}.Copy(ref Value, ref Value, IVariableLengthStruct{Value})"/> will be called with 
         /// managed pointer to new record.
         /// </returns>
-        bool CopyInPlace(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength);
+        bool CopyInPlace(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
+#if NETSTANDARD21
+            => true
+#endif
+            ;
     }
 }

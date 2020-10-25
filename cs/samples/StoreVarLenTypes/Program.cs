@@ -226,6 +226,13 @@ namespace StoreVarLenTypes
                 s.Upsert(key, value);
             }
 
+            using (IFasterScanIterator<SpanByte, SpanByte> iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+            {
+                while (iterator.GetNext(out RecordInfo recordInfo, out SpanByte keyObj, out SpanByte valueObj))
+                {
+                    Console.WriteLine("Key: " + keyObj.ToByteArray());
+                }
+            }
             bool success = true;
 
             r = new Random(100);

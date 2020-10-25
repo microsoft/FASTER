@@ -849,11 +849,11 @@ namespace FASTER.core
         {
             if (!KeyHasObjects())
             {
-                ShallowCopy(ref Unsafe.AsRef<Record<Key, Value>>(record).key, ref ctx.key);
+                ctx.key = Unsafe.AsRef<Record<Key, Value>>(record).key;
             }
             if (!ValueHasObjects())
             {
-                ShallowCopy(ref Unsafe.AsRef<Record<Key, Value>>(record).value, ref ctx.value);
+                ctx.value = Unsafe.AsRef<Record<Key, Value>>(record).value;
             }
 
             if (!(KeyHasObjects() || ValueHasObjects()))
