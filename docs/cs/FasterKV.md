@@ -151,11 +151,15 @@ await session.RMWAsync(key, input);
 
 At the end, the session is disposed:
 
-```session.Dispose();```
+```cs
+session.Dispose();
+```
 
 When all sessions are done operating on FASTER, you finally dispose the FasterKV instance:
 
-```store.Dispose();```
+```cs
+store.Dispose();
+```
 
 
 ## Quick End-To-End Sample
