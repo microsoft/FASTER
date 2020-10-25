@@ -268,11 +268,20 @@ namespace FASTER.core
             where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
+            using (var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions))
+                Compact(fhtSession, functions, cf, untilAddress, variableLengthStructSettings, shiftBeginAddress);
+        }
+
+        internal unsafe void Compact<Input, Output, Context, Functions, CompactionFunctions>(
+            ClientSession<Key, Value, Input, Output, Context, Functions> fhtSession,
+            Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+        {
             var originalUntilAddress = untilAddress;
 
-            using (var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions))
             using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
-            using (var tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions))
+            using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
                 using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
                 {

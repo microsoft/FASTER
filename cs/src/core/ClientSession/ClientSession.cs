@@ -578,6 +578,46 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Compact the log until specified address using current session, moving active records to the tail of the log. 
+        /// </summary>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
+        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
+        /// ensures that records written to the tail during compaction are first made stable.</param>
+        public void Compact(long untilAddress, bool shiftBeginAddress)
+        {
+            Compact(default(DefaultCompactionFunctions<Key, Value>), untilAddress, shiftBeginAddress);
+        }
+
+        /// <summary>
+        /// Compact the log until specified address using current session, moving active records to the tail of the log.
+        /// </summary>
+        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
+        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
+        /// ensures that records written to the tail during compaction are first made stable.</param>
+        public void Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress, bool shiftBeginAddress)
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+        {
+            if (!SupportAsync)
+                throw new FasterException("Do not perform compaction using a threadAffinitized session");
+
+            VariableLengthStructSettings<Key, Value> vl = null;
+
+            if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
+            {
+                vl = new VariableLengthStructSettings<Key, Value>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
+            }
+
+            fht.Log.Compact(this, functions, compactionFunctions, untilAddress, vl, shiftBeginAddress);
+        }
+
+        /// <summary>
         /// Resume session on current thread
         /// Call SuspendThread before any async op
         /// </summary>

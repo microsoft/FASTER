@@ -58,7 +58,8 @@ namespace FASTER.test
                 value.Span.Fill(i);
                 session.Upsert(key, value);
             }
-            fht.Log.Compact(compactUntil, true);
+            session.Compact(compactUntil, true);
+
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
