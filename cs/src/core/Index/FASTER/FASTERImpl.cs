@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
 #define CPR
 
 using System;
@@ -1024,7 +1023,7 @@ namespace FASTER.core
                                sessionCtx.version,
                                true, true, false,
                                latestLogicalAddress);
-                hlog.ShallowCopy(ref key, ref hlog.GetKey(newPhysicalAddress));
+                hlog.Serialize(ref key, newPhysicalAddress);
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
