@@ -65,7 +65,7 @@ namespace FASTER.devices
                 }
 
                 await pageBlob.CreateAsync(size,
-                    accessCondition: null, options: this.blobManager.GetBlobRequestOptions(), operationContext: null, this.blobManager.CancellationToken);
+                    accessCondition: null, options: this.blobManager.GetBlobRequestOptionsWithRetry(), operationContext: null, this.blobManager.CancellationToken);
 
                 // At this point the blob is fully created. After this line all consequent writers will write immediately. We just
                 // need to clear the queue of pending writers.
