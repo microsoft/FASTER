@@ -231,10 +231,10 @@ FASTER also support true "log compaction", where the log is scanned and live rec
 session.Compact(compactUntil, shiftBeginAddress: true);
 ```
 
-This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. Typically, you may compact 10-20% of the log, e.g., you set `compactUntil` address to `(store.Log.TailAddress - store.Log.BeginAddress) / 5`. The parameter `shiftBeginAddress`, when true, causes the compation to also shift the begin address when the compaction is complete. However, since live records are written to the tail, this operation may result in data loss if the store fails immediately. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address, as shown below:
+This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. Typically, you may compact 10-20% of the log, e.g., you set `compactUntil` address to `store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5`. The parameter `shiftBeginAddress`, when true, causes the compation to also shift the begin address when the compaction is complete. However, since live records are written to the tail, this operation may result in data loss if the store fails immediately. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address, as shown below:
 
 ```cs
-  long compactUntil = (store.Log.TailAddress - store.Log.BeginAddress) / 5;
+  long compactUntil = store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5;
   session.Compact(compactUntil, shiftBeginAddress: false);
   await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
   store.Log.ShiftBeginAddress(compactUntil);
