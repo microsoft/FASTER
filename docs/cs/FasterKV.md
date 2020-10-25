@@ -170,9 +170,9 @@ I/O operations. There is no checkpointing in this example as well.
 ```cs
 public static void Test()
 {
-  var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-  var store = new FasterKV<long, long>(1L << 20, new Funcs(), new LogSettings { LogDevice = log });
-  var s = fht.NewSession(new SimpleFunctions<long, long>);
+  using var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
+  using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
+  using var s = store.NewSession(new SimpleFunctions<long, long>());
   long key = 1, value = 1, input = 10, output = 0;
   s.Upsert(ref key, ref value);
   s.Read(ref key, ref output);
@@ -181,13 +181,10 @@ public static void Test()
   s.RMW(ref key, ref input);
   s.Read(ref key, ref output);
   Debug.Assert(output == value + 20);
-  s.StopSession();
-  store.Dispose();
-  log.Close();
 }
 ```
 
-We use default out-of-the-box provided `SimpleFunctions<Key,Value>` in the above example. In these functions,
+We use the default out-of-the-box provided `SimpleFunctions<Key,Value>` in the above example. In these functions,
 `Input` and `Output` are simply set to `Value`, while `Context` is an empty struct `Empty`.
 
 ## More Examples
