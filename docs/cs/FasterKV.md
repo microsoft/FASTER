@@ -27,6 +27,7 @@ Table of Contents
 * [Quick End-to-End Sample](#quick-end-to-end-sample)
 * [More Examples](#more-examples)
 * [Handling Variable Length Keys and Values](#handling-variable-length-keys-and-values)
+* [Log Compaction](#log-compaction)
 * [Checkpointing and Recovery](#checkpointing-and-recovery)
 
 ## Getting FASTER
@@ -202,17 +203,43 @@ All these call be accessed through Visual Studio via the main FASTER.sln solutio
 
 ## Handling Variable Length Keys and Values
 
-There are two ways to handle variable length keys and values in FasterKV:
+There are several ways to handle variable length keys and values in FasterKV:
 
-* Use standard C# class types (e.g., `byte[]`, `string`, and `class` objects) to store keys and values. This is easiest, but there are performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
+* Use `Memory<byte>` or more generally, `Memory<T> where T : unmanaged` as your value and input type, and `ReadOnlyMemory<T> where T : unmanaged` or `Memory<T> where T : unmanaged` as the key type. This will work out of the box and store the keys and values on the main FasterKV log (no object log required). This provides very high performance with a single backing hybrid log. Your `IFunctions` implementation can use or extend the default supplied base class called [MemoryFunctions](https://github.com/microsoft/FASTER/blob/master/cs/src/core/VarLen/MemoryFunctions.cs).
 
-* Use `Memory<byte>` or more generally, `Memory<T> where T : unmanaged` as your value and input type, and `ReadOnlyMemory<T> where T : unmanaged` or `Memory<T> where T : unmanaged` as the key type. This will work out of the box and store the keys and values on the main FasterKV log (no object log required). Your `IFunctions` implementation can use or extend the default supplied base class called [MemoryFunctions](https://github.com/microsoft/FASTER/blob/master/cs/src/core/VarLen/MemoryFunctions.cs).
+* Use standard C# class types (e.g., `byte[]`, `string`, and `class` objects) to store keys and values. This is easiest and also allows you to perform in-place updates of objects that are still in the mutable region of the log, like a traditional C# object cache. However, there may be performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
 
-* Use `SpanByte` our wrapper struct concept, as your key and/or value type. `SpanByte` represents a simple sequence of bytes with a 4-byte (int) header that stores the length of the rest of the payload. `SpanByte` provides the highest performance for variable-length keys and values, and is compatible with pinned memory and `Span<byte>` inputs. Learn more about its use in the related PR [here](https://github.com/microsoft/FASTER/pull/349).
+* Use `SpanByte` our wrapper struct concept, as your key and/or value type. `SpanByte` represents a simple sequence of bytes with a 4-byte (int) header that stores the length of the rest of the payload. `SpanByte` is similar to `Memory<T>` support, but provides the highest performance for variable-length keys and values. It is only compatible with pinned memory and fixed `Span<byte>` inputs. Learn more about its use in the related PR [here](https://github.com/microsoft/FASTER/pull/349).
 
 * Our support for `Memory<T> where T : unmanaged` and `SpanByte` both use an underlying functionality that we call _variable-length structs_, that you can use directly if `SpanByte` does not fit your needs, e.g., if you want to use only two bytes for the length header or want to store ints instead of bytes. You do this by specifying `VariableLengthStructSettings` during FasterKV construction, and `SessionVariableLengthStructSettings` during session creation.
 
-* Check out the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes).
+Check out the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for how to use `Memory<T> where T : unmanaged` and `SpanByte` with a single backing hybrid log. For C# class objects, check out [StoreCustomTypes](https://github.com/microsoft/FASTER/tree/master/cs/samples/StoreCustomTypes).
+
+## Log Compaction
+
+FASTER is backed by a record-oriented log laid out across storage and main memory, with one disk file per log segment. As the log grows, you have two options to clean up the log. The first is a simple log truncation from the beginning of the log. By doing so, you are effectively expiring all log records older than the begin address. To perform this, we shift the begin address (`BeginAddress`) of the log as follows:
+
+```cs
+  store.Log.ShiftBeginAddress(long newBeginAddress);
+```
+
+This call shifts the begin address of the log, deleting any log segment files needed.
+
+FASTER also support true "log compaction", where the log is scanned and live records are copied to the tail so that the store does not expire any data. You can perform log compaction over a FasterKv client session (`ClientSession`) as follows:
+
+```cs
+  session.Compact(compactUntil, shiftBeginAddress: true);
+```
+
+This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. Typically, you may compact 10-20% of the log, e.g., you set `compactUntil` address to `store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5`. The parameter `shiftBeginAddress`, when true, causes the compation to also shift the begin address when the compaction is complete. However, since live records are written to the tail, this operation may result in data loss if the store fails immediately. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address, as shown below:
+
+```cs
+  long compactUntil = store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5;
+  session.Compact(compactUntil, shiftBeginAddress: false);
+  await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+  store.Log.ShiftBeginAddress(compactUntil);
+```
+
 
 ## Checkpointing and Recovery
 

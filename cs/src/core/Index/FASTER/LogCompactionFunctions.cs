@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
 using System.Runtime.CompilerServices;
 
@@ -93,6 +91,49 @@ namespace FASTER.core
             return false;
         }
     }
+
+    internal unsafe struct DefaultReadOnlyMemoryCompactionFunctions<T> : ICompactionFunctions<ReadOnlyMemory<T>, Memory<T>> where T : unmanaged
+    {
+        public void Copy(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            src.CopyTo(dst);
+        }
+
+        public bool CopyInPlace(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            if (src.Length > dst.Length) return false;
+            src.CopyTo(dst);
+            dst.ShrinkSerializedLength(src.Length);
+            return true;
+        }
+
+        public bool IsDeleted(in ReadOnlyMemory<T> key, in Memory<T> value)
+        {
+            return false;
+        }
+    }
+
+    internal unsafe struct DefaultMemoryCompactionFunctions<T> : ICompactionFunctions<Memory<T>, Memory<T>> where T : unmanaged
+    {
+        public void Copy(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            src.CopyTo(dst);
+        }
+
+        public bool CopyInPlace(ref Memory<T> src, ref Memory<T> dst, IVariableLengthStruct<Memory<T>> valueLength)
+        {
+            if (src.Length > dst.Length) return false;
+            src.CopyTo(dst);
+            dst.ShrinkSerializedLength(src.Length);
+            return true;
+        }
+
+        public bool IsDeleted(in Memory<T> key, in Memory<T> value)
+        {
+            return false;
+        }
+    }
+
 
     internal struct DefaultCompactionFunctions<Key, Value> : ICompactionFunctions<Key, Value>
     {

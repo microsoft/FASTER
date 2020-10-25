@@ -1604,16 +1604,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Shallow copy
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dst"></param>
-        public virtual void ShallowCopy(ref Key src, ref Key dst)
-        {
-            dst = src;
-        }
-
-        /// <summary>
         /// Serialize to log
         /// </summary>
         /// <param name="src"></param>
@@ -1631,16 +1621,6 @@ namespace FASTER.core
         public virtual void Serialize(ref Value src, long physicalAddress)
         {
             GetValue(physicalAddress) = src;
-        }
-
-        /// <summary>
-        /// Shallow copy
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dst"></param>
-        public virtual void ShallowCopy(ref Value src, ref Value dst)
-        {
-            dst = src;
         }
 
         internal string PrettyPrint(long address)

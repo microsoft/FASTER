@@ -275,8 +275,8 @@ namespace FASTER.core
         /// <returns></returns>
         protected override bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
         {
-            ShallowCopy(ref GetKey((long)record), ref ctx.key);
-            ShallowCopy(ref GetValue((long)record), ref ctx.value);
+            ctx.key = GetKey((long)record);
+            ctx.value = GetValue((long)record);
             return true;
         }
 

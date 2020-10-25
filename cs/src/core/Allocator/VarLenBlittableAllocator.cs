@@ -186,16 +186,6 @@ namespace FASTER.core
             ValueLength.Serialize(ref src, (byte*)ValueOffset(physicalAddress));
         }
 
-        public override void ShallowCopy(ref Key src, ref Key dst)
-        {
-            throw new NotImplementedException();
-        }
-
-        public override void ShallowCopy(ref Value src, ref Value dst)
-        {
-            throw new NotImplementedException();
-        }
-
         /// <summary>
         /// Dispose memory allocator
         /// </summary>

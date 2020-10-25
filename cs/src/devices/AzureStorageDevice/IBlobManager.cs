@@ -14,10 +14,16 @@ namespace FASTER.devices
     public interface IBlobManager
     {
         /// <summary>
-        /// Get blob request options
+        /// Get blob request options (default)
         /// </summary>
         /// <returns></returns>
-        BlobRequestOptions GetBlobRequestOptions();
+        BlobRequestOptions GetBlobRequestOptionsWithoutRetry();
+
+        /// <summary>
+        /// Get blob request options (with retry)
+        /// </summary>
+        /// <returns></returns>
+        BlobRequestOptions GetBlobRequestOptionsWithRetry();
 
         /// <summary>
         /// Cancellation token for blob operations
@@ -39,5 +45,25 @@ namespace FASTER.devices
         /// </summary>
         /// <returns></returns>
         ValueTask ConfirmLeaseAsync();
+
+        /// <summary>
+        /// Max concurrency on async storage read
+        /// </summary>
+        SemaphoreSlim AsyncStorageReadMaxConcurrency { get; }
+
+        /// <summary>
+        /// Max concurrency on async storage write
+        /// </summary>
+        SemaphoreSlim AsyncStorageWriteMaxConcurrency { get; }
+
+        /// <summary>
+        /// Max retries
+        /// </summary>
+        int MaxRetries { get; }
+
+        /// <summary>
+        /// Configure await for storage
+        /// </summary>
+        bool ConfigureAwaitForStorage { get; }
     }
 }
