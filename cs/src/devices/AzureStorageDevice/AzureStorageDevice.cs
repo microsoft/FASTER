@@ -27,15 +27,15 @@ namespace FASTER.devices
         internal BlobRequestOptions BlobRequestOptionsWithoutRetry { get; private set; }
         internal BlobRequestOptions BlobRequestOptionsWithRetry { get; private set; }
 
-        // Page Blobs permit blobs of max size 8 TB, but the emulator permits only 2 GB
-        private const long MAX_BLOB_SIZE = (long)(2 * 10e8);
         // Azure Page Blobs have a fixed sector size of 512 bytes.
         private const uint PAGE_BLOB_SECTOR_SIZE = 512;
+
         // Max upload size must be at most 4MB
         // we use an even smaller value to improve retry/timeout behavior in highly contended situations
         private const uint MAX_UPLOAD_SIZE = 1024 * 1024;
 
-        private const long MAX_PAGEBLOB_SIZE = 2L * 1024 * 1024 * 1024; // set this at 2 GB
+        // Max Azure Page Blob size (used when segment size is not specified): we set this at 8 GB
+        private const long MAX_PAGEBLOB_SIZE = 8L * 1024 * 1024 * 1024;
 
         // Whether blob files are deleted on close
         private readonly bool deleteOnClose;
