@@ -2,13 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using System.Buffers;
 
@@ -57,25 +52,67 @@ namespace FASTER.test
                 key.Span.Fill(i);
                 value.Span.Fill(i);
                 session.Upsert(key, value);
+                if (i < 50)
+                    session.Delete(key); // in-place delete
             }
+
+            for (int i = 50; i < 100; i++)
+            {
+                key.Span.Fill(i);
+                value.Span.Fill(i);
+                session.Delete(key); // tombstone inserted
+            }
+
             session.Compact(compactUntil, true);
 
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
-            // Read 2000 keys - all should be present
+            // Read 2000 keys - all but first 100 (deleted) should be present
             for (int i = 0; i < totalRecords; i++)
             {
                 key.Span.Fill(i);
-                value.Span.Fill(i);
 
-                var (status, output) = session.Read(key);
+                var (status, output) = session.Read(key, userContext: i < 100 ? 1 : 0);
                 if (status == Status.PENDING)
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
+                    if (i < 100)
+                        Assert.IsTrue(status == Status.NOTFOUND);
+                    else
+                    {
+                        Assert.IsTrue(status == Status.OK);
+                        Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
+                        output.Item1.Dispose();
+                    }
                 }
+            }
+
+            // Test iteration of distinct live keys
+            using (var iter = fht.Iterate())
+            {
+                int count = 0;
+                while (iter.GetNext(out RecordInfo recordInfo))
+                {
+                    var k = iter.GetKey();
+                    Assert.IsTrue(k.Span[0] >= 100);
+                    count++;
+                }
+                Assert.IsTrue(count == 1900);
+            }
+
+            // Test iteration of all log records
+            using (var iter = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
+            {
+                int count = 0;
+                while (iter.GetNext(out RecordInfo recordInfo))
+                {
+                    var k = iter.GetKey();
+                    Assert.IsTrue(k.Span[0] >= 50);
+                    count++;
+                }
+                // Includes 1900 live records + 50 deleted records
+                Assert.IsTrue(count == 1950);
             }
         }
     }
