@@ -582,9 +582,10 @@ namespace FASTER.core
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
-        public void Compact(long untilAddress, bool shiftBeginAddress)
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact(long untilAddress, bool shiftBeginAddress)
         {
-            Compact(untilAddress, shiftBeginAddress, default(DefaultCompactionFunctions<Key, Value>));
+            return Compact(untilAddress, shiftBeginAddress, default(DefaultCompactionFunctions<Key, Value>));
         }
 
         /// <summary>
@@ -595,7 +596,8 @@ namespace FASTER.core
         /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
-        public void Compact<CompactionFunctions>(long untilAddress, bool shiftBeginAddress, CompactionFunctions compactionFunctions)
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact<CompactionFunctions>(long untilAddress, bool shiftBeginAddress, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             if (!SupportAsync)
@@ -612,7 +614,7 @@ namespace FASTER.core
                 };
             }
 
-            fht.Log.Compact(this, functions, compactionFunctions, untilAddress, vl, shiftBeginAddress);
+            return fht.Log.Compact(this, functions, compactionFunctions, untilAddress, vl, shiftBeginAddress);
         }
 
         /// <summary>

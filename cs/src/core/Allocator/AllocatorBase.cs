@@ -751,10 +751,7 @@ namespace FASTER.core
                 return 0;
 
             // Determine insertion index.
-            // ReSharper disable once CSharpWarnings::CS0420
-#pragma warning disable 420
             localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
-#pragma warning restore 420
 
             int page = localTailPageOffset.Page;
             int offset = localTailPageOffset.Offset - numSlots;

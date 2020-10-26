@@ -1,8 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-#pragma warning disable 0162
-
-using System;
 
 namespace FASTER.core
 {
@@ -98,6 +95,8 @@ namespace FASTER.core
         }
 
         public long CurrentAddress => enumerationPhase == 0 ? iter1.CurrentAddress : iter2.CurrentAddress;
+
+        public long NextAddress => enumerationPhase == 0 ? iter1.NextAddress : iter2.NextAddress;
 
         public void Dispose()
         {
