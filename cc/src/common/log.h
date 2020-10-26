@@ -20,7 +20,11 @@ enum class Lvl {
 #define LEVEL Lvl::INFO
 
 /// Macro to add in the file and function name, and line number.
+#ifdef _WIN32
 #define logMessage(l, f, ...) logMsg(l, __LINE__, __func__, __FILE__, f, __VA_ARGS__)
+#else
+#define logMessage(l, f, a...) logMsg(l, __LINE__, __func__, __FILE__, f, ##a)
+#endif
 
 /// Prints out a message with the current timestamp and code location.
 inline void logMsg(Lvl level, int line, const char* func,

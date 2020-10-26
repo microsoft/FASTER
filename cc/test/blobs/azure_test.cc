@@ -21,7 +21,6 @@ using concurrent_queue = concurrency::concurrent_queue<T>;
 #include "tbb/concurrent_queue.h"
 template <typename T>
 using concurrent_queue = tbb::concurrent_queue<T>;
-using namespace tbb;
 
 #endif
 

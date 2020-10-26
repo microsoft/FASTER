@@ -25,7 +25,6 @@ using concurrent_unordered_map = tbb::concurrent_unordered_map<K, V>;
 #include "tbb/concurrent_queue.h"
 template <typename T>
 using concurrent_queue = tbb::concurrent_queue<T>;
-using namespace tbb;
 
 #endif
 

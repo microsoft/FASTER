@@ -16,7 +16,6 @@ using concurrent_queue = concurrency::concurrent_queue<T>;
 #include "tbb/concurrent_queue.h"
 template <typename T>
 using concurrent_queue = tbb::concurrent_queue<T>;
-using namespace tbb;
 
 #endif
 
@@ -66,11 +65,11 @@ class BlobFile {
   ///    8 Tera Bytes.
   /// \param deleteOnClose
   ///    If true, the "file" is deleted once closed.
-  BlobFile(const wchar_t* connection,
+  BlobFile(const char* connection,
            concurrent_queue<Task>* queue,
            uint16_t id=1, uint64_t blobSize=((uint64_t)1 << 40),
            bool deleteOnClose=true)
-    : conn(connection)
+    : conn(utility::conversions::to_string_t(connection))
     , account()
     , client()
     , id(std::to_string((unsigned long)id))
@@ -85,7 +84,7 @@ class BlobFile {
   /// \param queue
   ///    Queue on which to enqueue asynchronous IOs.
   BlobFile(concurrent_queue<Task>& queue)
-    : conn(L"UseDevelopmentStorage=true;")
+    : conn(utility::conversions::to_string_t("UseDevelopmentStorage=true;"))
     , account()
     , client()
     , id(std::to_string((unsigned long)1))
@@ -97,7 +96,7 @@ class BlobFile {
 
   /// Default constructor.
   BlobFile()
-    : conn(L"UseDevelopmentStorage=true;")
+    : conn(utility::conversions::to_string_t("UseDevelopmentStorage=true;"))
     , account()
     , client()
     , id(std::to_string((unsigned long)1))
@@ -503,7 +502,8 @@ class BlobFile {
       // Issue the asynchronous task and then add it to the list of
       // pending tasks.
       pendingTasks->push(
-        Task(blob.upload_pages_async(stream, page, L""), fContext,
+        Task(blob.upload_pages_async(stream, page,
+          utility::conversions::to_string_t("")), fContext,
           len, callback)
       );
     } catch (const storage_exception& e) {
