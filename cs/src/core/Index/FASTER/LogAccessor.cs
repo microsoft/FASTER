@@ -53,11 +53,15 @@ namespace FASTER.core
         public long BeginAddress => allocator.BeginAddress;
 
         /// <summary>
-        /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary.
+        /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
         /// </summary>
-        /// <param name="untilAddress"></param>
-        public void ShiftBeginAddress(long untilAddress)
+        /// <param name="untilAddress">Address to shift begin address until</param>
+        /// <param name="snapToPageStart">Whether given address should be snapped to nearest earlier page start address</param>
+        public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false)
         {
+            if (snapToPageStart)
+                untilAddress &= ~allocator.PageSizeMask;
+
             allocator.ShiftBeginAddress(untilAddress);
         }
 
