@@ -28,6 +28,11 @@ namespace FASTER.core
         public long CurrentAddress => currentAddress;
 
         /// <summary>
+        /// Next address
+        /// </summary>
+        public long NextAddress => nextAddress;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="hlog"></param>

@@ -151,11 +151,15 @@ await session.RMWAsync(key, input);
 
 At the end, the session is disposed:
 
-```session.Dispose();```
+```cs
+session.Dispose();
+```
 
 When all sessions are done operating on FASTER, you finally dispose the FasterKV instance:
 
-```store.Dispose();```
+```cs
+store.Dispose();
+```
 
 
 ## Quick End-To-End Sample
@@ -166,9 +170,9 @@ I/O operations. There is no checkpointing in this example as well.
 ```cs
 public static void Test()
 {
-  var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-  var store = new FasterKV<long, long>(1L << 20, new Funcs(), new LogSettings { LogDevice = log });
-  var s = fht.NewSession(new SimpleFunctions<long, long>);
+  using var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
+  using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
+  using var s = store.NewSession(new SimpleFunctions<long, long>());
   long key = 1, value = 1, input = 10, output = 0;
   s.Upsert(ref key, ref value);
   s.Read(ref key, ref output);
@@ -177,13 +181,10 @@ public static void Test()
   s.RMW(ref key, ref input);
   s.Read(ref key, ref output);
   Debug.Assert(output == value + 20);
-  s.StopSession();
-  store.Dispose();
-  log.Close();
 }
 ```
 
-We use default out-of-the-box provided `SimpleFunctions<Key,Value>` in the above example. In these functions,
+We use the default out-of-the-box provided `SimpleFunctions<Key,Value>` in the above example. In these functions,
 `Input` and `Output` are simply set to `Value`, while `Context` is an empty struct `Empty`.
 
 ## More Examples
@@ -228,14 +229,14 @@ This call shifts the begin address of the log, deleting any log segment files ne
 FASTER also support true "log compaction", where the log is scanned and live records are copied to the tail so that the store does not expire any data. You can perform log compaction over a FasterKv client session (`ClientSession`) as follows:
 
 ```cs
-  session.Compact(compactUntil, shiftBeginAddress: true);
+  compactUntil = session.Compact(compactUntil, shiftBeginAddress: true);
 ```
 
-This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. Typically, you may compact 10-20% of the log, e.g., you set `compactUntil` address to `store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5`. The parameter `shiftBeginAddress`, when true, causes the compation to also shift the begin address when the compaction is complete. However, since live records are written to the tail, this operation may result in data loss if the store fails immediately. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address, as shown below:
+This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. It returns the actual log address that the call compacted until (next nearest record boundary). Typically, you may compact 10-20% of the log, e.g., you set `compactUntil` address to `store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5`. The parameter `shiftBeginAddress`, when true, causes the compation to also shift the begin address when the compaction is complete. However, since live records are written to the tail, this operation may result in data loss if the store fails immediately. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address, as shown below:
 
 ```cs
   long compactUntil = store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5;
-  session.Compact(compactUntil, shiftBeginAddress: false);
+  compactUntil = session.Compact(compactUntil, shiftBeginAddress: false);
   await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
   store.Log.ShiftBeginAddress(compactUntil);
 ```
