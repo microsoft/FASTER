@@ -65,5 +65,10 @@ namespace FASTER.core
         /// Current address
         /// </summary>
         long CurrentAddress { get; }
+
+        /// <summary>
+        /// Next address
+        /// </summary>
+        long NextAddress { get; }
     }
 }

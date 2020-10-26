@@ -42,13 +42,9 @@ namespace FASTER.test
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;
-            long compactUntil = 0;
 
             for (int i = 0; i < totalRecords; i++)
             {
-                if (i == 1000)
-                    compactUntil = fht.Log.TailAddress;
-
                 key.Span.Fill(i);
                 value.Span.Fill(i);
                 session.Upsert(key, value);
@@ -63,7 +59,9 @@ namespace FASTER.test
                 session.Delete(key); // tombstone inserted
             }
 
-            session.Compact(compactUntil, true);
+            // Compact 20% of log:
+            var compactUntil = fht.Log.BeginAddress + (fht.Log.TailAddress - fht.Log.BeginAddress) / 5;
+            compactUntil = session.Compact(compactUntil, true);
 
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
