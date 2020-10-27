@@ -264,7 +264,7 @@ jobs:
     displayName: 'Compile'
 
   - script: |
-      npm install -g azurite
+      sudo npm install -g azurite
       azurite -s &
     displayName: 'Install and launch azurite (linux storage emulator)'
 
