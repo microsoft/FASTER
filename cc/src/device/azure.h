@@ -11,11 +11,15 @@
 template <typename T>
 using concurrent_queue = concurrency::concurrent_queue<T>;
 
+using dfs_conn_t = wchar_t;
+
 #else
 
 #include "tbb/concurrent_queue.h"
 template <typename T>
 using concurrent_queue = tbb::concurrent_queue<T>;
+
+using dfs_conn_t = char;
 
 #endif
 
@@ -65,7 +69,7 @@ class BlobFile {
   ///    8 Tera Bytes.
   /// \param deleteOnClose
   ///    If true, the "file" is deleted once closed.
-  BlobFile(const char* connection,
+  BlobFile(const dfs_conn_t* connection,
            concurrent_queue<Task>* queue,
            uint16_t id=1, uint64_t blobSize=((uint64_t)1 << 40),
            bool deleteOnClose=true)
