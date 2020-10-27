@@ -234,3 +234,43 @@ jobs:
       ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "faster_blobs_example"
     workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
+
+- job: 'cppBlobsLinux'
+  pool:
+    vmImage: ubuntu-16.04
+  displayName: 'C++ Blobs (Linux)'
+
+  steps:
+  - script: |
+      sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+      sudo apt update
+      sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev npm
+      sudo ./scripts/linux/azure/blob.sh
+    displayName: 'Install depdendencies'
+
+  - script: |
+      export CXX='g++-7'
+      cd cc
+      mkdir -p build/Debug build/Release
+      cd build/Debug
+      cmake -DCMAKE_BUILD_TYPE=Debug -DUSE_BLOBS=ON ../..
+      make -j
+      cd ../../build/Release
+      cmake -DCMAKE_BUILD_TYPE=Release -DUSE_BLOBS=ON ../..
+      make -j
+    displayName: 'Compile'
+
+  - script: |
+      npm install -g azurite
+      azurite -s &
+    displayName: 'Install and launch azurite (linux storage emulator)'
+
+  - script: |
+      CTEST_OUTPUT_ON_FAILURE=1 make test
+    workingDirectory: 'cc/build/Debug'
+    displayName: 'Run Tests (Debug)'
+
+  #- script: |
+  #    CTEST_OUTPUT_ON_FAILURE=1 make test
+  #  workingDirectory: 'cc/build/Release'
+  #  displayName: 'Run Tests (Release)'

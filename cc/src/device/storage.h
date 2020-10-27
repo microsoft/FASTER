@@ -657,7 +657,7 @@ class StorageFile {
 
     /// Depending on the remote tier's max IO size for writes, this
     /// operation might need to be broken up.
-    uint64_t remainingBytes = length;
+    uint32_t remainingBytes = length;
     uint64_t currentDest = dest;
     uint8_t* currentSource = const_cast<uint8_t*>(
                 reinterpret_cast<const uint8_t*>(source));
