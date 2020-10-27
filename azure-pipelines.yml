@@ -253,7 +253,6 @@ jobs:
     displayName: 'Install Azure dependencies'
 
   - script: |
-      export CXX='g++-7'
       cd cc
       mkdir -p build/Debug build/Release
       cd build/Debug
