@@ -140,6 +140,12 @@ class BlobFile {
   BlobFile(const BlobFile&) = delete;
   BlobFile& operator=(const BlobFile&) = delete;
 
+  /// The maximum number of bytes that can be written through
+  /// a single call to `WriteAsync()`. Azure page blobs support 4 MiB max.
+  static constexpr uint32_t maxWriteBytes() {
+    return 4 * 1024 * 1024;
+  }
+
   /// Opens the file.
   ///
   /// Performs all initialization and setup on blob storage. After calling

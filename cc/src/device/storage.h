@@ -48,6 +48,8 @@ namespace device {
 /// Forward declaration of StorageFile.
 template <class H, class R>
 class StorageFile;
+template <class H, class R>
+class StorageDevice;
 
 /// A File on local SSD.
 template <class H, class R>
@@ -142,7 +144,7 @@ class LocalFile {
     status.store(FlushStatus::InProgress, CloseStatus::Open);
 
     // Allocate the page status array.
-    numPages = size / Address::kMaxOffset;
+    numPages = size / StorageDevice<H, R>::maxRemoteIO;
     if (size % Address::kMaxOffset != 0) numPages++;
     pages = new FullPageStatus[numPages];
 
@@ -653,20 +655,53 @@ class StorageFile {
       return Status::Aborted;
     }
 
-    // Create a context for the async write to the remote file. Identify
-    // the page within the local file that this write is for.
-    uint64_t pageInFile = (dest & (kFileSize - 1)) >> (Address::kOffsetBits);
-    uint64_t untilAddrs = (dest & (kFileSize - 1)) + length;
+    /// Depending on the remote tier's max IO size for writes, this
+    /// operation might need to be broken up.
+    uint64_t remainingBytes = length;
+    uint64_t currentDest = dest;
+    uint8_t* currentSource = const_cast<uint8_t*>(
+                reinterpret_cast<const uint8_t*>(source));
+    uint32_t maxRemoteIO = StorageDevice<H, R>::maxRemoteIO;
 
-    // The data to be written will have to be copied onto the heap, because
-    // it could be evicted from the HybridLog's circular buffer.
-    uint8_t* copy = new uint8_t[length];
-    memcpy(copy, source, length);
+    while (remainingBytes > maxRemoteIO) {
+      // Create a context for the async write to the remote file. Identify
+      // the page within the local file that this write is for.
+      uint64_t pageInFile = (currentDest & (kFileSize - 1)) / maxRemoteIO;
+      uint64_t untilAddrs = (currentDest & (kFileSize - 1)) + maxRemoteIO;
+
+      // The data to be written will have to be copied onto the heap, because
+      // it could be evicted from the HybridLog's circular buffer.
+      uint8_t* copy = new uint8_t[maxRemoteIO];
+      memcpy(copy, currentSource, maxRemoteIO);
+      FlushContext fContext = FlushContext(this, file, pageInFile, untilAddrs,
+                                           currentDest, copy);
+
+      // Issue the async write to Azure blob storage.
+      Status lRes = remote.WriteAsync(copy, maxRemoteIO, currentDest,
+                                      Flush, fContext);
+      if (lRes != Status::Ok) {
+        logMessage(Lvl::ERR,
+                   "Failed to write %lu B to address %lu on the remote store",
+                   maxRemoteIO, currentDest);
+        return Status::Aborted;
+      }
+
+      remainingBytes -= maxRemoteIO;
+      currentDest += maxRemoteIO;
+      currentSource += maxRemoteIO;
+    }
+
+    // Issue any remaining bytes to the remote tier.
+    uint64_t pageInFile = (currentDest & (kFileSize - 1)) / maxRemoteIO;
+    uint64_t untilAddrs = (currentDest & (kFileSize - 1)) + remainingBytes;
+
+    uint8_t* copy = new uint8_t[remainingBytes];
+    memcpy(copy, currentSource, remainingBytes);
     FlushContext fContext = FlushContext(this, file, pageInFile, untilAddrs,
-                                         dest, copy);
+                                         currentDest, copy);
 
-    // Issue the async write to Azure blob storage.
-    return remote.WriteAsync(copy, length, dest, Flush, fContext);
+    return remote.WriteAsync(copy, remainingBytes, currentDest, Flush,
+                             fContext);
   }
 
   /// Returns the file's alignment.
@@ -1203,6 +1238,10 @@ class StorageDevice {
   handler_t& handler() {
     return ioHandler;
   }
+
+  /// The size of an IO that will be issued to the remote layer.
+  static const uint64_t maxRemoteIO = std::min(remote_t::maxWriteBytes(),
+                                               Address::kMaxOffset + 1);
 
  private:
   /// Formats a given filesystem path.
