@@ -232,13 +232,14 @@ FASTER also support true "log compaction", where the log is scanned and live rec
   compactUntil = session.Compact(compactUntil, shiftBeginAddress: true);
 ```
 
-This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. It returns the actual log address that the call compacted until (next nearest record boundary). Typically, you may compact 10-20% of the log, e.g., you set `compactUntil` address to `store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5`. The parameter `shiftBeginAddress`, when true, causes the compation to also shift the begin address when the compaction is complete. However, since live records are written to the tail, this operation may result in data loss if the store fails immediately. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address, as shown below:
+This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. It returns the actual log address that the call compacted until (next nearest record boundary). You can only compact until the log's `SafeReadOnlyAddress` as the rest of the log is still mutable in-place. Typically, you may compact around 20% (up to 100%) of the log, e.g., you set `compactUntil` address to `store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress)`. The parameter `shiftBeginAddress`, when true, causes the compation to also shift the begin address when the compaction is complete. However, since live records are written to the tail, directly shifting the begin address may result in data loss if the store fails immediately. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address. Finally, you can take another checkpoint to save the new begin address. This is shown below:
 
 ```cs
-  long compactUntil = store.Log.BeginAddress + (store.Log.TailAddress - store.Log.BeginAddress) / 5;
+  long compactUntil = store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress);
   compactUntil = session.Compact(compactUntil, shiftBeginAddress: false);
   await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
   store.Log.ShiftBeginAddress(compactUntil);
+  await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
 ```
 
 
