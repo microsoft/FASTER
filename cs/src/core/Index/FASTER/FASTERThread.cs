@@ -350,7 +350,9 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             newRequest = default;
-            ref Key key = ref pendingContext.key.Get();
+
+            // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
+            ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
             OperationStatus internalStatus;
 
             // Issue the continue command
@@ -389,8 +391,7 @@ namespace FASTER.core
                     RecordInfo recordInfo;
                     unsafe { recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
 
-                    // If skipKeyVerification, we do not have the key in the initial call and must use the key from the satisfied request.
-                    fasterSession.ReadCompletionCallback(ref pendingContext.skipKeyVerification ? ref hlog.GetContextRecordKey(ref request) : ref key,
+                    fasterSession.ReadCompletionCallback(ref key,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,

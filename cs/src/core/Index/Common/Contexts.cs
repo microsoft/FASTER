@@ -75,7 +75,6 @@ namespace FASTER.core
             internal Output output;
             internal Context userContext;
 
-
             // Some additional information about the previous attempt
             internal long id;
             internal int version;
@@ -84,8 +83,23 @@ namespace FASTER.core
             internal HashBucketEntry entry;
             internal LatchOperation heldLatch;
 
-            internal bool skipKeyVerification;
+            internal byte operationFlags;
             internal RecordInfo recordInfo;
+
+            internal const byte kNoKey = 0x01;
+            internal const byte kReadByAddress = 0x02;
+
+            internal bool NoKey
+            { 
+                get => (operationFlags & kNoKey) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kNoKey) : (byte)(operationFlags & ~kNoKey);
+            }
+
+            internal bool ReadByAddress
+            {
+                get => (operationFlags & kReadByAddress) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kReadByAddress) : (byte)(operationFlags & ~kReadByAddress);
+            }
 
             public void Dispose()
             {

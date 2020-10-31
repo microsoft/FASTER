@@ -24,12 +24,6 @@ namespace FASTER.core
             private readonly FasterKV<Key, Value> _fasterKV;
             private readonly IFunctions<Key, Value, Input, Output, Context> _functions;
 
-            internal ClientSessionBuilder(FasterKV<Key, Value> fasterKV)
-            {
-                _fasterKV = fasterKV;
-                _functions = null;
-            }
-
             internal ClientSessionBuilder(FasterKV<Key, Value> fasterKV, IFunctions<Key, Value, Input, Output, Context> functions)
             {
                 _fasterKV = fasterKV;
