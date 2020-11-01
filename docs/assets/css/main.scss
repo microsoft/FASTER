@@ -7,7 +7,7 @@
 @import "minimal-mistakes/skins/{{ site.minimal_mistakes_skin | default: 'default' }}"; // skin
 @import "minimal-mistakes"; // main partials
 
-$background-color: #000 !default;
+$background-color: #fff !default;
 
 html {
     font-size: 16px; // originally 16px
