@@ -1,0 +1,47 @@
+# main links
+main:
+  - title: "Quick-Start Guide"
+    url: /docs/ug-quick-start-guide/
+  - title: "Code"
+    url: https://github.com/microsoft/FASTER
+  - title: "Releases" 
+    url: https://github.com/microsoft/FASTER/releases
+
+# documentation links
+docs:
+  - title: User Guide
+    children:
+      - title: "Quick-Start Guide"
+        url: /docs/ug-quick-start-guide/
+      - title: "Configuration"
+        url: /docs/ug-configuration/
+      - title: "Release Notes"
+        url: https://github.com/microsoft/FASTER/releases
+      - title: "Frequently asked Questions"
+        url: /docs/ug-faqs/
+  - title: Developer Guide
+    children:
+      - title: "Building from Source"
+        url: /docs/dg-building-from-source/
+      - title: "Code Structure"
+        url: /docs/dg-code-structure/
+      - title: "Roadmap"
+        url: https://github.com/microsoft/FASTER/blob/master/docs/Roadmap.md
+      - title: "Contributing"
+        url: https://github.com/microsoft/FASTER/blob/master/CONTRIBUTING.md
+  - title: Tour of FASTER
+    children:
+      - title: "Introduction"
+        url: /docs/tof-introduction/
+      - title: "Design Goals"
+        url: /docs/tof-design-goals/
+      - title: "Architecture"
+        url: /docs/tof-overview/
+  - title: Meta
+    children:
+      - title: "License"
+        url: https://github.com/microsoft/FASTER/blob/master/LICENSE
+#      - title: "Notice"
+#        url: https://github.com/microsoft/FASTER/blob/master/NOTICE.txt
+#      - title: "Security"
+#        url: https://github.com/microsoft/FASTER/blob/master/SECURITY.md
