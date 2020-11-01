@@ -4,7 +4,7 @@ permalink: /
 hidden: true
 header:
   overlay_color: "#5e616c"
-  overlay_image: /assets/images/faster-banner.jpg
+  overlay_image: /assets/images/faster-banner.png
   actions:
     - label: "<i class='fas fa-rocket'></i> Get started now"
       url: "/docs/ug-quick-start-guide/"
