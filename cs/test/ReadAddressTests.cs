@@ -66,20 +66,16 @@ namespace FASTER.test.readaddress
         /// </summary>
         public class Functions : AdvancedSimpleFunctions<Key, Value, Context>
         {
-            public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst)
-            {
-                dst.value = SetReadOutput(key.key, value.value);
-            }
+            public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) 
+                => dst.value = SetReadOutput(key.key, value.value);
 
-            public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst)
-            {
-                dst.value = SetReadOutput(key.key, value.value);
-            }
+            public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) 
+                => dst.value = SetReadOutput(key.key, value.value);
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, long address) => false;
 
             // Track the recordInfo for its PreviousAddress.
             public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)

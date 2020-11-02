@@ -687,12 +687,12 @@ namespace FASTER.core
                 _clientSession.LatestCommitPoint = commitPoint;
             }
 
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
                 _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
             }
 
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address)
             {
                 return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
             }
@@ -700,7 +700,7 @@ namespace FASTER.core
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress)
             {
                 _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
             }
@@ -720,12 +720,12 @@ namespace FASTER.core
                 return _clientSession.variableLengthStruct.GetLength(ref t, ref input);
             }
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, long address)
             {
                 _clientSession.functions.InitialUpdater(ref key, ref input, ref value);
             }
 
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, long address)
             {
                 return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
             }
@@ -740,12 +740,12 @@ namespace FASTER.core
                 _clientSession.functions.RMWCompletionCallback(ref key, ref input, ctx, status);
             }
 
-            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
                 _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst);
             }
 
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst, long address)
             {
                 _clientSession.functions.SingleWriter(ref key, ref src, ref dst);
             }
