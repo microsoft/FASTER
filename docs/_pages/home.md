@@ -37,7 +37,7 @@ public static void Main()
 {
   using var log = Devices.CreateLogDevice("hlog.log"); // backing storage device
   using var store = new FasterKV<long, long>(1L << 20, // hash table size (number of 64-byte buckets)
-     new LogSettings { LogDevice = log } // log settings
+     new LogSettings { LogDevice = log } // log settings (devices, page size, memory size, etc.)
      );
 
   // Create a session per sequence of interactions with FASTER
