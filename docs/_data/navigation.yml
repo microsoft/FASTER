@@ -13,6 +13,8 @@ docs:
     children:
       - title: "Quick-Start Guide"
         url: /docs/quick-start-guide/
+      - title: "Build and Test"
+        url: /docs/build-and-test/
       - title: "Release Notes"
         url: https://github.com/microsoft/FASTER/releases
       - title: "Frequently asked Questions"
