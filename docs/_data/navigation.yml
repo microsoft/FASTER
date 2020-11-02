@@ -9,16 +9,35 @@ main:
 
 # documentation links
 docs:
-  - title: User Guide
+  - title: Overview
     children:
       - title: "Quick-Start Guide"
         url: /docs/quick-start-guide/
-      - title: "Configuration"
-        url: /docs/configuration/
       - title: "Release Notes"
         url: https://github.com/microsoft/FASTER/releases
       - title: "Frequently asked Questions"
         url: /docs/faqs/
+
+  - title: FasterKV User Guide
+    children:
+      - title: "FasterKV Details"
+        url: /docs/faster-kv/
+      - title: "FasterLog Details"
+        url: /docs/faster-log/
+      - title: "Tuning FasterKV"
+        url: /docs/faster-log/
+      - title: "FasterLog Details"
+        url: /docs/faster-log/
+      - title: "FasterKV C++ Port"
+        url: /docs/fasterkv-cpp/
+
+  - title: FasterLog User Guide
+    children:
+      - title: "Details"
+        url: /docs/faster-log/
+      - title: "Tuning"
+        url: /docs/faster-log/
+
   - title: Developer Guide
     children:
       - title: "Building from Source"
@@ -29,7 +48,8 @@ docs:
         url: https://github.com/microsoft/FASTER/blob/master/docs/Roadmap.md
       - title: "Contributing"
         url: https://github.com/microsoft/FASTER/blob/master/CONTRIBUTING.md
-  - title: FASTER Details
+
+  - title: Technical Details
     children:
       - title: "Introduction"
         url: /docs/fd-introduction/
@@ -37,11 +57,8 @@ docs:
         url: /docs/fd-design-goals/
       - title: "Architecture"
         url: /docs/fd-overview/
+
   - title: Meta
     children:
       - title: "License"
         url: https://github.com/microsoft/FASTER/blob/master/LICENSE
-#      - title: "Notice"
-#        url: https://github.com/microsoft/FASTER/blob/master/NOTICE.txt
-#      - title: "Security"
-#        url: https://github.com/microsoft/FASTER/blob/master/SECURITY.md
