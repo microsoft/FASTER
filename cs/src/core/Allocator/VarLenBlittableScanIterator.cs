@@ -129,7 +129,7 @@ namespace FASTER.core
                     physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
 
                 // Check if record fits on page, if not skip to next page
-                var recordSize = hlog.GetRecordSize(physicalAddress);
+                var recordSize = hlog.GetRecordSize(physicalAddress).Item2;
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;

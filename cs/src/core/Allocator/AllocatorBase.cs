@@ -273,6 +273,14 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract ref Value GetValue(long physicalAddress);
         /// <summary>
+        /// Get value from address range
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <param name="endPhysicalAddress"></param>
+        /// <returns></returns>
+        public virtual ref Value GetValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
+
+        /// <summary>
         /// Get address info for key
         /// </summary>
         /// <param name="physicalAddress"></param>
@@ -290,7 +298,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
-        public abstract int GetRecordSize(long physicalAddress);
+        public abstract (int, int) GetRecordSize(long physicalAddress);
 
         /// <summary>
         /// Get record size
@@ -299,7 +307,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract int GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public abstract (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
             where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
@@ -323,7 +331,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract int GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+        public abstract (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
             where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
@@ -332,7 +340,7 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public abstract int GetRecordSize(ref Key key, ref Value value);
+        public abstract (int, int) GetRecordSize(ref Key key, ref Value value);
 
         /// <summary>
         /// Allocate page
@@ -1604,6 +1612,26 @@ namespace FASTER.core
         public virtual void ShallowCopy(ref Key src, ref Key dst)
         {
             dst = src;
+        }
+
+        /// <summary>
+        /// Serialize to log
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="physicalAddress"></param>
+        public virtual void Serialize(ref Key src, long physicalAddress)
+        {
+            GetKey(physicalAddress) = src;
+        }
+
+        /// <summary>
+        /// Serialize to log
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="physicalAddress"></param>
+        public virtual void Serialize(ref Value src, long physicalAddress)
+        {
+            GetValue(physicalAddress) = src;
         }
 
         /// <summary>
