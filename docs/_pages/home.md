@@ -30,9 +30,30 @@ Two paras on FASTER here
 
 {% include feature_row_small id="features" %}
 
-# FasterKv Embedded Sample in C#
+# Embedded key-value store sample in C#
 
 ```cs
+public static void Main()
+{
+  using var log = Devices.CreateLogDevice("hlog.log"); // backing storage device
+  using var store = new FasterKV<long, long>(1L << 20, // hash table size (number of 64-byte buckets)
+     new LogSettings { LogDevice = log } // log settings
+     );
 
+  // Create a session per sequence of interactions with FASTER
+  using var s = store.NewSession(new SimpleFunctions<long, long>());
+  long key = 1, value = 1, input = 10, output = 0;
+  
+  // Upsert and Read
+  s.Upsert(ref key, ref value);
+  s.Read(ref key, ref output);
+  Debug.Assert(output == value);
+  
+  // Read-Modify-Write
+  s.RMW(ref key, ref input);
+  s.RMW(ref key, ref input);
+  s.Read(ref key, ref output);
+  Debug.Assert(output == value + 20);
+}
 ```
 
