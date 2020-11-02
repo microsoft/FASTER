@@ -13,8 +13,6 @@ docs:
     children:
       - title: "Quick-Start Guide"
         url: /docs/quick-start-guide/
-      - title: "Build and Test"
-        url: /docs/build-and-test/
       - title: "Release Notes"
         url: https://github.com/microsoft/FASTER/releases
       - title: "Frequently asked Questions"
@@ -22,28 +20,28 @@ docs:
 
   - title: FasterKV User Guide
     children:
-      - title: "FasterKV Details"
-        url: /docs/faster-kv/
-      - title: "FasterLog Details"
-        url: /docs/faster-log/
-      - title: "Tuning FasterKV"
-        url: /docs/faster-log/
-      - title: "FasterLog Details"
-        url: /docs/faster-log/
-      - title: "FasterKV C++ Port"
+      - title: "Basics"
+        url: /docs/fasterkv-basics/
+      - title: "Tuning"
+        url: /docs/fasterkv-tuning/
+      - title: "Samples"
+        url: /docs/fasterkv-samples/
+      - title: "C++ Port"
         url: /docs/fasterkv-cpp/
 
   - title: FasterLog User Guide
     children:
-      - title: "Details"
-        url: /docs/faster-log/
+      - title: "Basics"
+        url: /docs/fasterlog-basics/
       - title: "Tuning"
-        url: /docs/faster-log/
+        url: /docs/fasterlog-tuning/
+      - title: "Samples"
+        url: /docs/fasterlog-samples/
 
   - title: Developer Guide
     children:
-      - title: "Building from Source"
-        url: /docs/building-from-source/
+      - title: "Build and Test"
+        url: /docs/build-and-test/
       - title: "Code Structure"
         url: /docs/code-structure/
       - title: "Roadmap"
