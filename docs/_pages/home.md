@@ -26,39 +26,71 @@ features:
     excerpt: "Feature 3 excerpt"
 ---
 
-Managing large application state easily and with high performance is one of the hardest problems
-in the cloud today. FASTER is a concurrent key-value store + cache that is designed for point 
+Managing large application state easily, resiliently, and with high performance is one of the hardest
+problems in the cloud today. The FASTER project offers two artifacts to help tackle this problem.
+
+* **FASTER Log** is a high-performance concurrent persistent recoverable log, iterator, and random 
+reader library in C#. It supports very frequent commit operations at low latency, and can quickly saturate 
+disk bandwidth. It supports both sync and async interfaces, handles disk errors, and supports checksums. Learn 
+more about the FASTER Log in C# here: [github](docs/cs/FasterLog.md) | [web](https://microsoft.github.io/FASTER/cs/fasterlog).
+
+* **FASTER KV** is a concurrent key-value store + cache (available in C# and C++) that is designed for point 
 lookups and heavy updates. FASTER supports data larger than memory, by leveraging fast external 
-storage. It also supports consistent recovery using a non-blocking checkpointing technique that lets 
-applications trade-off performance for commit latency.
+storage (local or cloud). It also supports consistent recovery using a new checkpointing technique that lets 
+applications trade-off performance for commit latency. Learn 
+more about the FASTER KV in C# here: [github](docs/cs/FasterKV.md) | [web](https://microsoft.github.io/FASTER/cs/fasterkv).
+For FASTER C++, check here: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc).
 
 {% include feature_row_small id="features" %}
 
+Some key differentiating features of FASTER KV and FASTER Log include:
 
-The following features of FASTER differentiate it from a technical perspective:
+1. Latch-free cache-optimized index, in FASTER KV.
+2. A fast persistent recoverable append-only log based on fine-grained epoch protection for concurrency, 
+in FASTER Log.
+3. Unique “hybrid record log” design in FASTER KV, that combines the above log with in-place updates, to 
+shape the memory working set and retain performance.
+4. Architecture as a component that can be embedded in multi-threaded cloud apps. 
+5. Asynchronous recovery model based on group commit (called [CPR](#Recovery-in-FASTER)).
+6. A rich extensible storage device abstraction called `IDevice`, with implementations for local
+storage, cloud storage, tiered storage, and sharded storage.
 
-1. Latch-free cache-optimized index.
-2. Unique “hybrid record log” design that combines a traditional persistent append-only log with in-place updates (cache), to shape the memory working set and retain performance.
-3. Architecture as a component that can be embedded in multi-threaded cloud apps.
-4. Asynchronous checkpoint/recovery support, based on group commit.
-
-For standard benchmarks where the working set fits in main memory, we found FASTER to achieve
+For standard benchmarks where the working set fits in main memory, we found FASTER KV to achieve
 significantly higher throughput than current systems, and match or exceed the performance of pure 
-in-memory data structures while offering more functionality. See [the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf) for more details. We also have a detailed analysis of C# FASTER performance in a wiki page 
+in-memory data structures while offering more functionality. See 
+[the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf)
+for more details. We also have a detailed analysis of C# FASTER KV performance in a wiki page 
 [here](https://github.com/Microsoft/FASTER/wiki/Performance-of-FASTER-in-C%23). The performance of the 
-C# and C++ versions of FASTER are very similar.
+C# and C++ versions of FASTER are very similar. FASTER Log is also extremely fast, capable of saturating modern
+NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded setting.
+
+:new: We now support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
+a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
+
+:new: We support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](docs/cs/README.md) for more information. Also, check out the 
+samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
 
 # Getting Started
 
-* Visit our [research page](http://aka.ms/FASTER) for technical details and papers.
-* Start reading about FASTER C# [here](cs).
-* FASTER C# binaries are available via NuGet:
+* Docs: [github](docs/) | [web](https://microsoft.github.io/FASTER)
+* Research papers: [https://aka.ms/FASTER](https://aka.ms/FASTER)
+* FASTER C# details: [github](docs/cs/) | [web](https://microsoft.github.io/FASTER/cs)
+* FASTER C++ details: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc)
+* Tuning FASTER: [github](docs/tuning/) | [web](https://microsoft.github.io/FASTER/tuning)
+* Project roadmap: [github](docs/Roadmap.md) | [web](https://microsoft.github.io/FASTER/roadmap).
+* NuGet binary feed:
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
-* Start reading about FASTER C++ [here](cc).
+* Samples: [github](https://github.com/Microsoft/FASTER/tree/master/cs/samples)
+
+# Build and Test
+
+For C#, click [here](cs/).
+
+For C++, click [here](cc/).
 
 
-# Embedded key-value store sample in C#
+# Embedded key-value store sample
 
 ```cs
 public static void Main()
