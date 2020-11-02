@@ -41,8 +41,6 @@ applications trade-off performance for commit latency. Learn
 more about the FASTER KV in C# here: [github](docs/cs/FasterKV.md) | [web](https://microsoft.github.io/FASTER/cs/fasterkv).
 For FASTER C++, check here: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc).
 
-{% include feature_row_small id="features" %}
-
 # Key Features
 
 1. Latch-free cache-optimized index, in FASTER KV.
