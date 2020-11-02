@@ -7,7 +7,7 @@ toc: false
 classes: wide
 ---
 
-# Key Links
+## Key Links
 
 * Docs: [github](docs/) and [web](https://microsoft.github.io/FASTER)
 * Research papers: [https://aka.ms/FASTER](https://aka.ms/FASTER)
