@@ -43,7 +43,7 @@ For FASTER C++, check here: [github](docs/cc/) | [web](https://microsoft.github.
 
 {% include feature_row_small id="features" %}
 
-Some key differentiating features of FASTER KV and FASTER Log include:
+# Key Features
 
 1. Latch-free cache-optimized index, in FASTER KV.
 2. A fast persistent recoverable append-only log based on fine-grained epoch protection for concurrency, 
@@ -72,6 +72,7 @@ a new type called `SpanByte` to represent variable-length keys and values. See t
 * We support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](docs/cs/README.md) for more information. Also, check out the 
 samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
 
+
 # Getting Started
 
 * Docs: [github](docs/) and [web](https://microsoft.github.io/FASTER)
@@ -84,12 +85,6 @@ samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
 * Samples: [github](https://github.com/Microsoft/FASTER/tree/master/cs/samples)
-
-# Build and Test
-
-For C#, click [here](cs/).
-
-For C++, click [here](cc/).
 
 
 # Embedded key-value store sample
