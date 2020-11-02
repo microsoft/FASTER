@@ -1,7 +1,7 @@
 # main links
 main:
   - title: "Quick-Start Guide"
-    url: /docs/ug-quick-start-guide/
+    url: /docs/quick-start-guide/
   - title: "Code"
     url: https://github.com/microsoft/FASTER
   - title: "Releases" 
@@ -12,31 +12,31 @@ docs:
   - title: User Guide
     children:
       - title: "Quick-Start Guide"
-        url: /docs/ug-quick-start-guide/
+        url: /docs/quick-start-guide/
       - title: "Configuration"
-        url: /docs/ug-configuration/
+        url: /docs/configuration/
       - title: "Release Notes"
         url: https://github.com/microsoft/FASTER/releases
       - title: "Frequently asked Questions"
-        url: /docs/ug-faqs/
+        url: /docs/faqs/
   - title: Developer Guide
     children:
       - title: "Building from Source"
-        url: /docs/dg-building-from-source/
+        url: /docs/building-from-source/
       - title: "Code Structure"
-        url: /docs/dg-code-structure/
+        url: /docs/code-structure/
       - title: "Roadmap"
         url: https://github.com/microsoft/FASTER/blob/master/docs/Roadmap.md
       - title: "Contributing"
         url: https://github.com/microsoft/FASTER/blob/master/CONTRIBUTING.md
-  - title: Tour of FASTER
+  - title: FASTER Details
     children:
       - title: "Introduction"
-        url: /docs/tof-introduction/
+        url: /docs/fd-introduction/
       - title: "Design Goals"
-        url: /docs/tof-design-goals/
+        url: /docs/fd-design-goals/
       - title: "Architecture"
-        url: /docs/tof-overview/
+        url: /docs/fd-overview/
   - title: Meta
     children:
       - title: "License"
