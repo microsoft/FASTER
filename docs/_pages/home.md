@@ -49,7 +49,7 @@ public static void Main()
   s.Read(ref key, ref output);
   Debug.Assert(output == value);
   
-  // Read-Modify-Write
+  // Read-Modify-Write (add input to value)
   s.RMW(ref key, ref input);
   s.RMW(ref key, ref input);
   s.Read(ref key, ref output);
