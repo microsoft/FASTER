@@ -6,8 +6,8 @@ header:
   overlay_color: "#5e616c"
   overlay_image: /assets/images/faster-banner.png
   actions:
-    - label: "<i class='fas fa-rocket'></i> Get started now"
-      url: "/docs/ug-quick-start-guide/"
+    - label: "Get Started"
+      url: "/docs/quick-start-guide/"
 excerpt: >
   A fast concurrent persistent key-value store and log, in C# and C++.<br />
   <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.7.4">Latest release v1.7.4</a></small>
