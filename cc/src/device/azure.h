@@ -1,6 +1,5 @@
-// Copyright (c) Microsoft Corporation
-// File created on 19th June 2018.
-// Chinmay Kulkarni (t-chkulk)
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
 
 #include <memory>
 #include <algorithm>
