@@ -230,7 +230,7 @@ namespace FASTER.core
                     pendingContext.key = hlog.GetKeyContainer(ref key);
                 pendingContext.input = fasterSession.GetHeapContainer(ref input);
                 pendingContext.output = output;
-                        
+
                 if (pendingContext.output is IHeapConvertible heapConvertible)
                     heapConvertible.ConvertToHeap();
 

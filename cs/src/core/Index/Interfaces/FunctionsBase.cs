@@ -117,7 +117,7 @@ namespace FASTER.core
         public override void SingleWriter(ref Key key, ref Value src, ref Value dst, long address) => dst = src;
 
         public override void InitialUpdater(ref Key key, ref Value input, ref Value value, long address) => value = input;
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, long oldAddress, long mewAddress) => newValue = merger(input, oldValue);
+        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress) => newValue = merger(input, oldValue);
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, long address) { value = merger(input, value); return true; }
 
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo) { }

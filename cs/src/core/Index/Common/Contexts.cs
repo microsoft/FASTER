@@ -90,11 +90,12 @@ namespace FASTER.core
             internal const byte kReadByAddress = 0x02;
 
             internal bool NoKey
-            { 
+            {
                 get => (operationFlags & kNoKey) != 0;
                 set => operationFlags = value ? (byte)(operationFlags | kNoKey) : (byte)(operationFlags & ~kNoKey);
             }
 
+            // This indicates the form of Read that takes an address or a RecordInfo (whether or not RecordInfo.PreviousAddress is set).
             internal bool ReadByAddress
             {
                 get => (operationFlags & kReadByAddress) != 0;

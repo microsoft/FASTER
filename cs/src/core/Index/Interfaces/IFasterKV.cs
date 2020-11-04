@@ -71,32 +71,87 @@ namespace FASTER.core
         /// <summary>
         /// Grow the hash index
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Whether the request succeeded</returns>
         bool GrowIndex();
 
         /// <summary>
-        /// Take full checkpoint of FASTER
+        /// Initiate full (index + log) checkpoint of FASTER
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
-        /// <returns>Whether checkpoint was initiated</returns>
+        /// <returns>Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
+        /// <remarks>Uses the checkpoint type specified in the <see cref="CheckpointSettings"/></remarks>
         bool TakeFullCheckpoint(out Guid token);
 
         /// <summary>
-        /// Take checkpoint of FASTER index only (not log)
+        /// Initiate full (index + log) checkpoint of FASTER
         /// </summary>
-        /// <param name="token">Token describing checkpoin</param>
-        /// <returns>Whether checkpoint was initiated</returns>
+        /// <param name="token">Token describing checkpoint</param>
+        /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
+        /// <returns>Whether we successfully initiated the checkpoint (initiation mayfail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
+        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType);
+
+        /// <summary>
+        /// Take full (index + log) checkpoint of FASTER asynchronously
+        /// </summary>
+        /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
+        /// <param name="cancellationToken">A token to cancel the operation</param>
+        /// <returns>A (bool success, Guid token) tuple.
+        /// success: Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index).
+        /// token: Token for taken checkpoint.
+        /// Await the task to complete checkpoint, if initiated successfully</returns>
+        public ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Initiate checkpoint of FASTER index only (not log)
+        /// </summary>
+        /// <param name="token">Token describing checkpoint</param>
+        /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to await completion.</returns>
         bool TakeIndexCheckpoint(out Guid token);
 
         /// <summary>
-        /// Take checkpoint of FASTER log only (not index)
+        /// Take asynchronous checkpoint of FASTER index only (not log)
         /// </summary>
-        /// <param name="token">Token describing checkpoin</param>
-        /// <returns>Whether checkpoint was initiated</returns>
+        /// <param name="cancellationToken">A token to cancel the operation</param>
+        /// <returns>A (bool success, Guid token) tuple.
+        /// success: Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index).
+        /// token: Token for taken checkpoint.
+        /// Await the task to complete checkpoint, if initiated successfully</returns>
+        public ValueTask<(bool success, Guid token)> TakeIndexCheckpointAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Initiate checkpoint of FASTER log only (not index)
+        /// </summary>
+        /// <param name="token">Token describing checkpoint</param>
+        /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to await completion.</returns>
         bool TakeHybridLogCheckpoint(out Guid token);
 
         /// <summary>
-        /// Recover from last successful index and log checkpoint
+        /// Take asynchronous checkpoint of FASTER log only (not index)
+        /// </summary>
+        /// <param name="token">Token describing checkpoint</param>
+        /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
+        /// <returns>Whether we successfully initiated the checkpoint (initiation mayfail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType);
+
+        /// <summary>
+        /// Initiate checkpoint of FASTER log only (not index)
+        /// </summary>
+        /// <param name="cancellationToken">A token to cancel the operation</param>
+        /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
+        /// <returns>A (bool success, Guid token) tuple.
+        /// success: Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
+        /// operation such as growing the index).
+        /// token: Token for taken checkpoint.
+        /// Await the task to complete checkpoint, if initiated successfully</returns>
+        public ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Recover from last successful index and log checkpoints
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>

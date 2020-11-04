@@ -103,8 +103,8 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="recordSize">Record size</param>
-        /// <param name="sectorSize">Sector size</param>
+        /// <param name="recordSize">Record size. May be 1 if allocations of different lengths will be made</param>
+        /// <param name="sectorSize">Sector size, e.g. from log device</param>
         public SectorAlignedBufferPool(int recordSize, int sectorSize)
         {
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
