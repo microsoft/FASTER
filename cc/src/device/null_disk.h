@@ -63,7 +63,8 @@ class NullDisk {
   typedef NullFile file_t;
   typedef NullFile log_file_t;
 
-  NullDisk(const std::string& filename, core::LightEpoch& epoch) {
+  NullDisk(const std::string& filename, core::LightEpoch& epoch,
+           const std::string& config) {
   }
 
   static uint32_t sector_size() {

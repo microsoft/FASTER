@@ -88,3 +88,29 @@ Sum-store, located in [FASTER/cc/playground/sum_store-dir](https://github.com/Mi
 checkpointing and recovery.
 
 There's a basic YCSB test driver in [FASTER/cc/benchmark-dir](https://github.com/Microsoft/FASTER/tree/master/cc/benchmark-dir).
+
+Remote Device
+===========
+
+The C++ version's persistent layer can be extended from local storage to a remote tier using the
+[`StorageDevice`](https://github.com/Microsoft/FASTER/tree/master/cc/src/device/storage.h). This
+device stores data across a set of files locally, and transparently flushes them to a remote tier.
+Reads are also transparently served from the appropriate tier too. This device is templated with
+the remote tier, and we currently support [Azure blob storage](https://github.com/Microsoft/FASTER/tree/master/cc/src/device/azure.h).
+An example along with unit tests can be found under [FASTER/cc/test/blobs](https://github.com/Microsoft/FASTER/tree/master/cc/test/blobs).
+
+This device depends on  `cpprestsdk` and `azure-storage-cpp`. On Linux, these
+can be installed using the helper script at
+[FASTER/cc/scripts/linux/azure/blob.sh](https://github.com/Microsoft/FASTER/tree/master/cc/scripts/linux/azure/blob.sh).
+On windows, use [vcpkg](https://github.com/microsoft/vcpkg) to install the `azure-storage-cpp:x64-windows` library, and
+then run `vcpkg integrate install` to satisfy these dependencies.
+
+To compile the unit tests, pass in `-DUSE_BLOBS=ON`
+when generating build scripts with `cmake`. To run the unit tests, you will need an instance
+of [Azurite](https://github.com/Azure/Azurite) running for Linux, or the
+[Azure storage emulator](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-emulator) running
+for Windows.
+
+If you run into issues while trying to setup this device, please refer to FASTER's
+[CI](https://github.com/Microsoft/FASTER/tree/master/azure-pipelines.yml); it contains rules that setup and test
+this layer on both, Linux and Windows.
