@@ -52,11 +52,11 @@ docs:
   - title: Technical Details
     children:
       - title: "Introduction"
-        url: /docs/fd-introduction/
+        url: /docs/td-introduction/
       - title: "Design Goals"
-        url: /docs/fd-design-goals/
+        url: /docs/td-design-goals/
       - title: "Architecture"
-        url: /docs/fd-overview/
+        url: /docs/td-overview/
 
   - title: Meta
     children:
