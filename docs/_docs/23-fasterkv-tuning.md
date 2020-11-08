@@ -3,7 +3,8 @@ title: "Tuning FasterKV"
 permalink: /docs/fasterkv-tuning/
 excerpt: "Tuning FasterKV"
 last_modified_at: 2020-11-07
-toc: true
+toc: false
+classes: wide
 ---
 
 ## Configuring the Hybrid Log
