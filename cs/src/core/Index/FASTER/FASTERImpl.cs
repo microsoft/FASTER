@@ -94,9 +94,8 @@ namespace FASTER.core
             }
             else
             {
-                logicalAddress = startAddress;
-                tagExists = logicalAddress >= hlog.BeginAddress;
-                entry.Address = logicalAddress;
+                tagExists = startAddress >= hlog.BeginAddress;
+                entry.Address = startAddress;
             }
 
             if (tagExists)
