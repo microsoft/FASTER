@@ -6,8 +6,7 @@ last_modified_at: 2020-11-07
 toc: true
 ---
 
-Introduction to FasterKV C#
-===========================
+## Introduction to FasterKV C#
 
 The FasterKV key-value store and cache in C# works in .NET Framework and .NET core, and can be used in both a 
 single-threaded and highly concurrent setting. It has been tested to work on both Windows and Linux. It exposes 
@@ -19,16 +18,6 @@ FASTER  may be used as a high-performance replacement for traditional concurrent
 .NET ConcurrentDictionary, and additionally supports larger-than-memory data. It also supports checkpointing of the 
 data structure - both incremental and non-incremental. Operations on FASTER can be issued synchronously or 
 asynchronously, i.e., using the C# `async` interface.
-
-Table of Contents
------------
-* [Getting FASTER](#getting-faster)
-* [Basic Concepts](#basic-concepts)
-* [Quick End-to-End Sample](#quick-end-to-end-sample)
-* [More Examples](#more-examples)
-* [Handling Variable Length Keys and Values](#handling-variable-length-keys-and-values)
-* [Log Compaction](#log-compaction)
-* [Checkpointing and Recovery](#checkpointing-and-recovery)
 
 ## Getting FASTER
 
