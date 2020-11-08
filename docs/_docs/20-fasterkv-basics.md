@@ -259,7 +259,7 @@ an asynchronous commit (checkpoint). The user is responsible for initiating the 
 
 Below, we show a simple recovery example with asynchronous checkpointing.
 
-```Csharp
+```cs
 public class PersistenceExample
 {
     private FasterKV<long, long> fht;
