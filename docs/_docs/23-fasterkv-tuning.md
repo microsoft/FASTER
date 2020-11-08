@@ -2,7 +2,7 @@
 title: "Tuning FasterKV"
 permalink: /docs/fasterkv-tuning/
 excerpt: "Tuning FasterKV"
-last_modified_at: 2020-11-07
+last_modified_at: 2020-11-08
 toc: false
 classes: wide
 ---
@@ -13,7 +13,7 @@ Recall that FASTER consists of the hash index that connects to a hybrid log span
 memory. The hybrid log may be configured using the `LogSettings` input to the FasterKV constructor.
 
 ```cs
-var fht = new FasterKV<...>(1L << 20, new Funcs(), new LogSettings { ... }, ...);
+var fht = new FasterKV<Key, Value>(1L << 20, new LogSettings { ... }, ...);
 ```
 
 The following log settings are available for configuration:
@@ -26,10 +26,11 @@ You can use our extension method to easily create an instance of a local device:
     var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
     ```
     When using FASTER in memory, you can set the device to a null device (`NullDevice`) by providing an empty
-    string as parameter to the method above.
+    string as parameter to the method above. You are responsible for disposing the device via `IDisposable`.
 
 * `ObjectLogDevice`: If you are using C# class objects as FASTER keys and/or values, you need to also
-provide storage for the object log, similar to the main log described above.
+provide storage for the object log, similar to the main log described above. You are responsible for disposing 
+the device via `IDisposable`.
 
 * `PageSizeBits`: This field (P) is used to indicate the size of each page. It is provided in terms of the number
 of bits. You get the actual size of the page by a simple computation of two raised to the power of the number
@@ -39,8 +40,8 @@ default value of 25 (= 32MB).
 
 * `MemorySizeBits`: This field (M) indicates the total size of memory used by the log. As before, for a setting
 of M, 2<sup>M</sup> is the number of bytes used totally by the log. Since each page is of size 2<sup>P</sup>, the 
-number of pages in memory is simply 2<sup>M-P</sup>. FASTER requires at least 16 pages in memory, so M should be 
-set to at least P+4.
+number of pages in memory is simply 2<sup>M-P</sup>. FASTER requires at least 2 pages in memory, so M should be 
+set to at least P+1.
 
 * `MutableFraction`: This field (F) indicates the fraction of the memory that will be treated as _mutable_, i.e.,
 updates are performed in-place instead of creating a new version on the tail of the log. A value of 0.9 (the
