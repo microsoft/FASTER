@@ -56,7 +56,7 @@ docs:
       - title: "Design Goals"
         url: /docs/td-design-goals/
       - title: "Architecture"
-        url: /docs/td-overview/
+        url: /docs/td-architecture/
 
   - title: Meta
     children:
