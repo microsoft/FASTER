@@ -4,7 +4,6 @@ permalink: /docs/fasterkv-basics/
 excerpt: "FasterKV Basics"
 last_modified_at: 2020-11-07
 toc: true
-classes: wide
 ---
 
 Introduction to FasterKV C#
