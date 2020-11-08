@@ -7,7 +7,7 @@ toc: false
 classes: wide
 ---
 
-* Samples: [github](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
+* Main samples: [github](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
 * Playground with advanced samples: [github](https://github.com/Microsoft/FASTER/tree/master/cs/playground).
 * The sum-store, located [here](https://github.com/Microsoft/FASTER/tree/master/cc/playground/sum_store-dir), is a good example of checkpointing and recovery.
 * FasterKV supports variable-length keys and values via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also 
