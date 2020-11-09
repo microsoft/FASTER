@@ -236,9 +236,16 @@ Typically, you may compact around 20% (up to 100%) of the log, e.g., you could s
 
 ## Checkpointing and Recovery
 
-FASTER supports **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations
+FASTER supports asynchronous non-blocking **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations
 (Read, Upsert or RMW). FASTER allows clients to keep track of operations that have persisted and those that have not using 
-a session-based API. 
+a session-based API.
+
+This feature is based on a recovery model called Concurrent Prefix Recovery (CPR for short). You can read more about 
+CPR in the research paper [here](https://www.microsoft.com/en-us/research/uploads/prod/2019/01/cpr-sigmod19.pdf).
+Briefly, CPR is based on (periodic) group commit. However, instead of using an expensive 
+write-ahead log (WAL) which can kill FASTER's high performance, CPR: (1) provides a semantic description of committed
+operations, of the form “all operations until offset Ti in session i”; and (2) uses asynchronous 
+incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
 
 Recall that each FASTER client starts a session, associated with a unique session ID (or name). All FASTER session operations
 (Read, Upsert, RMW) carry a monotonic sequence number (sequence numbers are implicit in case of async calls). At any point in 
