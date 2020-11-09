@@ -9,6 +9,7 @@ classes: wide
 
 ## Slides
 
+* FASTER reference deck: [slideshare](https://www.slideshare.net/badrishc/faster-keyvalue-store-and-log)
 * Recovery in FASTER: [slideshare](https://www.slideshare.net/badrishc/concurrent-prefix-recovery-performing-cpr-on-a-database)
 
 ## Videos
