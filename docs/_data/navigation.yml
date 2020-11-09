@@ -53,10 +53,14 @@ docs:
     children:
       - title: "Introduction"
         url: /docs/td-introduction/
-      - title: "Design Goals"
-        url: /docs/td-design-goals/
-      - title: "Architecture"
-        url: /docs/td-architecture/
+      #- title: "Design Goals"
+      #  url: /docs/td-design-goals/
+      #- title: "Architecture"
+      #  url: /docs/td-architecture/
+      - title: "Research Papers"
+        url: /docs/td-research-papers/
+      - title: "Slides and Videos"
+        url: /docs/td-slides-videos/
 
   - title: Meta
     children:
