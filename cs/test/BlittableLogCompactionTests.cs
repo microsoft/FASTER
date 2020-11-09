@@ -57,7 +57,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            fht.Log.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -112,7 +112,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var tail = fht.Log.TailAddress;
-            fht.Log.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
             Assert.IsTrue(fht.Log.TailAddress == tail);
 
@@ -165,7 +165,7 @@ namespace FASTER.test
             }
 
             var tail = fht.Log.TailAddress;
-            fht.Log.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -220,7 +220,7 @@ namespace FASTER.test
             var tail = fht.Log.TailAddress;
 
             // Only leave records with even vfield1
-            fht.Log.Compact(default(EvenCompactionFunctions), compactUntil, true);
+            compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
             // Read 2000 keys - all should be present
@@ -256,6 +256,7 @@ namespace FASTER.test
         [Test]
         public void BlittableLogCompactionCustomFunctionsTest2()
         {
+            // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
 
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -273,9 +274,9 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var compactionFunctions = new Test2CompactionFunctions();
-            fht.Log.Compact(compactionFunctions, fht.Log.TailAddress, true);
+            session.Compact(fht.Log.TailAddress, true, compactionFunctions);
 
-            Assert.IsTrue(compactionFunctions.CopyCalled);
+            Assert.IsFalse(compactionFunctions.CopyCalled);
 
             var input = default(InputStruct);
             var output = default(OutputStruct);

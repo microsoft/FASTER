@@ -98,9 +98,10 @@ class FasterKv {
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
 
   FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
-           double log_mutable_fraction = 0.9, bool pre_allocate_log = false)
+           double log_mutable_fraction = 0.9, bool pre_allocate_log = false,
+           const std::string& config = "")
     : min_table_size_{ table_size }
-    , disk{ filename, epoch_ }
+    , disk{ filename, epoch_, config }
     , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , num_pending_ios{ 0 } {

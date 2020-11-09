@@ -477,8 +477,10 @@ class FileSystemDisk {
   }
 
  public:
-  FileSystemDisk(const std::string& root_path, core::LightEpoch& epoch, bool enablePrivileges = false,
-                 bool unbuffered = true, bool delete_on_close = false)
+  FileSystemDisk(const std::string& root_path, core::LightEpoch& epoch,
+                 const std::string& config = "",
+                 bool enablePrivileges = false, bool unbuffered = true,
+                 bool delete_on_close = false)
     : root_path_{ NormalizePath(root_path) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }

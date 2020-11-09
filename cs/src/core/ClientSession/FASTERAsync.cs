@@ -108,9 +108,9 @@ namespace FASTER.core
             internal RecordInfo _recordInfo;
 
             internal ReadAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession, FasterExecutionContext<Input, Output, Context> currentCtx,
-                                       PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
+                                       PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
-                _exception = default;
+                _exception = exceptionDispatchInfo;
                 _fasterKV = fasterKV;
                 _fasterSession = fasterSession;
                 _currentCtx = currentCtx;
@@ -129,20 +129,23 @@ namespace FASTER.core
                 {
                     try
                     {
-                        _fasterSession.UnsafeResumeThread();
-                        try
+                        if (_exception == default)
                         {
-                            Debug.Assert(_fasterKV.RelaxedCPR);
+                            _fasterSession.UnsafeResumeThread();
+                            try
+                            {
+                                Debug.Assert(_fasterKV.RelaxedCPR);
 
-                            var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
-                            Debug.Assert(status != Status.PENDING);
-                            _result = (status, _pendingContext.output);
-                            unsafe { _recordInfo = _fasterKV.hlog.GetInfoFromBytePointer(_diskRequest.record.GetValidPointer()); }
-                            _pendingContext.Dispose();
-                        }
-                        finally
-                        {
-                            _fasterSession.UnsafeSuspendThread();
+                                var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
+                                Debug.Assert(status != Status.PENDING);
+                                _result = (status, _pendingContext.output);
+                                unsafe { _recordInfo = _fasterKV.hlog.GetInfoFromBytePointer(_diskRequest.record.GetValidPointer()); }
+                                _pendingContext.Dispose();
+                            }
+                            finally
+                            {
+                                _fasterSession.UnsafeSuspendThread();
+                            }
                         }
                     }
                     catch (Exception e)
@@ -153,6 +156,7 @@ namespace FASTER.core
                     {
                         _currentCtx.ioPendingRequests.Remove(_pendingContext.id);
                         _currentCtx.asyncPendingCount--;
+                        _currentCtx.pendingReads.Remove();
                     }
                 }
 
@@ -192,12 +196,12 @@ namespace FASTER.core
                 FasterKV<Key, Value> fasterKV,
                 IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                 FasterExecutionContext<Input, Output, Context> currentCtx,
-                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
+                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 status = Status.PENDING;
                 output = default;
                 this.recordInfo = default;
-                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest);
+                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
             }
 
             /// <summary>
@@ -278,6 +282,8 @@ namespace FASTER.core
             currentCtx.asyncPendingCount++;
             currentCtx.pendingReads.Add();
 
+            ExceptionDispatchInfo exceptionDispatchInfo = default;
+
             try
             {
                 token.ThrowIfCancellationRequested();
@@ -287,18 +293,12 @@ namespace FASTER.core
 
                 diskRequest = await diskRequest.asyncOperation.Task;
             }
-            catch
+            catch (Exception e)
             {
-                currentCtx.ioPendingRequests.Remove(pendingContext.id);
-                currentCtx.asyncPendingCount--;
-                throw;
-            }
-            finally
-            {
-                currentCtx.pendingReads.Remove();
+                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
             }
 
-            return new ReadAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pendingContext, diskRequest);
+            return new ReadAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
         }
 
         internal sealed class RmwAsyncInternal<Input, Output, Context>
@@ -314,9 +314,10 @@ namespace FASTER.core
             int CompletionComputeStatus;
 
             internal RmwAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                      FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
+                                      FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, 
+                                      AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
-                _exception = default;
+                _exception = exceptionDispatchInfo;
                 _fasterKV = fasterKV;
                 _fasterSession = fasterSession;
                 _currentCtx = currentCtx;
@@ -337,17 +338,20 @@ namespace FASTER.core
                 {
                     try
                     {
-                        _fasterSession.UnsafeResumeThread();
-                        try
+                        if (_exception == default)
                         {
-                            var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out newDiskRequest);
-                            _pendingContext.Dispose();
-                            if (status != Status.PENDING)
-                                return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, default));
-                        }
-                        finally
-                        {
-                            _fasterSession.UnsafeSuspendThread();
+                            _fasterSession.UnsafeResumeThread();
+                            try
+                            {
+                                var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out newDiskRequest);
+                                _pendingContext.Dispose();
+                                if (status != Status.PENDING)
+                                    return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, default));
+                            }
+                            finally
+                            {
+                                _fasterSession.UnsafeSuspendThread();
+                            }
                         }
                     }
                     catch (Exception e)
@@ -358,6 +362,7 @@ namespace FASTER.core
                     {
                         _currentCtx.ioPendingRequests.Remove(_pendingContext.id);
                         _currentCtx.asyncPendingCount--;
+                        _currentCtx.pendingReads.Remove();
                     }
                 }
 
@@ -389,11 +394,11 @@ namespace FASTER.core
                 FasterKV<Key, Value> fasterKV,
                 IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                 FasterExecutionContext<Input, Output, Context> currentCtx,
-                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest)
+                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 status = Status.PENDING;
                 output = default;
-                rmwAsyncInternal = new RmwAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest);
+                rmwAsyncInternal = new RmwAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
             }
 
             /// <summary>
@@ -479,6 +484,7 @@ namespace FASTER.core
             currentCtx.asyncPendingCount++;
             currentCtx.pendingReads.Add();
 
+            ExceptionDispatchInfo exceptionDispatchInfo = default;
             try
             {
                 token.ThrowIfCancellationRequested();
@@ -488,18 +494,12 @@ namespace FASTER.core
 
                 diskRequest = await diskRequest.asyncOperation.Task;
             }
-            catch
+            catch (Exception e)
             {
-                currentCtx.ioPendingRequests.Remove(pendingContext.id);
-                currentCtx.asyncPendingCount--;
-                throw;
-            }
-            finally
-            {
-                currentCtx.pendingReads.Remove();
+                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
             }
 
-            return new RmwAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pendingContext, diskRequest);
+            return new RmwAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
         }
     }
 }

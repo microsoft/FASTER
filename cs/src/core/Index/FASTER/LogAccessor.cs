@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
-using System.Runtime.CompilerServices;
+using System.Reflection;
 
 namespace FASTER.core
 {
@@ -55,11 +53,15 @@ namespace FASTER.core
         public long BeginAddress => allocator.BeginAddress;
 
         /// <summary>
-        /// Truncate the log until, but not including, untilAddress
+        /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
         /// </summary>
-        /// <param name="untilAddress"></param>
-        public void ShiftBeginAddress(long untilAddress)
+        /// <param name="untilAddress">Address to shift begin address until</param>
+        /// <param name="snapToPageStart">Whether given address should be snapped to nearest earlier page start address</param>
+        public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false)
         {
+            if (snapToPageStart)
+                untilAddress &= ~allocator.PageSizeMask;
+
             allocator.ShiftBeginAddress(untilAddress);
         }
 
@@ -148,7 +150,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Scan the log given address range
+        /// Scan the log given address range, returns all records with address less than endAddress
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
@@ -199,22 +201,41 @@ namespace FASTER.core
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
-        public void Compact(long untilAddress, bool shiftBeginAddress)
+        /// <returns>Address until which compaction was done</returns>
+        [Obsolete("Invoke Compact() on a client session (ClientSession) instead")]
+        public long Compact(long untilAddress, bool shiftBeginAddress)
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
-                var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
+                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
                 {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
+                    MethodInfo method = GetType().GetMethod("CompactReadOnly", BindingFlags.NonPublic | BindingFlags.Instance);
+                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
+                    return (long)generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
+                }
+                else if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
+                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
+                {
+                    MethodInfo method = GetType().GetMethod("CompactMemory", BindingFlags.NonPublic | BindingFlags.Instance);
+                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
+                    return (long)generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
+                }
+                else
+                {
+                    var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
+                    var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                    {
+                        keyLength = varLen.KeyLength,
+                        valueLength = varLen.ValueLength,
+                    };
 
-                Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                    return Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                }
             }
             else
             {
-                Compact(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default(DefaultCompactionFunctions<Key, Value>), untilAddress, null, shiftBeginAddress);
+                return Compact(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default(DefaultCompactionFunctions<Key, Value>), untilAddress, null, shiftBeginAddress);
             }
         }
 
@@ -226,7 +247,9 @@ namespace FASTER.core
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
-        public void Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress, bool shiftBeginAddress)
+        /// <returns>Address until which compaction was done</returns>
+        [Obsolete("Invoke Compact() on a client session (ClientSession) instead")]
+        public long Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress, bool shiftBeginAddress)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
@@ -238,23 +261,32 @@ namespace FASTER.core
                     valueLength = varLen.ValueLength,
                 };
 
-                Compact(functions, compactionFunctions, untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                return Compact(functions, compactionFunctions, untilAddress, variableLengthStructSettings, shiftBeginAddress);
             }
             else
             {
-                Compact(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null, shiftBeginAddress);
+                return Compact(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null, shiftBeginAddress);
             }
         }
 
-        private unsafe void Compact<Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
+        private unsafe long Compact<Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
             where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+        {
+            using var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
+            return Compact(fhtSession, functions, cf, untilAddress, variableLengthStructSettings, shiftBeginAddress);
+        }
+
+        internal unsafe long Compact<Input, Output, Context, Functions, CompactionFunctions>(
+            ClientSession<Key, Value, Input, Output, Context, Functions> fhtSession,
+            Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             var originalUntilAddress = untilAddress;
 
-            using (var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions))
             using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
-            using (var tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions))
+            using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
                 using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
                 {
@@ -268,6 +300,8 @@ namespace FASTER.core
                         else
                             tempKvSession.Upsert(ref key, ref value, default, 0);
                     }
+                    // Ensure address is at record boundary
+                    untilAddress = originalUntilAddress = iter1.NextAddress;
                 }
 
                 // TODO: Scan until SafeReadOnlyAddress
@@ -275,45 +309,45 @@ namespace FASTER.core
                 LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
 
                 // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
-                using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
+                using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
+                while (iter3.GetNext(out var recordInfo))
                 {
-                    while (iter3.GetNext(out var recordInfo))
+                    ref var key = ref iter3.GetKey();
+                    ref var value = ref iter3.GetValue();
+
+                    if (!recordInfo.Tombstone)
                     {
-                        ref var key = ref iter3.GetKey();
-                        ref var value = ref iter3.GetValue();
-
-                        if (!recordInfo.Tombstone)
+                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
                         {
-                            if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
-                            {
-                                // Check if recordInfo point to the newest record.
-                                // With #164 it is possible that tempKv might have multiple records with the same
-                                // key (ConcurrentWriter returns false). For this reason check the index
-                                // whether the actual record has the same address (or maybe even deleted).
-                                // If this is too much of a performance hit - we could try and add additional info
-                                // to the recordInfo to indicate that it was replaced (but it would only for tempKv 
-                                // not general case).
-                                var bucket = default(HashBucket*);
-                                var slot = default(int);
+                            // Check if recordInfo point to the newest record.
+                            // With #164 it is possible that tempKv might have multiple records with the same
+                            // key (ConcurrentWriter returns false). For this reason check the index
+                            // whether the actual record has the same address (or maybe even deleted).
+                            // If this is too much of a performance hit - we could try and add additional info
+                            // to the recordInfo to indicate that it was replaced (but it would only for tempKv 
+                            // not general case).
+                            var bucket = default(HashBucket*);
+                            var slot = default(int);
 
-                                var hash = tempKv.Comparer.GetHashCode64(ref key);
-                                var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+                            var hash = tempKv.Comparer.GetHashCode64(ref key);
+                            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-                                var entry = default(HashBucketEntry);
-                                if (tempKv.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter3.CurrentAddress)
-                                    fhtSession.Upsert(ref key, ref value, default, 0);
-                            }
+                            var entry = default(HashBucketEntry);
+                            if (tempKv.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter3.CurrentAddress)
+                                fhtSession.Upsert(ref key, ref value, default, 0);
                         }
-                        if (scanUntil < fht.Log.SafeReadOnlyAddress)
-                        {
-                            LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
-                        }
+                    }
+                    if (scanUntil < fht.Log.SafeReadOnlyAddress)
+                    {
+                        LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
                     }
                 }
             }
 
             if (shiftBeginAddress)
                 ShiftBeginAddress(originalUntilAddress);
+
+            return originalUntilAddress;
         }
 
         private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, ref long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
@@ -323,17 +357,50 @@ namespace FASTER.core
             {
                 untilAddress = scanUntil;
                 scanUntil = fht.Log.SafeReadOnlyAddress;
-                using (var iter2 = fht.Log.Scan(untilAddress, scanUntil))
+                using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
+                while (iter2.GetNext(out var _))
                 {
-                    while (iter2.GetNext(out var _))
-                    {
-                        ref var key = ref iter2.GetKey();
-                        ref var value = ref iter2.GetValue();
+                    ref var key = ref iter2.GetKey();
+                    ref var value = ref iter2.GetValue();
 
-                        tempKvSession.Delete(ref key, default, 0);
-                    }
+                    tempKvSession.Delete(ref key, default, 0);
                 }
             }
         }
+
+#pragma warning disable IDE0051 // Remove unused private members
+        private long CompactReadOnly<T>(long untilAddress, bool shiftBeginAddress) where T : unmanaged
+        {
+            if (allocator is VariableLengthBlittableAllocator<ReadOnlyMemory<T>, Memory<T>> varLen)
+            {
+                var functions = new LogVariableCompactFunctions<ReadOnlyMemory<T>, Memory<T>, DefaultReadOnlyMemoryCompactionFunctions<T>>(varLen, default);
+                var variableLengthStructSettings = new VariableLengthStructSettings<ReadOnlyMemory<T>, Memory<T>>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
+
+                return (this as LogAccessor<ReadOnlyMemory<T>, Memory<T>>).Compact(functions, default(DefaultReadOnlyMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+            }
+            throw new FasterException("Unexpected condition during log compaction");
+        }
+
+        private long CompactMemory<T>(long untilAddress, bool shiftBeginAddress)
+            where T : unmanaged
+        {
+            if (allocator is VariableLengthBlittableAllocator<Memory<T>, Memory<T>> varLen)
+            {
+                var functions = new LogVariableCompactFunctions<Memory<T>, Memory<T>, DefaultMemoryCompactionFunctions<T>>(varLen, default);
+                var variableLengthStructSettings = new VariableLengthStructSettings<Memory<T>, Memory<T>>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
+
+                return (this as LogAccessor<Memory<T>, Memory<T>>).Compact(functions, default(DefaultMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+            }
+            throw new FasterException("Unexpected condition during log compaction");
+        }
+#pragma warning restore IDE0051 // Remove unused private members
     }
 }
