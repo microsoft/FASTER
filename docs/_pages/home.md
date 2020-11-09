@@ -73,7 +73,7 @@ samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
 
 # Getting Started
 
-* Quick-Start Guide and Docs: [here](/docs/quick-start-guide/)
+* Quick-Start Guide and Docs: [here](docs/quick-start-guide/)
 * Source Code: [https://github.com/microsoft/FASTER](https://github.com/microsoft/FASTER)
 * C# Samples: [https://github.com/microsoft/FASTER/tree/master/cs/samples](https://github.com/microsoft/FASTER/tree/master/cs/samples)
 * C# NuGet binary feed:
