@@ -7,9 +7,9 @@ toc: false
 classes: wide
 ---
 
-* Main FasterLog sample: https://github.com/microsoft/FASTER/tree/master/cs/samples/FasterLogSample
-* Publish/subscribe using FasterLog: https://github.com/microsoft/FASTER/tree/master/cs/samples/FasterLogPubSub
+* Main FasterLog sample: [FasterLogSample](https://github.com/microsoft/FASTER/tree/master/cs/samples/FasterLogSample)
+* Publish/subscribe using FasterLog: [FasterLogPubSub](https://github.com/microsoft/FASTER/tree/master/cs/samples/FasterLogPubSub)
 * Unit tests for FasterLog:
-  * https://github.com/microsoft/FASTER/blob/master/cs/test/FasterLogTests.cs
-  * https://github.com/microsoft/FASTER/blob/master/cs/test/DeviceFasterLogTests.cs
-  * https://github.com/microsoft/FASTER/blob/master/cs/test/FasterLogResumeTests.cs
+  * [FasterLogTests](https://github.com/microsoft/FASTER/blob/master/cs/test/FasterLogTests.cs)
+  * [DeviceFasterLogTests](https://github.com/microsoft/FASTER/blob/master/cs/test/DeviceFasterLogTests.cs)
+  * [FasterLogResumeTests](https://github.com/microsoft/FASTER/blob/master/cs/test/FasterLogResumeTests.cs)
