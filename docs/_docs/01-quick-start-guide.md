@@ -14,7 +14,7 @@ classes: wide
 * C# NuGet binary feed:
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
-* Research papers: [link](td-research-papers/)
+* Research papers: [link](/FASTER/docs/td-research-papers/)
 
 
 Choose links from the navigation menu to learn more and start using FASTER.
