@@ -79,7 +79,8 @@ samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
 * C# NuGet binary feed:
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
-* Research papers: [link](/docs/td-research-papers/)
+* Checkpointing and Recovery: [link](docs/fasterkv-basics/#checkpointing-and-recovery)
+* Research papers: [link](docs/td-research-papers/)
 * Project roadmap: [github](https://github.com/microsoft/FASTER/tree/master/docs/Roadmap.md)
 
 
