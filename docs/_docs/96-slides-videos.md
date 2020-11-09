@@ -13,4 +13,10 @@ classes: wide
 
 ## Videos
 
+* FASTER Introduction from MSR Faculty Summit
+
 [![FASTER Introduction](http://img.youtube.com/vi/2Dj8kbe1tg4/0.jpg)](https://www.youtube.com/watch?v=2Dj8kbe1tg4 "FASTER Introduction")
+
+* FASTER Presentation from SIGMOD 2018
+
+[![FASTER Paper Presentation](http://img.youtube.com/vi/68YBpitMrMI/0.jpg)](https://www.youtube.com/watch?v=68YBpitMrMI "FASTER Paper Presentation")
