@@ -45,7 +45,7 @@ docs:
       - title: "Code Structure"
         url: /docs/code-structure/
       - title: "Roadmap"
-        url: https://github.com/microsoft/FASTER/blob/master/docs/Roadmap.md
+        url: /docs/roadmap/
       - title: "Contributing"
         url: https://github.com/microsoft/FASTER/blob/master/CONTRIBUTING.md
 
