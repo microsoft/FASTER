@@ -1,5 +1,5 @@
 <p align="center">
-  <image src="https://raw.githubusercontent.com/microsoft/FASTER/master/docs/assets/images/faster-logo.png" alt="FASTER logo" width="600px">
+  <img src="https://raw.githubusercontent.com/microsoft/FASTER/master/docs/assets/images/faster-logo.png" alt="FASTER logo" width="600px" />
 </p>
   
 [![NuGet](https://img.shields.io/nuget/v/Microsoft.FASTER.Core.svg)](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
