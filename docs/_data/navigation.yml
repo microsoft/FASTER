@@ -1,0 +1,68 @@
+# main links
+main:
+  - title: "Quick-Start Guide"
+    url: /docs/quick-start-guide/
+  - title: "Code"
+    url: https://github.com/microsoft/FASTER
+  - title: "Releases" 
+    url: https://github.com/microsoft/FASTER/releases
+
+# documentation links
+docs:
+  - title: Overview
+    children:
+      - title: "Quick-Start Guide"
+        url: /docs/quick-start-guide/
+      - title: "Release Notes"
+        url: https://github.com/microsoft/FASTER/releases
+      - title: "Frequently asked Questions"
+        url: /docs/faqs/
+
+  - title: FasterKV User Guide
+    children:
+      - title: "Basics"
+        url: /docs/fasterkv-basics/
+      - title: "Tuning"
+        url: /docs/fasterkv-tuning/
+      - title: "Samples"
+        url: /docs/fasterkv-samples/
+      - title: "C++ Port"
+        url: /docs/fasterkv-cpp/
+
+  - title: FasterLog User Guide
+    children:
+      - title: "Basics"
+        url: /docs/fasterlog-basics/
+      - title: "Tuning"
+        url: /docs/fasterlog-tuning/
+      - title: "Samples"
+        url: /docs/fasterlog-samples/
+
+  - title: Developer Guide
+    children:
+      - title: "Build and Test"
+        url: /docs/build-and-test/
+      - title: "Code Structure"
+        url: /docs/code-structure/
+      - title: "Roadmap"
+        url: /docs/roadmap/
+      - title: "Contributing"
+        url: https://github.com/microsoft/FASTER/blob/master/CONTRIBUTING.md
+
+  - title: Technical Details
+    children:
+      - title: "Introduction"
+        url: /docs/td-introduction/
+      #- title: "Design Goals"
+      #  url: /docs/td-design-goals/
+      #- title: "Architecture"
+      #  url: /docs/td-architecture/
+      - title: "Research Papers"
+        url: /docs/td-research-papers/
+      - title: "Slides and Videos"
+        url: /docs/td-slides-videos/
+
+  - title: Meta
+    children:
+      - title: "License"
+        url: https://github.com/microsoft/FASTER/blob/master/LICENSE
