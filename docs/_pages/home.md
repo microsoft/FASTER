@@ -79,7 +79,7 @@ for more information. Also, check out the samples [here](https://github.com/Micr
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
 * Checkpointing and Recovery: [link](docs/fasterkv-basics/#checkpointing-and-recovery)
 * Research papers: [link](docs/td-research-papers/)
-* Project roadmap: [github](https://github.com/microsoft/FASTER/tree/master/docs/Roadmap.md)
+* Project roadmap: [here](docs/roadmap)
 
 
 # Embedded key-value store sample
