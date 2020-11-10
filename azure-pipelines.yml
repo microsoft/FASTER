@@ -171,3 +171,105 @@ jobs:
       msbuild /t:restore $(solution)
       msbuild /p:Configuration=Release $(solution)
     displayName: 'Build'
+    
+# - job: 'cppBlobsWindows'
+#   pool:
+#     vmImage: vs2017-win2016
+#   displayName: 'C++ Blobs (Windows)'
+
+#   strategy:
+#     maxParallel: 2
+#     matrix:
+#       x64-Debug:
+#         buildPlatform: 'x64'
+#         buildConfiguration: 'Debug'
+#       x64-Release:
+#         buildPlatform: 'x64'
+#         buildConfiguration: 'Release'
+
+#   steps:
+#   - task: CMake@1
+#     displayName: 'CMake .. -G"Visual Studio 15 2017 Win64" -DUSE_BLOBS=ON'
+#     inputs:
+#       workingDirectory: 'cc/build'
+#       cmakeArgs: '.. -G"Visual Studio 15 2017 Win64" -DUSE_BLOBS=ON'
+
+#   - script: 'git clone https://github.com/microsoft/vcpkg'
+#     workingDirectory: 'cc/build'
+#     displayName: 'Download Vcpkg'
+
+#   - script: '.\vcpkg\bootstrap-vcpkg.bat'
+#     workingDirectory: 'cc/build'
+#     displayName: 'Install Vcpkg'
+
+#   - script: '.\vcpkg\vcpkg.exe install azure-storage-cpp:x64-windows'
+#     workingDirectory: 'cc/build'
+#     displayName: 'Install Azure dependencies'
+
+#   - script: '.\vcpkg\vcpkg.exe integrate install'
+#     workingDirectory: 'cc/build'
+#     displayName: 'Integrate vcpkg with msbuild'
+
+#   - task: MSBuild@1
+#     displayName: 'Build solution cc/build/FASTER.sln'
+#     inputs:
+#       solution: 'cc/build/FASTER.sln'
+#       msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
+
+#   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
+#     displayName: 'Download Azure Storage Emulator'
+
+#   - powershell:  'msiexec /passive /lvx installation.log /a azure-storage-emulator.msi TARGETDIR="C:\storage-emulator"'
+#     displayName: 'Install Azure Storage Emulator'
+
+#   - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
+#     displayName: 'Init Test Db'
+
+#   - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
+#     displayName: 'Start Storage Emulator'
+
+#   - script: |
+#       ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "azure_test"
+#       ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "storage_test"
+#       ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "faster_blobs_example"
+#     workingDirectory: 'cc/build'
+#     displayName: 'Run Ctest'
+
+# - job: 'cppBlobsLinux'
+#   pool:
+#     vmImage: ubuntu-18.04
+#   displayName: 'C++ Blobs (Linux)'
+
+#   steps:
+#   - script: |
+#       sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+#       sudo apt update
+#       sudo apt install -y libaio-dev uuid-dev libtbb-dev npm
+#     displayName: 'Install dependencies'
+
+#   - script: |
+#       sudo ./scripts/linux/azure/blob.sh
+#     workingDirectory: 'cc'
+#     displayName: 'Install Azure dependencies'
+
+#   - script: |
+#       cd cc
+#       mkdir -p build/Debug build/Release
+#       cd build/Debug
+#       cmake -DCMAKE_BUILD_TYPE=Debug -DUSE_BLOBS=ON ../..
+#       make -j
+#       cd ../../build/Release
+#       cmake -DCMAKE_BUILD_TYPE=Release -DUSE_BLOBS=ON ../..
+#       make -j
+#     displayName: 'Compile'
+
+#   - script: |
+#       sudo npm install -g azurite
+#       azurite -s &
+#     displayName: 'Install and launch azurite (linux storage emulator)'
+
+#   - script: |
+#       export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+#       CTEST_OUTPUT_ON_FAILURE=1 make test
+#     workingDirectory: 'cc/build/Debug'
+#     displayName: 'Run Tests (Debug)'

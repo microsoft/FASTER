@@ -7,6 +7,11 @@ enable_testing()
 include(ExternalProject)
 project(FASTER)
 
+# The set of additional options that we can pass into cmake. We currently support
+# a flag `USE_BLOBS` that will link in azure's blob store library so that FASTER
+# can be used with a blob device for the hybrid log.
+OPTION(USE_BLOBS "Extend FASTER's hybrid log to blob store" OFF)
+
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /Gm- /W3 /WX /EHsc /GS /fp:precise /permissive- /Zc:wchar_t /Zc:forScope /Zc:inline /Gd /TP")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /wd4996")
@@ -72,6 +77,10 @@ if(WIN32)
   set(FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} rpcrt4)
 else()
   set (FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
+  # Using blob storage. Link in appropriate libraries.
+  if(USE_BLOBS)
+    set (FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} azurestorage cpprest boost_system crypto ssl)
+  endif()
 endif()
 
 # Set the link libraries to for benchmark binary compilation
@@ -103,3 +112,7 @@ add_subdirectory(playground)
 add_subdirectory(src)
 add_subdirectory(test)
 
+# Compile tests for blob device too
+if(USE_BLOBS)
+  add_subdirectory(test/blobs)
+endif()
