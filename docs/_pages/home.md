@@ -26,6 +26,10 @@ features:
     excerpt: "Feature 3 excerpt"
 ---
 
+<p align="center">
+  <image src="https://raw.githubusercontent.com/badrishc/FASTER/webpage-v2/docs/assets/images/faster-logo.png" alt="FASTER logo" width="600px">
+</p>
+
 Managing large application state easily, resiliently, and with high performance is one of the hardest
 problems in the cloud today. The FASTER project offers two artifacts to help tackle this problem.
 
