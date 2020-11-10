@@ -81,6 +81,7 @@ for more information. Also, check out the samples [here](https://github.com/Micr
 * Research papers: [link](docs/td-research-papers/)
 * Project roadmap: [here](docs/roadmap)
 
+Thanks to [Minimal Mistakes](https://github.com/mmistakes/minimal-mistakes) for their amazing website theme.
 
 # Embedded key-value store sample
 
