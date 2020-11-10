@@ -1,0 +1,54 @@
+# To build an image from this file, run the following command:
+#     sudo docker image build --build-arg infiniband=[OFF|ON] \
+#                             --build-arg valuesize=[8|100|1000|<int>] \
+#                             --build-arg dfs=[OFF|ON] \
+#                             ../../ -f Dockerfile.server -t sofaster-server
+
+# We're going to use an image with dependencies pre-installed as our base
+# for building the server.
+FROM sofaster-deps AS build
+
+# These arguments help determine what kind of binary we want in the final image.
+
+# If ON, use Blobs in addition to local SSD for the hlog.
+ARG dfs=OFF
+
+# Value sizes to be used by the system.
+ARG valuesize=8
+
+# If ON, use Infiniband. Otherwise use TCP.
+ARG infiniband=OFF
+
+# First, copy all SoFASTER source code into the container.
+WORKDIR "/"
+RUN mkdir SoFASTER
+RUN mkdir SoFASTER/cc
+RUN mkdir SoFASTER/scripts
+
+COPY cc ./SoFASTER/cc/
+COPY scripts ./SoFASTER/scripts/
+
+# Run the script(s) to setup SoFASTER and compile the server.
+WORKDIR "./SoFASTER"
+RUN scripts/common/sofaster.sh $infiniband $valuesize $dfs
+
+WORKDIR "./cc/build/Release"
+RUN ["make", "sofaster-server"]
+
+# We're going to use an image with dependencies pre-installed as our base
+# for running the server too.
+FROM sofaster-deps AS server
+
+# Copy in the compiled server binary.
+WORKDIR "/"
+RUN mkdir -p SoFASTER/cc/build/Release/
+COPY --from=build /SoFASTER/cc/build/Release/sofaster-server \
+                  ./SoFASTER/cc/build/Release/
+
+# Copy in the server deployment script.
+RUN mkdir -p SoFASTER/scripts/common
+COPY scripts/common/server.py SoFASTER/scripts/common/
+
+# By default, launch a bash process inside the container.
+WORKDIR "/SoFASTER/"
+CMD ["bash"]
