@@ -22,7 +22,7 @@ classes: wide
 Choose links from the navigation menu to learn more and start using FASTER.
 
 
-# Embedded key-value store sample (without checkpointing)
+## Embedded key-value store sample (without checkpointing)
 
 ```cs
 public static void Main()
