@@ -7,7 +7,7 @@ toc: false
 classes: wide
 ---
 
-<img src="https://raw.githubusercontent.com/badrishc/FASTER/webpage-v2/docs/assets/images/faster-logo.png" alt="FASTER logo" width="600px" />
+<img src="https://raw.githubusercontent.com/microsoft/FASTER/master/docs/assets/images/faster-logo.png" alt="FASTER logo" width="600px" />
 
 ## Key Links
 
