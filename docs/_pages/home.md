@@ -32,14 +32,13 @@ problems in the cloud today. The FASTER project offers two artifacts to help tac
 * **FASTER Log** is a high-performance concurrent persistent recoverable log, iterator, and random 
 reader library in C#. It supports very frequent commit operations at low latency, and can quickly saturate 
 disk bandwidth. It supports both sync and async interfaces, handles disk errors, and supports checksums. Learn 
-more about the FASTER Log in C# here: [github](docs/cs/FasterLog.md) | [web](https://microsoft.github.io/FASTER/cs/fasterlog).
+more about using the FASTER Log in C# [here](docs/fasterlog-basics/).
 
 * **FASTER KV** is a concurrent key-value store + cache (available in C# and C++) that is designed for point 
 lookups and heavy updates. FASTER supports data larger than memory, by leveraging fast external 
 storage (local or cloud). It also supports consistent recovery using a new checkpointing technique that lets 
-applications trade-off performance for commit latency. Learn 
-more about the FASTER KV in C# here: [github](docs/cs/FasterKV.md) | [web](https://microsoft.github.io/FASTER/cs/fasterkv).
-For FASTER C++, check here: [github](docs/cc/) | [web](https://microsoft.github.io/FASTER/cc).
+applications trade-off performance for commit latency. Learn more about the FASTER KV in C# 
+[here](docs/fasterkv-basics/). For the FASTER C++ port, check [here](docs/fasterkv-cpp/).
 
 # Key Features
 
@@ -49,17 +48,16 @@ in FASTER Log.
 3. Unique “hybrid record log” design in FASTER KV, that combines the above log with in-place updates, to 
 shape the memory working set and retain performance.
 4. Architecture as a component that can be embedded in multi-threaded cloud apps. 
-5. Asynchronous recovery model based on group commit (called [CPR](#Recovery-in-FASTER)).
+5. Asynchronous non-blocking recovery model based on group commit.
 6. A rich extensible storage device abstraction called `IDevice`, with implementations for local
 storage, cloud storage, tiered storage, and sharded storage.
 
 For standard benchmarks where the working set fits in main memory, we found FASTER KV to achieve
 significantly higher throughput than current systems, and match or exceed the performance of pure 
-in-memory data structures while offering more functionality. See 
-[the SIGMOD paper](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf)
+in-memory data structures while offering more functionality. See our [research papers](docs/td-research-papers/)
 for more details. We also have a detailed analysis of C# FASTER KV performance in a wiki page 
 [here](https://github.com/Microsoft/FASTER/wiki/Performance-of-FASTER-in-C%23). The performance of the 
-C# and C++ versions of FASTER are very similar. FASTER Log is also extremely fast, capable of saturating modern
+C# and C++ versions of FASTER is very similar. FASTER Log is also extremely fast, capable of saturating modern
 NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded setting.
 
 # News and Updates
@@ -67,8 +65,8 @@ NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded se
 * We now support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
 a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
 
-* We support C# async in FASTER KV (and FASTER Log). See the detailed guide at [this link](docs/cs/README.md) for more information. Also, check out the 
-samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
+* We support C# async in FASTER KV (and FASTER Log). See the guides for [FasterKV](docs/fasterkv-basics/) and [FasterLog](docs/fasterlog-basics/) 
+for more information. Also, check out the samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
 
 
 # Getting Started
@@ -110,4 +108,3 @@ public static void Main()
   Debug.Assert(output == value + 20);
 }
 ```
-
