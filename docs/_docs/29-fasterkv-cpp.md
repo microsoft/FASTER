@@ -1,21 +1,19 @@
 ---
-layout: default
-title: FASTER C++
-nav_order: 1000
-description: Overview of C++ version of FASTER
-permalink: /cc
+title: "FasterKV C++ Port"
+permalink: /docs/fasterkv-cpp/
+excerpt: "FasterKV C++ Port"
+last_modified_at: 2020-11-07
+toc: true
 ---
 
-Building C++ FASTER
-===================
+## Building C++ FASTER
 
 The C++ version of FASTER uses CMake for builds. To build C++ FASTER, create
 one or more build directories and use CMake to set up build scripts for your
 target OS. Once CMake has generated the build scripts, it will try to update
 them, as needed, during ordinary build.
 
-Building on Windows
--------------------
+### Building on Windows
 
 Create new directory "build" off the root directory (FASTER\cc). From the new
 "build" directory, execute:
@@ -35,8 +33,7 @@ That will create build scripts inside your new "build" directory, including
 a "FASTER.sln" file that you can use inside Visual Studio. CMake will add several
 build profiles to FASTER.sln, including Debug/x64 and Release/x64.
 
-Building on Linux
------------------
+### Building on Linux
 
 The Linux build requires several packages (both libraries and header files);
 see "CMakeFiles.txt" in the root directory (FASTER/cc) for the list of libraries
@@ -73,14 +70,12 @@ cmake -DCMAKE_BUILD_TYPE=Release ../..
 Then you can build Debug or Release binaries by running "make" inside the
 relevant build directory.
 
-Other options
--------------
+### Other options
 
 You can try other generators (compilers) supported by CMake. The main CMake
 build script is the CMakeLists.txt located in the root directory (FASTER/cc).
 
-Examples
-========
+## Examples
 
 There are some unit tests in [FASTER/cc/test](https://github.com/Microsoft/FASTER/tree/master/cc/test).
 
@@ -89,8 +84,7 @@ checkpointing and recovery.
 
 There's a basic YCSB test driver in [FASTER/cc/benchmark-dir](https://github.com/Microsoft/FASTER/tree/master/cc/benchmark-dir).
 
-Remote Device
-===========
+## Remote Device
 
 The C++ version's persistent layer can be extended from local storage to a remote tier using the
 [`StorageDevice`](https://github.com/Microsoft/FASTER/tree/master/cc/src/device/storage.h). This
