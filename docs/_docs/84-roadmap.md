@@ -1,16 +1,15 @@
 ---
-layout: default
-title: Project Roadmap
-nav_order: 2000
-description: Project Roadmap
-permalink: /roadmap
+title: "Roadmap"
+permalink: /docs/roadmap/
+excerpt: "Roadmap"
+last_modified_at: 2020-11-10
+toc: false
+classes: wide
 ---
 
-# Roadmap
-
-_This is a living document containing the FASTER team's priorities as well as release notes
+This is a living document containing the FASTER team's priorities as well as release notes
 for previous releases. Items refer to FASTER C# unless indicated otherwise. For C++ info, 
-scroll to [C++ Porting Notes](#c-porting-notes)._
+scroll to [C++ Porting Notes](#c-porting-notes).
 
 (Scroll to [Release Notes](#release-notes))
 
@@ -70,20 +69,23 @@ Completed items are included to provide the context and progress of the work.
 * [x] Generic state machine for checkpointing (internals)
 * [x] Choose checkpoint type (Snapshot and FoldOver) on a per-checkpoint basis
 * [x] Process all checkpoints through a `IDevice`-based checkpoint and log commit manager
+* [x] Limit number of preloaded pages during recovery: [PR](https://github.com/microsoft/FASTER/pull/292)
 
 ### Ongoing and Future Work
 
+* [ ] Look for key via chain starting at given logical addresses: [PR](https://github.com/microsoft/FASTER/pull/347)
+* [ ] Read record directly via logical address: [PR](https://github.com/microsoft/FASTER/pull/347)
 * [ ] Client-server interface to FASTER
-* [ ] Read variant starting from given logical addresses
-* [ ] Limit number of preloaded pages during recovery
+* [ ] Scale-out and elasticity support
 * [ ] RDMA `IDevice` implementation
 * [ ] Support for Incremental Snapshot checkpoint type
 * [ ] Expose incremental data structures over FasterKV hash chains
-* [ ] Scale-out and elasticity support
 * [ ] Handle log logical addresses greater than 48 bit (up to 64 bit)
 * [ ] Checksums for storage pages
 
 ## Release Notes
+
+Find all recent release notes via our releases page [here](https://github.com/microsoft/FASTER/releases). Older release notes are below:
 
 #### FASTER v2019.10.31.1
 
@@ -149,8 +151,7 @@ Completed items are included to provide the context and progress of the work.
 
 ## C++ Porting Notes
 
-FASTER C++ is a fairly direct port of FASTER C# using C++ based coding and style
-guidelines. It supports the following features as of now:
+FASTER C++ is a fairly direct port of FASTER C# using C++ based coding and style guidelines. It supports the following features as of now:
 
 * [x] Full Read, Upsert, RMW functionality
 * [x] Persistence support for larger-than-memory data
@@ -159,3 +160,4 @@ guidelines. It supports the following features as of now:
 * [x] CPR-based checkpointing and recovery (both snapshot and fold-over modes), see [[here](https://microsoft.github.io/FASTER/#recovery-in-faster)]
 * [x] Ability to resize the hash table
 * [x] C++: Added a new `value_size()` method to `RmwContext` for RCU operations: [PR](https://github.com/microsoft/FASTER/pull/145)
+* [x] Azure storage device: [PR](https://github.com/microsoft/FASTER/pull/353)

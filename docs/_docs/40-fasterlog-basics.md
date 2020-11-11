@@ -1,12 +1,12 @@
 ---
-layout: default
-title: FasterLog persistent log in C#
-parent: FASTER C#
-nav_order: 3
-permalink: /cs/fasterlog
+title: "FasterLog Basics"
+permalink: /docs/fasterlog-basics/
+excerpt: "FasterLog Basics"
+last_modified_at: 2020-11-08
+toc: true
 ---
 
-# Introducing FasterLog
+## Introduction to FasterLog C#
 
 FasterLog is a blazing fast, persistent, concurrent, and recoverable log for C#. You can perform
 appends, iteration, and log truncation. Tailing iteration, where the iterator can continue to read newly
@@ -19,7 +19,7 @@ and pages sizes are configurable during construction of FasterLog. By default,
 FasterLog commits at page boundaries. You can also force-commit the log as frequently as you need, e.g., every 
 5ms. The typical use cases of FasterLog are captured in our extremely detailed commented sample [here](https://github.com/microsoft/FASTER/blob/master/cs/samples/FasterLogSample/Program.cs). FasterLog
 works with .NET Standard 2.0, and can be used on a broad range of machines and devices. We have tested
-it on both Windows and Linux-based machines.
+it on both Windows and Linux machines.
 
 ## Creating the Log
 
@@ -29,9 +29,10 @@ it on both Windows and Linux-based machines.
 ```
 
 We first create a 'device' (with specified file name prefix) that will store the persisted data. FasterLog is
-based on the FASTER `IDevice` abstraction, and we have various device implementations available for use. The 
-commit information is frequently written into a file in the same path, called 'hlog.log.commit'. There are 
-other settings that can be provided, discussed later in this document.
+based on the FASTER `IDevice` abstraction, and we have various device implementations available for use, such
+as local and Azure storage devices. The commit information is frequently written into a file in the same 
+path, called 'hlog.log.commit'. You are responsible for disposing the device via `IDisposable` when done. There 
+are other settings that can be provided, discussed later in this guide.
 
 ## Operations on FasterLog
 
@@ -224,7 +225,7 @@ log.
 The following log settings are available for configuration:
 
 * `LogDevice`: This is an instance of the storage interface (device/path/file) that will be used for the
-main log. It is a class that implements the `IDevice` interface. FASTER provides several device implementations 
+main log. It is a class that implements the disposable `IDevice` interface. FASTER provides several device implementations 
 out of the box, such as `LocalStorageDevice` and `ManagedLocalStorageDevice` for local (or attached) storage.
 You can use our extension method to easily create an instance of a local device:
 ```cs
@@ -341,4 +342,3 @@ async ValueTask<(byte[], int)> ReadAsync(long address, int estimatedLength = 0)
 void RefreshUncommitted(bool spinWait = false)
 
 ```
-
