@@ -23,6 +23,7 @@ namespace FASTER.core
         private long currentAddress, nextAddress;
         private Key currentKey;
         private Value currentValue;
+        private long currentPhysicalAddress;
 
         /// <summary>
         /// Current address
@@ -87,6 +88,8 @@ namespace FASTER.core
         /// <returns></returns>
         public ref Key GetKey()
         {
+            if (currentPhysicalAddress != 0)
+                return ref hlog.GetKey(currentPhysicalAddress);
             return ref currentKey;
         }
 
@@ -96,6 +99,8 @@ namespace FASTER.core
         /// <returns></returns>
         public ref Value GetValue()
         {
+            if (currentPhysicalAddress != 0)
+                return ref hlog.GetValue(currentPhysicalAddress);
             return ref currentValue;
         }
 
@@ -118,29 +123,37 @@ namespace FASTER.core
                     return false;
                 }
 
+                epoch?.Resume();
+                var headAddress = hlog.HeadAddress;
+
                 if (currentAddress < hlog.BeginAddress)
                 {
+                    epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
-                if (frameSize == 0 && currentAddress < hlog.HeadAddress)
+                if (frameSize == 0 && currentAddress < headAddress)
                 {
+                    epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
                 var offset = currentAddress & hlog.PageSizeMask;
 
-                epoch?.Resume();
-                var headAddress = hlog.HeadAddress;
                 if (currentAddress < headAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
                 long physicalAddress;
                 if (currentAddress >= headAddress)
+                {
                     physicalAddress = hlog.GetPhysicalAddress(currentAddress);
+                    currentPhysicalAddress = 0;
+                }
                 else
-                    physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+                {
+                    currentPhysicalAddress = physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+                }
 
                 // Check if record fits on page, if not skip to next page
                 var recordSize = hlog.GetRecordSize(physicalAddress).Item2;
@@ -160,10 +173,12 @@ namespace FASTER.core
                     continue;
                 }
 
-                var currentPhysicalAddress = physicalAddress;
                 recordInfo = info;
-                currentKey = hlog.GetKey(currentPhysicalAddress);
-                currentValue = hlog.GetValue(currentPhysicalAddress);
+                if (currentPhysicalAddress == 0)
+                {
+                    currentKey = hlog.GetKey(physicalAddress);
+                    currentValue = hlog.GetValue(physicalAddress);
+                }
                 epoch?.Suspend();
                 return true;
             }

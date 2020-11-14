@@ -123,13 +123,18 @@ namespace FASTER.core
                     return false;
                 }
 
+                epoch?.Resume();
+                var headAddress = hlog.HeadAddress;
+
                 if (currentAddress < hlog.BeginAddress)
                 {
+                    epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
-                if (frameSize == 0 && currentAddress < hlog.HeadAddress)
+                if (frameSize == 0 && currentAddress < headAddress)
                 {
+                    epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
@@ -137,8 +142,6 @@ namespace FASTER.core
 
                 var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
-                epoch?.Resume();
-                var headAddress = hlog.HeadAddress;
                 if (currentAddress < headAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
