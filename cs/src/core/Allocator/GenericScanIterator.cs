@@ -18,6 +18,7 @@ namespace FASTER.core
         private readonly GenericFrame<Key, Value> frame;
         private readonly CountdownEvent[] loaded;
         private readonly int recordSize;
+        private readonly LightEpoch epoch;
 
         private bool first = true;
         private long currentAddress, nextAddress;
@@ -41,9 +42,11 @@ namespace FASTER.core
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        public unsafe GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        /// <param name="epoch"></param>
+        public unsafe GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
         {
             this.hlog = hlog;
+            this.epoch = epoch;
 
             if (beginAddress == 0)
                 beginAddress = hlog.GetFirstValidLogicalAddress(0);
@@ -131,40 +134,51 @@ namespace FASTER.core
 
                 var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
-                if (currentAddress < hlog.HeadAddress)
+                epoch.Resume();
+                var headAddress = hlog.HeadAddress;
+                if (currentAddress < headAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
                 // Check if record fits on page, if not skip to next page
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+                    epoch.Suspend();
                     continue;
                 }
 
                 nextAddress = currentAddress + recordSize;
 
-                if (currentAddress >= hlog.HeadAddress)
+                if (currentAddress >= headAddress)
                 {
                     // Read record from cached page memory
                     var page = currentPage % hlog.BufferSize;
 
                     if (hlog.values[page][offset].info.Invalid)
+                    {
+                        epoch.Suspend();
                         continue;
+                    }
 
                     recordInfo = hlog.values[page][offset].info;
                     currentKey = hlog.values[page][offset].key;
                     currentValue = hlog.values[page][offset].value;
+                    epoch.Suspend();
                     return true;
                 }
 
                 var currentFrame = currentPage % frameSize;
 
                 if (frame.GetInfo(currentFrame, offset).Invalid)
+                {
+                    epoch.Suspend();
                     continue;
+                }
 
                 recordInfo = frame.GetInfo(currentFrame, offset);
                 currentKey = frame.GetKey(currentFrame, offset);
                 currentValue = frame.GetValue(currentFrame, offset);
+                epoch.Suspend();
                 return true;
             }
         }
@@ -214,7 +228,9 @@ namespace FASTER.core
                 }
                 first = false;
             }
+            epoch.Suspend();
             loaded[currentFrame].Wait();
+            epoch.Resume();
         }
 
         /// <summary>
