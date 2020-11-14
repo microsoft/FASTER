@@ -1,13 +1,12 @@
 ---
-layout: default
-title: FasterKV store + cache in C#
-parent: FASTER C#
-nav_order: 4
-permalink: /cs/fasterkv
+title: "FasterKV Basics"
+permalink: /docs/fasterkv-basics/
+excerpt: "FasterKV Basics"
+last_modified_at: 2020-11-07
+toc: true
 ---
 
-Introduction to FasterKV C#
-===========================
+## Introduction to FasterKV C#
 
 The FasterKV key-value store and cache in C# works in .NET Framework and .NET core, and can be used in both a 
 single-threaded and highly concurrent setting. It has been tested to work on both Windows and Linux. It exposes 
@@ -19,16 +18,6 @@ FASTER  may be used as a high-performance replacement for traditional concurrent
 .NET ConcurrentDictionary, and additionally supports larger-than-memory data. It also supports checkpointing of the 
 data structure - both incremental and non-incremental. Operations on FASTER can be issued synchronously or 
 asynchronously, i.e., using the C# `async` interface.
-
-Table of Contents
------------
-* [Getting FASTER](#getting-faster)
-* [Basic Concepts](#basic-concepts)
-* [Quick End-to-End Sample](#quick-end-to-end-sample)
-* [More Examples](#more-examples)
-* [Handling Variable Length Keys and Values](#handling-variable-length-keys-and-values)
-* [Log Compaction](#log-compaction)
-* [Checkpointing and Recovery](#checkpointing-and-recovery)
 
 ## Getting FASTER
 
@@ -247,9 +236,16 @@ Typically, you may compact around 20% (up to 100%) of the log, e.g., you could s
 
 ## Checkpointing and Recovery
 
-FASTER supports **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations
+FASTER supports asynchronous non-blocking **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations
 (Read, Upsert or RMW). FASTER allows clients to keep track of operations that have persisted and those that have not using 
-a session-based API. 
+a session-based API.
+
+This feature is based on a recovery model called Concurrent Prefix Recovery (CPR for short). You can read more about 
+CPR in the research paper [here](https://www.microsoft.com/en-us/research/uploads/prod/2019/01/cpr-sigmod19.pdf).
+Briefly, CPR is based on (periodic) group commit. However, instead of using an expensive 
+write-ahead log (WAL) which can kill FASTER's high performance, CPR: (1) provides a semantic description of committed
+operations, of the form “all operations until offset Ti in session i”; and (2) uses asynchronous 
+incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
 
 Recall that each FASTER client starts a session, associated with a unique session ID (or name). All FASTER session operations
 (Read, Upsert, RMW) carry a monotonic sequence number (sequence numbers are implicit in case of async calls). At any point in 
@@ -270,7 +266,7 @@ an asynchronous commit (checkpoint). The user is responsible for initiating the 
 
 Below, we show a simple recovery example with asynchronous checkpointing.
 
-```Csharp
+```cs
 public class PersistenceExample
 {
     private FasterKV<long, long> fht;
@@ -345,3 +341,4 @@ incremental nature. You can find a few basic checkpointing examples
 [here](https://github.com/Microsoft/FASTER/blob/master/cs/test/SimpleRecoveryTest.cs) and 
 [here](https://github.com/Microsoft/FASTER/tree/master/cs/playground/SumStore). We plan to add more examples and details going
 forward.
+
