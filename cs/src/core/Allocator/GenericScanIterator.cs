@@ -46,7 +46,10 @@ namespace FASTER.core
         public unsafe GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
         {
             this.hlog = hlog;
-            this.epoch = epoch;
+
+            // If we are protected when creating the iterator, we do not need per-GetNext protection
+            if (!epoch.ThisInstanceProtected())
+                this.epoch = epoch;
 
             if (beginAddress == 0)
                 beginAddress = hlog.GetFirstValidLogicalAddress(0);
@@ -134,7 +137,7 @@ namespace FASTER.core
 
                 var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
-                epoch.Resume();
+                epoch?.Resume();
                 var headAddress = hlog.HeadAddress;
                 if (currentAddress < headAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
@@ -143,7 +146,7 @@ namespace FASTER.core
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
-                    epoch.Suspend();
+                    epoch?.Suspend();
                     continue;
                 }
 
@@ -156,14 +159,14 @@ namespace FASTER.core
 
                     if (hlog.values[page][offset].info.Invalid)
                     {
-                        epoch.Suspend();
+                        epoch?.Suspend();
                         continue;
                     }
 
                     recordInfo = hlog.values[page][offset].info;
                     currentKey = hlog.values[page][offset].key;
                     currentValue = hlog.values[page][offset].value;
-                    epoch.Suspend();
+                    epoch?.Suspend();
                     return true;
                 }
 
@@ -171,14 +174,14 @@ namespace FASTER.core
 
                 if (frame.GetInfo(currentFrame, offset).Invalid)
                 {
-                    epoch.Suspend();
+                    epoch?.Suspend();
                     continue;
                 }
 
                 recordInfo = frame.GetInfo(currentFrame, offset);
                 currentKey = frame.GetKey(currentFrame, offset);
                 currentValue = frame.GetValue(currentFrame, offset);
-                epoch.Suspend();
+                epoch?.Suspend();
                 return true;
             }
         }
@@ -228,9 +231,9 @@ namespace FASTER.core
                 }
                 first = false;
             }
-            epoch.Suspend();
+            epoch?.Suspend();
             loaded[currentFrame].Wait();
-            epoch.Resume();
+            epoch?.Resume();
         }
 
         /// <summary>
