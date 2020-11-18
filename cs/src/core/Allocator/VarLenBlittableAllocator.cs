@@ -437,7 +437,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode);
+            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
         }
 
 

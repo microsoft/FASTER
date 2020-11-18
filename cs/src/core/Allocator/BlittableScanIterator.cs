@@ -17,9 +17,12 @@ namespace FASTER.core
         private readonly long endAddress;
         private readonly BlittableFrame frame;
         private readonly CountdownEvent[] loaded;
+        private readonly LightEpoch epoch;
 
         private bool first = true;
         private long currentAddress, nextAddress;
+        private Key currentKey;
+        private Value currentValue;
         private long currentPhysicalAddress;
 
         /// <summary>
@@ -39,9 +42,14 @@ namespace FASTER.core
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        public unsafe BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        /// <param name="epoch"></param>
+        public unsafe BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
         {
             this.hlog = hlog;
+
+            // If we are protected when creating the iterator, we do not need per-GetNext protection
+            if (!epoch.ThisInstanceProtected())
+                this.epoch = epoch;
 
             if (beginAddress == 0)
                 beginAddress = hlog.GetFirstValidLogicalAddress(0);
@@ -80,7 +88,9 @@ namespace FASTER.core
         /// <returns></returns>
         public ref Key GetKey()
         {
-            return ref hlog.GetKey(currentPhysicalAddress);
+            if (currentPhysicalAddress != 0)
+                return ref hlog.GetKey(currentPhysicalAddress);
+            return ref currentKey;
         }
 
         /// <summary>
@@ -89,7 +99,9 @@ namespace FASTER.core
         /// <returns></returns>
         public ref Value GetValue()
         {
-            return ref hlog.GetValue(currentPhysicalAddress);
+            if (currentPhysicalAddress != 0)
+                return ref hlog.GetValue(currentPhysicalAddress);
+            return ref currentValue;
         }
 
         /// <summary>
@@ -111,33 +123,44 @@ namespace FASTER.core
                     return false;
                 }
 
+                epoch?.Resume();
+                var headAddress = hlog.HeadAddress;
+
                 if (currentAddress < hlog.BeginAddress)
                 {
+                    epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
-                if (frameSize == 0 && currentAddress < hlog.HeadAddress)
+                if (frameSize == 0 && currentAddress < headAddress)
                 {
+                    epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
                 var offset = currentAddress & hlog.PageSizeMask;
 
-                if (currentAddress < hlog.HeadAddress)
+                if (currentAddress < headAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
                 long physicalAddress;
-                if (currentAddress >= hlog.HeadAddress)
+                if (currentAddress >= headAddress)
+                {
                     physicalAddress = hlog.GetPhysicalAddress(currentAddress);
+                    currentPhysicalAddress = 0;
+                }
                 else
-                    physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+                {
+                    currentPhysicalAddress = physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+                }
 
                 // Check if record fits on page, if not skip to next page
                 var recordSize = hlog.GetRecordSize(physicalAddress).Item2;
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
+                    epoch?.Suspend();
                     continue;
                 }
 
@@ -146,11 +169,17 @@ namespace FASTER.core
                 ref var info = ref hlog.GetInfo(physicalAddress);
                 if (info.Invalid || info.IsNull())
                 {
+                    epoch?.Suspend();
                     continue;
                 }
 
-                currentPhysicalAddress = physicalAddress;
                 recordInfo = info;
+                if (currentPhysicalAddress == 0)
+                {
+                    currentKey = hlog.GetKey(physicalAddress);
+                    currentValue = hlog.GetValue(physicalAddress);
+                }
+                epoch?.Suspend();
                 return true;
             }
         }
@@ -208,7 +237,9 @@ namespace FASTER.core
                 }
                 first = false;
             }
+            epoch?.Suspend();
             loaded[currentFrame].Wait();
+            epoch?.Resume();
         }
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)

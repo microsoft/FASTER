@@ -439,7 +439,7 @@ namespace FASTER.core
                 ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
 
                 if (valueTasks.Count == 0)
-                    break;
+                    continue; // we need to re-check loop, so we return only when we are at REST
 
                 foreach (var task in valueTasks)
                 {
