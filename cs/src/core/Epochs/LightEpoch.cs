@@ -242,6 +242,9 @@ namespace FASTER.core
         private void Release()
         {
             int entry = threadEntryIndex;
+
+            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0, "Trying to release unprotected epoch");
+
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
 
