@@ -8,6 +8,7 @@ using System.IO;
 using FASTER.core;
 using System.Threading;
 using NUnit.Framework;
+using System.Threading.Tasks;
 
 namespace FASTER.test.recovery
 {
@@ -15,17 +16,16 @@ namespace FASTER.test.recovery
     [TestFixture]
     internal class ComponentRecoveryTests
     {
-        [Test]
-        public unsafe void MallocFixedPageSizeRecoveryTest()
+        private static unsafe void Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten)
         {
-            int seed = 123;
+            seed = 123;
             var rand1 = new Random(seed);
-            var device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
+            device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
-            int numBucketsToAdd = 16 * allocator.GetPageSize();
-            long[] logicalAddresses = new long[numBucketsToAdd];
+            numBucketsToAdd = 16 * allocator.GetPageSize();
+            logicalAddresses = new long[numBucketsToAdd];
             for (int i = 0; i < numBucketsToAdd; i++)
             {
                 long logicalAddress = allocator.Allocate();
@@ -38,19 +38,15 @@ namespace FASTER.test.recovery
             }
 
             //issue call to checkpoint
-            allocator.BeginCheckpoint(device, 0, out ulong numBytesWritten);
+            allocator.BeginCheckpoint(device, 0, out numBytesWritten);
             //wait until complete
             allocator.IsCheckpointCompletedAsync().AsTask().Wait();
 
             allocator.Dispose();
+        }
 
-            var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
-
-            //issue call to recover
-            recoveredAllocator.BeginRecovery(device, 0, numBucketsToAdd, numBytesWritten, out ulong numBytesRead);
-            //wait until complete
-            recoveredAllocator.IsRecoveryCompleted(true);
-
+        private static unsafe void Finish_MallocFixedPageSizeRecoveryTest(int seed, int numBucketsToAdd, long[] logicalAddresses, ulong numBytesWritten, MallocFixedPageSize<HashBucket> recoveredAllocator, ulong numBytesRead)
+        {
             Assert.IsTrue(numBytesWritten == numBytesRead);
 
             var rand2 = new Random(seed);
@@ -68,16 +64,38 @@ namespace FASTER.test.recovery
         }
 
         [Test]
-        public unsafe void TestFuzzyIndexRecovery()
+        public void MallocFixedPageSizeRecoveryTest()
         {
-            int seed = 123;
-            int size = 1 << 16;
-            long numAdds = 1 << 18;
+            Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
 
-            IDevice ht_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\TestFuzzyIndexRecoveryht.dat", deleteOnClose: true);
-            IDevice ofb_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\TestFuzzyIndexRecoveryofb.dat", deleteOnClose: true);
+            var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
+            //issue call to recover
+            recoveredAllocator.BeginRecovery(device, 0, numBucketsToAdd, numBytesWritten, out ulong numBytesRead);
+            //wait until complete
+            recoveredAllocator.IsRecoveryCompleted(true);
 
-            var hash_table1 = new FasterBase();
+            Finish_MallocFixedPageSizeRecoveryTest(seed, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
+        }
+
+        [Test]
+        public async Task MallocFixedPageSizeRecoveryAsyncTest()
+        {
+            Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
+
+            var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
+            ulong numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten);
+
+            Finish_MallocFixedPageSizeRecoveryTest(seed, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
+        }
+
+        private static unsafe void Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out FasterBase hash_table1, out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets)
+        {
+            seed = 123;
+            size = 1 << 16;
+            numAdds = 1 << 18;
+            ht_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\TestFuzzyIndexRecoveryht.dat", deleteOnClose: true);
+            ofb_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\TestFuzzyIndexRecoveryofb.dat", deleteOnClose: true);
+            hash_table1 = new FasterBase();
             hash_table1.Initialize(size, 512);
 
             //do something
@@ -99,21 +117,15 @@ namespace FASTER.test.recovery
             }
 
             //issue checkpoint call
-            hash_table1.TakeIndexFuzzyCheckpoint(0, ht_device, out ulong ht_num_bytes_written,
-                ofb_device, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
+            hash_table1.TakeIndexFuzzyCheckpoint(0, ht_device, out ht_num_bytes_written,
+                ofb_device, out ofb_num_bytes_written, out num_ofb_buckets);
 
             //wait until complete
             hash_table1.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
+        }
 
-            var hash_table2 = new FasterBase();
-            hash_table2.Initialize(size, 512);
-
-            //issue recover call
-            hash_table2.RecoverFuzzyIndex(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written);
-            //wait until complete
-            hash_table2.IsFuzzyIndexRecoveryComplete(true);
-
-            //verify
+        private static unsafe void Finish_FuzzyIndexRecoveryTest(int seed, long numAdds, FasterBase hash_table1, FasterBase hash_table2)
+        {
             var keyGenerator2 = new Random(seed);
 
             var bucket1 = default(HashBucket*);
@@ -142,6 +154,37 @@ namespace FASTER.test.recovery
 
             hash_table1.Free();
             hash_table2.Free();
+        }
+
+        [Test]
+        public unsafe void FuzzyIndexRecoveryTest()
+        {
+            Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out FasterBase hash_table1,
+                                         out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
+
+            var hash_table2 = new FasterBase();
+            hash_table2.Initialize(size, 512);
+
+            //issue recover call
+            hash_table2.RecoverFuzzyIndex(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written);
+            //wait until complete
+            hash_table2.IsFuzzyIndexRecoveryComplete(true);
+
+            Finish_FuzzyIndexRecoveryTest(seed, numAdds, hash_table1, hash_table2);
+        }
+
+        [Test]
+        public async Task FuzzyIndexRecoveryAsyncTest()
+        {
+            Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out FasterBase hash_table1,
+                                         out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
+
+            var hash_table2 = new FasterBase();
+            hash_table2.Initialize(size, 512);
+
+            await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written);
+
+            Finish_FuzzyIndexRecoveryTest(seed, numAdds, hash_table1, hash_table2);
         }
     }
 }

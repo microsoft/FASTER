@@ -7,6 +7,7 @@ using System.Linq;
 using System.IO;
 using FASTER.core;
 using NUnit.Framework;
+using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.objectstore
 {
@@ -83,7 +84,7 @@ namespace FASTER.test.recovery.objectstore
         }
 
         [Test]
-        public void ObjectRecoveryTest1()
+        public async ValueTask ObjectRecoveryTest1([Values]bool isAsync)
         {
             Populate();
             fht.Dispose();
@@ -91,7 +92,13 @@ namespace FASTER.test.recovery.objectstore
             log.Dispose();
             objlog.Dispose();
             Setup();
-            RecoverAndTest(token, token);
+
+            if (isAsync)
+                await fht.RecoverAsync(token, token);
+            else
+                fht.Recover(token, token);
+
+            Verify(token, token);
         }
 
         public unsafe void Populate()
@@ -140,11 +147,8 @@ namespace FASTER.test.recovery.objectstore
             session.Dispose();
         }
 
-        public unsafe void RecoverAndTest(Guid cprVersion, Guid indexVersion)
+        public unsafe void Verify(Guid cprVersion, Guid indexVersion)
         {
-            // Recover
-            fht.Recover(cprVersion, indexVersion);
-
             // Create array for reading
             var inputArray = new StructTuple<AdId, Input>[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)

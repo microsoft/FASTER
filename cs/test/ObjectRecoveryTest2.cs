@@ -5,6 +5,7 @@ using FASTER.core;
 using System;
 using System.IO;
 using NUnit.Framework;
+using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.objects
 {
@@ -52,9 +53,10 @@ namespace FASTER.test.recovery.objects
 
 
         [Test]
-        public void ObjectRecoveryTest1(
+        public async ValueTask ObjectRecoveryTest1(
             [Values]CheckpointType checkpointType,
-            [Range(100, 1500, 600)] int iterations)
+            [Range(100, 1500, 600)] int iterations,
+            [Values]bool isAsync)
         {
             this.iterations = iterations;
             Prepare(checkpointType, out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
@@ -71,7 +73,10 @@ namespace FASTER.test.recovery.objects
 
             Prepare(checkpointType, out _, out _, out log, out objlog, out h, out context);
 
-            h.Recover();
+            if (isAsync)
+                await h.RecoverAsync();
+            else
+                h.Recover();
 
             var session2 = h.For(new MyFunctions()).NewSession<MyFunctions>();
             Read(session2, context, true);

@@ -387,6 +387,14 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Asynchronously recover from the latest checkpoint (blocking operation)
+        /// </summary>
+        /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
+        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public ValueTask RecoverAsync(int numPagesToPreload = -1, bool undoFutureVersions = true)
+            => InternalRecoverFromLatestCheckpointsAsync(numPagesToPreload, undoFutureVersions);
+
+        /// <summary>
         /// Recover from specific token (blocking operation)
         /// </summary>
         /// <param name="fullCheckpointToken">Token</param>
@@ -396,6 +404,15 @@ namespace FASTER.core
         {
             InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoFutureVersions);
         }
+
+        /// <summary>
+        /// Asynchronously recover from specific token (blocking operation)
+        /// </summary>
+        /// <param name="fullCheckpointToken">Token</param>
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public ValueTask RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true) 
+            => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoFutureVersions);
 
         /// <summary>
         /// Recover from specific index and log token (blocking operation)
@@ -408,6 +425,16 @@ namespace FASTER.core
         {
             InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoFutureVersions);
         }
+
+        /// <summary>
+        /// Asynchronously recover from specific index and log token (blocking operation)
+        /// </summary>
+        /// <param name="indexCheckpointToken"></param>
+        /// <param name="hybridLogCheckpointToken"></param>
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public ValueTask RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true) 
+            => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoFutureVersions);
 
         /// <summary>
         /// Wait for ongoing checkpoint to complete
