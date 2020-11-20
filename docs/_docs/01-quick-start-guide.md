@@ -48,5 +48,6 @@ public static void Main()
   s.RMW(ref key, ref input);
   s.Read(ref key, ref output);
   Debug.Assert(output == value + 20);
+  Console.WriteLine("Success!");
 }
 ```
