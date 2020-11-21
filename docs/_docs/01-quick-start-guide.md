@@ -11,6 +11,7 @@ classes: wide
 
 ## Key Links
 
+* Home Page: [https://aka.ms/FASTER](https://aka.ms/FASTER)
 * Source Code: [https://github.com/microsoft/FASTER](https://github.com/microsoft/FASTER)
 * C# Samples: [https://github.com/microsoft/FASTER/tree/master/cs/samples](https://github.com/microsoft/FASTER/tree/master/cs/samples)
 * C# NuGet binary feed:
@@ -33,7 +34,8 @@ public static void Main()
      );
 
   // Create a session per sequence of interactions with FASTER
-  using var s = store.NewSession(new SimpleFunctions<long, long>());
+  // We use default callback functions with a custom merger: RMW merges input by adding it to value
+  using var s = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
   long key = 1, value = 1, input = 10, output = 0;
   
   // Upsert and Read
@@ -46,5 +48,7 @@ public static void Main()
   s.RMW(ref key, ref input);
   s.Read(ref key, ref output);
   Debug.Assert(output == value + 20);
+  
+  Console.WriteLine("Success!");
 }
 ```
