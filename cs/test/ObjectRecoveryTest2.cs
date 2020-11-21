@@ -9,9 +9,8 @@ using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.objects
 {
-
     [TestFixture]
-    public class ObjectRecoveryTest
+    public class ObjectRecoveryTests2
     {
         int iterations;
         string FasterFolderPath { get; set; }
@@ -53,7 +52,7 @@ namespace FASTER.test.recovery.objects
 
 
         [Test]
-        public async ValueTask ObjectRecoveryTest1(
+        public async ValueTask ObjectRecoveryTest2(
             [Values]CheckpointType checkpointType,
             [Range(100, 1500, 600)] int iterations,
             [Values]bool isAsync)
