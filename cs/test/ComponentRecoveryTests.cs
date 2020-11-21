@@ -1,13 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.IO;
 using FASTER.core;
-using System.Threading;
 using NUnit.Framework;
+using System;
 using System.Threading.Tasks;
 
 namespace FASTER.test.recovery

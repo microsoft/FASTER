@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -26,10 +27,12 @@ namespace FASTER.core
         public long recoveryDevicePageOffset;
         public IDevice objectLogRecoveryDevice;
 
+        // These are circular buffers of 'capacity' size; the indexing wraps due to hlog.GetPageIndexForPage().
         public ReadStatus[] readStatus;
         public FlushStatus[] flushStatus;
 
-        private CountdownWrapper countdown;
+        private SemaphoreSlim readSemaphore = new SemaphoreSlim(0);
+        private SemaphoreSlim flushSemaphore = new SemaphoreSlim(0);
 
         public RecoveryStatus(int capacity,
                               long startPage,
@@ -50,25 +53,47 @@ namespace FASTER.core
             }
         }
 
-        internal void DoSync(int pages, Action action)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SignalRead(int pageIndex)
         {
-            if (pages == 0)
-                return;
-            this.countdown = new CountdownWrapper(pages, isAsync: false);
-            action();
-            this.countdown.Wait();
+            this.readStatus[pageIndex] = ReadStatus.Done;
+            this.readSemaphore.Release();
         }
 
-        internal async ValueTask DoAsync(int pages, Action action)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WaitRead(int pageIndex)
         {
-            if (pages == 0)
-                return;
-            this.countdown = new CountdownWrapper(pages, isAsync: true);
-            action();
-            await this.countdown.CompletionTask;
+            while (this.readStatus[pageIndex] == ReadStatus.Pending)
+                this.readSemaphore.Wait();
         }
 
-        internal void Decrement() => this.countdown.Decrement();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal async ValueTask WaitReadAsync(int pageIndex)
+        {
+            while (this.readStatus[pageIndex] == ReadStatus.Pending)
+                await this.readSemaphore.WaitAsync();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SignalFlushed(int pageIndex)
+        {
+            this.flushStatus[pageIndex] = FlushStatus.Done;
+            this.flushSemaphore.Release();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WaitFlush(int pageIndex)
+        {
+            while (this.flushStatus[pageIndex] == FlushStatus.Pending)
+                this.flushSemaphore.Wait();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal async ValueTask WaitFlushAsync(int pageIndex)
+        {
+            while (this.flushStatus[pageIndex] == FlushStatus.Pending)
+                await this.flushSemaphore.WaitAsync();
+        }
 
         internal void Dispose()
         {
@@ -214,7 +239,7 @@ namespace FASTER.core
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, undoFutureVersions);
+                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.FoldOver, undoFutureVersions);
                 hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, tailAddress);
             }
             else
@@ -223,7 +248,7 @@ namespace FASTER.core
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version, undoFutureVersions);
+                RecoverHybridLog(scanFromAddress, fromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.Snapshot, undoFutureVersions);
                 // Then recover snapshot into mutable region
                 RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid, undoFutureVersions);
                 hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, recoveredHLCInfo.info.flushedLogicalAddress);
@@ -244,7 +269,7 @@ namespace FASTER.core
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                await RecoverHybridLogAsync(scanFromAddress, fromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, undoFutureVersions);
+                await RecoverHybridLogAsync(scanFromAddress, fromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.FoldOver, undoFutureVersions);
                 hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, tailAddress);
             }
             else
@@ -253,7 +278,7 @@ namespace FASTER.core
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                await RecoverHybridLogAsync (scanFromAddress, fromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version, undoFutureVersions);
+                await RecoverHybridLogAsync (scanFromAddress, fromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.Snapshot, undoFutureVersions);
                 // Then recover snapshot into mutable region
                 await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid, undoFutureVersions);
                 hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, recoveredHLCInfo.info.flushedLogicalAddress);
@@ -348,73 +373,79 @@ namespace FASTER.core
             return true;
         }
 
-        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, bool undoFutureVersions)
+        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, CheckpointType checkpointType, bool undoFutureVersions)
         {
             if (untilAddress < scanFromAddress)
                 return;
-            GetPageRangesToRead(scanFromAddress, untilAddress, out long startPage, out long endPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
+            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst);
 
             // Issue request to read pages as much as possible
-            recoveryStatus.DoSync(numPagesToReadFirst, () => hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus));
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
 
             for (long page = startPage; page < endPage; page++)
             {
                 // Ensure page has been read into memory
                 int pageIndex = hlog.GetPageIndexForPage(page);
-                Debug.Assert(recoveryStatus.readStatus[pageIndex] != ReadStatus.Pending);
+                recoveryStatus.WaitRead(pageIndex);
 
                 if (ProcessReadPage(recoverFromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, page, pageIndex))
                 {
-                    recoveryStatus.DoSync(1, () => hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus));
+                    // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
+                    hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                     continue;
                 }
+
+                // We do not need to flush
                 recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
 
-                // Issue next read
+                // Issue next read if there are more pages past 'capacity' from this one.
                 if (page + capacity < endPage)
                 {
                     recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                    recoveryStatus.DoSync(1, () => hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus));
+                    hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
                 }
             }
 
-            AssertAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
+            WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
         }
 
-        private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, bool undoFutureVersions)
+        private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, CheckpointType checkpointType, bool undoFutureVersions)
         {
             if (untilAddress < scanFromAddress)
                 return;
-            GetPageRangesToRead(scanFromAddress, untilAddress, out long startPage, out long endPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
+            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst);
 
             // Issue request to read pages as much as possible
-            await recoveryStatus.DoAsync(numPagesToReadFirst, () => hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus));
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
 
             for (long page = startPage; page < endPage; page++)
             {
                 // Ensure page has been read into memory
                 int pageIndex = hlog.GetPageIndexForPage(page);
-                Debug.Assert(recoveryStatus.readStatus[pageIndex] != ReadStatus.Pending);
+                await recoveryStatus.WaitReadAsync(pageIndex);
 
                 if (ProcessReadPage(recoverFromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, page, pageIndex))
                 {
-                    await recoveryStatus.DoAsync(1, () => hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus));
+                    // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
+                    hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                     continue;
                 }
+
+                // We do not need to flush
                 recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
 
-                // Issue next read
+                // Issue next read if there are more pages past 'capacity' from this one.
                 if (page + capacity < endPage)
                 {
                     recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                    await recoveryStatus.DoAsync(1, () => hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus));
+                    hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
                 }
             }
 
-            AssertAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
+            await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus);
         }
 
-        private void GetPageRangesToRead(long scanFromAddress, long untilAddress, out long startPage, out long endPage, out int capacity, out RecoveryStatus recoveryStatus, out int numPagesToReadFirst)
+        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst)
         {
             startPage = hlog.GetPage(scanFromAddress);
             endPage = hlog.GetPage(untilAddress);
@@ -424,9 +455,9 @@ namespace FASTER.core
             }
 
             capacity = hlog.GetCapacityNumPages();
-            recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress, CheckpointType.FoldOver);
             int totalPagesToRead = (int)(endPage - startPage);
             numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
+            return new RecoveryStatus(capacity, startPage, endPage, untilAddress, checkpointType);
         }
 
         private bool ProcessReadPage(long recoverFromAddress, long untilAddress, int version, bool undoFutureVersions, RecoveryStatus recoveryStatus, long page, int pageIndex)
@@ -447,7 +478,7 @@ namespace FASTER.core
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                 if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, version, undoFutureVersions))
                 {
-                    // OS thread flushes current page and issues a read request if necessary
+                    // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                     recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                     recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
                     return true;
@@ -459,60 +490,43 @@ namespace FASTER.core
 
         private void WaitUntilAllPagesHaveBeenFlushed(long startPage, long endPage, RecoveryStatus recoveryStatus)
         {
-            // Wait until all pages have been flushed
-            var done = false;
-            while (!done)
-            {
-                done = true;
-                for (long page = startPage; page < endPage; page++)
-                {
-                    int pageIndex = hlog.GetPageIndexForPage(page);
-                    if (recoveryStatus.flushStatus[pageIndex] == FlushStatus.Pending)
-                    {
-                        Thread.Sleep(10);
-                        done = false;
-                        break;
-                    }
-                }
-            }
+            for (long page = startPage; page < endPage; page++)
+                recoveryStatus.WaitFlush(hlog.GetPageIndexForPage(page));
         }
 
-        [Conditional("DEBUG")]
-        private void AssertAllPagesHaveBeenFlushed(long startPage, long endPage, RecoveryStatus recoveryStatus)
+        private async ValueTask WaitUntilAllPagesHaveBeenFlushedAsync(long startPage, long endPage, RecoveryStatus recoveryStatus)
         {
-            // Assert all pages have been flushed
             for (long page = startPage; page < endPage; page++)
-                Debug.Assert(recoveryStatus.flushStatus[hlog.GetPageIndexForPage(page)] == FlushStatus.Done);
+                await recoveryStatus.WaitFlushAsync(hlog.GetPageIndexForPage(page));
         }
 
         private void RecoverHybridLogFromSnapshotFile(long fromAddress, long untilAddress, int version, Guid guid, bool undoFutureVersions)
         {
             GetSnapshotPageRangesToRead(fromAddress, untilAddress, guid, out long startPage, out long endPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
 
-            recoveryStatus.DoSync(numPagesToReadFirst, () => hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress,
-                                                                hlog.AsyncReadPagesCallbackForRecovery,
-                                                                recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                                                                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice));
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress,
+                                          hlog.AsyncReadPagesCallbackForRecovery,
+                                          recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
+                                          recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
             for (long page = startPage; page < endPage; page++)
             {
                 // Ensure the page is read from file or flushed
                 int pageIndex = hlog.GetPageIndexForPage(page);
-                Debug.Assert(recoveryStatus.readStatus[pageIndex] != ReadStatus.Pending);
-
+                recoveryStatus.WaitRead(pageIndex);
                 ProcessReadSnapshotPage(fromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, page, pageIndex);
 
                 // Issue next read
                 if (page + capacity < endPage)
                 {
                     recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                    recoveryStatus.DoSync(1, () => hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
-                                                        recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                                                        recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice));
+                    hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
+                                                  recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
+                                                  recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
                 }
             }
 
-            AssertAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
+            WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
             recoveryStatus.Dispose();
         }
 
@@ -520,29 +534,29 @@ namespace FASTER.core
         {
             GetSnapshotPageRangesToRead(fromAddress, untilAddress, guid, out long startPage, out long endPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
 
-            await recoveryStatus.DoAsync(numPagesToReadFirst, () => hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress,
-                                                                        hlog.AsyncReadPagesCallbackForRecovery,
-                                                                        recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                                                                        recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice));
+            hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress,
+                                          hlog.AsyncReadPagesCallbackForRecovery,
+                                          recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
+                                          recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
             for (long page = startPage; page < endPage; page++)
             {
                 // Ensure the page is read from file or flushed
                 int pageIndex = hlog.GetPageIndexForPage(page);
+                await recoveryStatus.WaitReadAsync(pageIndex);
                 ProcessReadSnapshotPage(fromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, page, pageIndex);
 
                 // Issue next read
                 if (page + capacity < endPage)
                 {
                     recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                    await recoveryStatus.DoAsync(1, () => hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
-                                                                recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                                                                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice));
-                    Debug.Assert(recoveryStatus.readStatus[pageIndex] == ReadStatus.Done);
+                    hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
+                                                  recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
+                                                  recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
                 }
             }
 
-            AssertAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
+            WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
             recoveryStatus.Dispose();
         }
 
@@ -685,8 +699,8 @@ namespace FASTER.core
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                int index = hlog.GetPageIndexForPage(result.page);
-                result.context.flushStatus[index] = FlushStatus.Done;
+                int pageIndex = hlog.GetPageIndexForPage(result.page);
+                result.context.SignalFlushed(pageIndex);
                 if (result.page + result.context.capacity < result.context.endPage)
                 {
                     long readPage = result.page + result.context.capacity;
@@ -780,13 +794,10 @@ namespace FASTER.core
                         numPages++;
                     }
 
-                    recoveryStatus.DoSync(numPages, () => AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus));
+                    AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
 
                     for (long page = headPage; page <= tailPage; page++)
-                    {
-                        int pageIndex = GetPageIndexForPage(page);
-                        Debug.Assert(recoveryStatus.readStatus[pageIndex] != ReadStatus.Pending);
-                    }
+                        recoveryStatus.WaitRead(GetPageIndexForPage(page));
                 }
             }
 
@@ -800,7 +811,7 @@ namespace FASTER.core
                 Trace.TraceError("AsyncReadPagesCallbackForRecovery error: {0}", errorCode);
             }
 
-            // Set the page status to flushed
+            // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;
 
             if (result.freeBuffer1 != null)
@@ -808,10 +819,8 @@ namespace FASTER.core
                 PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();
             }
-            int index = GetPageIndexForPage(result.page);
-            result.context.readStatus[index] = ReadStatus.Done;
-            Interlocked.MemoryBarrier();
-            result.context.Decrement();
+            int pageIndex = GetPageIndexForPage(result.page);
+            result.context.SignalRead(pageIndex);
         }
     }
 }
