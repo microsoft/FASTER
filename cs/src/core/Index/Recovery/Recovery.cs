@@ -206,8 +206,11 @@ namespace FASTER.core
             try
             {
                 recoveredICInfo = new IndexCheckpointInfo();
-                recoveredICInfo.Recover(indexToken, checkpointManager);
-                recoveredICInfo.info.DebugPrint();
+                if (indexToken != default)
+                {
+                    recoveredICInfo.Recover(indexToken, checkpointManager);
+                    recoveredICInfo.info.DebugPrint();
+                }
             }
             catch
             {
