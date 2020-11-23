@@ -170,7 +170,7 @@ namespace FASTER.core
                         fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
                     }
                 }
-                if ((ctx.version == targetStartState.version) && (ctx.phase < Phase.REST))
+                if ((ctx.version == targetStartState.version) && (ctx.phase < Phase.REST) && !(ctx.threadStateMachine is IndexSnapshotStateMachine))
                 {
                     IssueCompletionCallback(ctx, fasterSession);
                 }
@@ -185,6 +185,7 @@ namespace FASTER.core
                 {
                     ctx.phase = targetState.phase;
                     ctx.version = targetState.version;
+                    ctx.threadStateMachine = currentTask;
                 }
                 return;
             }
@@ -193,9 +194,9 @@ namespace FASTER.core
             // We start at either the start point or our previous position in the state machine.
             // If we are calling from somewhere other than an execution thread (e.g. waiting on
             // a checkpoint to complete on a client app thread), we start at current system state
-            var threadState = 
+            var threadState =
                 ctx == null ? targetState :
-                FastForwardToCurrentCycle(currentState, targetStartState);
+                (ctx.threadStateMachine == currentTask ? currentState : targetStartState);
 
             var previousState = threadState;
             do
@@ -212,6 +213,7 @@ namespace FASTER.core
                 {
                     ctx.phase = threadState.phase;
                     ctx.version = threadState.version;
+                    ctx.threadStateMachine = currentTask;
                 }   
 
                 previousState.word = threadState.word;
