@@ -7,12 +7,13 @@ using System.IO;
 using NUnit.Framework;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.objects
 {
 
     [TestFixture]
-    public class ObjectRecoveryTest2
+    public class ObjectRecoveryTests3
     {
         int iterations;
         string FasterFolderPath { get; set; }
@@ -54,15 +55,16 @@ namespace FASTER.test.recovery.objects
 
 
         [Test]
-        public void ObjectRecoveryTest3(
+        public async ValueTask ObjectRecoveryTest3(
             [Values]CheckpointType checkpointType,
-            [Values(5000)] int iterations)
+            [Values(5000)] int iterations,
+            [Values]bool isAsync)
         {
             this.iterations = iterations;
             Prepare(checkpointType, out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
 
             var session1 = h.For(new MyFunctions()).NewSession<MyFunctions>();
-            Write(session1, context, h);
+            var tokens = Write(session1, context, h);
             Read(session1, context, false, iterations);
             session1.Dispose();
 
@@ -75,7 +77,10 @@ namespace FASTER.test.recovery.objects
             {
                 Prepare(checkpointType, out _, out _, out log, out objlog, out h, out context);
 
-                h.Recover(default, item.Item2);
+                if (isAsync)
+                    await h.RecoverAsync(default, item.Item2);
+                else
+                    h.Recover(default, item.Item2);
 
                 var session2 = h.For(new MyFunctions()).NewSession<MyFunctions>();
                 Read(session2, context, false, item.Item1);
@@ -84,8 +89,6 @@ namespace FASTER.test.recovery.objects
                 Destroy(log, objlog, h);
             }
         }
-
-        List<(int, Guid)> tokens = new List<(int, Guid)>();
 
         private void Prepare(CheckpointType checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
         {
@@ -122,8 +125,9 @@ namespace FASTER.test.recovery.objects
             objlog.Dispose();
         }
 
-        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht)
+        private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht)
         {
+            var tokens = new List<(int, Guid)>();
             for (int i = 0; i < iterations; i++)
             {
                 var _key = new MyKey { key = i, name = string.Concat(Enumerable.Repeat(i.ToString(), 100)) };
@@ -137,6 +141,7 @@ namespace FASTER.test.recovery.objects
                     tokens.Add((i, token));
                 }
             }
+            return tokens;
         }
 
         private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, bool delete, int iter)
