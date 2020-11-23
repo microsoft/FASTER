@@ -79,7 +79,7 @@ namespace FASTER.test.recovery
             Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
 
             var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
-            ulong numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten);
+            ulong numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten, cancellationToken: default);
 
             Finish_MallocFixedPageSizeRecoveryTest(seed, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
         }
@@ -178,7 +178,7 @@ namespace FASTER.test.recovery
             var hash_table2 = new FasterBase();
             hash_table2.Initialize(size, 512);
 
-            await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written);
+            await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written, cancellationToken: default);
 
             Finish_FuzzyIndexRecoveryTest(seed, numAdds, hash_table1, hash_table2);
         }

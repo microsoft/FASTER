@@ -36,7 +36,11 @@ namespace FASTER.core
         internal bool IsCompleted => this.syncEvent is null ? this.remaining == 0 : this.syncEvent.IsSet;
 
         internal void Wait() => this.syncEvent.Wait();
-        internal Task CompletionTask => this.asyncTcs.Task;
+        internal async ValueTask WaitAsync(CancellationToken cancellationToken)
+        {
+            using var reg = cancellationToken.Register(() => this.asyncTcs.TrySetCanceled());
+            await this.asyncTcs.Task;
+        }
 
         internal void Decrement()
         {
@@ -552,11 +556,12 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="buckets"></param>
         /// <param name="numBytes"></param>
+        /// <param name="cancellationToken"></param>
         /// <param name="offset"></param>
-        public async ValueTask<ulong> RecoverAsync(IDevice device, ulong offset, int buckets, ulong numBytes)
+        public async ValueTask<ulong> RecoverAsync(IDevice device, ulong offset, int buckets, ulong numBytes, CancellationToken cancellationToken)
         {
             BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead, isAsync: true);
-            await this.recoveryCountdown.CompletionTask;
+            await this.recoveryCountdown.WaitAsync(cancellationToken);
             return numBytesRead;
         }
 
