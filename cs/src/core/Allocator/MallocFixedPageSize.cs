@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -14,6 +15,46 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    internal class CountdownWrapper
+    {
+        // Separate event for sync code and tcs for async code: Do not block on async code.
+        private readonly CountdownEvent syncEvent;
+        private readonly TaskCompletionSource<int> asyncTcs;
+        int remaining;
+
+        internal CountdownWrapper(int count, bool isAsync)
+        {
+            if (isAsync)
+            {
+                this.asyncTcs = new TaskCompletionSource<int>();
+                this.remaining = count;
+                return;
+            }
+            this.syncEvent = new CountdownEvent(count);
+        }
+
+        internal bool IsCompleted => this.syncEvent is null ? this.remaining == 0 : this.syncEvent.IsSet;
+
+        internal void Wait() => this.syncEvent.Wait();
+        internal async ValueTask WaitAsync(CancellationToken cancellationToken)
+        {
+            using var reg = cancellationToken.Register(() => this.asyncTcs.TrySetCanceled());
+            await this.asyncTcs.Task;
+        }
+
+        internal void Decrement()
+        {
+            if (this.asyncTcs is {})
+            {
+                Debug.Assert(this.remaining > 0);
+                if (Interlocked.Decrement(ref this.remaining) == 0)
+                    this.asyncTcs.TrySetResult(0);
+                return;
+            }
+            this.syncEvent.Signal();
+        }
+    }
+
     /// <summary>
     /// Memory allocator for objects
     /// </summary>
@@ -510,31 +551,45 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Recover
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="buckets"></param>
+        /// <param name="numBytes"></param>
+        /// <param name="cancellationToken"></param>
+        /// <param name="offset"></param>
+        public async ValueTask<ulong> RecoverAsync(IDevice device, ulong offset, int buckets, ulong numBytes, CancellationToken cancellationToken)
+        {
+            BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead, isAsync: true);
+            await this.recoveryCountdown.WaitAsync(cancellationToken);
+            return numBytesRead;
+        }
+
+        /// <summary>
         /// Check if recovery complete
         /// </summary>
         /// <param name="waitUntilComplete"></param>
         /// <returns></returns>
         public bool IsRecoveryCompleted(bool waitUntilComplete = false)
         {
-            bool completed = (numLevelsToBeRecovered == 0);
+            bool completed = this.recoveryCountdown.IsCompleted;
             if (!completed && waitUntilComplete)
             {
-                while (numLevelsToBeRecovered != 0)
-                {
-                    Thread.Sleep(10);
-                }
+                this.recoveryCountdown.Wait();
+                return true;
             }
             return completed;
         }
 
         // Implementation of asynchronous recovery
-        private int numLevelsToBeRecovered;
+        private CountdownWrapper recoveryCountdown;
 
         internal unsafe void BeginRecovery(IDevice device,
                                     ulong offset,
                                     int buckets,
                                     ulong numBytesToRead,
-                                    out ulong numBytesRead)
+                                    out ulong numBytesRead,
+                                    bool isAsync = false)
         {
             // Allocate as many records in memory
             while (count < buckets)
@@ -547,7 +602,7 @@ namespace FASTER.core
             int numCompleteLevels = numRecords >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
 
-            numLevelsToBeRecovered = numLevels;
+            this.recoveryCountdown = new CountdownWrapper(numLevels, isAsync);
 
             numBytesRead = 0;
             uint alignedPageSize = (uint)PageSize * (uint)RecordSize;
@@ -555,7 +610,7 @@ namespace FASTER.core
             for (int i = 0; i < numLevels; i++)
             {
                 //read a full page
-                uint length = (uint)PageSize * (uint)RecordSize; ;
+                uint length = (uint)PageSize * (uint)RecordSize;
                 OverflowPagesReadAsyncResult result = default;
                 device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
                 numBytesRead += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
@@ -568,7 +623,7 @@ namespace FASTER.core
             {
                 System.Diagnostics.Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
             }
-            Interlocked.Decrement(ref numLevelsToBeRecovered);
+            this.recoveryCountdown.Decrement();
         }
         #endregion
     }

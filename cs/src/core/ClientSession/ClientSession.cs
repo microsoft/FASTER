@@ -556,7 +556,7 @@ namespace FASTER.core
             token.ThrowIfCancellationRequested();
 
             // Complete all pending operations on session
-            await CompletePendingAsync();
+            await CompletePendingAsync(token: token);
 
             var task = fht.CheckpointTask;
             CommitPoint localCommitPoint = LatestCommitPoint;
