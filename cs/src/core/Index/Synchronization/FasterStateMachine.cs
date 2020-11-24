@@ -98,15 +98,20 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Check whether threadState is in same cycle compared to current systemState
+        /// Check whether thread is in same cycle compared to current systemState
         /// </summary>
+        /// <param name="ctx"></param>
         /// <param name="threadState"></param>
         /// <returns></returns>
-        internal bool SameCycle(SystemState threadState)
+        internal bool SameCycle<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, SystemState threadState)
         {
-            var _systemState = SystemState.Copy(ref systemState);
-            SystemState.RemoveIntermediate(ref _systemState);
-            return StartOfCurrentCycle(threadState).version == StartOfCurrentCycle(_systemState).version;
+            if (ctx == null)
+            {
+                var _systemState = SystemState.Copy(ref systemState);
+                SystemState.RemoveIntermediate(ref _systemState);
+                return StartOfCurrentCycle(threadState).version == StartOfCurrentCycle(_systemState).version;
+            }
+            return ctx.threadStateMachine == currentSyncStateMachine;
         }
 
         /// <summary>
@@ -194,9 +199,20 @@ namespace FASTER.core
             // We start at either the start point or our previous position in the state machine.
             // If we are calling from somewhere other than an execution thread (e.g. waiting on
             // a checkpoint to complete on a client app thread), we start at current system state
-            var threadState =
-                ctx == null ? targetState :
-                (ctx.threadStateMachine == currentTask ? currentState : targetStartState);
+            var threadState = targetState;
+
+            if (ctx != null)
+            {
+                if (ctx.threadStateMachine == currentTask)
+                {
+                    threadState = currentState;
+                }
+                else
+                {
+                    threadState = targetStartState;
+                    ctx.threadStateMachine = currentTask;
+                }
+            }
 
             var previousState = threadState;
             do
@@ -213,8 +229,7 @@ namespace FASTER.core
                 {
                     ctx.phase = threadState.phase;
                     ctx.version = threadState.version;
-                    ctx.threadStateMachine = currentTask;
-                }   
+                }
 
                 previousState.word = threadState.word;
                 threadState = currentTask.NextState(threadState);
