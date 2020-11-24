@@ -239,8 +239,6 @@ namespace FASTER.core
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             pcontext.operationFlags = operationFlags;
-            if (pcontext.NoKey)
-                pcontext.ReadByAddress = true;
             var diskRequest = default(AsyncIOContext<Key, Value>);
             Output output = default;
 

@@ -13,6 +13,19 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Flags for the Read-by-address methods
+    /// </summary>
+    [Flags]
+    public enum ReadFlags
+    {
+        /// <summary>Default read operation</summary>
+        None = 0,
+
+        /// <summary>Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete</summary>
+        SkipReadCache = 0x00000001,
+    }
+
     public partial class FasterKV<Key, Value> : FasterBase,
         IFasterKV<Key, Value>
     {
@@ -474,12 +487,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, Context context, FasterSession fasterSession, long serialNo,
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
             FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.ReadByAddress = true;
+            pcontext.operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
             var internalStatus = InternalRead(ref key, ref input, ref output, recordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
 
@@ -501,13 +514,13 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(long address, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
+        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(long address, ref Input input, ref Output output, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
             FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             pcontext.NoKey = true;
-            pcontext.ReadByAddress = true;
+            pcontext.operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(readFlags, noKey: true);
             Key key = default;
             var internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);

@@ -103,8 +103,7 @@ namespace FASTER.core
 
                 if (UseReadCache)
                 {
-                    // We don't let "read by address" use read cache
-                    if (usePreviousAddress)
+                    if (pendingContext.SkipReadCache)
                     {
                         SkipReadCache(ref logicalAddress);
                     }
@@ -1233,7 +1232,7 @@ namespace FASTER.core
                 fasterSession.SingleReader(ref key, ref pendingContext.input.Get(),
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, request.logicalAddress);
 
-                if ((CopyReadsToTail && !pendingContext.ReadByAddress) || UseReadCache)
+                if ((CopyReadsToTail && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx);
                 }
@@ -1320,7 +1319,7 @@ namespace FASTER.core
                 fasterSession.SingleWriter(ref key,
                                        ref hlog.GetContextRecordValue(ref request),
                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                       newLogicalAddress | Constants.kReadCacheBitMask);
+                                       Constants.kInvalidAddress);  // ReadCache addresses are not valid for indexing etc.
             }
             else
             {

@@ -241,7 +241,7 @@ namespace FASTER.core
 
         /// <summary>This method is not available for non-Advanced ClientSessions, because ReadCompletionCallback does not have RecordInfo.</summary>
         [Obsolete(AdvancedOnlyMethodErr)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, Context userContext = default, long serialNo = 0) 
+        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0) 
             => throw new FasterException(AdvancedOnlyMethodErr);
 #endif // DEBUG;
 
@@ -251,16 +251,17 @@ namespace FASTER.core
         /// <param name="address">The address to look up</param>
         /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
         /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress(long address, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
+        public Status ReadAtAddress(long address, ref Input input, ref Output output, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextReadAtAddress(address, ref input, ref output, userContext, FasterSession, serialNo, ctx);
+                return fht.ContextReadAtAddress(address, ref input, ref output, readFlags, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -343,7 +344,8 @@ namespace FASTER.core
 #if DEBUG
         /// <summary>For consistency with Read(.., ref RecordInfo, ...), this method is not available for non-Advanced ClientSessions.</summary>
         [Obsolete(AdvancedOnlyMethodErr)]
-        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags = ReadFlags.None,
+                                                                                                 Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
             => throw new FasterException(AdvancedOnlyMethodErr);
 #endif
 
@@ -352,6 +354,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="address">The address to look up</param>
         /// <param name="input">Input to help extract the retrieved value into output</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <param name="cancellationToken">Token to cancel the operation</param>
@@ -360,11 +363,13 @@ namespace FASTER.core
         ///     on the return value to complete the read operation and obtain the result status, the output that is populated by the 
         ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ReadFlags readFlags = ReadFlags.None,
+                                                                                                          Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(SupportAsync, NotAsyncSessionErr);
             Key key = default;
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, address, userContext, serialNo, cancellationToken, FasterKV<Key, Value>.PendingContext<Input, Output, Context>.kNoKey);
+            var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags, noKey: true);
+            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, address, userContext, serialNo, cancellationToken, operationFlags);
         }
 
         /// <summary>

@@ -125,7 +125,7 @@ namespace FASTER.test.readaddress
             internal FasterKV<Key, Value> fkv;
             internal IDevice logDevice;
             internal string testDir;
-            private bool flush;
+            private readonly bool flush;
 
             internal long[] InsertAddresses = new long[numKeys];
 
@@ -267,7 +267,7 @@ namespace FASTER.test.readaddress
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, context, serialNo: maxLap + 1);
+                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
@@ -335,7 +335,7 @@ namespace FASTER.test.readaddress
                 {
                     var readAtAddress = recordInfo.PreviousAddress;
 
-                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, context, serialNo: maxLap + 1);
+                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
@@ -353,7 +353,7 @@ namespace FASTER.test.readaddress
                         var saveOutput = output;
                         var saveRecordInfo = recordInfo;
 
-                        status = session.ReadAtAddress(readAtAddress, ref input, ref output, context, serialNo: maxLap + 1);
+                        status = session.ReadAtAddress(readAtAddress, ref input, ref output, userContext: context, serialNo: maxLap + 1);
                         if (status == Status.PENDING)
                         {
                             // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
@@ -434,7 +434,7 @@ namespace FASTER.test.readaddress
                 for (int ii = 0; ii < numKeys; ++ii)
                 {
                     var keyOrdinal = rng.Next(numKeys);
-                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, context, serialNo: maxLap + 1);
+                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, userContext: context, serialNo: maxLap + 1);
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.

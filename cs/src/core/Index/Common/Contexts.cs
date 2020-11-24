@@ -86,8 +86,20 @@ namespace FASTER.core
             internal byte operationFlags;
             internal RecordInfo recordInfo;
 
-            internal const byte kNoKey = 0x01;
-            internal const byte kReadByAddress = 0x02;
+            internal const byte kSkipReadCache = 0x01;
+            internal const byte kNoKey = 0x02;
+            internal const byte kSkipCopyReadsToTail = 0x04;
+
+            internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
+            {
+                Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
+                byte flags = (byte)(readFlags & ReadFlags.SkipReadCache);
+                if (noKey) flags |= kNoKey;
+
+                // This is always set true for the Read overloads (Reads by address) that call this method.
+                flags |= kSkipCopyReadsToTail;
+                return flags;
+            }
 
             internal bool NoKey
             {
@@ -95,11 +107,16 @@ namespace FASTER.core
                 set => operationFlags = value ? (byte)(operationFlags | kNoKey) : (byte)(operationFlags & ~kNoKey);
             }
 
-            // This indicates the form of Read that takes an address or a RecordInfo (whether or not RecordInfo.PreviousAddress is set).
-            internal bool ReadByAddress
+            internal bool SkipReadCache
             {
-                get => (operationFlags & kReadByAddress) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kReadByAddress) : (byte)(operationFlags & ~kReadByAddress);
+                get => (operationFlags & kSkipReadCache) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kSkipReadCache) : (byte)(operationFlags & ~kSkipReadCache);
+            }
+
+            internal bool SkipCopyReadsToTail
+            {
+                get => (operationFlags & kSkipCopyReadsToTail) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kSkipCopyReadsToTail) : (byte)(operationFlags & ~kSkipCopyReadsToTail);
             }
 
             public void Dispose()

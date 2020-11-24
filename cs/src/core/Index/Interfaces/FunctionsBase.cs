@@ -99,7 +99,7 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// Default empty functions base class to make it easy for users to provide their own implementation of FunctionsBase
+    /// Default empty functions base class to make it easy for users to provide their own implementation of AdvancedFunctionsBase
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>

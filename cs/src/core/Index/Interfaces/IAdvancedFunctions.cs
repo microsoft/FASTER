@@ -83,7 +83,9 @@ namespace FASTER.core
         /// <param name="input">The user input to be used for computing <paramref name="newValue"/> from <paramref name="oldValue"/></param>
         /// <param name="oldValue">The previous value to be copied/updated</param>
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
-        /// <param name="oldAddress">The logical address of the record being copied from; can be used as a RecordId by indexing or passed to <see cref="RecordAccessor{Key, Value}"/></param>
+        /// <param name="oldAddress">The logical address of the record being copied from; can be used as a RecordId by indexing or passed to <see cref="RecordAccessor{Key, Value}"/>.
+        ///     Note that this address may be in the immutable region, or may not be in memory because this method is called for a read that has gone pending.
+        ///     Use <see cref="RecordAccessor{Key, Value}.IsInMemory(long)"/> to test before dereferencing.</param>
         /// <param name="newAddress">The logical address of the record being copied to; can be used as a RecordId by indexing or passed to <see cref="RecordAccessor{Key, Value}"/></param>
         void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress);
 
@@ -103,9 +105,9 @@ namespace FASTER.core
         /// <param name="input">The user input for computing <paramref name="dst"/> from <paramref name="value"/></param>
         /// <param name="value">The value for the record being read</param>
         /// <param name="dst">The location where <paramref name="value"/> is to be copied</param>
-        /// <param name="address">The logical address of the record being read from; can be used as a RecordId by indexing and for liveness checking. Note that this address may
-        ///     be in the immutable region, or may not be in memory because this method is called for a read that has gone pending. Use <see cref="RecordAccessor{Key, Value}.IsInMemory(long)"/>
-        ///     to test before dereferencing.</param>
+        /// <param name="address">The logical address of the record being read from; can be used as a RecordId by indexing and for liveness checking or passed to <see cref="RecordAccessor{Key, Value}"/>.
+        ///     Note that this address may be in the immutable region, or may not be in memory because this method is called for a read that has gone pending.
+        ///     Use <see cref="RecordAccessor{Key, Value}.IsInMemory(long)"/> to test before dereferencing.</param>
         void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address);
 
         /// <summary>
