@@ -231,6 +231,10 @@ namespace FASTER.core
         {
             if (threadEntryIndex == kInvalidIndex)
                 threadEntryIndex = ReserveEntryForThread();
+
+            Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
+                "Trying to acquire protected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+
             threadEntryIndexCount++;
         }
 
@@ -243,7 +247,8 @@ namespace FASTER.core
         {
             int entry = threadEntryIndex;
 
-            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0, "Trying to release unprotected epoch");
+            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
+                "Trying to release unprotected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
