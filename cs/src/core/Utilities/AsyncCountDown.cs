@@ -52,16 +52,17 @@ namespace FASTER.core
         /// Provides a way to execute a continuation when the counter reaches zero
         /// </summary>
         /// <returns>A Task that completes when the counter reaches zero</returns>
-        public Task WaitEmptyAsync()
+        public async ValueTask WaitUntilEmptyAsync(CancellationToken cancellationToken)
         {
-            if (counter == 0)
-                return Task.CompletedTask;
+            if (counter == 0 || !GetOrCreateTaskCompletionSource(out var tcsOut))
+                return;
 
-            return GetOrCreateTaskCompletionSource();
+            using var reg = cancellationToken.Register(() => tcsOut.TrySetCanceled());
+            await tcsOut.Task;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Task GetOrCreateTaskCompletionSource()
+        private bool GetOrCreateTaskCompletionSource(out TaskCompletionSource<int> tcsOut)
         {
             // If tcs is not null, we'll get it in taskSource
             var taskSource = Interlocked.CompareExchange(ref tcs, nextTcs, null);
@@ -75,10 +76,8 @@ namespace FASTER.core
                 nextTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
-            if (counter == 0)
-                return Task.CompletedTask;
-
-            return taskSource.Task;
+            tcsOut = taskSource;
+            return counter > 0;
         }
     }
 }

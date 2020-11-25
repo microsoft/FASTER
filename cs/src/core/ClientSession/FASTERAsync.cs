@@ -60,8 +60,7 @@ namespace FASTER.core
                     ||
                     currentCtx.phase == Phase.WAIT_PENDING)
                 {
-
-                    await currentCtx.prevCtx.pendingReads.WaitEmptyAsync();
+                    await currentCtx.prevCtx.pendingReads.WaitUntilEmptyAsync(token);
 
                     await InternalCompletePendingRequestsAsync(currentCtx.prevCtx, currentCtx, fasterSession, token);
                     Debug.Assert(currentCtx.prevCtx.SyncIoPendingCount == 0);
@@ -289,7 +288,8 @@ namespace FASTER.core
                 if (@this.epoch.ThisInstanceProtected())
                     throw new NotSupportedException("Async operations not supported over protected epoch");
 
-                diskRequest = await diskRequest.asyncOperation.Task;
+                using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
+                    diskRequest = await diskRequest.asyncOperation.Task;
             }
             catch (Exception e)
             {
@@ -490,7 +490,8 @@ namespace FASTER.core
                 if (@this.epoch.ThisInstanceProtected())
                     throw new NotSupportedException("Async operations not supported over protected epoch");
 
-                diskRequest = await diskRequest.asyncOperation.Task;
+                using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
+                    diskRequest = await diskRequest.asyncOperation.Task;
             }
             catch (Exception e)
             {

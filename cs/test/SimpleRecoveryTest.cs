@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
@@ -20,38 +21,39 @@ namespace FASTER.test.recovery.sumstore.simple
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "checkpoints4";
 
-
-        [TestCase(CheckpointType.FoldOver)]
-        [TestCase(CheckpointType.Snapshot)]
-        public void PageBlobSimpleRecoveryTest(CheckpointType checkpointType)
+        [Test]
+        public async ValueTask PageBlobSimpleRecoveryTest([Values]CheckpointType checkpointType, [Values]bool isAsync)
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
                 ICheckpointManager checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
                     new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobSimpleRecoveryTest"));
-                SimpleRecoveryTest1(checkpointType, checkpointManager);
+                await SimpleRecoveryTest1_Worker(checkpointType, checkpointManager, isAsync);
                 checkpointManager.PurgeAll();
                 checkpointManager.Dispose();
             }
         }
 
-        [TestCase(CheckpointType.FoldOver)]
-        [TestCase(CheckpointType.Snapshot)]
-        public void LocalDeviceSimpleRecoveryTest(CheckpointType checkpointType)
+        [Test]
+        public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync)
         {
             ICheckpointManager checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
                 new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobSimpleRecoveryTest"));
-            SimpleRecoveryTest1(checkpointType, checkpointManager);
+            await SimpleRecoveryTest1_Worker(checkpointType, checkpointManager, isAsync);
             checkpointManager.PurgeAll();
             checkpointManager.Dispose();
         }
 
 
-        [TestCase(CheckpointType.FoldOver)]
-        [TestCase(CheckpointType.Snapshot)]
-        public void SimpleRecoveryTest1(CheckpointType checkpointType, ICheckpointManager checkpointManager = null)
+        [Test]
+        public async ValueTask SimpleRecoveryTest1([Values]CheckpointType checkpointType, [Values]bool isAsync)
+        {
+            await SimpleRecoveryTest1_Worker(checkpointType, null, isAsync);
+        }
+
+        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, ICheckpointManager checkpointManager, bool isAsync)
         {
             string checkpointDir = TestContext.CurrentContext.TestDirectory + $"\\{TEST_CONTAINER}";
 
@@ -96,7 +98,10 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
 
-            fht2.Recover(token);
+            if (isAsync)
+                await fht2.RecoverAsync(token);
+            else
+                fht2.Recover(token);
 
             var session2 = fht2.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
@@ -120,9 +125,8 @@ namespace FASTER.test.recovery.sumstore.simple
                 new DirectoryInfo(checkpointDir).Delete(true);
         }
 
-        [TestCase(CheckpointType.FoldOver)]
-        [TestCase(CheckpointType.Snapshot)]
-        public void SimpleRecoveryTest2(CheckpointType checkpointType)
+        [Test]
+        public async ValueTask SimpleRecoveryTest2([Values]CheckpointType checkpointType, [Values]bool isAsync)
         {
             var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestContext.CurrentContext.TestDirectory + "\\checkpoints4"), false);
 
@@ -166,7 +170,10 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
 
-            fht2.Recover(token);
+            if (isAsync)
+                await fht2.RecoverAsync(token);
+            else 
+                fht2.Recover(token);
 
             var session2 = fht2.NewSession(new SimpleFunctions());
             for (int key = 0; key < numOps; key++)
@@ -191,7 +198,7 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         [Test]
-        public void ShouldRecoverBeginAddress()
+        public async ValueTask ShouldRecoverBeginAddress([Values]bool isAsync)
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\SimpleRecoveryTest2.log", deleteOnClose: true);
 
@@ -238,7 +245,10 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
 
-            fht2.Recover(token);
+            if (isAsync)
+                await fht2.RecoverAsync(token);
+            else
+                fht2.Recover(token);
 
             Assert.AreEqual(address, fht2.Log.BeginAddress);
 

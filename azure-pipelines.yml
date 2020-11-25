@@ -26,8 +26,6 @@ jobs:
 
   steps:
   - task: NuGetToolInstaller@1
-    inputs:
-      versionSpec: '5.5.0'
 
   - task: NuGetCommand@2
     inputs:

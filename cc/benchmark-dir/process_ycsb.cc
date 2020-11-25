@@ -24,6 +24,7 @@ int main(int argc, char* argv[]) {
   
   while (!from_file.eof()) {
     char buffer[256];
+    from_file.clear();
     from_file.getline(buffer, sizeof(buffer));
     std::string line{ buffer };
     std::string::size_type pos = line.find(prefix);
