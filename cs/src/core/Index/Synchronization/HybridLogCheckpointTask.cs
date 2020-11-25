@@ -131,7 +131,7 @@ namespace FASTER.core
                 var s = faster._hybridLogCheckpoint.flushedSemaphore;
 
                 var notify = faster.hlog.FlushedUntilAddress >= faster._hybridLogCheckpoint.info.finalLogicalAddress;
-                notify = notify || !faster.SameCycle(current) || s == null;
+                notify = notify || !faster.SameCycle(ctx, current) || s == null;
 
                 if (valueTasks != null && !notify)
                 {
@@ -218,7 +218,7 @@ namespace FASTER.core
                 var s = faster._hybridLogCheckpoint.flushedSemaphore;
 
                 var notify = s != null && s.CurrentCount > 0;
-                notify = notify || !faster.SameCycle(current) || s == null;
+                notify = notify || !faster.SameCycle(ctx, current) || s == null;
 
                 if (valueTasks != null && !notify)
                 {

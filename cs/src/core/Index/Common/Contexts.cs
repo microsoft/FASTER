@@ -137,6 +137,7 @@ namespace FASTER.core
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public List<long> excludedSerialNos;
             public int asyncPendingCount;
+            public ISynchronizationStateMachine threadStateMachine;
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 

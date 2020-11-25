@@ -514,7 +514,15 @@ namespace FASTER.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
         {
-            return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>

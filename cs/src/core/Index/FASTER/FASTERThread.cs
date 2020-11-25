@@ -113,6 +113,7 @@ namespace FASTER.core
         {
             dst.phase = src.phase;
             dst.version = src.version;
+            dst.threadStateMachine = src.threadStateMachine;
             dst.markers = src.markers;
             dst.serialNum = src.serialNum;
             dst.guid = src.guid;
