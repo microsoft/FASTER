@@ -549,7 +549,6 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.NoKey = true;
             pcontext.operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(readFlags, noKey: true);
             Key key = default;
             var internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
