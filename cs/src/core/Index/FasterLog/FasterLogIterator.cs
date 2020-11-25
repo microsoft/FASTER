@@ -95,7 +95,6 @@ namespace FASTER.core
             }
         }
 
-#if DOTNETCORE
         /// <summary>
         /// Async enumerable for iterator
         /// </summary>
@@ -141,7 +140,6 @@ namespace FASTER.core
                 yield return (result, length, currentAddress, nextAddress);
             }
         }
-#endif
 
         /// <summary>
         /// Wait for iteration to be ready to continue

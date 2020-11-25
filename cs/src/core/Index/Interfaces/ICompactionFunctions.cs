@@ -43,7 +43,7 @@
         /// <param name="valueLength">[Can be null] Variable length struct functions</param>
         /// <returns></returns>
         void Copy(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
-#if NETSTANDARD21
+#if NETSTANDARD2_1
             { }
 #else
             ;
@@ -64,7 +64,7 @@
         /// managed pointer to new record.
         /// </returns>
         bool CopyInPlace(ref Value src, ref Value dst, IVariableLengthStruct<Value> valueLength)
-#if NETSTANDARD21
+#if NETSTANDARD2_1
             => true
 #endif
             ;
