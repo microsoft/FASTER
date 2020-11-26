@@ -64,8 +64,8 @@ jobs:
   - task: VSTest@2
     inputs:
       testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp*\*test.dll
+       **\$(BuildConfiguration)\netcoreapp2*\*test.dll
+       **\$(BuildConfiguration)\**\netcoreapp2*\*test.dll
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
        !**\*TestAdapter.dll
@@ -76,8 +76,8 @@ jobs:
   - task: VSTest@2
     inputs:
       testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp*\*test.dll
+       **\$(BuildConfiguration)\netcoreapp3*\*test.dll
+       **\$(BuildConfiguration)\**\netcoreapp3*\*test.dll
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
        !**\*TestAdapter.dll
@@ -169,6 +169,11 @@ jobs:
   - task: NuGetCommand@2
     inputs:
       restoreSolution: '$(solution)'
+
+  - task: UseDotNet@2
+    inputs:
+      packageType: 'sdk'
+      version: '2.2.8'
 
   - task: UseDotNet@2
     inputs:
