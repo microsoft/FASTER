@@ -32,6 +32,7 @@ namespace FASTER.core
                     break;
 
                 case Phase.WAIT_INDEX_CHECKPOINT:
+                case Phase.WAIT_INDEX_ONLY_CHECKPOINT:
                     break;
                     
                 case Phase.REST:
@@ -74,13 +75,14 @@ namespace FASTER.core
                     faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.WAIT_INDEX_CHECKPOINT:
+                case Phase.WAIT_INDEX_ONLY_CHECKPOINT:
                     var notify = faster.IsIndexFuzzyCheckpointCompleted();
-                    notify = notify || !faster.SameCycle(current);
+                    notify = notify || !faster.SameCycle(ctx, current);
 
                     if (valueTasks != null && !notify)
                     {
                         var t = faster.IsIndexFuzzyCheckpointCompletedAsync(token);
-                        if (!faster.SameCycle(current))
+                        if (!faster.SameCycle(ctx, current))
                             notify = true;
                         else
                             valueTasks.Add(t);
@@ -115,9 +117,9 @@ namespace FASTER.core
                     result.phase = Phase.PREP_INDEX_CHECKPOINT;
                     break;
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    result.phase = Phase.WAIT_INDEX_CHECKPOINT;
+                    result.phase = Phase.WAIT_INDEX_ONLY_CHECKPOINT;
                     break;
-                case Phase.WAIT_INDEX_CHECKPOINT:
+                case Phase.WAIT_INDEX_ONLY_CHECKPOINT:
                     result.phase = Phase.REST;
                     break;
                 default:
