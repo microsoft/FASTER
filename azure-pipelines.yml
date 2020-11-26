@@ -71,6 +71,18 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2'
+
+  - task: VSTest@2
+    inputs:
+      testAssemblyVer2: |
+       **\$(BuildConfiguration)\netcoreapp*\*test.dll
+       **\$(BuildConfiguration)\**\netcoreapp*\*test.dll
+       !**\*Microsoft.VisualStudio.TestPlatform*
+       !**\obj\**
+       !**\*TestAdapter.dll
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
       otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1'
 
   - task: PublishTestResults@2
