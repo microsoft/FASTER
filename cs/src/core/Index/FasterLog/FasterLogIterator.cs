@@ -122,7 +122,7 @@ namespace FASTER.core
         /// Async enumerable for iterator (memory pool based version)
         /// </summary>
         /// <returns>Entry, actual entry length, logical address of entry, logical address of next entry</returns>
-        public async IAsyncEnumerable<(IMemoryOwner<byte>, int entryLength, long currentAddress, long nextAddress)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
+        public async IAsyncEnumerable<(IMemoryOwner<byte> entry, int entryLength, long currentAddress, long nextAddress)> GetAsyncEnumerable(MemoryPool<byte> pool, [EnumeratorCancellation] CancellationToken token = default)
         {
             while (!disposed)
             {

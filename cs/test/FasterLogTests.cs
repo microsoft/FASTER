@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -54,7 +56,7 @@ namespace FASTER.test
                 this.log = fasterLog;
             }
 
-            internal void Increment(long nextAddr)
+            internal void IncrementAndMaybeTruncateUntil(long nextAddr)
             {
                 this.count++;
                 if (this.count % 100 == 0)
@@ -64,9 +66,53 @@ namespace FASTER.test
             public override string ToString() => $"{this.count}";
         }
 
+        public enum IteratorType
+        {
+            AsyncByteVector,
+            AsyncMemoryOwner,
+            Sync
+        }
+
+        private static bool IsAsync(IteratorType iterType) => iterType == IteratorType.AsyncByteVector || iterType == IteratorType.AsyncMemoryOwner;
+
+        private async ValueTask AssertGetNext(IAsyncEnumerator<(byte[] entry, int entryLength, long currentAddress, long nextAddress)> asyncByteVectorIter,
+                                              IAsyncEnumerator<(IMemoryOwner<byte> entry, int entryLength, long currentAddress, long nextAddress)> asyncMemoryOwnerIter,
+                                              FasterLogScanIterator iter, byte[] expectedData = default, bool verifyAtEnd = false)
+        {
+            if (asyncByteVectorIter is {})
+            {
+                Assert.IsTrue(await asyncByteVectorIter.MoveNextAsync());
+                if (expectedData is {})
+                    Assert.IsTrue(asyncByteVectorIter.Current.entry.SequenceEqual(expectedData));
+
+                // MoveNextAsync() would hang here waiting for more entries
+                if (verifyAtEnd)
+                    Assert.IsTrue(asyncByteVectorIter.Current.nextAddress == log.TailAddress);
+                return;
+            }
+
+            if (asyncMemoryOwnerIter is {})
+            {
+                Assert.IsTrue(await asyncMemoryOwnerIter.MoveNextAsync());
+                if (expectedData is {})
+                    Assert.IsTrue(asyncMemoryOwnerIter.Current.entry.Memory.Span.ToArray().Take(expectedData.Length).SequenceEqual(expectedData));
+                asyncMemoryOwnerIter.Current.entry.Dispose();
+
+                // MoveNextAsync() would hang here waiting for more entries
+                if (verifyAtEnd)
+                    Assert.IsTrue(asyncMemoryOwnerIter.Current.nextAddress == log.TailAddress);
+                return;
+            }
+
+            Assert.IsTrue(iter.GetNext(out byte[] result, out _, out _));
+            if (expectedData is {})
+                Assert.IsTrue(result.SequenceEqual(expectedData));
+            if (verifyAtEnd)
+                Assert.IsFalse(iter.GetNext(out _, out _, out _));
+        }
 
         [Test]
-        public async ValueTask FasterLogTest1([Values]LogChecksumType logChecksum, [Values]bool isAsync)
+        public async ValueTask FasterLogTest1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
 
@@ -81,25 +127,37 @@ namespace FASTER.test
             log.Commit(true);
 
             // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
-            var endAddress = isAsync ? log.TailAddress : long.MaxValue;
+            var endAddress = IsAsync(iteratorType) ? log.TailAddress : long.MaxValue;
             using (var iter = log.Scan(0, endAddress))
             {
                 var counter = new Counter(log);
-                if (isAsync)
+                switch (iteratorType)
                 {
-                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
-                    {
-                        Assert.IsTrue(result.SequenceEqual(entry));
-                        counter.Increment(nextAddress);
-                    }
-                }
-                else
-                {
-                    while (iter.GetNext(out byte[] result, out _, out _))
-                    {
-                        Assert.IsTrue(result.SequenceEqual(entry));
-                        counter.Increment(iter.NextAddress);
-                    }
+                    case IteratorType.AsyncByteVector:
+                        await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                        {
+                            Assert.IsTrue(result.SequenceEqual(entry));
+                            counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                        }
+                        break;
+                    case IteratorType.AsyncMemoryOwner:
+                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                        {
+                            Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
+                            result.Dispose();
+                            counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                        }
+                        break;
+                    case IteratorType.Sync:
+                        while (iter.GetNext(out byte[] result, out _, out _))
+                        {
+                            Assert.IsTrue(result.SequenceEqual(entry));
+                            counter.IncrementAndMaybeTruncateUntil(iter.NextAddress);
+                        }
+                        break;
+                    default:
+                        Assert.Fail("Unknown IteratorType");
+                        break;
                 }
                 Assert.IsTrue(counter.count == numEntries);
             }
@@ -108,15 +166,18 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest2([Values]LogChecksumType logChecksum, [Values]bool isAsync)
+        public async ValueTask FasterLogTest2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
-            byte[] data1 = new byte[10000];
-            for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
+
+            const int dataLength = 10000;
+            byte[] data1 = new byte[dataLength];
+            for (int i = 0; i < dataLength; i++) data1[i] = (byte)i;
 
             using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
             {
-                var asyncIter = isAsync ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
                 int i = 0;
                 while (i++ < 500)
                 {
@@ -139,28 +200,14 @@ namespace FASTER.test
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
-                    if (isAsync)
-                    {
-                        var curr = await asyncIter.MoveNextAsync();
-                        Assert.IsTrue(curr);
-                        Assert.IsTrue(asyncIter.Current.entry.SequenceEqual(data1));
-                        // MoveNextAsync() would hang here waiting for more entries
-                        Assert.IsTrue(asyncIter.Current.nextAddress == log.TailAddress);
-                    }
-                    else
-                    {
-                        var curr = iter.GetNext(out byte[] result, out _, out _);
-                        Assert.IsTrue(curr);
-                        Assert.IsTrue(result.SequenceEqual(data1));
-                        Assert.IsFalse(iter.GetNext(out _, out _, out _));
-                    }
+                    await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd :true);
                 }
             }
             log.Dispose();
         }
 
         [Test]
-        public async ValueTask FasterLogTest3([Values]LogChecksumType logChecksum, [Values] bool isAsync)
+        public async ValueTask FasterLogTest3([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[10000];
@@ -168,15 +215,15 @@ namespace FASTER.test
 
             using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
             {
-                var asyncIter = isAsync ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
 
                 var appendResult = log.TryEnqueue(data1, out _);
                 Assert.IsTrue(appendResult);
                 await log.CommitAsync();
                 await iter.WaitAsync();
-                var iterResult = isAsync ? await asyncIter.MoveNextAsync()
-                                         : iter.GetNext(out _, out _, out _);
-                Assert.IsTrue(iterResult);
+
+                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1);
 
                 // This will fail due to page overflow, leaving a "hole"
                 appendResult = log.TryEnqueue(data1, out _);
@@ -190,34 +237,51 @@ namespace FASTER.test
                     await log.CommitAsync();
                 }
 
-                if (isAsync)
+                switch (iteratorType)
                 {
-                    // Because we have a hole, awaiting MoveNextAsync would hang; instead, hold onto the task that results from WaitAsync() inside MoveNextAsync().
-                    var task = asyncIter.MoveNextAsync();
-                    await retryAppend(task.IsCompleted);
+                    case IteratorType.Sync:
+                        // Should read the "hole" and return false
+                        Assert.IsFalse(iter.GetNext(out _, out _, out _));
 
-                    // Now the data is available.
-                    Assert.IsTrue(await task);
-                }
-                else
-                {
-                    // Should read the "hole" and return false
-                    Assert.IsFalse(iter.GetNext(out _, out _, out _));
+                        // Should wait for next item
+                        var task = iter.WaitAsync();
+                        await retryAppend(task.IsCompleted);
+                        await task;
 
-                    // Should wait for next item
-                    var task = iter.WaitAsync();
-                    await retryAppend(task.IsCompleted);
-                    await task;
+                        // Now the data is available.
+                        Assert.IsTrue(iter.GetNext(out _, out _, out _));
+                        break;
+                    case IteratorType.AsyncByteVector:
+                        {
+                            // Because we have a hole, awaiting MoveNextAsync would hang; instead, hold onto the task that results from WaitAsync() inside MoveNextAsync().
+                            var moveNextTask = asyncByteVectorIter.MoveNextAsync();
+                            await retryAppend(moveNextTask.IsCompleted);
 
-                    // Now the data is available.
-                    Assert.IsTrue(iter.GetNext(out _, out _, out _));
+                            // Now the data is available.
+                            Assert.IsTrue(await moveNextTask);
+                        }
+                        break;
+                    case IteratorType.AsyncMemoryOwner:
+                        {
+                            // Because we have a hole, awaiting MoveNextAsync would hang; instead, hold onto the task that results from WaitAsync() inside MoveNextAsync().
+                            var moveNextTask = asyncMemoryOwnerIter.MoveNextAsync();
+                            await retryAppend(moveNextTask.IsCompleted);
+
+                            // Now the data is available, and must be disposed.
+                            Assert.IsTrue(await moveNextTask);
+                            asyncMemoryOwnerIter.Current.entry.Dispose();
+                        }
+                        break;
+                    default:
+                        Assert.Fail("Unknown IteratorType");
+                        break;
                 }
             }
             log.Dispose();
         }
 
         [Test]
-        public async ValueTask FasterLogTest4([Values]LogChecksumType logChecksum, [Values] bool isAsync)
+        public async ValueTask FasterLogTest4([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[100];
@@ -236,9 +300,11 @@ namespace FASTER.test
 
             using (var iter = log.Scan(0, long.MaxValue))
             {
-                var iterResult = isAsync ? await iter.GetAsyncEnumerable().GetAsyncEnumerator().MoveNextAsync()
-                                         : iter.GetNext(out _, out _, out _);
-                Assert.IsTrue(iterResult);
+                var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
+
+                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1);
+
                 log.TruncateUntil(iter.NextAddress);
 
                 Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
@@ -286,7 +352,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest6([Values] LogChecksumType logChecksum, [Values] bool isAsync)
+        public async ValueTask FasterLogTest6([Values] LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[1000];
@@ -303,25 +369,48 @@ namespace FASTER.test
 
             using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
             {
-                var asyncIter = isAsync ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
 
-                if (isAsync)
+                switch (iteratorType)
                 {
-                    while (await asyncIter.MoveNextAsync() && asyncIter.Current.nextAddress != log.SafeTailAddress)
-                        log.TruncateUntil(asyncIter.Current.nextAddress);
+                    case IteratorType.Sync:
+                        while (iter.GetNext(out _, out _, out _))
+                            log.TruncateUntil(iter.NextAddress);
+                        Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                        break;
+                    case IteratorType.AsyncByteVector:
+                        {
+                            while (await asyncByteVectorIter.MoveNextAsync() && asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
+                                log.TruncateUntil(asyncByteVectorIter.Current.nextAddress);
+                        }
+                        break;
+                    case IteratorType.AsyncMemoryOwner:
+                        {
+                            while (await asyncMemoryOwnerIter.MoveNextAsync()) {
+                                log.TruncateUntil(asyncMemoryOwnerIter.Current.nextAddress);
+                                asyncMemoryOwnerIter.Current.entry.Dispose();
+                                if (asyncMemoryOwnerIter.Current.nextAddress == log.SafeTailAddress)
+                                    break;
+                            }
+                        }
+                        break;
+                    default:
+                        Assert.Fail("Unknown IteratorType");
+                        break;
                 }
-                else
-                {
-                    while (iter.GetNext(out _, out _, out _))
-                        log.TruncateUntil(iter.NextAddress);
 
-                    Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
-                }
+                // Enqueue data but do not make it visible
                 log.Enqueue(data1);
-                if (!isAsync)   // MoveNextAsync() would hang here waiting for more entries
+
+                // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
+                if (!IsAsync(iteratorType))
                     Assert.IsFalse(iter.GetNext(out _, out _, out _));
+
+                // Make the data visible
                 log.RefreshUncommitted();
-                Assert.IsTrue(isAsync ? await asyncIter.MoveNextAsync() : iter.GetNext(out _, out _, out _));
+
+                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
             log.Dispose();
         }
