@@ -31,11 +31,6 @@ jobs:
     inputs:
       restoreSolution: '$(solution)'
 
-  - task: UseDotNet@2
-    inputs:
-      packageType: 'runtime'
-      version: '2.2.8'
-
   - task: VSBuild@1
     inputs:
       solution: '$(solution)'

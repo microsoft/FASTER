@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp3.1;netcoreapp2.2;net461</TargetFrameworks>
+    <TargetFrameworks>netcoreapp3.1;netcoreapp2.1;net461</TargetFrameworks>
     <Platforms>AnyCPU;x64</Platforms>
     <HighEntropyVA>true</HighEntropyVA>
     <LangVersion>8</LangVersion>
