@@ -186,7 +186,7 @@ jobs:
     inputs:
       command: test
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration)'
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1'
    
 # - job: 'cppBlobsWindows'
 #   pool:
