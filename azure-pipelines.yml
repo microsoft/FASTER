@@ -175,6 +175,18 @@ jobs:
       packageType: 'sdk'
       version: '3.1.201'
 
+  - task: VSTest@2
+    inputs:
+      testAssemblyVer2: |
+       **\$(BuildConfiguration)\netcoreapp*\*test.dll
+       **\$(BuildConfiguration)\**\netcoreapp*\*test.dll
+       !**\*Microsoft.VisualStudio.TestPlatform*
+       !**\obj\**
+       !**\*TestAdapter.dll
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1'
+
   - script: |
       mono --version
       msbuild /version
