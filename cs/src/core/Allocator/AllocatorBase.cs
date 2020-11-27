@@ -552,6 +552,10 @@ namespace FASTER.core
 
             device = settings.LogDevice;
             sectorSize = (int)device.SectorSize;
+
+            if (PageSize < sectorSize)
+                throw new FasterException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
+
             AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
         }
 
