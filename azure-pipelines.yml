@@ -33,7 +33,7 @@ jobs:
 
   - task: UseDotNet@2
     inputs:
-      packageType: 'sdk'
+      packageType: 'runtime'
       version: '2.2.8'
 
   - task: VSBuild@1
