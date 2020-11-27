@@ -440,7 +440,15 @@ namespace FASTER.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
         {
-            return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
@@ -556,7 +564,7 @@ namespace FASTER.core
             token.ThrowIfCancellationRequested();
 
             // Complete all pending operations on session
-            await CompletePendingAsync();
+            await CompletePendingAsync(token: token);
 
             var task = fht.CheckpointTask;
             CommitPoint localCommitPoint = LatestCommitPoint;

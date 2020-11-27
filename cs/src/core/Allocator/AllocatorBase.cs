@@ -607,24 +607,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Acquire thread
-        /// </summary>
-        public void Acquire()
-        {
-            if (ownedEpoch)
-                epoch.Resume();
-        }
-
-        /// <summary>
-        /// Release thread
-        /// </summary>
-        public void Release()
-        {
-            if (ownedEpoch)
-                epoch.Suspend();
-        }
-
-        /// <summary>
         /// Dispose allocator
         /// </summary>
         public virtual void Dispose()

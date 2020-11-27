@@ -10,6 +10,7 @@ using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.sumstore.recover_continue
 {
@@ -87,9 +88,8 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         [Test]
-        public void RecoverContinueTest()
+        public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
-
             long sno = 0;
 
             var firstsession = fht1.For(new SimpleFunctions()).NewSession<SimpleFunctions>("first");
@@ -104,7 +104,10 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             session1.Dispose();
 
             // Recover and check if recovered values are correct
-            fht2.Recover();
+            if (isAsync)
+                await fht2.RecoverAsync();
+            else
+                fht2.Recover();
             var session2 = fht2.For(new SimpleFunctions()).NewSession<SimpleFunctions>();
             CheckAllValues(ref session2, 1);
             session2.Dispose();
@@ -123,9 +126,11 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             CheckAllValues(ref session3, 2);
             session3.Dispose();
 
-
             // Recover and check if recovered values are correct
-            fht3.Recover();
+            if (isAsync)
+                await fht3.RecoverAsync();
+            else
+                fht3.Recover();
 
             var nextsession = fht3.For(new SimpleFunctions()).ResumeSession<SimpleFunctions>("first", out cp);
             long newSno2 = cp.UntilSerialNo;

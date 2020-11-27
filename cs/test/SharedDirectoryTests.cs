@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.sumstore
 {
@@ -51,7 +52,7 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [Test]
-        public void SharedLogDirectory()
+        public async ValueTask SharedLogDirectory([Values]bool isAsync)
         {
             this.original.Initialize($"{this.rootPath}\\OriginalCheckpoint", this.sharedLogDirectory);
             Assert.IsTrue(IsDirectoryEmpty(this.sharedLogDirectory)); // sanity check
@@ -71,7 +72,11 @@ namespace FASTER.test.recovery.sumstore
 
             // Recover from original checkpoint
             this.clone.Initialize(cloneCheckpointDirectory, this.sharedLogDirectory, populateLogHandles: true);
-            this.clone.Faster.Recover(checkpointGuid);
+
+            if (isAsync)
+                await this.clone.Faster.RecoverAsync(checkpointGuid);
+            else
+                this.clone.Faster.Recover(checkpointGuid);
 
             // Both sessions should work concurrently
             Test(this.original, checkpointGuid);
