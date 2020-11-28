@@ -19,7 +19,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "\\" + TestContext.CurrentContext.Test.Name + "\\";
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
             if (Directory.Exists(commitPath))
                 DeleteDirectory(commitPath);

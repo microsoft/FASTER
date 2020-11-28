@@ -23,8 +23,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MiscFASTERTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MiscFASTERTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/MiscFASTERTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/MiscFASTERTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<int, MyValue>
                 (128,
@@ -115,7 +115,7 @@ namespace FASTER.test
             var log = default(IDevice);
             try
             {
-                log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
+                log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
                 using var fht = new FasterKV<KeyStruct, ValueStruct>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
                 using var session = fht.NewSession(copyOnWrite);
