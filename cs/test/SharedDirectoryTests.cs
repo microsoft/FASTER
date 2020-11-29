@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.sumstore
@@ -104,6 +105,10 @@ namespace FASTER.test.recovery.sumstore
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
+#if !NET461
+                if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                    populateLogHandles = false;
+#endif
                 this.CheckpointDirectory = checkpointDirectory;
                 this.LogDirectory = logDirectory;
 
@@ -127,7 +132,17 @@ namespace FASTER.test.recovery.sumstore
                     }
                 }
 
-                this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
+#if !NET461
+                if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    this.LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);
+                }
+                else
+#endif
+                {
+                    this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
+                }
+
                 this.Faster = new FasterKV<AdId, NumClicks>(
                     keySpace,
                     new LogSettings { LogDevice = this.LogDevice },
