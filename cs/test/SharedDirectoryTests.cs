@@ -83,12 +83,17 @@ namespace FASTER.test.recovery.sumstore
             Test(this.original, checkpointGuid);
             Test(this.clone, checkpointGuid);
 
-            // Dispose original, files should not be deleted
+            // Dispose original, files should not be deleted on Windows
             this.original.TearDown();
 
-            // Clone should still work
-            Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
-            Test(this.clone, checkpointGuid);
+#if !NET461
+            if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+#endif
+            {
+                // Clone should still work on Windows
+                Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
+                Test(this.clone, checkpointGuid);
+            }
 
             this.clone.TearDown();
 
