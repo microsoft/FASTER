@@ -16,7 +16,7 @@ namespace FASTER.test
         public void ShouldSkipEmptySpaceAtEndOfPage()
         {
             var vlLength = new VLValue();
-            var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog-vl-iter.log", deleteOnClose: true);
+            var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog-vl-iter.log", deleteOnClose: true);
             var fht = new FasterKV<Key, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page

@@ -20,7 +20,7 @@ namespace StoreAsyncApi
         /// </summary>
         static void Main()
         {
-            var path = Path.GetTempPath() + "StoreAsyncApi\\";
+            var path = Path.GetTempPath() + "StoreAsyncApi/";
 
             // Since the example runs forever, we set option to auto-delete files on close
             // Note that this setting precludes recovery

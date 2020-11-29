@@ -22,7 +22,7 @@ namespace CacheStore
             // Use blittable structs for *much* better performance
 
             // Create files for storing data
-            var path = Path.GetTempPath() + "ClassCache\\";
+            var path = Path.GetTempPath() + "ClassCache/";
             var log =  Devices.CreateLogDevice(path + "hlog.log");
 
             // Log for storing serialized objects; needed only for class keys/values

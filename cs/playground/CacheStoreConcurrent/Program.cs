@@ -34,7 +34,7 @@ namespace CacheStoreConcurrent
             // Number of caches and number of threads can be varied.
 
             h = new FasterKV<CacheKey, CacheValue>[kNumTables];
-            var path = Path.GetTempPath() + "CacheStoreConcurrent\\";
+            var path = Path.GetTempPath() + "CacheStoreConcurrent/";
 
             for (int ht = 0; ht < kNumTables; ht++)
             {

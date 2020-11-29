@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net461;netstandard2.0;netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
     <Platforms>AnyCPU;x64</Platforms>
     <LangVersion>8</LangVersion>
   </PropertyGroup>
@@ -32,14 +32,6 @@
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
   
-  <PropertyGroup Condition="'$(TargetFramework)' != 'net461'">
-    <DefineConstants>$(DefineConstants);DOTNETCORE</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
-    <DefineConstants>$(DefineConstants);NETSTANDARD21</DefineConstants>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.7.1" />
   </ItemGroup>
@@ -51,6 +43,7 @@
   <ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
     <PackageReference Include="System.Memory" Version="4.5.4" />
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' != 'net461'">

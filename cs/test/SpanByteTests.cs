@@ -26,7 +26,7 @@ namespace FASTER.test
 
             FasterKV<SpanByte, SpanByte> fht;
             IDevice log;
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
             fht = new FasterKV<SpanByte, SpanByte>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
 

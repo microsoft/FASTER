@@ -14,7 +14,7 @@ namespace FasterLogPubSub
     {
         const int commitPeriodMs = 2000;
         const int restorePeriodMs = 1000;
-        static string path = Path.GetTempPath() + "FasterLogPubSub\\";
+        static string path = Path.GetTempPath() + "FasterLogPubSub/";
 
         static async Task Main()
         {

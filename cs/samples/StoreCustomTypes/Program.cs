@@ -18,7 +18,7 @@ namespace StoreCustomTypes
             // (2) Provide IFasterEqualityComparer<Key> instance as param to FASTER constructor
 
             // Main hybrid log device
-            var path = Path.GetTempPath() + "StoreCustomTypes\\";
+            var path = Path.GetTempPath() + "StoreCustomTypes/";
             var log = Devices.CreateLogDevice(path + "hlog.log");
 
             // With non-blittable types, you need an object log device in addition to the

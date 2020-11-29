@@ -28,7 +28,7 @@ namespace SumStore
             this.threadCount = threadCount;
 
             // Create FASTER index
-            var log = Devices.CreateLogDevice("logs\\hlog");
+            var log = Devices.CreateLogDevice("logs/hlog");
             fht = new FasterKV<AdId, NumClicks>
                 (indexSize, new LogSettings { LogDevice = log },
                 new CheckpointSettings { CheckpointDir = "logs" });
