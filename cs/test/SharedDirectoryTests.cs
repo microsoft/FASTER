@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.sumstore
@@ -28,9 +29,9 @@ namespace FASTER.test.recovery.sumstore
         [SetUp]
         public void Setup()
         {
-            this.rootPath = $"{TestContext.CurrentContext.TestDirectory}\\{Path.GetRandomFileName()}";
+            this.rootPath = $"{TestContext.CurrentContext.TestDirectory}/{Path.GetRandomFileName()}";
             Directory.CreateDirectory(this.rootPath);
-            this.sharedLogDirectory = $"{this.rootPath}\\SharedLogs";
+            this.sharedLogDirectory = $"{this.rootPath}/SharedLogs";
             Directory.CreateDirectory(this.sharedLogDirectory);
 
             this.original = new FasterTestInstance();
@@ -54,7 +55,7 @@ namespace FASTER.test.recovery.sumstore
         [Test]
         public async ValueTask SharedLogDirectory([Values]bool isAsync)
         {
-            this.original.Initialize($"{this.rootPath}\\OriginalCheckpoint", this.sharedLogDirectory);
+            this.original.Initialize($"{this.rootPath}/OriginalCheckpoint", this.sharedLogDirectory);
             Assert.IsTrue(IsDirectoryEmpty(this.sharedLogDirectory)); // sanity check
             Populate(this.original.Faster);
 
@@ -67,7 +68,7 @@ namespace FASTER.test.recovery.sumstore
             Test(this.original, checkpointGuid);
 
             // Copy checkpoint directory
-            var cloneCheckpointDirectory = $"{this.rootPath}\\CloneCheckpoint";
+            var cloneCheckpointDirectory = $"{this.rootPath}/CloneCheckpoint";
             CopyDirectory(new DirectoryInfo(this.original.CheckpointDirectory), new DirectoryInfo(cloneCheckpointDirectory));
 
             // Recover from original checkpoint
@@ -82,12 +83,17 @@ namespace FASTER.test.recovery.sumstore
             Test(this.original, checkpointGuid);
             Test(this.clone, checkpointGuid);
 
-            // Dispose original, files should not be deleted
+            // Dispose original, files should not be deleted on Windows
             this.original.TearDown();
 
-            // Clone should still work
-            Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
-            Test(this.clone, checkpointGuid);
+#if NETCOREAPP
+            if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+#endif
+            {
+                // Clone should still work on Windows
+                Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
+                Test(this.clone, checkpointGuid);
+            }
 
             this.clone.TearDown();
 
@@ -104,11 +110,15 @@ namespace FASTER.test.recovery.sumstore
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
+#if NETCOREAPP
+                if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                    populateLogHandles = false;
+#endif
                 this.CheckpointDirectory = checkpointDirectory;
                 this.LogDirectory = logDirectory;
 
                 string logFileName = "log";
-                string deviceFileName = $"{this.LogDirectory}\\{logFileName}";
+                string deviceFileName = $"{this.LogDirectory}/{logFileName}";
                 KeyValuePair<int, SafeFileHandle>[] initialHandles = null;
                 if (populateLogHandles)
                 {
@@ -127,7 +137,17 @@ namespace FASTER.test.recovery.sumstore
                     }
                 }
 
-                this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
+#if NETCOREAPP
+                if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    this.LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);
+                }
+                else
+#endif
+                {
+                    this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
+                }
+
                 this.Faster = new FasterKV<AdId, NumClicks>(
                     keySpace,
                     new LogSettings { LogDevice = this.LogDevice },

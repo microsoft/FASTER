@@ -14,7 +14,7 @@ namespace StoreCheckpointRecover
             // We use classes in this example, replace with blittable structs for 
             // much better performance
 
-            var path = Path.GetTempPath() + "StoreCheckpointRecover\\";
+            var path = Path.GetTempPath() + "StoreCheckpointRecover/";
 
             // Main hybrid log device                        
             var log = Devices.CreateLogDevice(path + "hlog.log");

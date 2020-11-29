@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net461;netcoreapp3.1</TargetFrameworks>
+    <TargetFrameworks>netcoreapp3.1;netcoreapp2.1;net461</TargetFrameworks>
     <Platforms>AnyCPU;x64</Platforms>
     <HighEntropyVA>true</HighEntropyVA>
     <LangVersion>8</LangVersion>
@@ -34,10 +34,6 @@
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
   
-  <PropertyGroup Condition="'$(TargetFramework)'!='net461'">
-    <DefineConstants>$(DefineConstants);DOTNETCORE</DefineConstants>
-  </PropertyGroup>
-    
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
   </PropertyGroup>

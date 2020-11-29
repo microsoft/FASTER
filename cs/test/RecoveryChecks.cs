@@ -28,7 +28,7 @@ namespace FASTER.test.recovery
                 inputArray[i].adId = i;
             }
 
-            path = TestContext.CurrentContext.TestDirectory + "\\RecoveryChecks\\";
+            path = TestContext.CurrentContext.TestDirectory + "/RecoveryChecks/";
             log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>

@@ -18,8 +18,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericStringTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericStringTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.obj.log", deleteOnClose: true);
 
             fht
                 = new FasterKV<string, string>(

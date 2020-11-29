@@ -33,12 +33,12 @@ namespace FASTER.test.statemachine
                 inputArray[i].adId = i;
             }
 
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\StateMachineTest1.log", deleteOnClose: true);
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "\\checkpoints4");
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/StateMachineTest1.log", deleteOnClose: true);
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/checkpoints4");
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = CheckpointType.FoldOver }
                 );
         }
 
@@ -47,7 +47,7 @@ namespace FASTER.test.statemachine
         {
             fht1.Dispose();
             log.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "\\checkpoints4").Delete(true);
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/checkpoints4").Delete(true);
         }
 
 
@@ -391,7 +391,7 @@ namespace FASTER.test.statemachine
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "\\checkpoints4", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2.Recover(); // sync, does not require session

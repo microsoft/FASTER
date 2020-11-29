@@ -23,7 +23,7 @@ namespace FASTER.test.async
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\hlog1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }

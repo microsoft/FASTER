@@ -24,8 +24,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericLogCompactionTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\GenericLogCompactionTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericLogCompactionTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
