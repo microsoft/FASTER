@@ -86,7 +86,7 @@ namespace FASTER.test.recovery.sumstore
             // Dispose original, files should not be deleted on Windows
             this.original.TearDown();
 
-#if !NET461
+#if NETCOREAPP
             if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
 #endif
             {
@@ -110,7 +110,7 @@ namespace FASTER.test.recovery.sumstore
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
-#if !NET461
+#if NETCOREAPP
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                     populateLogHandles = false;
 #endif
@@ -137,7 +137,7 @@ namespace FASTER.test.recovery.sumstore
                     }
                 }
 
-#if !NET461
+#if NETCOREAPP
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
                     this.LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);

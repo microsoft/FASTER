@@ -279,7 +279,7 @@ namespace FASTER.core
             return FileName + "." + segmentId;
         }
 
-        internal static uint GetSectorSize(string filename)
+        private static uint GetSectorSize(string filename)
         {
 #if NETSTANDARD
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

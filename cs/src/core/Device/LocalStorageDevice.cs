@@ -400,7 +400,12 @@ namespace FASTER.core
             Debug.WriteLine($"Unable to retrieve sector size information for temporary handle {filename + ".tmp"}, trying disk level information");
             */
 
-            return ManagedLocalStorageDevice.GetSectorSize(filename);
+            if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3), out _, out sectorSize, out _, out _))
+            {
+                Debug.WriteLine("Unable to retrieve information for disk " + filename.Substring(0, 3) + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
+                sectorSize = 512;
+            }
+            return sectorSize;
         }
 
         /// Sets file size to the specified value.
