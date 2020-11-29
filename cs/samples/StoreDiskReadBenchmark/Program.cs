@@ -31,7 +31,7 @@ namespace StoreDiskReadBenchmark
         /// </summary>
         static void Main()
         {
-            var path = Path.GetTempPath() + "FasterKVDiskReadBenchmark\\";
+            var path = Path.GetTempPath() + "FasterKVDiskReadBenchmark/";
             if (Directory.Exists(path))
                 new DirectoryInfo(path).Delete(true);
 

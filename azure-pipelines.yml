@@ -64,8 +64,20 @@ jobs:
   - task: VSTest@2
     inputs:
       testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp*\*test.dll
+       **\$(BuildConfiguration)\netcoreapp2*\*test.dll
+       **\$(BuildConfiguration)\**\netcoreapp2*\*test.dll
+       !**\*Microsoft.VisualStudio.TestPlatform*
+       !**\obj\**
+       !**\*TestAdapter.dll
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2'
+
+  - task: VSTest@2
+    inputs:
+      testAssemblyVer2: |
+       **\$(BuildConfiguration)\netcoreapp3*\*test.dll
+       **\$(BuildConfiguration)\**\netcoreapp3*\*test.dll
        !**\*Microsoft.VisualStudio.TestPlatform*
        !**\obj\**
        !**\*TestAdapter.dll
@@ -169,7 +181,13 @@ jobs:
       msbuild /t:restore $(solution)
       msbuild /p:Configuration=Release $(solution)
     displayName: 'Build'
-    
+
+  - task: DotNetCoreCLI@2
+    inputs:
+      command: test
+      projects: '**/test/*.csproj'
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1'
+   
 # - job: 'cppBlobsWindows'
 #   pool:
 #     vmImage: vs2017-win2016

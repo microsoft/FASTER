@@ -33,13 +33,13 @@ namespace FASTER.test.recovery.objectstore
         {
             if (test_path == null)
             {
-                test_path = TestContext.CurrentContext.TestDirectory + "\\" + Path.GetRandomFileName();
+                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
                 if (!Directory.Exists(test_path))
                     Directory.CreateDirectory(test_path);
             }
 
-            log = Devices.CreateLogDevice(test_path + "\\ObjectRecoveryTests.log", false);
-            objlog = Devices.CreateLogDevice(test_path + "\\ObjectRecoveryTests.obj.log", false);
+            log = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.log", false);
+            objlog = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.obj.log", false);
 
             fht = new FasterKV<AdId, NumClicks>
                 (

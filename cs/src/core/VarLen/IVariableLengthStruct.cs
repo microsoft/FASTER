@@ -33,7 +33,7 @@ namespace FASTER.core
         /// <param name="source"></param>
         /// <param name="destination"></param>
         unsafe void Serialize(ref T source, void* destination)
-#if NETSTANDARD21
+#if NETSTANDARD2_1
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source))
 #endif
             ;
@@ -44,7 +44,7 @@ namespace FASTER.core
         /// <param name="source"></param>
         /// <returns></returns>
         unsafe ref T AsRef(void* source)
-#if NETSTANDARD21
+#if NETSTANDARD2_1
             => ref Unsafe.AsRef<T>(source)
 #endif
             ;
@@ -56,7 +56,7 @@ namespace FASTER.core
         /// <param name="end"></param>
         /// <returns></returns>
         unsafe void Initialize(void* source, void* end)
-#if NETSTANDARD21
+#if NETSTANDARD2_1
             { }
 #else
             ;

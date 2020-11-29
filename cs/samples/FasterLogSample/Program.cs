@@ -31,7 +31,7 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            var path = Path.GetTempPath() + "FasterLogSample\\";
+            var path = Path.GetTempPath() + "FasterLogSample/";
             IDevice device = Devices.CreateLogDevice(path + "hlog.log");
 
             // FasterLog will recover and resume if there is a previous commit found

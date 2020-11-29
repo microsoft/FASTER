@@ -409,8 +409,8 @@ namespace FASTER.benchmark
 
         private void LoadDataFromFile(string filePath)
         {
-            string init_filename = filePath + "\\load_" + distribution + "_250M_raw.dat";
-            string txn_filename = filePath + "\\run_" + distribution + "_250M_1000M_raw.dat";
+            string init_filename = filePath + "/load_" + distribution + "_250M_raw.dat";
+            string txn_filename = filePath + "/run_" + distribution + "_250M_1000M_raw.dat";
 
             long count = 0;
             using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read,

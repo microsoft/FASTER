@@ -18,7 +18,7 @@ namespace FASTER.test.recovery.objects
         [SetUp]
         public void Setup()
         {
-            FasterFolderPath = TestContext.CurrentContext.TestDirectory + "\\" + Path.GetRandomFileName();
+            FasterFolderPath = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
             if (!Directory.Exists(FasterFolderPath))
                 Directory.CreateDirectory(FasterFolderPath);
         }

@@ -16,7 +16,7 @@ namespace FASTER.test.recovery
         {
             seed = 123;
             var rand1 = new Random(seed);
-            device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
+            device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
@@ -89,8 +89,8 @@ namespace FASTER.test.recovery
             seed = 123;
             size = 1 << 16;
             numAdds = 1 << 18;
-            ht_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\TestFuzzyIndexRecoveryht.dat", deleteOnClose: true);
-            ofb_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\TestFuzzyIndexRecoveryofb.dat", deleteOnClose: true);
+            ht_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/TestFuzzyIndexRecoveryht.dat", deleteOnClose: true);
+            ofb_device = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/TestFuzzyIndexRecoveryofb.dat", deleteOnClose: true);
             hash_table1 = new FasterBase();
             hash_table1.Initialize(size, 512);
 
