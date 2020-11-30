@@ -59,7 +59,7 @@ namespace FASTER.core
                         // Need to be very careful here as threadCtx is changing
                         var _ctx = prev.phase == Phase.IN_PROGRESS ? ctx.prevCtx : ctx;
                         var tokens = faster._hybridLogCheckpoint.info.checkpointTokens;
-                        if (!faster.SameCycle(current) || tokens == null)
+                        if (!faster.SameCycle(ctx, current) || tokens == null)
                             return;
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
