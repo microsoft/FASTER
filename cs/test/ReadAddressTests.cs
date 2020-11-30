@@ -131,8 +131,8 @@ namespace FASTER.test.readaddress
 
             internal TestStore(bool useReadCache, bool copyReadsToTail, bool flush)
             {
-                this.testDir = $"{TestContext.CurrentContext.TestDirectory}\\{TestContext.CurrentContext.Test.Name}";
-                this.logDevice = Devices.CreateLogDevice($"{testDir}\\hlog.log");
+                this.testDir = $"{TestContext.CurrentContext.TestDirectory}/{TestContext.CurrentContext.Test.Name}";
+                this.logDevice = Devices.CreateLogDevice($"{testDir}/hlog.log");
                 this.flush = flush;
 
                 var logSettings = new LogSettings
@@ -149,7 +149,7 @@ namespace FASTER.test.readaddress
                 this.fkv = new FasterKV<Key, Value>(
                     size: 1L << 20,
                     logSettings: logSettings,
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = $"{this.testDir}\\CheckpointDir" },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = $"{this.testDir}/CheckpointDir" },
                     serializerSettings: null,
                     comparer: new Key.Comparer()
                     );
