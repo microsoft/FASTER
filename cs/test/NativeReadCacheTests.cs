@@ -24,7 +24,7 @@ namespace FASTER.test
         public void Setup()
         {
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "\\NativeReadCacheTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/NativeReadCacheTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (1L<<20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
         }

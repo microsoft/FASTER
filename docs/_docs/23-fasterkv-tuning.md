@@ -36,7 +36,8 @@ the device via `IDisposable`.
 of bits. You get the actual size of the page by a simple computation of two raised to the power of the number
 specified (2<sup>P</sup>). For example, when `PageSizeBits` P is set to 12, it represents pages of size 4KB 
 (since 2<sup>P</sup> = 2<sup>10</sup> = 4096 = 4KB). Generally you should not need to adjust page size from its
-default value of 25 (= 32MB).
+default value of 25 (= 32MB). You cannot use a page size smaller than the device sector size (512 bytes by 
+default), which translates to a `PageSizeBits` value of at least 9.
 
 * `MemorySizeBits`: This field (M) indicates the total size of memory used by the log. As before, for a setting
 of M, 2<sup>M</sup> is the number of bytes used totally by the log. Since each page is of size 2<sup>P</sup>, the 

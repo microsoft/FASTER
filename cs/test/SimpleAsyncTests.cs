@@ -28,7 +28,7 @@ namespace FASTER.test.async
                 inputArray[i].adId = i;
             }
 
-            path = TestContext.CurrentContext.TestDirectory + "\\SimpleAsyncTests\\";
+            path = TestContext.CurrentContext.TestDirectory + "/SimpleAsyncTests/";
             log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>

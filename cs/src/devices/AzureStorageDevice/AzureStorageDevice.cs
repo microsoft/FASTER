@@ -53,7 +53,7 @@ namespace FASTER.devices
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         public AzureStorageDevice(CloudBlobDirectory cloudBlobDirectory, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
-            : base($"{cloudBlobDirectory}\\{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
+            : base($"{cloudBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
             this.blobDirectory = cloudBlobDirectory;
@@ -83,7 +83,7 @@ namespace FASTER.devices
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
-            : base($"{connectionString}\\{containerName}\\{directoryName}\\{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
+            : base($"{connectionString}/{containerName}/{directoryName}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             var storageAccount = CloudStorageAccount.Parse(connectionString);
             var client = storageAccount.CreateCloudBlobClient();

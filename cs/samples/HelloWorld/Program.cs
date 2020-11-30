@@ -17,7 +17,7 @@ namespace HelloWorld
             // This is a simple in-memory sample of FASTER using value types
 
             // Create device for FASTER log
-            var path = Path.GetTempPath() + "HelloWorld\\";
+            var path = Path.GetTempPath() + "HelloWorld/";
             var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
 
             // Create store instance

@@ -19,7 +19,7 @@ namespace SecondaryReaderStore
         static void Main()
         {
             // Create files for storing data
-            var path = Path.GetTempPath() + "SecondaryReaderStore\\";
+            var path = Path.GetTempPath() + "SecondaryReaderStore/";
             if (Directory.Exists(path))
                 new DirectoryInfo(path).Delete(true);
 

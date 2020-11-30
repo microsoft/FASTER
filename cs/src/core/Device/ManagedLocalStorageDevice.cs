@@ -109,7 +109,7 @@ namespace FASTER.core
             logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
             Interlocked.Increment(ref numPending);
 
-#if NETSTANDARD21
+#if NETSTANDARD2_1
             var umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
             logReadHandle.ReadAsync(umm.Memory).AsTask()
 #else
@@ -121,16 +121,7 @@ namespace FASTER.core
                     Interlocked.Decrement(ref numPending);
 
                     uint errorCode = 0;
-                    if (!t.IsFaulted)
-                    {
-#if !NETSTANDARD21
-                        fixed (void* source = memory.buffer)
-                        {
-                            Buffer.MemoryCopy(source, (void*)destinationAddress, readLength, readLength);
-                        }
-#endif
-                    }
-                    else
+                    if (t.IsFaulted)
                     {
                         if (t.Exception.InnerException is IOException)
                         {
@@ -142,12 +133,9 @@ namespace FASTER.core
                             errorCode = uint.MaxValue;
                         }
                     }
-#if !NETSTANDARD21
-                    memory.Return();
-#endif
 
                     // Sequentialize all reads from same handle on non-windows
-#if DOTNETCORE
+#if NETSTANDARD
                     if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
                         if (offset >= 0) streampool?.Return(offset);
@@ -158,7 +146,7 @@ namespace FASTER.core
                 }
                 );
 
-#if DOTNETCORE
+#if NETSTANDARD
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 if (offset >= 0) streampool?.Return(offset);
 #else
@@ -194,7 +182,7 @@ namespace FASTER.core
             logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
             Interlocked.Increment(ref numPending);
 
-#if NETSTANDARD21
+#if NETSTANDARD2_1
             var umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
             logWriteHandle.WriteAsync(umm.Memory).AsTask()
 #else
@@ -222,12 +210,9 @@ namespace FASTER.core
                             errorCode = uint.MaxValue;
                         }
                     }
-#if !NETSTANDARD21
-                    memory.Return();
-#endif
 
                     // Sequentialize all writes to same handle on non-windows
-#if DOTNETCORE
+#if NETSTANDARD
                     if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
                         ((FileStream)logWriteHandle).Flush(true);
@@ -239,7 +224,7 @@ namespace FASTER.core
                 }
                 );
 
-#if DOTNETCORE
+#if NETSTANDARD
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 if (offset >= 0) streampool?.Return(offset);
 #else
@@ -296,7 +281,7 @@ namespace FASTER.core
 
         private static uint GetSectorSize(string filename)
         {
-#if DOTNETCORE
+#if NETSTANDARD
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 Debug.WriteLine("Assuming 512 byte sector alignment for disk with file " + filename);
