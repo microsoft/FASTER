@@ -75,7 +75,6 @@ namespace FASTER.core
             internal Output output;
             internal Context userContext;
 
-
             // Some additional information about the previous attempt
             internal long id;
             internal int version;
@@ -83,6 +82,42 @@ namespace FASTER.core
             internal long serialNum;
             internal HashBucketEntry entry;
             internal LatchOperation heldLatch;
+
+            internal byte operationFlags;
+            internal RecordInfo recordInfo;
+
+            internal const byte kSkipReadCache = 0x01;
+            internal const byte kNoKey = 0x02;
+            internal const byte kSkipCopyReadsToTail = 0x04;
+
+            internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
+            {
+                Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
+                byte flags = (byte)(readFlags & ReadFlags.SkipReadCache);
+                if (noKey) flags |= kNoKey;
+
+                // This is always set true for the Read overloads (Reads by address) that call this method.
+                flags |= kSkipCopyReadsToTail;
+                return flags;
+            }
+
+            internal bool NoKey
+            {
+                get => (operationFlags & kNoKey) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kNoKey) : (byte)(operationFlags & ~kNoKey);
+            }
+
+            internal bool SkipReadCache
+            {
+                get => (operationFlags & kSkipReadCache) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kSkipReadCache) : (byte)(operationFlags & ~kSkipReadCache);
+            }
+
+            internal bool SkipCopyReadsToTail
+            {
+                get => (operationFlags & kSkipCopyReadsToTail) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kSkipCopyReadsToTail) : (byte)(operationFlags & ~kSkipCopyReadsToTail);
+            }
 
             public void Dispose()
             {

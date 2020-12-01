@@ -1,5 +1,7 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
+
+#pragma warning disable 0162
 
 using System;
 using System.Collections.Generic;
@@ -19,11 +21,11 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
+    public sealed class AdvancedClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
 #if DEBUG
         , IClientSession<Key, Value, Input, Output, Context>
 #endif
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+        where Functions : IAdvancedFunctions<Key, Value, Input, Output, Context>
     {
         private readonly FasterKV<Key, Value> fht;
 
@@ -37,9 +39,9 @@ namespace FASTER.core
 
         internal readonly AsyncFasterSession FasterSession;
 
-        internal const string NotAsyncSessionErr = "Session does not support async operations";
+        internal const string NotAsyncSessionErr = ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int>>.NotAsyncSessionErr;
 
-        internal ClientSession(
+        internal AdvancedClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
@@ -236,14 +238,34 @@ namespace FASTER.core
             return (Read(ref key, ref input, ref output, userContext, serialNo), output);
         }
 
-#if DEBUG
-        internal const string AdvancedOnlyMethodErr = "This method is not available on non-Advanced ClientSessions";
-
-        /// <summary>This method is not available for non-Advanced ClientSessions, because ReadCompletionCallback does not have RecordInfo.</summary>
-        [Obsolete(AdvancedOnlyMethodErr)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0) 
-            => throw new FasterException(AdvancedOnlyMethodErr);
-#endif // DEBUG;
+        /// <summary>
+        /// Read operation that accepts a <paramref name="recordInfo"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
+        ///     and is updated with the record header for the found record (which contains previous address in the hash chain for this key; this can
+        ///     be used as <paramref name="recordInfo"/> in a subsequent call to iterate all records for <paramref name="key"/>).
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="recordInfo">On input contains the address to start at in its <see cref="RecordInfo.PreviousAddress"/>; if this is Constants.kInvalidAddress, the
+        ///     search starts with the key as in other forms of Read. On output, receives a copy of the record's header, which can be passed
+        ///     in a subsequent call, thereby enumerating all records in a key's hash chain.</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
+        {
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.ContextRead(ref key, ref input, ref output, ref recordInfo, readFlags, userContext, FasterSession, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
 
         /// <summary>
         /// Read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.
@@ -305,6 +327,7 @@ namespace FASTER.core
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
+
         /// <summary>
         /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
         /// </summary>
@@ -341,13 +364,30 @@ namespace FASTER.core
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
-#if DEBUG
-        /// <summary>For consistency with Read(.., ref RecordInfo, ...), this method is not available for non-Advanced ClientSessions.</summary>
-        [Obsolete(AdvancedOnlyMethodErr)]
-        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags = ReadFlags.None,
+        /// <summary>
+        /// Async read operation that accepts a <paramref name="startAddress"/> to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
+        ///     and returns the <see cref="RecordInfo"/> for the found record (which contains previous address in the hash chain for this key; this can
+        ///     be used as <paramref name="startAddress"/> in a subsequent call to iterate all records for <paramref name="key"/>).
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into output</param>
+        /// <param name="startAddress">Start at this address rather than the address in the hash table for <paramref name="key"/>"/></param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <param name="cancellationToken">Token to cancel the operation</param>
+        /// <returns>ReadAsyncResult - call <see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/>
+        ///     or <see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordInfo)"/> 
+        ///     on the return value to complete the read operation and obtain the result status, the output that is populated by the 
+        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags,
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-            => throw new FasterException(AdvancedOnlyMethodErr);
-#endif
+        {
+            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
+            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, startAddress, userContext, serialNo, cancellationToken, operationFlags);
+        }
 
         /// <summary>
         /// Async Read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.
@@ -363,7 +403,7 @@ namespace FASTER.core
         ///     on the return value to complete the read operation and obtain the result status, the output that is populated by the 
         ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ReadFlags readFlags = ReadFlags.None,
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ReadFlags readFlags,
                                                                                                           Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(SupportAsync, NotAsyncSessionErr);
@@ -514,15 +554,7 @@ namespace FASTER.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
         }
 
         /// <summary>
@@ -638,7 +670,7 @@ namespace FASTER.core
             token.ThrowIfCancellationRequested();
 
             // Complete all pending operations on session
-            await CompletePendingAsync(token: token);
+            await CompletePendingAsync();
 
             var task = fht.CheckpointTask;
             CommitPoint localCommitPoint = LatestCommitPoint;
@@ -655,48 +687,6 @@ namespace FASTER.core
                 if (localCommitPoint.UntilSerialNo >= ctx.serialNum && localCommitPoint.ExcludedSerialNos?.Count == 0)
                     break;
             }
-        }
-
-        /// <summary>
-        /// Compact the log until specified address using current session, moving active records to the tail of the log. 
-        /// </summary>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
-        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
-        /// ensures that records written to the tail during compaction are first made stable.</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact(long untilAddress, bool shiftBeginAddress)
-        {
-            return Compact(untilAddress, shiftBeginAddress, default(DefaultCompactionFunctions<Key, Value>));
-        }
-
-        /// <summary>
-        /// Compact the log until specified address using current session, moving active records to the tail of the log.
-        /// </summary>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
-        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
-        /// ensures that records written to the tail during compaction are first made stable.</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact<CompactionFunctions>(long untilAddress, bool shiftBeginAddress, CompactionFunctions compactionFunctions)
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            if (!SupportAsync)
-                throw new FasterException("Do not perform compaction using a threadAffinitized session");
-
-            VariableLengthStructSettings<Key, Value> vl = null;
-
-            if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                vl = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-            }
-
-            return fht.Log.Compact(this, functions, compactionFunctions, untilAddress, vl, shiftBeginAddress);
         }
 
         /// <summary>
@@ -727,9 +717,9 @@ namespace FASTER.core
         // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
         internal struct AsyncFasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            private readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+            private readonly AdvancedClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
 
-            public AsyncFasterSession(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+            public AsyncFasterSession(AdvancedClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
             {
                 _clientSession = clientSession;
             }
@@ -742,12 +732,12 @@ namespace FASTER.core
 
             public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
-                _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+                _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, address);
             }
 
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address)
             {
-                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst, address);
             }
 
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
@@ -755,7 +745,7 @@ namespace FASTER.core
 
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress)
             {
-                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, oldAddress, newAddress);
             }
 
             public void DeleteCompletionCallback(ref Key key, Context ctx)
@@ -775,17 +765,17 @@ namespace FASTER.core
 
             public void InitialUpdater(ref Key key, ref Input input, ref Value value, long address)
             {
-                _clientSession.functions.InitialUpdater(ref key, ref input, ref value);
+                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, address);
             }
 
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, long address)
             {
-                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, address);
             }
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
             {
-                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordInfo);
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)
@@ -795,12 +785,12 @@ namespace FASTER.core
 
             public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
-                _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst);
+                _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, address);
             }
 
             public void SingleWriter(ref Key key, ref Value src, ref Value dst, long address)
             {
-                _clientSession.functions.SingleWriter(ref key, ref src, ref dst);
+                _clientSession.functions.SingleWriter(ref key, ref src, ref dst, address);
             }
 
             public void UnsafeResumeThread()

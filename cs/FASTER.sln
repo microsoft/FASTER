@@ -55,6 +55,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AzureBackedStore", "samples
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SecondaryReaderStore", "samples\SecondaryReaderStore\SecondaryReaderStore.csproj", "{EBE313E5-22D2-4C74-BA1F-16B60404B335}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VersionedRead", "samples\ReadAddress\VersionedRead.csproj", "{33ED9E1B-1EF0-4984-A07A-7A26C205A446}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -215,6 +217,14 @@ Global
 		{EBE313E5-22D2-4C74-BA1F-16B60404B335}.Release|Any CPU.Build.0 = Release|x64
 		{EBE313E5-22D2-4C74-BA1F-16B60404B335}.Release|x64.ActiveCfg = Release|x64
 		{EBE313E5-22D2-4C74-BA1F-16B60404B335}.Release|x64.Build.0 = Release|x64
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Debug|x64.Build.0 = Debug|Any CPU
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Release|x64.ActiveCfg = Release|Any CPU
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -241,6 +251,7 @@ Global
 		{F6EA46D5-DD66-47F2-8FAC-370FDD733DD3} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{EBE313E5-22D2-4C74-BA1F-16B60404B335} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
+		{33ED9E1B-1EF0-4984-A07A-7A26C205A446} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}

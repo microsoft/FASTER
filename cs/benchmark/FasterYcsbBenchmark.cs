@@ -10,7 +10,6 @@ using FASTER.core;
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -254,6 +253,7 @@ namespace FASTER.benchmark
             var storeWasRecovered = false;
             if (this.backupMode.HasFlag(BackupMode.Restore) && kPeriodicCheckpointMilliseconds <= 0)
             {
+                Console.WriteLine("Recovering store for fast restart");
                 sw.Start();
                 try
                 {

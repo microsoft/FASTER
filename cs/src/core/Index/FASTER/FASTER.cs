@@ -13,6 +13,19 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// Flags for the Read-by-address methods
+    /// </summary>
+    [Flags]
+    public enum ReadFlags
+    {
+        /// <summary>Default read operation</summary>
+        None = 0,
+
+        /// <summary>Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete</summary>
+        SkipReadCache = 0x00000001,
+    }
+
     public partial class FasterKV<Key, Value> : FasterBase,
         IFasterKV<Key, Value>
     {
@@ -60,17 +73,22 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value> ReadCache { get; }
 
+        /// <summary>
+        /// An accessor to the record at a given logical address, for use in IFunctions callbacks.
+        /// </summary>
+        public RecordAccessor<Key, Value> RecordAccessor { get; }
+
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>
         /// Create FASTER instance
         /// </summary>
         /// <param name="size">Size of core index (#cache lines)</param>
-        /// <param name="comparer">FASTER equality comparer for key</param>
-        /// <param name="variableLengthStructSettings"></param>
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
+        /// <param name="comparer">FASTER equality comparer for key</param>
+        /// <param name="variableLengthStructSettings"></param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
@@ -96,6 +114,8 @@ namespace FASTER.core
                     this.comparer = FasterEqualityComparer.Get<Key>();
                 }
             }
+
+            this.RecordAccessor = new RecordAccessor<Key, Value>(this);
 
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
@@ -478,7 +498,60 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            var internalStatus = InternalRead(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            var internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+
+            Status status;
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                status = (Status)internalStatus;
+            }
+            else
+            {
+                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
+            }
+
+            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
+            sessionCtx.serialNum = serialNo;
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext<Input, Output, Context> sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            var pcontext = default(PendingContext<Input, Output, Context>);
+            pcontext.operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
+            var internalStatus = InternalRead(ref key, ref input, ref output, recordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+
+            Status status;
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                recordInfo = pcontext.recordInfo;
+                status = (Status)internalStatus;
+            }
+            else
+            {
+                recordInfo = default;
+                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
+            }
+
+            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
+            sessionCtx.serialNum = serialNo;
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(long address, ref Input input, ref Output output, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
+            FasterExecutionContext<Input, Output, Context> sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            var pcontext = default(PendingContext<Input, Output, Context>);
+            pcontext.operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(readFlags, noKey: true);
+            Key key = default;
+            var internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
 
             Status status;
