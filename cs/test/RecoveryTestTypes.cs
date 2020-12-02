@@ -64,7 +64,6 @@ namespace FASTER.test.recovery.sumstore
 
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions

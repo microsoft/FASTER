@@ -1986,6 +1986,28 @@ namespace FASTER.core
             }
         }
 
+        private void SkipReadCacheBucket(HashBucket* bucket)
+        {
+            for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+            {
+                HashBucketEntry* entry = (HashBucketEntry*)&bucket->bucket_entries[index];
+                if (0 == entry->word)
+                    continue;
+                
+                if (!entry->ReadCache) continue;
+                var logicalAddress = entry->Address;
+                var physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+
+                while (true)
+                {
+                    logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
+                    entry->Address = logicalAddress;
+                    if (!entry->ReadCache) break;
+                    physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+                }
+            }
+        }
+
         private void SkipAndInvalidateReadCache(ref long logicalAddress, ref Key key)
         {
             HashBucketEntry entry = default;

@@ -73,7 +73,7 @@ namespace FASTER.test
 
             InputStruct input = default;
 
-            for (int i = 0; i < 2000; i++)
+            for (int i = 0; i < 700; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
@@ -92,7 +92,7 @@ namespace FASTER.test
             }
 
 
-            for (int i = 0; i < 2000; i++)
+            for (int i = 0; i < 700; i++)
             {
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };

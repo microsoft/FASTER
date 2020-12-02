@@ -26,8 +26,6 @@ namespace FASTER.core
                     }
 
                     faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.startLogicalAddress);
-                    if (faster.UseReadCache && faster.ReadCache.BeginAddress != faster.ReadCache.TailAddress)
-                        throw new FasterException("Index checkpoint with read cache is not supported");
                     faster.TakeIndexFuzzyCheckpoint();
                     break;
 

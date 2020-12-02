@@ -16,7 +16,8 @@ namespace FASTER.core
     internal unsafe struct HashIndexPageAsyncFlushResult
     {
         public int chunkIndex;
-	}
+        public SectorAlignedMemory mem;
+    }
 
     internal unsafe struct HashIndexPageAsyncReadResult
     {
@@ -25,6 +26,7 @@ namespace FASTER.core
 
     internal struct OverflowPagesFlushAsyncResult
     {
+        public SectorAlignedMemory mem;
     }
 
     internal struct OverflowPagesReadAsyncResult
