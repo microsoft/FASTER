@@ -69,7 +69,12 @@ namespace FASTER.core
             long totalSize = state[version].size * sizeof(HashBucket);
 
             int numChunks = 1;
-            if (totalSize > uint.MaxValue)
+            if (useReadCache && (totalSize > (1L << 25)))
+            {
+                numChunks = (int)Math.Ceiling((double)totalSize / (1L << 25));
+                numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
+            }
+            else if (totalSize > uint.MaxValue)
             {
                 numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
                 numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
@@ -83,12 +88,12 @@ namespace FASTER.core
             numBytesWritten = 0;
             for (int index = 0; index < numChunks; index++)
             {
-                long chunkStartBucket = (long)start + (index * chunkSize);
+                IntPtr chunkStartBucket = (IntPtr)((byte*)start + (index * chunkSize));
                 HashIndexPageAsyncFlushResult result = default;
                 result.chunkIndex = index;
                 if (!useReadCache)
                 {
-                    device.WriteAsync((IntPtr)chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                    device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                 }
                 else
                 {
