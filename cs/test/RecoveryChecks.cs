@@ -69,11 +69,10 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s1.Read(ref key, ref output);
-                    if (status == Status.PENDING)
-                        s1.CompletePending(true);
-                    else
+                    if (status != Status.PENDING)
                         Assert.IsTrue(status == Status.OK && output == key);
                 }
+                s1.CompletePending(true);
             }
 
             var task = fht1.TakeFullCheckpointAsync(checkpointType);
@@ -104,11 +103,10 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (status == Status.PENDING)
-                    s2.CompletePending(true);
-                else
+                if (status != Status.PENDING)
                     Assert.IsTrue(status == Status.OK && output == key);
             }
+            s2.CompletePending(true);
         }
 
         [Test]
@@ -142,11 +140,10 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status == Status.PENDING)
-                            s1.CompletePending(true);
-                        else
+                        if (status != Status.PENDING)
                             Assert.IsTrue(status == Status.OK && output == key);
                     }
+                    s1.CompletePending(true);
                 }
 
                 var task = fht1.TakeHybridLogCheckpointAsync(checkpointType);
@@ -171,11 +168,10 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status == Status.PENDING)
-                        s2.CompletePending(true);
-                    else
+                    if (status != Status.PENDING)
                         Assert.IsTrue(status == Status.OK && output == key);
                 }
+                s2.CompletePending(true);
             }
         }
 
@@ -210,11 +206,10 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status == Status.PENDING)
-                            s1.CompletePending(true);
-                        else
+                        if (status != Status.PENDING)
                             Assert.IsTrue(status == Status.OK && output == key);
                     }
+                    s1.CompletePending(true);
                 }
 
                 var task = fht1.TakeFullCheckpointAsync(checkpointType);
@@ -239,11 +234,10 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status == Status.PENDING)
-                        s2.CompletePending(true);
-                    else
+                    if (status != Status.PENDING)
                         Assert.IsTrue(status == Status.OK && output == key);
                 }
+                s2.CompletePending(true);
             }
         }
 
@@ -278,11 +272,10 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status == Status.PENDING)
-                            s1.CompletePending(true);
-                        else
+                        if (status != Status.PENDING)
                             Assert.IsTrue(status == Status.OK && output == key);
                     }
+                    s1.CompletePending(true);
                 }
 
                 if (i == 0)
@@ -310,11 +303,10 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status == Status.PENDING)
-                        s2.CompletePending(true);
-                    else
+                    if (status != Status.PENDING)
                         Assert.IsTrue(status == Status.OK && output == key);
                 }
+                s2.CompletePending(true);
             }
         }
     }
