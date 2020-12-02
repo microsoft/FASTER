@@ -451,17 +451,6 @@ namespace FASTER.core
         #region Checkpoint
 
         /// <summary>
-        /// Public facing persistence API
-        /// </summary>
-        /// <param name="device"></param>
-        /// <param name="start_offset"></param>
-        /// <param name="numBytes"></param>
-        public void TakeCheckpoint(IDevice device, ulong start_offset, out ulong numBytes)
-        {
-            BeginCheckpoint(device, start_offset, out numBytes);
-        }
-
-        /// <summary>
         /// Is checkpoint complete
         /// </summary>
         /// <returns></returns>
@@ -481,7 +470,25 @@ namespace FASTER.core
             s.Release();
         }
 
-        internal unsafe void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
+        /// <summary>
+        /// Public facing persistence API
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="offset"></param>
+        /// <param name="numBytesWritten"></param>
+        public void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten)
+            => BeginCheckpoint(device, offset, out numBytesWritten, false, default, default);
+
+        /// <summary>
+        /// Internal persistence API
+        /// </summary>
+        /// <param name="device"></param>
+        /// <param name="offset"></param>
+        /// <param name="numBytesWritten"></param>
+        /// <param name="useReadCache"></param>
+        /// <param name="skipReadCache"></param>
+        /// <param name="epoch"></param>
+        internal unsafe void BeginCheckpoint(IDevice device, ulong offset, out ulong numBytesWritten, bool useReadCache, SkipReadCache skipReadCache, LightEpoch epoch)
         {
             int localCount = count;
             int recordsCountInLastLevel = localCount & PageSizeMask;
@@ -492,15 +499,40 @@ namespace FASTER.core
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
-
             int sectorSize = (int)device.SectorSize;
             numBytesWritten = 0;
             for (int i = 0; i < numLevels; i++)
             {
                 OverflowPagesFlushAsyncResult result = default;
+                
                 uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
 
-                device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                if (!useReadCache)
+                {
+                    device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                }
+                else
+                {
+                    result.mem = new SectorAlignedMemory((int)writeSize, (int)device.SectorSize);
+                    bool prot = false;
+                    if (!epoch.ThisInstanceProtected())
+                    {
+                        prot = true;
+                        epoch.Resume();
+                    }
+
+                    Buffer.MemoryCopy((void*)pointers[i], result.mem.aligned_pointer, writeSize, writeSize);
+                    int j = 0;
+                    if (i == 0) j += kAllocateChunkSize*RecordSize;
+                    for (; j < writeSize; j += sizeof(HashBucket))
+                    {
+                        skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
+                    }
+                    
+                    if (prot) epoch.Suspend();
+
+                    device.WriteAsync((IntPtr)result.mem.aligned_pointer, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                }
                 numBytesWritten += writeSize;
             }
         }
@@ -509,8 +541,11 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                System.Diagnostics.Trace.TraceError("AsyncFlushCallback error: {0}", errorCode);
+                Trace.TraceError("AsyncFlushCallback error: {0}", errorCode);
             }
+
+            var mem = ((OverflowPagesFlushAsyncResult)context).mem;
+            mem?.Dispose();
 
             if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
             {
