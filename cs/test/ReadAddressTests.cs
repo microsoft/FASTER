@@ -170,7 +170,6 @@ namespace FASTER.test.readaddress
                 var functions = new Functions();
                 using var session = this.fkv.For(functions).NewSession<Functions>();
                 var context = new Context();
-                Console.WriteLine($"Writing {numKeys} keys to FASTER", numKeys);
 
                 var prevLap = 0;
                 for (int ii = 0; ii < numKeys; ii++)

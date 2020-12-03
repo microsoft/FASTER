@@ -87,6 +87,13 @@ namespace FASTER.core
                                       IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null)
                 : base(filename, GetSectorSize(filename), capacity)
         {
+#if NETSTANDARD
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
+            }
+#endif
+
             if (UsePrivileges && preallocateFile)
                 Native32.EnableProcessPrivileges();
 

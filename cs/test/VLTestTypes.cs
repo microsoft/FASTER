@@ -138,7 +138,6 @@ namespace FASTER.test
 
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions
@@ -210,7 +209,6 @@ namespace FASTER.test
 
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
         {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
         // Read functions

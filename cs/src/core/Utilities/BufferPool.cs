@@ -54,6 +54,36 @@ namespace FASTER.core
         internal SectorAlignedBufferPool pool;
 
         /// <summary>
+        /// Default constructor
+        /// </summary>
+        public SectorAlignedMemory() { }
+
+        /// <summary>
+        /// Create new instance of SectorAlignedMemory
+        /// </summary>
+        /// <param name="numRecords"></param>
+        /// <param name="sectorSize"></param>
+        public SectorAlignedMemory(int numRecords, int sectorSize)
+        {
+            int recordSize = 1;
+            int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+
+            buffer = new byte[requiredSize];
+            handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            aligned_pointer = (byte*)(((long)handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~(sectorSize - 1));
+            offset = (int)((long)aligned_pointer - (long)handle.AddrOfPinnedObject());
+        }
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            handle.Free();
+            buffer = null;
+        }
+
+        /// <summary>
         /// Return
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
