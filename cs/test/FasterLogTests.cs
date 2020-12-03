@@ -196,7 +196,11 @@ namespace FASTER.test
                     }
                     Assert.IsFalse(waitingReader.IsCompleted);
 
-                    await log.CommitAsync();
+                    // Default is cancellationToken, but actually pass it through just to double check that it truly is using it
+                    // Just an extra aspect of this test
+                    CancellationToken cancellationToken;
+
+                    await log.CommitAsync(cancellationToken);
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
@@ -414,6 +418,66 @@ namespace FASTER.test
             }
             log.Dispose();
         }
+
+
+        [Test]
+        public async ValueTask FasterLogTest7_CommitFalse([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
+            // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
+            // to make sure it isn't crashing and that it does actually commit it
+            log.Commit(false);
+
+            // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
+            var endAddress = IsAsync(iteratorType) ? log.TailAddress : long.MaxValue;
+            using (var iter = log.Scan(0, endAddress))
+            {
+                var counter = new Counter(log);
+                switch (iteratorType)
+                {
+                    case IteratorType.AsyncByteVector:
+                        await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                        {
+                            Assert.IsTrue(result.SequenceEqual(entry));
+                            counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                        }
+                        break;
+                    case IteratorType.AsyncMemoryOwner:
+                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                        {
+                            Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
+                            result.Dispose();
+                            counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                        }
+                        break;
+                    case IteratorType.Sync:
+                        while (iter.GetNext(out byte[] result, out _, out _))
+                        {
+                            Assert.IsTrue(result.SequenceEqual(entry));
+                            counter.IncrementAndMaybeTruncateUntil(iter.NextAddress);
+                        }
+                        break;
+                    default:
+                        Assert.Fail("Unknown IteratorType");
+                        break;
+                }
+                Assert.IsTrue(counter.count == numEntries);
+            }
+
+            log.Dispose();
+        }
+
 
         private static void DeleteDirectory(string path)
         {
