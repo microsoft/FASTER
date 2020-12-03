@@ -42,6 +42,7 @@ namespace FASTER.client
         /// <typeparam name="ParameterSerializer"></typeparam>
         /// <param name="functions">Local callback functions</param>
         /// <param name="serializer">Parameter serializer</param>
+        /// <param name="maxSizeSettings"></param>
         /// <returns></returns>
         public ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> NewSession<Input, Output, Context, Functions, ParameterSerializer>(Functions functions, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
@@ -87,6 +88,7 @@ namespace FASTER.client
         /// </summary>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
+        /// <typeparam name="Functions"></typeparam>
         /// <returns></returns>
         public static ClientSession<Key, Value, Value, Value, byte, Functions, BlittableParameterSerializer<Key, Value, Value, Value>> NewSession<Key, Value, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
             where Key : unmanaged
@@ -102,6 +104,8 @@ namespace FASTER.client
         /// </summary>
         /// <typeparam name="Key"></typeparam>
         /// <typeparam name="Value"></typeparam>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
         /// <returns></returns>
         public static ClientSession<Key, Value, Input, Output, byte, Functions, BlittableParameterSerializer<Key, Value, Input, Output>> NewSession<Key, Value, Input, Output, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
             where Key : unmanaged

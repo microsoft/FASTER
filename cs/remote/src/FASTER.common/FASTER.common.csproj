@@ -1,9 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
 	<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	<Platforms>AnyCPU;x64</Platforms>
+	<SignAssembly>true</SignAssembly>
+	<AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
+	<DelaySign>false</DelaySign>
+	<DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

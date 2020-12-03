@@ -117,9 +117,9 @@ namespace FASTER.client
         }
 
         int lastSeqNo = -1;
-        Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext =
+        readonly Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext =
             new Dictionary<int, (Key, Input, Output, Context)>();
-        Dictionary<int, TaskCompletionSource<(Status, Output)>> readRmwPendingTcs =
+        readonly Dictionary<int, TaskCompletionSource<(Status, Output)>> readRmwPendingTcs =
             new Dictionary<int, TaskCompletionSource<(Status, Output)>>();
 
         internal void ProcessReplies(byte[] buf, int offset)
@@ -255,7 +255,12 @@ namespace FASTER.client
                 case MessageType.Read:
                     {
                         var status = hrw.ReadStatus(ref src);
+#if NETSTANDARD2_1
                         readRmwPendingContext.Remove(p, out var result);
+#else
+                        readRmwPendingContext.TryGetValue(p, out var result);
+                        readRmwPendingContext.Remove(p);
+#endif
                         if (status == Status.OK)
                         {
                             result.Item3 = serializer.ReadOutput(ref src);
@@ -268,7 +273,13 @@ namespace FASTER.client
                 case MessageType.ReadAsync:
                     {
                         var status = hrw.ReadStatus(ref src);
+#if NETSTANDARD2_1
                         readRmwPendingTcs.Remove(p, out var result);
+#else
+                        readRmwPendingTcs.TryGetValue(p, out var result);
+                        readRmwPendingTcs.Remove(p);
+#endif
+
                         if (status == Status.OK)
                             result.SetResult((status, serializer.ReadOutput(ref src)));
                         else
@@ -278,14 +289,24 @@ namespace FASTER.client
                 case MessageType.RMW:
                     {
                         var status = hrw.ReadStatus(ref src);
+#if NETSTANDARD2_1
                         readRmwPendingContext.Remove(p, out var result);
+#else
+                        readRmwPendingContext.TryGetValue(p, out var result);
+                        readRmwPendingContext.Remove(p);
+#endif
                         functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, result.Item4, status);
                         break;
                     }
                 case MessageType.RMWAsync:
                     {
                         var status = hrw.ReadStatus(ref src);
+#if NETSTANDARD2_1
                         readRmwPendingTcs.Remove(p, out var result);
+#else
+                        readRmwPendingTcs.TryGetValue(p, out var result);
+                        readRmwPendingTcs.Remove(p);
+#endif
                         result.SetResult((status, default));
                         break;
                     }
