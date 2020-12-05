@@ -107,7 +107,7 @@ a fixed region (first 100MB) of the log follows:
 Scan using `IAsyncEnumerable`:
 
 ```cs
-using (iter = log.Scan(log.BeginAddress, 100_000_000))
+using (var iter = log.Scan(log.BeginAddress, 100_000_000))
     await foreach ((byte[] result, int length, long currentAddress, long nextAddress) in iter.GetAsyncEnumerable())
     {
        // Process record
