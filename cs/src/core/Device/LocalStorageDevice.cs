@@ -17,6 +17,13 @@ namespace FASTER.core
     /// </summary>
     public unsafe class LocalStorageDevice : StorageDeviceBase
     {
+        /// <summary>
+        /// Whether we use process and volume privilege calls to set file size in Windows.
+        /// Speeds up disk writes, but may have scalability issues on cloud VMs if many devices
+        /// are concurrently created.
+        /// </summary>
+        public static bool UsePrivileges = true;
+
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
         private readonly bool disableFileBuffering;
@@ -80,7 +87,16 @@ namespace FASTER.core
                                       IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null)
                 : base(filename, GetSectorSize(filename), capacity)
         {
-            Native32.EnableProcessPrivileges();
+#if NETSTANDARD
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
+            }
+#endif
+
+            if (UsePrivileges && preallocateFile)
+                Native32.EnableProcessPrivileges();
+
             string path = new FileInfo(filename).Directory.FullName;
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
@@ -136,10 +152,10 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public override void ReadAsync(int segmentId, ulong sourceAddress, 
-                                     IntPtr destinationAddress, 
-                                     uint readLength, 
-                                     DeviceIOCompletionCallback callback, 
+        public override void ReadAsync(int segmentId, ulong sourceAddress,
+                                     IntPtr destinationAddress,
+                                     uint readLength,
+                                     DeviceIOCompletionCallback callback,
                                      object context)
         {
             if (!results.TryDequeue(out SimpleAsyncResult result))
@@ -200,11 +216,11 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public override unsafe void WriteAsync(IntPtr sourceAddress, 
+        public override unsafe void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
-                                      ulong destinationAddress, 
-                                      uint numBytesToWrite, 
-                                      DeviceIOCompletionCallback callback, 
+                                      ulong destinationAddress,
+                                      uint numBytesToWrite,
+                                      DeviceIOCompletionCallback callback,
                                       object context)
         {
             HandleCapacity(segmentId);
@@ -422,7 +438,7 @@ namespace FASTER.core
             if (size <= 0)
                 return false;
 
-            if (Native32.EnableVolumePrivileges(filename, logHandle))
+            if (UsePrivileges && Native32.EnableVolumePrivileges(filename, logHandle))
             {
                 return Native32.SetFileSize(logHandle, size);
             }

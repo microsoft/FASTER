@@ -54,6 +54,36 @@ namespace FASTER.core
         internal SectorAlignedBufferPool pool;
 
         /// <summary>
+        /// Default constructor
+        /// </summary>
+        public SectorAlignedMemory() { }
+
+        /// <summary>
+        /// Create new instance of SectorAlignedMemory
+        /// </summary>
+        /// <param name="numRecords"></param>
+        /// <param name="sectorSize"></param>
+        public SectorAlignedMemory(int numRecords, int sectorSize)
+        {
+            int recordSize = 1;
+            int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+
+            buffer = new byte[requiredSize];
+            handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            aligned_pointer = (byte*)(((long)handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~(sectorSize - 1));
+            offset = (int)((long)aligned_pointer - (long)handle.AddrOfPinnedObject());
+        }
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            handle.Free();
+            buffer = null;
+        }
+
+        /// <summary>
         /// Return
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -103,8 +133,8 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="recordSize">Record size</param>
-        /// <param name="sectorSize">Sector size</param>
+        /// <param name="recordSize">Record size. May be 1 if allocations of different lengths will be made</param>
+        /// <param name="sectorSize">Sector size, e.g. from log device</param>
         public SectorAlignedBufferPool(int recordSize, int sectorSize)
         {
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];

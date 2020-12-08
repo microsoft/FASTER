@@ -327,12 +327,12 @@ namespace FASTER.core
                 _fasterKV._functions.CheckpointCompletionCallback(guid, commitPoint);
             }
 
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
                 _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
             }
 
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address)
             {
                 return _fasterKV._functions.ConcurrentWriter(ref key, ref src, ref dst);
             }
@@ -340,7 +340,7 @@ namespace FASTER.core
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
                 => _fasterKV._functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress)
             {
                 _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
             }
@@ -360,17 +360,17 @@ namespace FASTER.core
                 return _fasterKV._variableLengthStructForInput.GetLength(ref t, ref input);
             }
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, long address)
             {
                 _fasterKV._functions.InitialUpdater(ref key, ref input, ref value);
             }
 
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, long address)
             {
                 return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value);
             }
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
             {
                 _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
@@ -380,12 +380,12 @@ namespace FASTER.core
                 _fasterKV._functions.RMWCompletionCallback(ref key, ref input, ctx, status);
             }
 
-            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
                 _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst);
             }
 
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst, long address)
             {
                 _fasterKV._functions.SingleWriter(ref key, ref src, ref dst);
             }

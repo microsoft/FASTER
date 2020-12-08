@@ -1480,7 +1480,8 @@ namespace FASTER.core
                     // We have the complete record.
                     if (RetrievedFullRecord(record, ref ctx))
                     {
-                        if (comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
+                        // ReadAtAddress does not have a request key, so it is an implicit match.
+                        if (ctx.request_key is null || comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
                         {
                             // The keys are same, so I/O is complete
                             // ctx.record = result.record;

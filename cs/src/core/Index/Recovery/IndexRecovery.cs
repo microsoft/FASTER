@@ -114,10 +114,10 @@ namespace FASTER.core
             ulong numBytesRead = 0;
             for (int index = 0; index < numChunks; index++)
             {
-                long chunkStartBucket = (long)start + (index * chunkSize);
+                IntPtr chunkStartBucket = (IntPtr)(((byte*)start) + (index * chunkSize));
                 HashIndexPageAsyncReadResult result = default;
                 result.chunkIndex = index;
-                device.ReadAsync(numBytesRead, (IntPtr)chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
+                device.ReadAsync(numBytesRead, chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
                 numBytesRead += chunkSize;
             }
             Debug.Assert(numBytesRead == num_bytes);

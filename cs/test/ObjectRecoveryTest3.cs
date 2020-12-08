@@ -35,7 +35,7 @@ namespace FASTER.test.recovery.objects
         [Test]
         public async ValueTask ObjectRecoveryTest3(
             [Values]CheckpointType checkpointType,
-            [Values(2000)] int iterations,
+            [Values(1000)] int iterations,
             [Values]bool isAsync)
         {
             this.iterations = iterations;
