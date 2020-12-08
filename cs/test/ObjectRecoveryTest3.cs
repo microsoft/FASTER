@@ -29,30 +29,8 @@ namespace FASTER.test.recovery.objects
         [TearDown]
         public void TearDown()
         {
-            DeleteDirectory(FasterFolderPath);
+            Directory.Delete(FasterFolderPath, true);
         }
-
-        public static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                Directory.Delete(path, true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Directory.Delete(path, true);
-            }
-        }
-
 
         [Test]
         public async ValueTask ObjectRecoveryTest3(

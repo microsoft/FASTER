@@ -184,7 +184,7 @@ namespace FASTER.core
                 results.Enqueue(result);
             }
             catch
-            {
+             {
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);
@@ -306,6 +306,13 @@ namespace FASTER.core
             uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
             uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
             uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
+
+            if (String.IsNullOrEmpty(fileName))
+            {
+                fileAccess = Native32.GENERIC_READ;
+                //fileShare = unchecked(((uint)FileShare.Read & ~(uint)FileShare.Inheritable));
+                fileCreation = unchecked((uint)FileMode.Open);
+            }
 
             if (disableFileBuffering)
             {

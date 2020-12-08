@@ -483,7 +483,7 @@ namespace FASTER.core
 
                 if (currentAddress < _headAddress)
                 {
-                    if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress))
+                     if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress))
                         continue;
                     physicalAddress = frame.GetPhysicalAddress(_currentFrame, _currentOffset);
                 }

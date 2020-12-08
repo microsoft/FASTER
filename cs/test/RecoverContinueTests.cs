@@ -66,27 +66,6 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             Directory.Delete(TestContext.CurrentContext.TestDirectory + "/checkpoints3", true);
         }
 
-        public static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                Directory.Delete(path, true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Directory.Delete(path, true);
-            }
-        }
-
         [Test]
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {

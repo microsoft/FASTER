@@ -36,28 +36,7 @@ namespace FASTER.test.largeobjects
         [TearDown]
         public void TearDown()
         {
-            DeleteDirectory(test_path);
-        }
-
-        public static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                Directory.Delete(path, true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Directory.Delete(path, true);
-            }
+            Directory.Delete(test_path, true);
         }
 
         [TestCase(CheckpointType.FoldOver)]
