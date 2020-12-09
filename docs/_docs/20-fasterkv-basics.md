@@ -2,7 +2,7 @@
 title: "FasterKV Basics"
 permalink: /docs/fasterkv-basics/
 excerpt: "FasterKV Basics"
-last_modified_at: 2020-11-07
+last_modified_at: 2020-12-08
 toc: true
 ---
 
@@ -71,46 +71,54 @@ The total in-memory footprint of FASTER is controlled by the following parameter
 words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value 
 objects, this size only includes the 8-byte reference to the object. The older part of the log is spilled to storage.
 
-Read more about managing memory in FASTER [here](../tuning).
+Read more about managing memory in FASTER in the [tuning](./23-fasterkv-tuning) guide.
 
 ### Callback Functions
 
-The user provides an instance of a type that implements `IFunctions<Key, Value, Input, Output, Context>`, or its corresponding 
-abstract base class `<Key, Value, Input, Output, Context>`. Apart from Key and Value, functions use three new types:
-1. `Input`: This is the type of input provided to FASTER when calling Read or RMW. It may be regarded as a parameter for the 
-Read or RMW operation. For example, with RMW, it may be the delta being accumulated into the value.
+#### IFunctions
+
+For session operations, the user provides an instance of a type that implements `IFunctions<Key, Value, Input, Output, Context>`, or one of its corresponding abstract base classes (see [FunctionsBase.cs](../../cs/src/core/Index/Interfaces/FunctionsBase.cs)):
+- `FunctionsBase<Key, Value, Input, Output, Context>`
+- `SimpleFunctions<Key, Value, Context>`, a subclass of `FunctionsBase<Key, Value, Input, Output, Context>` that uses Value for the Input and Output types.
+- `SimpleFunctions<Key, Value>`, a subclass of `SimpleFunctions<Key, Value, Context>` that uses the `Empty` struct for Context.
+
+Apart from Key and Value, the IFunctions interface is defined on three additional types:
+1. `Input`: This is the type of input provided to FASTER when calling Read or RMW. It may be regarded as a parameter for the Read or RMW operation. For example, with RMW, it may be the delta being accumulated into the value.
 2. `Output`: This is the type of the output of a Read operation. The reader copies the relevant parts of the Value to Output.
 3. `Context`: User-defined context for the operation. Use `Empty` if there is no context necesssary.
 
+`IFunctions<>` encapsulates all callbacks made by FASTER back to the caller, which are described next:
 
-`IFunctions<>` encapsulates all callbacks made by FASTER back to the caller, and are described next:
+1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume that there are no concurrent operations on the record.
+2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Concurrent writer can assume that there are no concurrent operations on the record.
+3. Completion callbacks: Called by FASTER when various operations complete after they have gone "pending" due to requiring IO.
+4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
 
-1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can 
-assume that there are no concurrent operations on the record.
-2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Concurrent writer can 
-assume that there are no concurrent operations on the record.
-3. Completion callbacks: Called by FASTER when various operations complete.
-4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, 
-they are used to implement the RMW operation.
+#### IAdvancedFunctions
 
+`IAdvancedFunctions` is a superset of `IFunctions` and provides the same methods with some additional parameters:
+- ReadCompletionCallback receives the `RecordInfo` of the record that was read.
+- Other callbacks receive the logical address of the record, which can be useful for applications such as indexing.
+
+`IAdvancedFunctions` is a separate interface; it does not inherit from `IFunctions`.
+
+As with `IFunctions`, [FunctionsBase.cs](../../cs/src/core/Index/Interfaces/FunctionsBase.cs) defines abstract base classes to provide a default implementation of `IAdvancedFunctions`, using the same names prefixed with `Advanced`.
 
 ### Sessions
 
-Once FASTER is instantiated, one issues operations to FASTER by creating logical sessions. A session represents a "mono-threaded" sequence 
-of operations issued to FASTER. There is no concurrency within a session, but different sessions may execute concurrently. Sessions do not
-need to be affinitized to threads, but if they are, FASTER can leverage the same (covered later). You create a session as follows:
+Once FASTER is instantiated, one issues operations to FASTER by creating logical sessions. A session represents a "mono-threaded" sequence of operations issued to FASTER. There is no concurrency within a session, but different sessions may execute concurrently. Sessions do not need to be affinitized to threads, but if they are, FASTER can leverage the same (covered later). You create a session as follows:
 
 ```var session = store.NewSession(new Functions());```
 
-An equivalent, but more optimized API requires you to specify the Functions type a second time (it allows us to avoid accessing the 
-session via an interface call):
+An equivalent, but more optimized API requires you to specify the Functions type a second time (it allows us to avoid accessing the session via an interface call):
 
 ```cs
 var session = store.For(new Functions()).NewSession<Functions>();
 ```
 
-You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports sync and async versions of 
-operations. The operations are described below.
+As with the `IFunctions` and `IAdvancedFunctions` interfaces, there are separate, non-inheriting session classes that provide identical methods: `ClientSession` is returned by `NewSession` for a `Functions` class that implements `IFunctions`, and `AdvancedClientSession` is returned by `NewSession` for a `Functions` class that implements `IAdvancedFunctions`.
+
+You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports sync and async versions of operations. The basic forms of these operations are described below; additional overloads are available.
 
 #### Read
 
