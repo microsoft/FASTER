@@ -71,13 +71,13 @@ The total in-memory footprint of FASTER is controlled by the following parameter
 words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value 
 objects, this size only includes the 8-byte reference to the object. The older part of the log is spilled to storage.
 
-Read more about managing memory in FASTER in the [tuning](./23-fasterkv-tuning) guide.
+Read more about managing memory in FASTER in the [tuning](/FASTER/docs/fasterkv-tuning) guide.
 
 ### Callback Functions
 
 #### IFunctions
 
-For session operations, the user provides an instance of a type that implements `IFunctions<Key, Value, Input, Output, Context>`, or one of its corresponding abstract base classes (see [FunctionsBase.cs](../../cs/src/core/Index/Interfaces/FunctionsBase.cs)):
+For session operations, the user provides an instance of a type that implements `IFunctions<Key, Value, Input, Output, Context>`, or one of its corresponding abstract base classes (see [FunctionsBase.cs](https://github.com/microsoft/FASTER/blob/master/cs/src/core/Index/Interfaces/FunctionsBase.cs)):
 - `FunctionsBase<Key, Value, Input, Output, Context>`
 - `SimpleFunctions<Key, Value, Context>`, a subclass of `FunctionsBase<Key, Value, Input, Output, Context>` that uses Value for the Input and Output types.
 - `SimpleFunctions<Key, Value>`, a subclass of `SimpleFunctions<Key, Value, Context>` that uses the `Empty` struct for Context.
@@ -102,7 +102,7 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 
 `IAdvancedFunctions` is a separate interface; it does not inherit from `IFunctions`.
 
-As with `IFunctions`, [FunctionsBase.cs](../../cs/src/core/Index/Interfaces/FunctionsBase.cs) defines abstract base classes to provide a default implementation of `IAdvancedFunctions`, using the same names prefixed with `Advanced`.
+As with `IFunctions`, [FunctionsBase.cs](https://github.com/microsoft/FASTER/blob/master/cs/src/core/Index/Interfaces/FunctionsBase.cs) defines abstract base classes to provide a default implementation of `IAdvancedFunctions`, using the same names prefixed with `Advanced`.
 
 ### Sessions
 
