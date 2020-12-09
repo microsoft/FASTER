@@ -323,13 +323,6 @@ namespace FASTER.core
             uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
             uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;
 
-            if (String.IsNullOrEmpty(fileName))
-            {
-                fileAccess = Native32.GENERIC_READ;
-                //fileShare = unchecked(((uint)FileShare.Read & ~(uint)FileShare.Inheritable));
-                fileCreation = unchecked((uint)FileMode.Open);
-            }
-
             if (disableFileBuffering)
             {
                 fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
