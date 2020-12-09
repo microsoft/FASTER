@@ -1,15 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
+using System.Text;
 
+
+//** Note - this test is based on FasterLogPubSub sample found in the 
 
 namespace FASTER.test
 {
@@ -17,17 +17,14 @@ namespace FASTER.test
     [TestFixture]
     internal class BasicRecoverReadOnly
     {
-        //private FasterLog log;
-       // private IDevice device;
-        private FasterLog logReadOnly;
-        private IDevice deviceReadOnly;
         private FasterLog log;
         private IDevice device;
+        private FasterLog logReadOnly;
+        private IDevice deviceReadOnly;
 
         private static string path = Path.GetTempPath() + "BasicRecoverReadOnly/";
         const int commitPeriodMs = 2000;
         const int restorePeriodMs = 1000;
-
 
         [SetUp]
         public void Setup()
@@ -40,14 +37,9 @@ namespace FASTER.test
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "Recover", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
-//            var device = Devices.CreateLogDevice(path + "mylog");
-  //          var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
+            deviceReadOnly = Devices.CreateLogDevice(path + "RecoverReadOnly");
+            logReadOnly = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
 
-
-
-            // Run consumer on SEPARATE read-only FasterLog instance - need this for recovery
-            //deviceReadOnly = Devices.CreateLogDevice(path + "ReadOnly", deleteOnClose: true);
-            //logReadOnly = new FasterLog(new FasterLogSettings { LogDevice = deviceReadOnly, ReadOnlyMode = true });
         }
 
         [TearDown]
@@ -63,7 +55,7 @@ namespace FASTER.test
 
 
         [Test]
-        public async ValueTask RecoverReadOnlyBasicTest()
+        public void RecoverReadOnlyBasicTest()
         {
 
             using var cts = new CancellationTokenSource();
@@ -74,32 +66,18 @@ namespace FASTER.test
             // Run consumer on SEPARATE read-only FasterLog instance
             var consumer = SeparateConsumerAsync(cts.Token);
 
-//            Console.CancelKeyPress += (o, eventArgs) =>
-  //          {
-                Console.WriteLine("Cancelling program...");
-      //          eventArgs.Cancel = true;
-                //cts.Cancel();
-    //        };
-
-            //await producer;
-            //await consumer;
-            //await commiter;
-
-//            Console.WriteLine("Finished.");
-
-            log.Dispose();
-            try { new DirectoryInfo(path).Delete(true); } catch { }
+            // Give it some time to run a bit - similar to waiting for things to run before hitting cancel
+            Thread.Sleep(5000);
+            cts.Cancel();
 
         }
 
+        //**** Helper Functions - based off of FasterLogPubSub sample ***
         static async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
-
-                Console.WriteLine("Committing...");
-
                 await log.CommitAsync();
             }
         }
@@ -109,11 +87,7 @@ namespace FASTER.test
             var i = 0L;
             while (!cancellationToken.IsCancellationRequested)
             {
-
-                byte[] entry = new byte[100];
-                entry[i] = (byte)i;
-
-                log.Enqueue(entry);
+                log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
                 log.RefreshUncommitted();
 
                 i++;
@@ -122,41 +96,32 @@ namespace FASTER.test
             }
         }
 
-        static async Task SeparateConsumerAsync(CancellationToken cancellationToken)
+        // This creates a separate FasterLog over the same log file, using RecoverReadOnly to continuously update
+        // to the primary FasterLog's commits.
+        public async Task SeparateConsumerAsync(CancellationToken cancellationToken)
         {
-            //            var device = Devices.CreateLogDevice(path + "mylog");
-            //          var log = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
-            var deviceReadOnly = Devices.CreateLogDevice(path + "ReadOnly", deleteOnClose: true);
-            var logReadOnly = new FasterLog(new FasterLogSettings { LogDevice = deviceReadOnly, ReadOnlyMode = true });
+            var _ = BeginRecoverAsyncLoop(logReadOnly, cancellationToken);
 
-
-            //var _ = RecoverAsync(log, cancellationToken);
-
+            // This enumerator waits asynchronously when we have reached the committed tail of the duplicate FasterLog. When RecoverReadOnly
+            // reads new data committed by the primary FasterLog, it signals commit completion to let iter continue to the new tail.
             using var iter = logReadOnly.Scan(logReadOnly.BeginAddress, long.MaxValue);
-
             await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
             {
-             
-                string DG23 = result.ToString();
                 iter.CompleteUntil(nextAddress);
             }
         }
 
-        static async Task RecoverAsync(FasterLog log, CancellationToken cancellationToken)
+        static async Task BeginRecoverAsyncLoop(FasterLog log, CancellationToken cancellationToken)
         {
-//            while (!cancellationToken.IsCancellationRequested)
-  //          {
-//                await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
-                
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                // Delay for a while before checking again.
+                await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
+
+                // Recover to the last commit by the primary FasterLog instance.
                 log.RecoverReadOnly();
-    //        }
+            }
         }
-
-
-
-
-
-
     }
 }
 
