@@ -112,7 +112,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TruncateUntil3([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
 
@@ -166,7 +166,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TryEnqueue_Entry([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
 
@@ -211,7 +211,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest3([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask CommitAsync([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[10000];
@@ -285,7 +285,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest4([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TruncateUntil_Basic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[100];
@@ -323,8 +323,75 @@ namespace FASTER.test
             log.Dispose();
         }
 
+
         [Test]
-        public async ValueTask FasterLogTest5([Values]LogChecksumType logChecksum)
+        public async ValueTask TruncateUntilPageStart([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
+            byte[] data1 = new byte[1000];
+            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
+
+            for (int i = 0; i < 100; i++)
+            {
+                log.Enqueue(data1);
+            }
+            log.RefreshUncommitted();
+            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
+
+            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+
+            using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
+            {
+                var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
+
+                switch (iteratorType)
+                {
+                    case IteratorType.Sync:
+                        while (iter.GetNext(out _, out _, out _))
+                            log.TruncateUntilPageStart(iter.NextAddress);
+                        Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                        break;
+                    case IteratorType.AsyncByteVector:
+                        {
+                            while (await asyncByteVectorIter.MoveNextAsync() && asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
+                                log.TruncateUntilPageStart(asyncByteVectorIter.Current.nextAddress);
+                        }
+                        break;
+                    case IteratorType.AsyncMemoryOwner:
+                        {
+                            while (await asyncMemoryOwnerIter.MoveNextAsync())
+                            {
+                                log.TruncateUntilPageStart(asyncMemoryOwnerIter.Current.nextAddress);
+                                asyncMemoryOwnerIter.Current.entry.Dispose();
+                                if (asyncMemoryOwnerIter.Current.nextAddress == log.SafeTailAddress)
+                                    break;
+                            }
+                        }
+                        break;
+                    default:
+                        Assert.Fail("Unknown IteratorType");
+                        break;
+                }
+
+                // Enqueue data but do not make it visible
+                log.Enqueue(data1);
+
+                // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
+                if (!IsAsync(iteratorType))
+                    Assert.IsFalse(iter.GetNext(out _, out _, out _));
+
+                // Make the data visible
+                log.RefreshUncommitted();
+
+                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+            }
+            log.Dispose();
+        }
+
+
+        [Test]
+        public async ValueTask EnqueueAndWaitForCommitAsync_Entry([Values]LogChecksumType logChecksum)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
 
@@ -356,7 +423,7 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest6([Values] LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[1000];
@@ -421,7 +488,7 @@ namespace FASTER.test
 
 
         [Test]
-        public async ValueTask FasterLogTest7_CommitFalse([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
+        public async ValueTask CommitFalse([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
 
@@ -438,6 +505,7 @@ namespace FASTER.test
             // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
             // to make sure it isn't crashing and that it does actually commit it
             log.Commit(false);
+            log.Commit(true);  // makes sure commit eventually succeeds - this is also good aspect to call right after one another
 
             // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
             var endAddress = IsAsync(iteratorType) ? log.TailAddress : long.MaxValue;
@@ -474,6 +542,45 @@ namespace FASTER.test
                 }
                 Assert.IsTrue(counter.count == numEntries);
             }
+
+            log.Dispose();
+        }
+
+
+        [Test]
+        public async ValueTask ReadAsync_Basic([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
+        {
+
+            Assert.Fail("NOT DONE YET");
+
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            log.Commit();
+
+
+
+            ValueTask<(byte[], int)> DGiter = log.ReadAsync(8,8);
+            ValueTask<(byte[], int)> iter = log.ReadAsync(0);
+
+            //System.IDisposable iter;
+
+
+            //            using (iter = log.ReadAsync(0))
+            //          {
+            //                while (iter.GetNext(out byte[] result, out _, out _))
+            //              {
+            //  var DG = result;
+    //            }
+    //        }
 
             log.Dispose();
         }
