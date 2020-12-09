@@ -1,11 +1,23 @@
 ---
-title: "Tuning FasterKV"
+title: Tuning FasterKV
 permalink: /docs/fasterkv-tuning/
-excerpt: "Tuning FasterKV"
-last_modified_at: 2020-11-08
+excerpt: Tuning FasterKV
+last_modified_at: 2020-11-08T00:00:00.000Z
 toc: false
 classes: wide
 ---
+
+# Tuning FasterKV
+
+<!-- Use markdown-toc from https://github.com/jonschlinkert to insert the Table of Contents between the toc/tocstop comments; commandline is: markdown-toc -i <this file> -->
+
+<!-- toc -->
+
+- [Configuring the Hybrid Log](#configuring-the-hybrid-log)
+- [Configuring the Read Cache](#configuring-the-read-cache)
+- [Managing Hash Index Size](#managing-hash-index-size)
+
+<!-- tocstop -->
 
 ## Configuring the Hybrid Log
 
@@ -125,3 +137,4 @@ downside is more collisions and longer hash chains, leading to potentially slowe
 
 <b id="f1">[1]</b> In FASTER C++, the tag bits are read from bits 48-61 of the 64-bit hash value, instead of bits 50-63 
 in FASTER C#. Here, bit 0 stands for the least significant bit of the number.
+

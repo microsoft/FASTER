@@ -1,10 +1,38 @@
 ---
-title: "FasterKV Basics"
+title: FasterKV Basics
 permalink: /docs/fasterkv-basics/
-excerpt: "FasterKV Basics"
-last_modified_at: 2020-11-07
+excerpt: FasterKV Basics
+last_modified_at: 2020-11-07T00:00:00.000Z
 toc: true
 ---
+
+# FasterKV Basics
+
+<!-- Use markdown-toc from https://github.com/jonschlinkert to insert the Table of Contents between the toc/tocstop comments; commandline is: markdown-toc -i <this file> -->
+
+<!-- toc -->
+
+- [Introduction to FasterKV C#](#introduction-to-fasterkv-c%23)
+- [Getting FASTER](#getting-faster)
+  * [Building From Sources](#building-from-sources)
+  * [NuGet](#nuget)
+- [Basic Concepts](#basic-concepts)
+  * [FASTER Operations](#faster-operations)
+  * [Constructor](#constructor)
+    + [Constructor Parameters](#constructor-parameters)
+  * [Callback Functions](#callback-functions)
+  * [Sessions](#sessions)
+    + [Read](#read)
+    + [Upsert](#upsert)
+    + [RMW](#rmw)
+  * [Disposing](#disposing)
+- [Quick End-To-End Sample](#quick-end-to-end-sample)
+- [More Examples](#more-examples)
+- [Handling Variable Length Keys and Values](#handling-variable-length-keys-and-values)
+- [Log Compaction](#log-compaction)
+- [Checkpointing and Recovery](#checkpointing-and-recovery)
+
+<!-- tocstop -->
 
 ## Introduction to FasterKV C#
 
@@ -71,7 +99,7 @@ The total in-memory footprint of FASTER is controlled by the following parameter
 words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value 
 objects, this size only includes the 8-byte reference to the object. The older part of the log is spilled to storage.
 
-Read more about managing memory in FASTER [here](../tuning).
+Read more about managing memory in FASTER in the [tuning](./23-fasterkv-tuning) guide.
 
 ### Callback Functions
 

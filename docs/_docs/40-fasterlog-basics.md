@@ -1,10 +1,31 @@
 ---
-title: "FasterLog Basics"
+title: FasterLog Basics
 permalink: /docs/fasterlog-basics/
-excerpt: "FasterLog Basics"
-last_modified_at: 2020-11-08
+excerpt: FasterLog Basics
+last_modified_at: 2020-11-08T00:00:00.000Z
 toc: true
 ---
+# FasterLog Basics
+
+<!-- Use markdown-toc from https://github.com/jonschlinkert to insert the Table of Contents between the toc/tocstop comments; commandline is: markdown-toc -i <this file> -->
+
+<!-- toc -->
+
+  * [Introduction to FasterLog C#](#introduction-to-fasterlog-c%23)
+  * [Creating the Log](#creating-the-log)
+  * [Operations on FasterLog](#operations-on-fasterlog)
+    + [Enqueue](#enqueue)
+    + [Commit](#commit)
+    + [Wait-for-Commit](#wait-for-commit)
+    + [Helper: enqueue and wait for commit](#helper-enqueue-and-wait-for-commit)
+    + [Iteration](#iteration)
+    + [Iteration for Uncommitted Data (Publish/Subscribe)](#iteration-for-uncommitted-data-publishsubscribe)
+    + [Log Head Truncation](#log-head-truncation)
+    + [Random Read](#random-read)
+- [Configuring FasterLog](#configuring-fasterlog)
+- [Full API Reference](#full-api-reference)
+
+<!-- tocstop -->
 
 ## Introduction to FasterLog C#
 
@@ -342,3 +363,4 @@ async ValueTask<(byte[], int)> ReadAsync(long address, int estimatedLength = 0)
 void RefreshUncommitted(bool spinWait = false)
 
 ```
+

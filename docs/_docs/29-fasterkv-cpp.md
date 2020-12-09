@@ -1,10 +1,25 @@
 ---
-title: "FasterKV C++ Port"
+title: FasterKV C++ Port
 permalink: /docs/fasterkv-cpp/
-excerpt: "FasterKV C++ Port"
-last_modified_at: 2020-11-07
+excerpt: FasterKV C++ Port
+last_modified_at: 2020-11-07T00:00:00.000Z
 toc: true
 ---
+
+# FasterKV C++ Port
+
+<!-- Use markdown-toc from https://github.com/jonschlinkert to insert the Table of Contents between the toc/tocstop comments; commandline is: markdown-toc -i <this file> -->
+
+<!-- toc -->
+
+- [Building C++ FASTER](#building-c-faster)
+  * [Building on Windows](#building-on-windows)
+  * [Building on Linux](#building-on-linux)
+  * [Other options](#other-options)
+- [Examples](#examples)
+- [Remote Device](#remote-device)
+
+<!-- tocstop -->
 
 ## Building C++ FASTER
 
@@ -108,3 +123,4 @@ for Windows.
 If you run into issues while trying to setup this device, please refer to FASTER's
 [CI](https://github.com/Microsoft/FASTER/tree/master/azure-pipelines.yml); it contains rules that setup and test
 this layer on both, Linux and Windows.
+

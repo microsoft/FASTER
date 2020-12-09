@@ -1,11 +1,23 @@
 ---
-title: "Research Papers"
+title: Research Papers
 permalink: /docs/td-research-papers/
-excerpt: "Technical Details - Research Papers"
-last_modified_at: 2020-11-08
+excerpt: Technical Details - Research Papers
+last_modified_at: 2020-11-08T00:00:00.000Z
 toc: false
 classes: wide
 ---
+# Research Papers
+
+<!-- Use markdown-toc from https://github.com/jonschlinkert to insert the Table of Contents between the toc/tocstop comments; commandline is: markdown-toc -i <this file> -->
+
+<!-- toc -->
+
+- [Core FASTER System](#core-faster-system)
+- [Recovery](#recovery)
+- [Scale-Out](#scale-out)
+- [Secondary Indexing](#secondary-indexing)
+
+<!-- tocstop -->
 
 ## Core FASTER System
 
@@ -30,3 +42,4 @@ classes: wide
 [[pdf](https://badrish.net/papers/p1049-chandramouli.pdf)]
 * Dong Xie, Badrish Chandramouli, Yinan Li, Donald Kossmann. FishStore: Faster Ingestion with Subset Hashing. <i>SIGMOD 2019, Amsterdam, Netherlands, June 2019</i>
 [[pdf](https://badrish.net/papers/fishstore-sigmod19.pdf)]
+

@@ -7,6 +7,8 @@ toc: false
 classes: wide
 ---
 
+# Tuning FasterLog
+
 FasterLog may be configured using the `FasterLogSettings` input to the FasterLog constructor.
 
 ```cs

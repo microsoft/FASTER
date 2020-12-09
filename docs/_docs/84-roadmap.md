@@ -1,11 +1,33 @@
 ---
-title: "Roadmap"
+title: Roadmap
 permalink: /docs/roadmap/
-excerpt: "Roadmap"
-last_modified_at: 2020-11-10
+excerpt: Roadmap
+last_modified_at: 2020-11-10T00:00:00.000Z
 toc: false
 classes: wide
 ---
+# Roadmap
+
+<!-- Use markdown-toc from https://github.com/jonschlinkert to insert the Table of Contents between the toc/tocstop comments; commandline is: markdown-toc -i <this file> -->
+
+<!-- toc -->
+
+- [Past and Future Work](#past-and-future-work)
+  * [Past Work](#past-work)
+    + [General](#general)
+    + [Log, Cache, and Storage](#log-cache-and-storage)
+    + [Checkpoint and Recovery](#checkpoint-and-recovery)
+  * [Ongoing and Future Work](#ongoing-and-future-work)
+- [Release Notes](#release-notes)
+    + [FASTER v2019.10.31.1](#faster-v201910311)
+    + [FASTER v2019.8.27.1](#faster-v20198271)
+    + [FASTER v2019.7.23.1](#faster-v20197231)
+    + [FASTER v2019.4.24.4](#faster-v20194244)
+    + [FASTER v2019.4.1.1](#faster-v2019411)
+    + [FASTER v2019.3.16.1 (cumulative feature list)](#faster-v20193161-cumulative-feature-list)
+- [C++ Porting Notes](#c-porting-notes)
+
+<!-- tocstop -->
 
 This is a living document containing the FASTER team's priorities as well as release notes
 for previous releases. Items refer to FASTER C# unless indicated otherwise. For C++ info, 
@@ -161,3 +183,4 @@ FASTER C++ is a fairly direct port of FASTER C# using C++ based coding and style
 * [x] Ability to resize the hash table
 * [x] C++: Added a new `value_size()` method to `RmwContext` for RCU operations: [PR](https://github.com/microsoft/FASTER/pull/145)
 * [x] Azure storage device: [PR](https://github.com/microsoft/FASTER/pull/353)
+
