@@ -64,86 +64,112 @@ namespace FasterLogPubSub
             Console.WriteLine("Finished.");
 
             log.Dispose();
+            device.Dispose();
             try { new DirectoryInfo(path).Delete(true); } catch { }
         }
 
         static async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
 
-                Console.WriteLine("Committing...");
+                    Console.WriteLine("Committing...");
 
-                await log.CommitAsync();
+                    await log.CommitAsync(cancellationToken);
+                }
             }
+            catch (OperationCanceledException) { }
+            Console.WriteLine("Committer complete");
         }
 
         static async Task ProducerAsync(FasterLog log, CancellationToken cancellationToken)
         {
-            var i = 0L;
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                // Console.WriteLine($"Producing {i}");
+                var i = 0L;
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    // Console.WriteLine($"Producing {i}");
 
-                log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-                log.RefreshUncommitted();
+                    log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
+                    log.RefreshUncommitted();
 
-                i++;
+                    i++;
 
-                await Task.Delay(TimeSpan.FromMilliseconds(10));
+                    await Task.Delay(TimeSpan.FromMilliseconds(10));
+                }
             }
+            catch (OperationCanceledException) { }
+            Console.WriteLine("Producer complete");
         }
 
         static async Task ConsumerAsync(FasterLog log, bool scanUncommitted, CancellationToken cancellationToken)
         {
             using var iter = log.Scan(log.BeginAddress, long.MaxValue, "foo", true, ScanBufferingMode.DoublePageBuffering, scanUncommitted);
 
-            int count = 0;
-            await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+            try
             {
-                Console.WriteLine($"Same Log Consuming {Encoding.UTF8.GetString(result)}");
-                iter.CompleteUntil(nextAddress);
-                log.TruncateUntil(nextAddress);
+                int count = 0;
+                await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+                {
+                    Console.WriteLine($"Same Log Consuming {Encoding.UTF8.GetString(result)}");
+                    iter.CompleteUntil(nextAddress);
+                    log.TruncateUntil(nextAddress);
 
-                // Simulate temporary slow down of data consumption
-                // This will cause transient log spill to disk (observe folder on storage)
-                if (count++ > 1000 && count < 1200)
-                    Thread.Sleep(100);
+                    // Simulate temporary slow down of data consumption
+                    // This will cause transient log spill to disk (observe folder on storage)
+                    if (count++ > 1000 && count < 1200)
+                        Thread.Sleep(100);
+                }
             }
+            catch (OperationCanceledException) { }
+            Console.WriteLine("Consumer complete");
         }
 
         // This creates a separate FasterLog over the same log file, using RecoverReadOnly to continuously update
         // to the primary FasterLog's commits.
         static async Task SeparateConsumerAsync(CancellationToken cancellationToken)
         {
-            var device = Devices.CreateLogDevice(path + "mylog");
-            var log = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
+            using var device = Devices.CreateLogDevice(path + "mylog");
+            using var log = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
 
-            var _ = BeginRecoverAsyncLoop(log, cancellationToken);
-
-            // This enumerator waits asynchronously when we have reached the committed tail of the duplicate FasterLog. When RecoverReadOnly
-            // reads new data committed by the primary FasterLog, it signals commit completion to let iter continue to the new tail.
-            using var iter = log.Scan(log.BeginAddress, long.MaxValue);
-            await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+            try
             {
-                Console.WriteLine($"Separate Log Consuming {Encoding.UTF8.GetString(result)}");
-                iter.CompleteUntil(nextAddress);
+                var _ = BeginRecoverAsyncLoop(log, cancellationToken);
+
+                // This enumerator waits asynchronously when we have reached the committed tail of the duplicate FasterLog. When RecoverReadOnly
+                // reads new data committed by the primary FasterLog, it signals commit completion to let iter continue to the new tail.
+                using var iter = log.Scan(log.BeginAddress, long.MaxValue);
+                await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+                {
+                    Console.WriteLine($"Separate Log Consuming {Encoding.UTF8.GetString(result)}");
+                    iter.CompleteUntil(nextAddress);
+                }
             }
+            catch (OperationCanceledException) { }
+            Console.WriteLine("SeparateConsumer complete");
         }
 
         static async Task BeginRecoverAsyncLoop(FasterLog log, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                // Delay for a while before checking again.
-                await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    // Delay for a while before checking again.
+                    await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
 
-                Console.WriteLine("Restoring Separate Log...");
+                    Console.WriteLine("Restoring Separate Log...");
 
-                // Recover to the last commit by the primary FasterLog instance.
-                log.RecoverReadOnly();
+                    // Recover to the last commit by the primary FasterLog instance.
+                    await log.RecoverReadOnlyAsync(cancellationToken);
+                }
             }
+            catch (OperationCanceledException) { }
+            Console.WriteLine("RecoverAsyncLoop complete");
         }
     }
 }
