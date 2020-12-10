@@ -547,46 +547,8 @@ namespace FASTER.test
         }
 
 
-        [Test]
-        public async ValueTask ReadAsync_Basic([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
-        {
-
-            Assert.Fail("NOT DONE YET");
-
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
-
-            byte[] entry = new byte[entryLength];
-            for (int i = 0; i < entryLength; i++)
-                entry[i] = (byte)i;
-
-            for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
-
-            log.Commit();
-
-
-
-            ValueTask<(byte[], int)> DGiter = log.ReadAsync(8,8);
-            ValueTask<(byte[], int)> iter = log.ReadAsync(0);
-
-            //System.IDisposable iter;
-
-
-            //            using (iter = log.ReadAsync(0))
-            //          {
-            //                while (iter.GetNext(out byte[] result, out _, out _))
-            //              {
-            //  var DG = result;
-    //            }
-    //        }
-
-            log.Dispose();
-        }
-
-
-        private static void DeleteDirectory(string path)
+        
+                private static void DeleteDirectory(string path)
         {
             foreach (string directory in Directory.GetDirectories(path))
             {
