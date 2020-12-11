@@ -20,8 +20,8 @@ namespace FASTER.test
         private FasterLog log;
         private IDevice device;
         private string path = Path.GetTempPath() + "EnqueTests/";
-        static readonly byte[] entry = new byte[20];
-        static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(20);
+        static readonly byte[] entry = new byte[100];
+        static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
 
         public enum EnqueueIteratorType
         {
@@ -61,19 +61,27 @@ namespace FASTER.test
         }
 
 
-        [Test]
+       [Test]
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
         {
-            int entryLength = 20;
-            int numEntries = 1000; 
+            int entryLength = 100;
+            int numEntries = 1000000; 
             int entryFlag = 9999;
-            ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
+
+            // Reduce SpanBatch to make sure entry fits on page
+            if (iteratorType == EnqueueIteratorType.SpanBatch)
+            {
+                entryLength = 50;
+                numEntries = 2000;
+            }
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
             {
                 entry[i] = (byte)i;
             }
+
+            ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
 
             // Enqueue but set each Entry in a way that can differentiate between entries
             for (int i = 0; i < numEntries; i++)
@@ -110,6 +118,9 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(false);
 
+            // flag to make sure data has been checked 
+            bool datacheckrun = false;
+
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000))  
@@ -118,14 +129,17 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
+                        // set to flag 
+                        datacheckrun = true;
+
                         // Span Batch only added first entry several times
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
                         {
-                            Assert.IsTrue(result[0] == (byte)entryFlag);  
+                            Assert.IsTrue(result[0] == (byte)entryFlag, "Fail - Result[0]:"+result[0].ToString()+"  entryFlag:"+entryFlag);  
                         }
                         else
                         {
-                            Assert.IsTrue(result[currentEntry] == (byte)entryFlag); 
+                            Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
                         }
 
                         currentEntry++;
@@ -133,7 +147,11 @@ namespace FASTER.test
                 }
             }
 
+            // if data verification was skipped, then pop a fail
+            if (datacheckrun == false)
+                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
+
     }
 }
 
