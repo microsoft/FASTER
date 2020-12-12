@@ -200,7 +200,7 @@ namespace FASTER.core
                 results.Enqueue(result);
             }
             catch
-            {
+             {
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);

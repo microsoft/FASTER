@@ -29,7 +29,7 @@ namespace FASTER.test
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name +  "/";
 
             if (Directory.Exists(commitPath))
-                DeleteDirectory(commitPath);
+                Directory.Delete(commitPath, true);
 
             device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
             manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(commitPath));
@@ -42,7 +42,7 @@ namespace FASTER.test
             device.Dispose();
 
             if (Directory.Exists(commitPath))
-                DeleteDirectory(commitPath);
+                Directory.Delete(commitPath, true);
         }
 
         internal class Counter
@@ -73,7 +73,7 @@ namespace FASTER.test
             Sync
         }
 
-        private static bool IsAsync(IteratorType iterType) => iterType == IteratorType.AsyncByteVector || iterType == IteratorType.AsyncMemoryOwner;
+        internal static bool IsAsync(IteratorType iterType) => iterType == IteratorType.AsyncByteVector || iterType == IteratorType.AsyncMemoryOwner;
 
         private async ValueTask AssertGetNext(IAsyncEnumerator<(byte[] entry, int entryLength, long currentAddress, long nextAddress)> asyncByteVectorIter,
                                               IAsyncEnumerator<(IMemoryOwner<byte> entry, int entryLength, long currentAddress, long nextAddress)> asyncMemoryOwnerIter,
@@ -114,7 +114,8 @@ namespace FASTER.test
         [Test]
         public async ValueTask FasterLogTest1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
+            log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -168,7 +169,8 @@ namespace FASTER.test
         [Test]
         public async ValueTask FasterLogTest2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
+            log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             const int dataLength = 10000;
             byte[] data1 = new byte[dataLength];
@@ -209,7 +211,9 @@ namespace FASTER.test
         [Test]
         public async ValueTask FasterLogTest3([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
+
             byte[] data1 = new byte[10000];
             for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
 
@@ -283,7 +287,9 @@ namespace FASTER.test
         [Test]
         public async ValueTask FasterLogTest4([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
+
             byte[] data1 = new byte[100];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
@@ -354,7 +360,9 @@ namespace FASTER.test
         [Test]
         public async ValueTask FasterLogTest6([Values] LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
+            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
+
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
@@ -413,35 +421,6 @@ namespace FASTER.test
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
             log.Dispose();
-        }
-
-        private static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                try
-                {
-                    Directory.Delete(path, true);
-                }
-                catch { }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                try
-                {
-                    Directory.Delete(path, true);
-                }
-                catch { }
-            }
         }
     }
 }

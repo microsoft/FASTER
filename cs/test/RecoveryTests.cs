@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
 using FASTER.core;
 using NUnit.Framework;
@@ -50,28 +49,7 @@ namespace FASTER.test.recovery.sumstore
             fht.Dispose();
             fht = null;
             log.Dispose();
-            DeleteDirectory(test_path);
-        }
-
-        public static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                Directory.Delete(path, true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Directory.Delete(path, true);
-            }
+            Directory.Delete(test_path, true);
         }
 
         [Test]
