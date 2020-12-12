@@ -746,7 +746,7 @@ namespace FASTER.core
         }
     }
 
-    public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
+    public abstract partial class AllocatorBase<Key, Value> : IDisposable
     {
         /// <summary>
         /// Restore log
@@ -757,6 +757,38 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         public void RestoreHybridLog(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload = -1)
+        {
+            if (RestoreHybridLogInitializePages(beginAddress, headAddress, fromAddress, untilAddress, numPagesToPreload, out var recoveryStatus, out long headPage, out long tailPage))
+            { 
+                for (long page = headPage; page <= tailPage; page++)
+                    recoveryStatus.WaitRead(GetPageIndexForPage(page));
+            }
+
+            RecoveryReset(untilAddress, headAddress, beginAddress, untilAddress);
+        }
+
+        /// <summary>
+        /// Restore log
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="headAddress"></param>
+        /// <param name="fromAddress"></param>
+        /// <param name="untilAddress"></param>
+        /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
+        /// <param name="cancellationToken"></param>
+        public async ValueTask RestoreHybridLogAsync(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload = -1, CancellationToken cancellationToken = default)
+        {
+            if (RestoreHybridLogInitializePages(beginAddress, headAddress, fromAddress, untilAddress, numPagesToPreload, out var recoveryStatus, out long headPage, out long tailPage))
+            {
+                for (long page = headPage; page <= tailPage; page++)
+                    await recoveryStatus.WaitReadAsync(GetPageIndexForPage(page), cancellationToken);
+            }
+
+            RecoveryReset(untilAddress, headAddress, beginAddress, untilAddress);
+        }
+
+        private bool RestoreHybridLogInitializePages(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload,
+                                                     out RecoveryStatus recoveryStatus, out long headPage, out long tailPage)
         {
             if (numPagesToPreload != -1)
             {
@@ -780,10 +812,10 @@ namespace FASTER.core
             {
                 if (headAddress < fromAddress)
                 {
-                    var tailPage = GetPage(fromAddress);
-                    var headPage = GetPage(headAddress);
+                    tailPage = GetPage(fromAddress);
+                    headPage = GetPage(headAddress);
 
-                    var recoveryStatus = new RecoveryStatus(GetCapacityNumPages(), headPage, tailPage, untilAddress, 0);
+                    recoveryStatus = new RecoveryStatus(GetCapacityNumPages(), headPage, tailPage, untilAddress, 0);
                     for (int i = 0; i < recoveryStatus.capacity; i++)
                     {
                         recoveryStatus.readStatus[i] = ReadStatus.Done;
@@ -798,16 +830,16 @@ namespace FASTER.core
                     }
 
                     AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
-
-                    for (long page = headPage; page <= tailPage; page++)
-                        recoveryStatus.WaitRead(GetPageIndexForPage(page));
+                    return true;
                 }
             }
 
-            RecoveryReset(untilAddress, headAddress, beginAddress, untilAddress);
+            recoveryStatus = default;
+            headPage = tailPage = 0;
+            return false;
         }
 
-        internal void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, object context)
+        internal unsafe void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {

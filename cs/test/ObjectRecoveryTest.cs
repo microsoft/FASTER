@@ -57,28 +57,7 @@ namespace FASTER.test.recovery.objectstore
             fht = null;
             log.Dispose();
             objlog.Dispose();
-            DeleteDirectory(test_path);
-        }
-
-        public static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                Directory.Delete(path, true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Directory.Delete(path, true);
-            }
+            Directory.Delete(test_path, true);
         }
 
         [Test]

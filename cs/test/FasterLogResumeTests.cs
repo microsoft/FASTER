@@ -22,7 +22,7 @@ namespace FASTER.test
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
             if (Directory.Exists(commitPath))
-                DeleteDirectory(commitPath);
+                Directory.Delete(commitPath, true);
 
             device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
         }
@@ -33,7 +33,7 @@ namespace FASTER.test
             device.Dispose();
 
             if (Directory.Exists(commitPath))
-                DeleteDirectory(commitPath);
+                Directory.Delete(commitPath, true);
         }
 
         [Test]
@@ -106,35 +106,6 @@ namespace FASTER.test
 
                     // TestContext.Progress.WriteLine($"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}"); 
                 }
-            }
-        }
-
-        private static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                try
-                {
-                    Directory.Delete(path, true);
-                }
-                catch { }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                try
-                {
-                    Directory.Delete(path, true);
-                }
-                catch { }
             }
         }
     }

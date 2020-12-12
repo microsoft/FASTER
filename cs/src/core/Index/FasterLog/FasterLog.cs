@@ -57,7 +57,7 @@ namespace FASTER.core
         /// <summary>
         /// Dictionary of recovered iterators and their committed until addresses
         /// </summary>
-        public readonly Dictionary<string, long> RecoveredIterators;
+        public Dictionary<string, long> RecoveredIterators { get; private set; }
 
         /// <summary>
         /// Log committed until address
@@ -96,9 +96,25 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logSettings"></param>
         public FasterLog(FasterLogSettings logSettings)
+            : this(logSettings, false)
         {
-            bool oldCommitManager = false;
+            this.RecoveredIterators = Restore();
+        }
 
+        /// <summary>
+        /// Create new log instance asynchronously
+        /// </summary>
+        /// <param name="logSettings"></param>
+        /// <param name="cancellationToken"></param>
+        public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
+        {
+            var fasterLog = new FasterLog(logSettings, false);
+            fasterLog.RecoveredIterators = await fasterLog.RestoreAsync(cancellationToken);
+            return fasterLog;
+        }
+
+        private FasterLog(FasterLogSettings logSettings, bool oldCommitManager)
+        {
             if (oldCommitManager)
             {
                 logCommitManager = logSettings.LogCommitManager ??
@@ -138,7 +154,6 @@ namespace FASTER.core
                 allocator.HeadAddress = long.MaxValue;
             }
 
-            Restore(out RecoveredIterators);
         }
 
         /// <summary>
@@ -902,22 +917,41 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Recover instance to FasterLog's latest commit, when being used as a readonly log iterator
+        /// Synchronously recover instance to FasterLog's latest commit, when being used as a readonly log iterator
         /// </summary>
         public void RecoverReadOnly()
         {
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            Restore(out _);
+            this.Restore();
+            SignalWaitingROIterators();
+        }
 
+        /// <summary>
+        /// Asynchronously recover instance to FasterLog's latest commit, when being used as a readonly log iterator
+        /// </summary>
+        public async ValueTask RecoverReadOnlyAsync(CancellationToken cancellationToken = default)
+        {
+            if (!readOnlyMode)
+                throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
+
+            await this.RestoreAsync(cancellationToken);
+            SignalWaitingROIterators();
+        }
+
+        private void SignalWaitingROIterators()
+        {
+            // One RecoverReadOnly use case is to allow a FasterLogIterator to continuously read a mirror FasterLog (over the same log storage) of a primary FasterLog.
+            // In this scenario, when the iterator arrives at the tail after a previous call to RestoreReadOnly, it will wait asynchronously until more data
+            // is committed and read by a subsequent call to RecoverReadOnly. Here, we signal iterators that we have completed recovery.
             var _commitTcs = commitTcs;
             if (commitTcs.Task.Status != TaskStatus.Faulted || commitTcs.Task.Exception.InnerException as CommitFailureException != null)
             {
                 commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
-            // Update commit to release pending iterators
+            // Update commit to release pending iterators.
             var lci = new LinkedCommitInfo
             {
                 CommitInfo = new CommitInfo { BeginAddress = BeginAddress, FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
@@ -927,57 +961,96 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Restore log
+        /// Restore log synchronously
         /// </summary>
-        private void Restore(out Dictionary<string, long> recoveredIterators)
+        private Dictionary<string, long> Restore()
         {
-
-            recoveredIterators = null;
-
             foreach (var commitNum in logCommitManager.ListCommits())
             {
                 try
                 {
-                    var commitInfo = logCommitManager.GetCommitMetadata(commitNum);
+                    if (!PrepareToRestoreFromCommit(commitNum, out FasterLogRecoveryInfo info, out long headAddress))
+                        return default;
 
-                    FasterLogRecoveryInfo info = new FasterLogRecoveryInfo();
-
-                    if (commitInfo == null) return;
-
-                    using (var r = new BinaryReader(new MemoryStream(commitInfo)))
-                    {
-                        info.Initialize(r);
-                    }
-
-                    recoveredIterators = info.Iterators;
-
-                    if (!readOnlyMode)
-                    {
-                        var headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
-                        if (info.BeginAddress > headAddress)
-                            headAddress = info.BeginAddress;
-
-                        if (headAddress == 0) headAddress = Constants.kFirstValidAddress;
-
+                    if (headAddress > 0)
                         allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
-                    }
-                    CommittedUntilAddress = info.FlushedUntilAddress;
-                    CommittedBeginAddress = info.BeginAddress;
-                    SafeTailAddress = info.FlushedUntilAddress;
 
-                    // Fix uncommitted addresses in iterators
-                    if (recoveredIterators != null)
-                    {
-                        List<string> keys = recoveredIterators.Keys.ToList();
-                        foreach (var key in keys)
-                            if (recoveredIterators[key] > SafeTailAddress)
-                                recoveredIterators[key] = SafeTailAddress;
-                    }
-                    return;
+                    return CompleteRestoreFromCommit(info);
                 }
                 catch { }
             }
             Debug.WriteLine("Unable to recover using any available commit");
+            return null;
+        }
+
+        /// <summary>
+        /// Restore log asynchronously
+        /// </summary>
+        private async ValueTask<Dictionary<string, long>> RestoreAsync(CancellationToken cancellationToken)
+        {
+            foreach (var commitNum in logCommitManager.ListCommits())
+            {
+                try
+                {
+                    if (!PrepareToRestoreFromCommit(commitNum, out FasterLogRecoveryInfo info, out long headAddress))
+                        return default;
+
+                    if (headAddress > 0)
+                        await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress, cancellationToken: cancellationToken);
+
+                    return CompleteRestoreFromCommit(info);
+                }
+                catch { }
+            }
+            Debug.WriteLine("Unable to recover using any available commit");
+            return null;
+        }
+
+        private bool PrepareToRestoreFromCommit(long commitNum, out FasterLogRecoveryInfo info, out long headAddress)
+        {
+            headAddress = 0;
+            var commitInfo = logCommitManager.GetCommitMetadata(commitNum);
+            if (commitInfo is null)
+            {
+                info = default;
+                return false;
+            }
+
+            info = new FasterLogRecoveryInfo();
+            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+            {
+                info.Initialize(r);
+            }
+
+            if (!readOnlyMode)
+            {
+                headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
+                if (info.BeginAddress > headAddress)
+                    headAddress = info.BeginAddress;
+
+                if (headAddress == 0)
+                    headAddress = Constants.kFirstValidAddress;
+            }
+
+            return true;
+        }
+
+        private Dictionary<string, long> CompleteRestoreFromCommit(FasterLogRecoveryInfo info)
+        {
+            CommittedUntilAddress = info.FlushedUntilAddress;
+            CommittedBeginAddress = info.BeginAddress;
+            SafeTailAddress = info.FlushedUntilAddress;
+
+            // Fix uncommitted addresses in iterators
+            var recoveredIterators = info.Iterators;
+            if (recoveredIterators != null)
+            {
+                List<string> keys = recoveredIterators.Keys.ToList();
+                foreach (var key in keys)
+                    if (recoveredIterators[key] > SafeTailAddress)
+                        recoveredIterators[key] = SafeTailAddress;
+            }
+            return recoveredIterators;
         }
 
         /// <summary>
