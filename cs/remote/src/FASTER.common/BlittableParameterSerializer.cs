@@ -8,6 +8,13 @@ using FASTER.common;
 
 namespace FASTER.common
 {
+    /// <summary>
+    /// Serializer for blittable types
+    /// </summary>
+    /// <typeparam name="Key">Key</typeparam>
+    /// <typeparam name="Value">Value</typeparam>
+    /// <typeparam name="Input">Input</typeparam>
+    /// <typeparam name="Output">Output</typeparam>
     public unsafe struct BlittableParameterSerializer<Key, Value, Input, Output> 
         : IServerSerializer<Key, Value, Input, Output>, IClientSerializer<Key, Value, Input, Output>
     {
@@ -17,6 +24,7 @@ namespace FASTER.common
                 throw new Exception("Cannot use BlittableParameterSerializer with non-blittable types - specify serializer explicitly");
         }
 
+        /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref Key ReadKeyByRef(ref byte* src)
         {
@@ -25,6 +33,7 @@ namespace FASTER.common
             return ref Unsafe.AsRef<Key>(_src);
         }
 
+        /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref Value ReadValueByRef(ref byte* src)
         {
@@ -33,6 +42,7 @@ namespace FASTER.common
             return ref Unsafe.AsRef<Value>(_src);
         }
 
+        /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref Input ReadInputByRef(ref byte* src)
         {
@@ -41,6 +51,7 @@ namespace FASTER.common
             return ref Unsafe.AsRef<Input>(_src);
         }
 
+        /// <inheritdoc />
         public bool Write(ref Key k, ref byte* dst, int length)
         {
             if (length < Unsafe.SizeOf<Key>()) return false;
@@ -49,6 +60,7 @@ namespace FASTER.common
             return true;
         }
 
+        /// <inheritdoc />
         public bool Write(ref Value v, ref byte* dst, int length)
         {
             if (length < Unsafe.SizeOf<Value>()) return false;
@@ -57,6 +69,7 @@ namespace FASTER.common
             return true;
         }
 
+        /// <inheritdoc />
         public bool Write(ref Input i, ref byte* dst, int length)
         {
             if (length < Unsafe.SizeOf<Input>()) return false;
@@ -65,6 +78,7 @@ namespace FASTER.common
             return true;
         }
 
+        /// <inheritdoc />
         public bool Write(ref Output o, ref byte* dst, int length)
         {
             if (length < Unsafe.SizeOf<Output>()) return false;
@@ -96,16 +110,21 @@ namespace FASTER.common
             return true;
         }
 
+        /// <inheritdoc />
         public Output ReadOutput(ref byte* src)
         {
-            return Unsafe.AsRef<Output>(src);
+            var _src = src;
+            src += Unsafe.SizeOf<Output>();
+            return Unsafe.AsRef<Output>(_src);
         }
 
+        /// <inheritdoc />
         public ref Output AsRefOutput(byte* src, int length)
         {
             return ref Unsafe.AsRef<Output>(src);
         }
 
+        /// <inheritdoc />
         public void SkipOutput(ref byte* src)
         {
             src += Unsafe.SizeOf<Output>();

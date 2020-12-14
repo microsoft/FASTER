@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "YcsbClient": {
-      "commandName": "Project",
-      "commandLineArgs": "-b 0 -t 1 -n 1 -r 50 -d uniform"
-    }
-  }
-}
