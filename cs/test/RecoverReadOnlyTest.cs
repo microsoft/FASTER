@@ -137,10 +137,7 @@ namespace FASTER.test
                 // Which test you running?
                 if (AsyncRecover)
                 {
-                    //*#*#* Remove comment when implemented
-                    //*#*#*# Assert.Fail("RecoverReadOnlyAsync not implemented yet.");
-                    
-                    //await log.RecoverReadOnlyAsync(cancellationToken);
+                    await log.RecoverReadOnlyAsync(cancellationToken);
                 }
                 else
                     // Recover to the last commit by the primary FasterLog instance.

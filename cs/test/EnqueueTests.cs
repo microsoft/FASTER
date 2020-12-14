@@ -118,6 +118,8 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(false);
 
+            Thread.Sleep(5000);
+
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
