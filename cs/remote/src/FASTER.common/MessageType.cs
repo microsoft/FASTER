@@ -49,17 +49,26 @@ namespace FASTER.common
         /// A request to delete some value in a remote Faster instance
         /// </summary>
         Delete,
-        /// <summary>
-        /// Async versions
-        /// </summary>
-        ReadAsync, UpsertAsync, RMWAsync, DeleteAsync,
 
-        PendingResult,
-
-        CommitStatusCheck,
         /// <summary>
-        /// A reply from a remote Faster instance containing commit status
+        /// An async request to read some value in a remote Faster instance
         /// </summary>
-        CommitResult
+        ReadAsync,
+        /// <summary>
+        /// An async request to upsert some value in a remote Faster instance
+        /// </summary>
+        UpsertAsync,
+        /// <summary>
+        /// An async request to rmw on some value in a remote Faster instance
+        /// </summary>
+        RMWAsync,
+        /// <summary>
+        /// An async request to delete some value in a remote Faster instance
+        /// </summary>
+        DeleteAsync,
+        /// <summary>
+        /// Pending result
+        /// </summary>
+        PendingResult
     }
 }

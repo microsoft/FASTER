@@ -33,7 +33,7 @@ namespace FASTER.server
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.maxSizeSettings.MaxOutputSize < sizeof(int))
                 this.maxSizeSettings.MaxOutputSize = sizeof(int);
-            this.serverBufferSize = Utils.ServerBufferSize(maxSizeSettings);
+            this.serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
             this.messageManager = new NetworkSender(serverBufferSize);
             this.serializer = serializer;
 

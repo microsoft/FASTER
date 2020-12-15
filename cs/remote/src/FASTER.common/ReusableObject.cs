@@ -6,10 +6,17 @@ using System.Collections.Generic;
 
 namespace FASTER.common
 {
+    /// <summary>
+    /// Reusable object
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
     public struct ReusableObject<T> : IDisposable where T : class
     {
-        public static ReusableObject<T> INVALID = new ReusableObject<T>(null, null); 
         private readonly LightConcurrentStack<T> pool;
+
+        /// <summary>
+        /// Object
+        /// </summary>
         public T obj;
 
         internal ReusableObject(T obj, LightConcurrentStack<T> pool)
@@ -18,24 +25,12 @@ namespace FASTER.common
             this.obj = obj;
         }
 
+        /// <summary>
+        /// Dispose instance
+        /// </summary>
         public void Dispose()
         {
             pool?.TryPush(obj);
-        }
-        
-        public bool Equals(ReusableObject<T> other)
-        {
-            return EqualityComparer<T>.Default.Equals(obj, other.obj);
-        }
-
-        public override bool Equals(object obj)
-        {
-            return obj is ReusableObject<T> other && Equals(other);
-        }
-
-        public override int GetHashCode()
-        {
-            return EqualityComparer<T>.Default.GetHashCode(obj);
         }
     }
 }

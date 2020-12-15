@@ -11,6 +11,13 @@ namespace FASTER.client
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
     {
+        /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="forceFlush">Force immediate flush of message buffer</param>
+        /// <returns>Async result of read operation (status and output)</returns>
         public async Task<(Status, Output)> ReadAsync(Key key, Input input = default, bool forceFlush = true)
         {
             var tcs = new TaskCompletionSource<(Status, Output)>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -21,6 +28,13 @@ namespace FASTER.client
             return await tcs.Task;
         }
 
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="value">Value</param>
+        /// <param name="forceFlush">Force immediate flush of message buffer</param>
+        /// <returns>Async task for operation</returns>
         public async Task UpsertAsync(Key key, Value value, bool forceFlush = true)
         {
             var tcs = new TaskCompletionSource<(Status, Output)>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -31,6 +45,13 @@ namespace FASTER.client
             return;
         }
 
+        /// <summary>
+        /// RMW (read-modify-write) operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="forceFlush">Force immediate flush of message buffer</param>
+        /// <returns>Async result of RMW operation (status)</returns>
         public async Task<Status> RMWAsync(Key key, Input input, bool forceFlush = true)
         {
             var tcs = new TaskCompletionSource<(Status, Output)>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -41,6 +62,12 @@ namespace FASTER.client
             return status;
         }
 
+        /// <summary>
+        /// Delete operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="forceFlush">Force immediate flush of message buffer</param>
+        /// <returns>Async task for operation</returns>
         public async Task DeleteAsync(Key key, bool forceFlush = true)
         {
             var tcs = new TaskCompletionSource<(Status, Output)>(TaskCreationOptions.RunContinuationsAsynchronously);

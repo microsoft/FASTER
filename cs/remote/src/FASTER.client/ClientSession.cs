@@ -13,6 +13,16 @@ using FASTER.common;
 
 namespace FASTER.client
 {
+    /// <summary>
+    /// Client session wrapper
+    /// </summary>
+    /// <typeparam name="Key">Key</typeparam>
+    /// <typeparam name="Value">Value</typeparam>
+    /// <typeparam name="Input">Input</typeparam>
+    /// <typeparam name="Output">Output</typeparam>
+    /// <typeparam name="Context">Context</typeparam>
+    /// <typeparam name="Functions">Functions</typeparam>
+    /// <typeparam name="ParameterSerializer">Parameter Serializer</typeparam>
     public unsafe partial class ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> : IDisposable
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
@@ -34,12 +44,20 @@ namespace FASTER.client
         readonly ElasticCircularBuffer<(Key, Input, Output, Context)> readrmwQueue;
         readonly ElasticCircularBuffer<TaskCompletionSource<(Status, Output)>> tcsQueue;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="address">IP address</param>
+        /// <param name="port">Port</param>
+        /// <param name="functions">Client callback functions</param>
+        /// <param name="serializer">Serializer</param>
+        /// <param name="maxSizeSettings">Size settings</param>
         public ClientSession(string address, int port, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
         {
             this.functions = functions;
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
-            this.bufferSize = Utils.ClientBufferSize(this.maxSizeSettings);
+            this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
             this.messageManager = new NetworkSender(bufferSize);
 
             upsertQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
@@ -53,39 +71,114 @@ namespace FASTER.client
             sendSocket = GetSendSocket(address, port);
         }
 
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="desiredValue">Desired value</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
             => InternalUpsert(MessageType.Upsert, ref key, ref desiredValue, userContext, serialNo);
 
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="desiredValue">Desired value</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status Upsert(Key key, Value desiredValue, Context userContext = default, long serialNo = 0)
             => InternalUpsert(MessageType.Upsert, ref key, ref desiredValue, userContext, serialNo);
 
+        /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="output">Output</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
             => InternalRead(MessageType.Read, ref key, ref input, ref output, userContext, serialNo);
 
+        /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="output">Output</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status Read(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
         {
             output = default;
             return InternalRead(MessageType.Read, ref key, ref input, ref output, userContext, serialNo);
         }
 
+        /// <summary>
+        /// Read operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public (Status, Output) Read(Key key, Input input = default, Context userContext = default, long serialNo = 0)
         {
             Output output = default;
             return (InternalRead(MessageType.Read, ref key, ref input, ref output, userContext, serialNo), output);
         }
 
+        /// <summary>
+        /// RMW (read-modify-write) operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status RMW(ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
             => InternalRMW(MessageType.RMW, ref key, ref input, userContext, serialNo);
 
+        /// <summary>
+        /// RMW (read-modify-write) operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status RMW(Key key, Input input, Context userContext = default, long serialNo = 0)
             => InternalRMW(MessageType.RMW, ref key, ref input, userContext, serialNo);
 
+        /// <summary>
+        /// Delete operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status Delete(ref Key key, Context userContext = default, long serialNo = 0)
             => InternalDelete(MessageType.Delete, ref key, userContext, serialNo);
 
+        /// <summary>
+        /// Delete operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
         public Status Delete(Key key, Context userContext = default, long serialNo = 0)
             => InternalDelete(MessageType.Delete, ref key, userContext, serialNo);
 
+        /// <summary>
+        /// Flush current buffer of outgoing messages. Does not wait for responses.
+        /// </summary>
         public void Flush()
         {
             if (offset > sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size)
@@ -100,6 +193,9 @@ namespace FASTER.client
             }
         }
 
+        /// <summary>
+        /// Flush current buffer of outgoing messages. Spin-wait for all responses to be received and process them.
+        /// </summary>
         public void CompletePending(bool wait = true)
         {
             Flush();
@@ -110,6 +206,9 @@ namespace FASTER.client
                 }
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             Flush();
@@ -345,7 +444,7 @@ namespace FASTER.client
 
             // Ok to create new event args on accept because we assume a connection to be long-running
             var receiveEventArgs = new SocketAsyncEventArgs();
-            var bufferSize = Utils.ServerBufferSize(maxSizeSettings);
+            var bufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
             receiveEventArgs.SetBuffer(new byte[bufferSize], 0, bufferSize);
             receiveEventArgs.UserToken =
                 new ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>(socket, this);

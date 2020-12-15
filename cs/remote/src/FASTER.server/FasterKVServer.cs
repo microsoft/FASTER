@@ -12,7 +12,7 @@ using System;
 namespace FASTER.server
 {
     /// <summary>
-    /// Message manager
+    /// Server for FasterKV
     /// </summary>
     public sealed class FasterKVServer<Key, Value, Input, Output, Functions, ParameterSerializer> : IDisposable
             where Functions : IFunctions<Key, Value, Input, Output, long>
@@ -22,6 +22,15 @@ namespace FASTER.server
         private readonly Socket servSocket;
         private readonly MaxSizeSettings maxSizeSettings;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="store">Instance of FasterKV store to use in server</param>
+        /// <param name="functions">Functions</param>
+        /// <param name="address">IP address</param>
+        /// <param name="port">Port</param>
+        /// <param name="serializer">Parameter serializer</param>
+        /// <param name="maxSizeSettings">Max size settings</param>
         public FasterKVServer(FasterKV<Key, Value> store, Functions functions, string address, int port, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default) : base()
         {
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
@@ -37,6 +46,9 @@ namespace FASTER.server
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             servSocket.Dispose();
@@ -55,7 +67,7 @@ namespace FASTER.server
 
             // Ok to create new event args on accept because we assume a connection to be long-running
             var receiveEventArgs = new SocketAsyncEventArgs();
-            var bufferSize = Utils.ClientBufferSize(maxSizeSettings);
+            var bufferSize = BufferSizeUtils.ClientBufferSize(maxSizeSettings);
             receiveEventArgs.SetBuffer(new byte[bufferSize], 0, bufferSize);
             receiveEventArgs.UserToken = sns;
             receiveEventArgs.Completed += ServerNetworkSession<Key, Value, Input, Output, Functions, ParameterSerializer>.RecvEventArg_Completed;
@@ -76,6 +88,9 @@ namespace FASTER.server
             } while (!servSocket.AcceptAsync(e));
         }
 
+        /// <summary>
+        /// Start server
+        /// </summary>
         public void Start()
         {
             if (!servSocket.AcceptAsync(acceptEventArg))

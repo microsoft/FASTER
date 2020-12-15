@@ -3,10 +3,19 @@
 
 namespace FASTER.common
 {
-    public static class Utils
+    /// <summary>
+    /// Utility for computing buffer size given settings
+    /// </summary>
+    public static class BufferSizeUtils
+
     {
         private const int MaxBatchSize = 1 << 17;
 
+        /// <summary>
+        /// Compute required client buffer size
+        /// </summary>
+        /// <param name="maxSizeSettings">Settings</param>
+        /// <returns></returns>
         public static int ClientBufferSize(MaxSizeSettings maxSizeSettings)
         {
             int minSizeUpsert = maxSizeSettings.MaxKeySize + maxSizeSettings.MaxValueSize + 2 + BatchHeader.Size;
@@ -18,6 +27,11 @@ namespace FASTER.common
             return MaxBatchSize < minSize ? minSize : MaxBatchSize;
         }
 
+        /// <summary>
+        /// Compute required server buffer size
+        /// </summary>
+        /// <param name="maxSizeSettings">Settings</param>
+        /// <returns></returns>
         public static int ServerBufferSize(MaxSizeSettings maxSizeSettings)
         {
             int minSizeRead = maxSizeSettings.MaxOutputSize + 2 + BatchHeader.Size;

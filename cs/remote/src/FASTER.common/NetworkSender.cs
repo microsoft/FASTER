@@ -14,18 +14,35 @@ namespace FASTER.common
     {
         readonly SimpleObjectPool<SeaaBuffer> reusableSeaaBuffer;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="bufferSize">Buffer size</param>
         public NetworkSender(int bufferSize)
         {
              reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, bufferSize), e => e.Dispose());
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             reusableSeaaBuffer.Dispose();
         }
 
-         public ReusableObject<SeaaBuffer> GetReusableSeaaBuffer() => reusableSeaaBuffer.Checkout();
+        /// <summary>
+        /// Get reusable SocketAsyncEventArgs buffer
+        /// </summary>
+        /// <returns></returns>
+        public ReusableObject<SeaaBuffer> GetReusableSeaaBuffer() => reusableSeaaBuffer.Checkout();
 
+        /// <summary>
+        /// Send
+        /// </summary>
+        /// <param name="socket">Socket</param>
+        /// <param name="sendObject">Reusable SocketAsyncEventArgs buffer</param>
+        /// <param name="size">Size in bytes</param>
         public unsafe void Send(Socket socket, ReusableObject<SeaaBuffer> sendObject, int size)
         {
             // Set packet size
@@ -44,6 +61,14 @@ namespace FASTER.common
             ((ReusableObject<SeaaBuffer>)e.UserToken).Dispose();
         }
 
+        /// <summary>
+        /// Receive
+        /// </summary>
+        /// <param name="clientSocket">Socket</param>
+        /// <param name="buffer">Reusable SocketAsyncEventArgs buffer</param>
+        /// <param name="numBytes">Size in bytes</param>
+        /// <param name="flags">Socket flags</param>
+        /// <returns></returns>
         public static bool ReceiveFully(Socket clientSocket, byte[] buffer, int numBytes, SocketFlags flags = SocketFlags.None)
         {
             Debug.Assert(numBytes <= buffer.Length);
@@ -58,6 +83,14 @@ namespace FASTER.common
             return true;
         }
 
+        /// <summary>
+        /// Send
+        /// </summary>
+        /// <param name="clientSocket">Socket</param>
+        /// <param name="buffer">Byte array to send</param>
+        /// <param name="offset">Offset</param>
+        /// <param name="size">Size to send</param>
+        /// <param name="flags">Socket flags</param>
         public static void SendFully(Socket clientSocket, byte[] buffer, int offset, int size, SocketFlags flags = SocketFlags.None)
         {
             Debug.Assert(offset >= 0 && offset < buffer.Length && offset + size <= buffer.Length);

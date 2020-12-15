@@ -7,7 +7,11 @@ using System.Threading;
 
 namespace FASTER.common
 {
-    public class SimpleObjectPool<T> : IDisposable where T : class
+    /// <summary>
+    /// Object pool
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    internal class SimpleObjectPool<T> : IDisposable where T : class
     {
         private readonly Func<T> factory;
         private readonly Action<T> destructor;
@@ -15,6 +19,12 @@ namespace FASTER.common
         private int allocatedObjects;
         private readonly int maxObjects;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="factory"></param>
+        /// <param name="destructor"></param>
+        /// <param name="maxObjects"></param>
         public SimpleObjectPool(Func<T> factory, Action<T> destructor = null, int maxObjects = 128)
         {
             this.factory = factory;

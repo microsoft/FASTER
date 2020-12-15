@@ -7,13 +7,33 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.common
 {
-    public unsafe class SeaaBuffer
+    /// <summary>
+    /// Buffer of SocketAsyncEventArgs and pinned byte array for transport
+    /// </summary>
+    public unsafe class SeaaBuffer : IDisposable
     {
-        public readonly SocketAsyncEventArgs socketEventAsyncArgs;
-        public readonly byte[] buffer;
-        public readonly GCHandle handle;
-        public readonly byte* bufferPtr;
+        /// <summary>
+        /// SocketAsyncEventArgs
+        /// </summary>
+        internal readonly SocketAsyncEventArgs socketEventAsyncArgs;
 
+        /// <summary>
+        /// Byte buffer used by instance
+        /// </summary>
+        public readonly byte[] buffer;
+
+        /// <summary>
+        /// Pointer to byte buffer
+        /// </summary>
+        public readonly byte* bufferPtr;
+        
+        private readonly GCHandle handle;
+
+        /// <summary>
+        /// Construct new instance
+        /// </summary>
+        /// <param name="eventHandler">Event handler</param>
+        /// <param name="bufferSize">Buffer size</param>
         public SeaaBuffer(EventHandler<SocketAsyncEventArgs> eventHandler, int bufferSize)
         {
             socketEventAsyncArgs = new SocketAsyncEventArgs();
@@ -24,6 +44,9 @@ namespace FASTER.common
             socketEventAsyncArgs.Completed += eventHandler;
         }
 
+        /// <summary>
+        /// Dispose instance
+        /// </summary>
         public void Dispose()
         {
             handle.Free();
