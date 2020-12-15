@@ -19,7 +19,7 @@ using namespace FASTER::core;
 
 typedef FASTER::environment::UringIoHandler handler_t;
 
-#define CLASS RecoveryTest_Queue
+#define CLASS RecoveryTest_Uring
 
 #include "recovery_test.h"
 

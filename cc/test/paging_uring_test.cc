@@ -15,7 +15,7 @@ using namespace FASTER::core;
 
 typedef FASTER::environment::UringIoHandler handler_t;
 
-#define CLASS PagingTest_Queue
+#define CLASS PagingTest_Uring
 
 #include "paging_test.h"
 
