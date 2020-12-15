@@ -54,6 +54,7 @@ namespace FASTER.test
         public void TearDown()
         {
             log.Dispose();
+            device.Dispose();
 
             // Clean up log files
             try { new DirectoryInfo(path).Delete(true); }
