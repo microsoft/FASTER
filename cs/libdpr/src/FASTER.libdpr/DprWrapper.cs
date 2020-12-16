@@ -15,8 +15,16 @@ namespace FASTER.libdpr
         public HashSet<WorkerVersion> deps = new HashSet<WorkerVersion>();
     }
 
+    public class DprPendingCallback : OpCompletionCallback
+    {
+        public void Invoke(long serialNum, long version, DprOpContext ctx)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     public class DprWrapper<Underlying, Message, Token>
-        where Underlying : SessionedStateObject<Message, Token>
+        where Underlying : SessionedStateObject<Message, Token, DprPendingCallback>
         where Message : AppendableMessage
     {
         private Worker me;
@@ -31,7 +39,7 @@ namespace FASTER.libdpr
         private Thread syncThread;
         private ManualResetEventSlim termination;
         private ConcurrentDictionary<long, DprServerVersionHandle<Token>> versions;
-        private ConcurrentDictionary<Guid, StateObjectSession<Message>> sessions;
+        private ConcurrentDictionary<Guid, StateObjectSession<Message, DprPendingCallback>> sessions;
 
         public DprWrapper(Worker me, Underlying stateObject, MetadataStore metadataStore,
             IBucketingScheme<Message> bucketingScheme, IDprManager dprManager)
@@ -45,7 +53,7 @@ namespace FASTER.libdpr
             currentWorldLine = 0;
             epoch = new LightEpoch();
             versions = new ConcurrentDictionary<long, DprServerVersionHandle<Token>>();
-            sessions = new ConcurrentDictionary<Guid, StateObjectSession<Message>>();
+            sessions = new ConcurrentDictionary<Guid, StateObjectSession<Message, DprPendingCallback>>();
         }
 
         public void StartWorker(int checkpointIntervalMilli)
@@ -68,7 +76,7 @@ namespace FASTER.libdpr
             syncThread.Join();
         }
 
-        private StateObjectSession<Message> GetSession(Guid sessionId)
+        private StateObjectSession<Message, DprPendingCallback> GetSession(Guid sessionId)
         {
             return sessions.GetOrAdd(sessionId, guid => stateObject.GetSession(guid));
         }

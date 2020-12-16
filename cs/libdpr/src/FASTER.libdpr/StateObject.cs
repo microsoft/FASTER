@@ -21,20 +21,33 @@ namespace FASTER.libdpr
         void RestoreCheckpoint(CheckpointToken token);
     }
 
-    public interface StateObjectSession<Message>
+    public struct DprOpContext
+    {
+        // TODO(Tianyu): Place-holder
+        private long stuff;
+    }
+
+    public interface OpCompletionCallback
+    {
+        public void Invoke(long serialNum, long version, DprOpContext ctx);
+    }
+
+    public interface StateObjectSession<Message, PendingCallback>
         where Message : AppendableMessage
+        where PendingCallback : OpCompletionCallback
     {
         long Version();
         
-        Status Operate(ref Message request, ref Message reply, long serialNum);
+        Status Operate(ref Message request, ref Message reply, long serialNum, DprOpContext ctx);
 
         bool ClearPending(bool spinWait);
     }
 
-    public interface SessionedStateObject<Message, Token>
+    public interface SessionedStateObject<Message, Token, PendingCallback>
         where Message : AppendableMessage
+        where PendingCallback : OpCompletionCallback
     {
-        StateObjectSession<Message> GetSession(Guid sessionId);
+        StateObjectSession<Message, PendingCallback> GetSession(Guid sessionId);
 
         long BeginCheckpoint(Action<(long, Token)> onPersist, long targetVersion = -1);
 
