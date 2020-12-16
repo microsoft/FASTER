@@ -145,10 +145,10 @@ jobs:
       cd cc
       mkdir -p build/Debug build/Release
       cd build/Debug
-      cmake -DCMAKE_BUILD_TYPE=Debug ../..
+      cmake -DCMAKE_BUILD_TYPE=Debug -DUSE_URING=ON ../..
       make -j
       cd ../../build/Release
-      cmake -DCMAKE_BUILD_TYPE=Release ../..
+      cmake -DCMAKE_BUILD_TYPE=Release -DUSE_URING=ON ../..
       make -j
     displayName: 'Compile'
 

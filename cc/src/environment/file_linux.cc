@@ -196,6 +196,8 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   return Status::Ok;
 }
 
+#ifdef FASTER_URING
+
 bool UringIoHandler::TryComplete() {
   struct io_uring_cqe* cqe = nullptr;
   cq_lock_.Acquire();
@@ -306,6 +308,8 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   io_context.release();
   return Status::Ok;
 }
+
+#endif
 
 #undef DCHECK_ALIGNMENT
 

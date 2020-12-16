@@ -10,7 +10,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#ifdef FASTER_URING
 #include <liburing.h>
+#endif
 
 #include "../core/async.h"
 #include "../core/status.h"
@@ -18,29 +21,6 @@
 
 namespace FASTER {
 namespace environment {
-
-class alignas(64) SpinLock {
-public:
-    SpinLock(): locked_(false) {}
-
-    void Acquire() noexcept {
-        for (;;) {
-            if (!locked_.exchange(true, std::memory_order_acquire)) {
-                return;
-            }
-
-            while (locked_.load(std::memory_order_relaxed)) {
-                __builtin_ia32_pause();
-            }
-        }
-    }
-
-    void Release() noexcept {
-        locked_.store(false, std::memory_order_release);
-    }
-private:
-    std::atomic_bool locked_;
-};
 
 constexpr const char* kPathSeparator = "/";
 
@@ -274,6 +254,31 @@ class QueueFile : public File {
   io_context_t io_object_;
 };
 
+#ifdef FASTER_URING
+
+class alignas(64) SpinLock {
+public:
+    SpinLock(): locked_(false) {}
+
+    void Acquire() noexcept {
+        for (;;) {
+            if (!locked_.exchange(true, std::memory_order_acquire)) {
+                return;
+            }
+
+            while (locked_.load(std::memory_order_relaxed)) {
+                __builtin_ia32_pause();
+            }
+        }
+    }
+
+    void Release() noexcept {
+        locked_.store(false, std::memory_order_release);
+    }
+private:
+    std::atomic_bool locked_;
+};
+
 class UringFile;
 
 /// The QueueIoHandler class encapsulates completions for async file I/O, where the completions
@@ -395,6 +400,8 @@ class UringFile : public File {
   struct io_uring* ring_;
   SpinLock* sq_lock_;
 };
+
+#endif
 
 }
 } // namespace FASTER::environment
