@@ -26,7 +26,6 @@ namespace FASTER.libdpr
     {
         long Version();
         
-        // TODO(Tianyu): Add pending-handling?
         Status Operate(ref Message request, ref Message reply, long serialNum);
 
         bool ClearPending(bool spinWait);

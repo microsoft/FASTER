@@ -22,6 +22,11 @@ namespace FASTER.libdpr
         {
             throw new System.NotImplementedException();
         }
+
+        public bool ClearPending(bool spinWait)
+        {
+            throw new NotImplementedException();
+        }
     }
     
     public class SessionedStateObjectAdapter<Underlying, Message, OpDescriptor, CheckpointToken> : SessionedStateObject<Message, CheckpointToken>
