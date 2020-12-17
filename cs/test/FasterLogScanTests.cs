@@ -73,7 +73,6 @@ namespace FASTER.test
             catch { }
         }
 
-
         [Test]
         [Category("FasterLog")]
         public void ScanBasicDefaultTest()
@@ -214,40 +213,6 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanUncommittedTest()
-        {
-
-            // You can allow scans to proceed and read uncommitted data by setting scanUncommitted to true
-
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
-            // Read the log - Look for the flag so know each entry is unique
-            int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, scanUncommitted: true))
-            {
-                while (iter.GetNext(out byte[] result, out _, out _))
-                {
-                    if (currentEntry < entryLength)
-                    {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
-                        // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
-                        currentEntry++;
-                    }
-                }
-            }
-
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
-        }
-
-        [Test]
-        [Category("FasterLog")]
         public void ScanBufferingModeDoublePageTest()
         {
             // Same as default, but do it just to make sure have test in case default changes
@@ -311,11 +276,13 @@ namespace FASTER.test
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
 
-
+        /*  *#*#* TO DO: Finish these last two tests
         [Test]
         [Category("FasterLog")]
         public void ScanBufferingModeNoBufferingTest()
         {
+            // *#*# TO DO - Finish this 
+
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
@@ -343,7 +310,41 @@ namespace FASTER.test
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
 
+        [Test]
+        [Category("FasterLog")]
+        public void ScanUncommittedTest()
+        {
+            // *#*# TO DO - FInish this 
 
+            // You can allow scans to proceed and read uncommitted data by setting scanUncommitted to true
+
+            // flag to make sure data has been checked 
+            bool datacheckrun = false;
+
+            // Read the log - Look for the flag so know each entry is unique
+            int currentEntry = 0;
+            using (var iter = log.Scan(0, 100_000_000, scanUncommitted: true))
+            {
+                while (iter.GetNext(out byte[] result, out _, out _))
+                {
+                    if (currentEntry < entryLength)
+                    {
+                        // set check flag to show got in here
+                        datacheckrun = true;
+
+                        // Span Batch only added first entry several times so have separate verification
+                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+
+                        currentEntry++;
+                    }
+                }
+            }
+
+            // if data verification was skipped, then pop a fail
+            if (datacheckrun == false)
+                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+        }
+        */
 
     }
 }
