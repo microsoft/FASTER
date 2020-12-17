@@ -65,7 +65,6 @@ namespace FASTER.test
        [Test]
        [Category("FasterLog")]
        [Category("Smoke")]
-
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
         {
             int entryLength = 100;

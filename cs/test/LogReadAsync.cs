@@ -83,9 +83,6 @@ namespace FASTER.test
             // Commit to the log
             log.Commit();
 
-            //*** To DO
-            // Finish the other two iterations
-
             // Read one entry based on different parameters for AsyncReadOnly and verify 
             switch (iteratorType)
             {
@@ -102,8 +99,30 @@ namespace FASTER.test
 
                     break;
                 case ParameterDefaultsIteratorType.LengthParam:
+                    // Read one entry and verify
+                    record = log.ReadAsync(log.BeginAddress, 208);
+                    foundFlagged = record.Result.Item1[0];   // 15
+                    foundEntry = record.Result.Item1[1];  // 1
+                    foundTotal = record.Result.Item2;
+
+                    Assert.IsTrue(foundFlagged == (byte)entryFlag, "Fail reading data - Found Flagged Entry:" + foundFlagged.ToString() + "  Expected Flagged entry:" + entryFlag);
+                    Assert.IsTrue(foundEntry == 1, "Fail reading data - Found Normal Entry:" + foundEntry.ToString() + "  Expected Value: 1");
+                    Assert.IsTrue(foundTotal == 100, "Fail reading data - Found Total:" + foundTotal.ToString() + "  Expected Total: 100");
+
                     break;
                 case ParameterDefaultsIteratorType.TokenParam:
+                    var cts = new CancellationToken();
+
+                    // Read one entry and verify
+                    record = log.ReadAsync(log.BeginAddress, 104, cts);
+                    foundFlagged = record.Result.Item1[0];   // 15
+                    foundEntry = record.Result.Item1[1];  // 1
+                    foundTotal = record.Result.Item2;
+
+                    Assert.IsTrue(foundFlagged == (byte)entryFlag, "Fail reading data - Found Flagged Entry:" + foundFlagged.ToString() + "  Expected Flagged entry:" + entryFlag);
+                    Assert.IsTrue(foundEntry == 1, "Fail reading data - Found Normal Entry:" + foundEntry.ToString() + "  Expected Value: 1");
+                    Assert.IsTrue(foundTotal == 100, "Fail reading data - Found Total:" + foundTotal.ToString() + "  Expected Total: 100");
+
                     break;
                 default:
                     Assert.Fail("Unknown case ParameterDefaultsIteratorType.DefaultParams:");
