@@ -47,6 +47,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void GenericIterationTest1()
         {
             using var session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();

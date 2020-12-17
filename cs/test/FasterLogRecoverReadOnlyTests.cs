@@ -41,6 +41,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("FasterLog")]
         public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
         {
             using var device = Devices.CreateLogDevice(deviceName);

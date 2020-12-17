@@ -248,6 +248,7 @@ namespace FASTER.test.readaddress
         [TestCase(false, false, false, false)]
         [TestCase(false, true, true, true)]
         [TestCase(true, false, false, true)]
+        [Category("FasterKV")]
         public void VersionedReadSyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
@@ -286,6 +287,7 @@ namespace FASTER.test.readaddress
         [TestCase(false, false, false, false)]
         [TestCase(false, true, true, true)]
         [TestCase(true, false, false, true)]
+        [Category("FasterKV")]
         public async Task VersionedReadAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
@@ -314,6 +316,7 @@ namespace FASTER.test.readaddress
         [TestCase(false, false, false, false)]
         [TestCase(false, true, true, true)]
         [TestCase(true, false, false, true)]
+        [Category("FasterKV")]
         public void ReadAtAddressSyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
@@ -374,6 +377,7 @@ namespace FASTER.test.readaddress
         [TestCase(false, false, false, false)]
         [TestCase(false, true, true, true)]
         [TestCase(true, false, false, true)]
+        [Category("FasterKV")]
         public async Task ReadAtAddressAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
@@ -416,6 +420,7 @@ namespace FASTER.test.readaddress
         [TestCase(false, false, false, false)]
         [TestCase(false, true, true, true)]
         [TestCase(true, false, false, true)]
+        [Category("FasterKV")]
         public void ReadNoKeySyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
@@ -454,6 +459,7 @@ namespace FASTER.test.readaddress
         [TestCase(false, false, false, false)]
         [TestCase(false, true, true, true)]
         [TestCase(true, false, false, true)]
+        [Category("FasterKV")]
         public async Task ReadNoKeyAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);

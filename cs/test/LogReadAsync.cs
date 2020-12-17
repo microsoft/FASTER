@@ -44,14 +44,15 @@ namespace FASTER.test
         public void TearDown()
         {
             log.Dispose();
+            device.Dispose();
 
             // Clean up log files
             try { new DirectoryInfo(path).Delete(true); }
             catch { }
         }
 
-
         [Test]
+        [Category("FasterLog")]
         public void LogReadAsyncBasicTest([Values] ParameterDefaultsIteratorType iteratorType)
         {
             int entryLength = 100;

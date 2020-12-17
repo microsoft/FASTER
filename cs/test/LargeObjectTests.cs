@@ -41,6 +41,7 @@ namespace FASTER.test.largeobjects
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
+        [Category("FasterKV")]
         public void LargeObjectTest(CheckpointType checkpointType)
         {
             MyInput input = default;

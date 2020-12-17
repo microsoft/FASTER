@@ -42,6 +42,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void NativeInMemWriteRead()
         {
             InputStruct input = default;
@@ -67,6 +68,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void NativeInMemWriteReadDelete()
         {
             InputStruct input = default;
@@ -121,6 +123,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void NativeInMemWriteReadDelete2()
         {
             const int count = 10;
@@ -179,6 +182,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public unsafe void NativeInMemWriteRead2()
         {
             InputStruct input = default;
@@ -224,6 +228,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public unsafe void TestShiftHeadAddress()
         {
             InputStruct input = default;
@@ -270,6 +275,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public unsafe void NativeInMemRMW1()
         {
             InputStruct input = default;

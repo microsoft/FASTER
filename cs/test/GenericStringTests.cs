@@ -42,6 +42,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void GenericStringTest1()
         {
             const int totalRecords = 2000;

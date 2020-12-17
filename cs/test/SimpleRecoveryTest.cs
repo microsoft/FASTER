@@ -22,6 +22,7 @@ namespace FASTER.test.recovery.sumstore.simple
         public const string TEST_CONTAINER = "checkpoints4";
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask PageBlobSimpleRecoveryTest([Values]CheckpointType checkpointType, [Values]bool isAsync)
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
@@ -36,6 +37,7 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync)
         {
             ICheckpointManager checkpointManager = new DeviceLogCommitCheckpointManager(
@@ -48,6 +50,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask SimpleRecoveryTest1([Values]CheckpointType checkpointType, [Values]bool isAsync)
         {
             await SimpleRecoveryTest1_Worker(checkpointType, null, isAsync);
@@ -126,6 +129,7 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask SimpleRecoveryTest2([Values]CheckpointType checkpointType, [Values]bool isAsync)
         {
             var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestContext.CurrentContext.TestDirectory + "/checkpoints4"), false);
@@ -198,6 +202,7 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask ShouldRecoverBeginAddress([Values]bool isAsync)
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/SimpleRecoveryTest2.log", deleteOnClose: true);

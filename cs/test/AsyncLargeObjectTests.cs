@@ -42,6 +42,7 @@ namespace FASTER.test.async
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
+        [Category("FasterKV")]
         public async Task LargeObjectTest(CheckpointType checkpointType)
         {
             MyInput input = default;

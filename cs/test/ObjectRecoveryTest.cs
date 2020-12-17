@@ -61,6 +61,7 @@ namespace FASTER.test.recovery.objectstore
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask ObjectRecoveryTest1([Values]bool isAsync)
         {
             Populate();

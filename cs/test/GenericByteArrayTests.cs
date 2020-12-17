@@ -49,6 +49,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void GenericByteArrayTest1()
         {
             const int totalRecords = 2000;

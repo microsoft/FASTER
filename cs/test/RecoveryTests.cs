@@ -53,6 +53,7 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryTestSeparateCheckpoint([Values]bool isAsync)
         {
             Populate(SeparateCheckpointAction);
@@ -69,6 +70,7 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync)
         {
             Populate(FullCheckpointAction);

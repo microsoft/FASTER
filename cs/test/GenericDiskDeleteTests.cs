@@ -41,6 +41,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void GenericDiskDeleteTest1()
         {
             const int totalRecords = 2000;
@@ -106,6 +107,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void GenericDiskDeleteTest2()
         {
             const int totalRecords = 2000;

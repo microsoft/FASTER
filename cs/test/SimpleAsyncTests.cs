@@ -48,6 +48,7 @@ namespace FASTER.test.async
 
 
         [Test]
+        [Category("FasterKV")]
         public async Task SimpleAsyncTest1()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -64,6 +65,7 @@ namespace FASTER.test.async
         }
 
         [Test]
+        [Category("FasterKV")]
         public async Task SimpleAsyncTest2()
         {
             Status status;

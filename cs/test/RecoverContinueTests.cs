@@ -67,6 +67,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
             long sno = 0;

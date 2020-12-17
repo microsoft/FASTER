@@ -52,6 +52,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest1()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -107,6 +108,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest2()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -151,6 +153,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest3()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -189,6 +192,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest4()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -236,6 +240,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest5()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -300,6 +305,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest6()
         {
             Prepare(out var f, out var s1, out var s2);

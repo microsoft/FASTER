@@ -46,7 +46,9 @@ namespace FASTER.test
         public void TearDown()
         {
             log.Dispose();
+            device.Dispose();
             logReadOnly.Dispose();
+            deviceReadOnly.Dispose();
 
             // Clean up log files
             try { new DirectoryInfo(path).Delete(true); }
@@ -55,6 +57,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterLog")]
         public void RecoverReadOnlyBasicTest()
         {
             using var cts = new CancellationTokenSource();
@@ -71,6 +74,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
         public void RecoverReadOnlyAsyncBasicTest()
         {
             using var cts = new CancellationTokenSource();

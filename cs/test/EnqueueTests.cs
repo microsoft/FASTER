@@ -63,6 +63,9 @@ namespace FASTER.test
 
 
        [Test]
+       [Category("FasterLog")]
+       [Category("Smoke")]
+
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
         {
             int entryLength = 100;
@@ -117,9 +120,7 @@ namespace FASTER.test
             }
 
             // Commit to the log
-            log.Commit(false);
-
-            Thread.Sleep(5000);
+            log.Commit(true);
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -132,10 +133,10 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set to flag 
+                        // set check flag to show got in here
                         datacheckrun = true;
 
-                        // Span Batch only added first entry several times
+                        // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
                         {
                             Assert.IsTrue(result[0] == (byte)entryFlag, "Fail - Result[0]:"+result[0].ToString()+"  entryFlag:"+entryFlag);  

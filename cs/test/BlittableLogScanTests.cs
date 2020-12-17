@@ -38,6 +38,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void BlittableDiskWriteScan()
         {
             using var session = fht.For(new Functions()).NewSession<Functions>();

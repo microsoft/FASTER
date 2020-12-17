@@ -112,6 +112,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
+
         public async ValueTask FasterLogTest1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
@@ -167,7 +169,9 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        [Category("FasterLog")]
+
+        public async ValueTask TryEnqueue_Basic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -209,7 +213,9 @@ namespace FASTER.test
         }
 
         [Test]
-        public async ValueTask FasterLogTest3([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        [Category("FasterLog")]
+
+        public async ValueTask TryEnqueue2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -285,6 +291,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
+
         public async ValueTask TruncateUntil_Basic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
@@ -326,6 +334,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
+
         public async ValueTask EnqueueAndWaitForCommitAsync_Entry([Values]LogChecksumType logChecksum)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
@@ -358,6 +368,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
+
         public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
@@ -424,6 +436,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
+
         public async ValueTask TruncateUntilPageStart([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
@@ -490,6 +504,8 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterLog")]
+
         public async ValueTask CommitFalse([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });

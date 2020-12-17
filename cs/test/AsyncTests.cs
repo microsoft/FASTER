@@ -26,6 +26,7 @@ namespace FASTER.test.async
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
+        [Category("FasterKV")]
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/SimpleRecoveryTest2.log", deleteOnClose: true);

@@ -47,6 +47,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void GenericLogCompactionTest1()
         {
             MyInput input = new MyInput();
@@ -88,6 +89,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void GenericLogCompactionTest2()
         {
             MyInput input = new MyInput();
@@ -139,6 +141,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void GenericLogCompactionTest3()
         {
             MyInput input = new MyInput();
@@ -194,6 +197,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void GenericLogCompactionCustomFunctionsTest1()
         {
             MyInput input = new MyInput();
@@ -244,6 +248,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void GenericLogCompactionCustomFunctionsTest2()
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
