@@ -81,7 +81,7 @@ namespace FASTER.test
             }
 
             // Commit to the log
-            log.Commit();
+            log.Commit(true);
 
             // Read one entry based on different parameters for AsyncReadOnly and verify 
             switch (iteratorType)

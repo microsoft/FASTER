@@ -78,10 +78,10 @@ namespace FASTER.test
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
 
-            // Enqueue but set each Entry in a way that can differentiate between entries
+            // Fill Log
             for (int i = 0; i < numEntries; i++)
             {
-                // Fill log
+                // Fill log entry
                 if (i < entryLength)
                     entry[i] = (byte)i;
 
