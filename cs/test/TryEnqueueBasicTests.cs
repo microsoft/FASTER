@@ -14,16 +14,18 @@ using NUnit.Framework;
 namespace FASTER.test
 {
 
+    //** Fundamental basic test for TryEnqueue that covers all the parameters in TryEnqueue
+    //** Other tests in FasterLog.cs provide more coverage for TryEnqueue
+
     [TestFixture]
-    internal class EnqueueTests
+    internal class TryEnqueueTests
     {
         private FasterLog log;
         private IDevice device;
-        private string path = Path.GetTempPath() + "EnqueueTests/";
+        private string path = Path.GetTempPath() + "TryEnqueueTests/";
         static readonly byte[] entry = new byte[100];
-        static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
 
-        public enum EnqueueIteratorType
+        public enum TryEnqueueIteratorType
         {
             Byte,
             SpanBatch,
@@ -46,7 +48,7 @@ namespace FASTER.test
             catch {} 
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "Enqueue", deleteOnClose: true);
+            device = Devices.CreateLogDevice(path + "TryEnqueue", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
@@ -65,17 +67,17 @@ namespace FASTER.test
        [Test]
        [Category("FasterLog")]
        [Category("Smoke")]
-        public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
+        public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType)
         {
-            int entryLength = 100;
-            int numEntries = 1000000; 
+            int entryLength = 50;
+            int numEntries = 10000; 
             int entryFlag = 9999;
 
             // Reduce SpanBatch to make sure entry fits on page
-            if (iteratorType == EnqueueIteratorType.SpanBatch)
+            if (iteratorType == TryEnqueueIteratorType.SpanBatch)
             {
                 entryLength = 10;
-                numEntries = 500;
+                numEntries = 50;
             }
 
             // Set Default entry data
@@ -86,9 +88,14 @@ namespace FASTER.test
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
 
-            // Enqueue but set each Entry in a way that can differentiate between entries
+
+            // TryEnqueue but set each Entry in a way that can differentiate between entries
             for (int i = 0; i < numEntries; i++)
             {
+                bool appendResult = false;
+                long logicalAddress = 0;
+                long ExpectedOutAddress = 0;
+
                 // Flag one part of entry data that corresponds to index
                 if (i < entryLength)
                     entry[i] = (byte)entryFlag;
@@ -100,22 +107,33 @@ namespace FASTER.test
                 // Add to FasterLog
                 switch (iteratorType)
                 {
-                    case EnqueueIteratorType.Byte:
+                    case TryEnqueueIteratorType.Byte:
                         // Default is add bytes so no need to do anything with it
-                        log.Enqueue(entry);
+                        appendResult = log.TryEnqueue(entry, out logicalAddress);
                         break;
-                    case EnqueueIteratorType.SpanByte:
+                    case TryEnqueueIteratorType.SpanByte:
                         // Could slice the span but for basic test just pass span of full entry - easier verification
                         Span<byte> spanEntry = entry;
-                        log.Enqueue(spanEntry);
+                        appendResult = log.TryEnqueue(spanEntry, out logicalAddress);
                         break;
-                    case EnqueueIteratorType.SpanBatch:
-                        log.Enqueue(spanBatch);
+                    case TryEnqueueIteratorType.SpanBatch:
+                        appendResult = log.TryEnqueue(spanBatch, out logicalAddress);
                         break;
                     default:
-                        Assert.Fail("Unknown EnqueueIteratorType");
+                        Assert.Fail("Unknown TryEnqueueIteratorType");
                         break;
                 }
+
+                // Verify each Enqueue worked
+                Assert.IsTrue(appendResult == true, "Fail - TryEnqueue failed with a 'false' result for entry:" + i.ToString());
+
+                // logical address has new entry every x bytes which is one entry less than the TailAddress
+                if (iteratorType == TryEnqueueIteratorType.SpanBatch)
+                    ExpectedOutAddress = log.TailAddress - 5200;
+                else
+                    ExpectedOutAddress = log.TailAddress - 104;
+
+                Assert.IsTrue(logicalAddress == ExpectedOutAddress, "Fail - returned LogicalAddr: " + logicalAddress.ToString() + " is not equal to Expected LogicalAddr: " + ExpectedOutAddress.ToString());
             }
 
             // Commit to the log
@@ -136,14 +154,10 @@ namespace FASTER.test
                         datacheckrun = true;
 
                         // Span Batch only added first entry several times so have separate verification
-                        if (iteratorType == EnqueueIteratorType.SpanBatch)
-                        {
+                        if (iteratorType == TryEnqueueIteratorType.SpanBatch)
                             Assert.IsTrue(result[0] == (byte)entryFlag, "Fail - Result[0]:"+result[0].ToString()+"  entryFlag:"+entryFlag);  
-                        }
                         else
-                        {
                             Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-                        }
 
                         currentEntry++;
                     }

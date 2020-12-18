@@ -169,7 +169,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TryEnqueue_Basic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TryEnqueue_VariousConfigs([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
