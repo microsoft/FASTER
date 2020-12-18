@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.libdpr
 {
-    public class AzureSqlDprManagerV2 : IDprManager
+    public class AzureSqlDprFinderV2 : IDprFinder
     {
         private readonly Worker me;
         private Dictionary<Worker, long> recoverableCut;
@@ -17,7 +17,7 @@ namespace FASTER.libdpr
         private readonly List<long> outstandingVersions;
         private readonly List<IEnumerable<WorkerVersion>> outstandingVersionsDeps;
 
-        public AzureSqlDprManagerV2(string connString, Worker me, bool register = true)
+        public AzureSqlDprFinderV2(string connString, Worker me, bool register = true)
         {
             this.me = me;
             recoverableCut = new Dictionary<Worker, long>();

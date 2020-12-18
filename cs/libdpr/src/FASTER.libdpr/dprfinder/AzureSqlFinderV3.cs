@@ -8,7 +8,7 @@ using System.Net.Sockets;
 
 namespace FASTER.libdpr
 {
-    public class AzureSqlDprManagerV3 : IDprManager
+    public class AzureSqlDprFinderV3 : IDprFinder
     {
         private readonly Worker me;
         private Dictionary<Worker, long> recoverableCut;
@@ -17,7 +17,7 @@ namespace FASTER.libdpr
         private Socket dprFinderConn;
         private byte[] buffer = new byte[1 << 15];
 
-        public AzureSqlDprManagerV3(string connString, Worker me)
+        public AzureSqlDprFinderV3(string connString, Worker me)
         {
             this.me = me;
             recoverableCut = new Dictionary<Worker, long>();

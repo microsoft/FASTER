@@ -7,7 +7,7 @@ namespace FASTER.libdpr
         long SafeVersion(Worker worker);
     }
     
-    public interface IDprManager
+    public interface IDprFinder
     {
         /// <summary>
         /// 

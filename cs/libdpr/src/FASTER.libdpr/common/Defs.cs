@@ -4,11 +4,6 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    public enum DprStatus : int
-    {
-        OK, WORLD_LINE_MISMATCH, OWNERSHIP_MISMATCH
-    }
-    
     public struct Worker
     {
         public static Worker INVALID = new Worker(-1);

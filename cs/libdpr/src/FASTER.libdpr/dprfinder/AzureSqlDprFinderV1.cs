@@ -6,14 +6,14 @@ using System.Threading.Tasks;
 
 namespace FASTER.libdpr
 {
-    public class AzureSqlDprManagerV1: IDprManager
+    public class AzureSqlDprFinderV1: IDprFinder
     {
         // cached local value
         private readonly Worker me;
         private long globalSafeVersionNum = 0, globalMaxVersionNum = 1, systemWorldLine = 0;
         private readonly SqlConnection writeConn, readConn;
 
-        public AzureSqlDprManagerV1(string connString, Worker me, bool register = true)
+        public AzureSqlDprFinderV1(string connString, Worker me, bool register = true)
         {
             this.me = me;
             writeConn = new SqlConnection(connString);
