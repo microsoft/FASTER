@@ -84,6 +84,10 @@ namespace FASTER.benchmark
 
         public FASTER_YcsbBenchmark(int threadCount_, int numaStyle_, string distribution_, int readPercent_, int backupOptions_)
         {
+            // Pin loading thread if it is not used for checkpointing
+            if (kPeriodicCheckpointMilliseconds <= 0)
+                Native32.AffinitizeThreadShardedNuma(0, 2);
+
             threadCount = threadCount_;
             numaStyle = numaStyle_;
             distribution = distribution_;
@@ -230,8 +234,6 @@ namespace FASTER.benchmark
 
         public unsafe void Run()
         {
-            //Native32.AffinitizeThreadShardedNuma(0, 2);
-
             RandomGenerator rng = new RandomGenerator();
 
             LoadData();
