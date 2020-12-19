@@ -67,8 +67,8 @@ namespace FASTER.test
        [Category("Smoke")]
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
         {
-            int entryLength = 100;
-            int numEntries = 1000000; 
+            int entryLength = 20;
+            int numEntries = 1000; 
             int entryFlag = 9999;
 
             // Reduce SpanBatch to make sure entry fits on page
