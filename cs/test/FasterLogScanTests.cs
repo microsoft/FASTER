@@ -22,7 +22,7 @@ namespace FASTER.test
         private string path = Path.GetTempPath() + "ScanTests/";
         static readonly byte[] entry = new byte[100];
         static int entryLength = 100;
-        static int numEntries = 1000000;
+        static int numEntries = 1000;
         static int entryFlag = 9999;
 
         // Create and populate the log file so can do various scans
