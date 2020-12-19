@@ -1,26 +1,30 @@
+using System.Collections.Concurrent;
+using FASTER.core;
+using FASTER.libdpr.versiontracking;
+
 namespace FASTER.libdpr
 {
     public class DprWorkerCallbacks<TToken>
     {
-        public void OnVersionStart(long version)
-        {
-            
-        }
+        private DprWorkerState<TToken> state;
 
         public void OnVersionEnd(long version, TToken token)
         {
-            
+            var versionHandle = state.versions.GetOrAdd(state.stateObject.Version(), version => new VersionHandle<TToken>());
+            versionHandle.token = token;
         }
 
-        public bool GetRollbackToken(out TToken token)
+        public void OnVersionPersistent(long version, TToken token)
         {
-            token = default;
-            return false;
+            var versionObject = state.versions[version];
+            versionObject.token = token;
+            var workerVersion = new WorkerVersion(state.me, version);
+            state.dprFinder.ReportNewPersistentVersion(workerVersion, versionObject.deps);
         }
 
-        public void OnRollbackComplete(long version)
+        public void OnRollbackComplete()
         {
-            
+            state.epoch.BumpCurrentEpoch(() => state.nextWorldLine++);
         }
     }
 }

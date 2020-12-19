@@ -26,15 +26,13 @@ namespace FASTER.libdpr
         /// <param name="token">Unique identifier for a checkpoint that can be recovered to</param>
         /// <param name="targetVersion">The version to jump to, or -1 if jumping to next version</param>
         /// <returns>Whether the checkpoint is successful.</returns>
-        bool BeginCheckpoint(Action<(long, TToken)> onPersist,  out TToken token, long targetVersion = -1);
+        bool BeginCheckpoint(out TToken token, long targetVersion = -1);
 
         /// <summary>
         /// Recovers the state object to an earlier checkpoint, identified by the given token. After the function
-        /// returns, all future operations should see the recovered state. Although restore is allowed to fail
-        /// arbitrarily, libDPR expects a restore call to eventually succeed.
+        /// returns, all future operations should see the recovered state. A restore call must succeed.
         /// </summary>
         /// <param name="token">Unique checkpoint for the state object to recover to</param>
-        /// <returns>Whether the restore is successful</returns>
-        bool RestoreCheckpoint(TToken token);
+        void BeginRestore(TToken token);
     }
 }
