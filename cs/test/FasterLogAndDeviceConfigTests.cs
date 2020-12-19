@@ -71,8 +71,8 @@ namespace FASTER.test
             log.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(path+"\\log-commits\\commit.0.0"));
-            Assert.IsTrue(File.Exists(path + "\\DeviceConfig.0"));
+            Assert.IsTrue(File.Exists(path+"/log-commits/commit.0.0"));
+            Assert.IsTrue(File.Exists(path + "/DeviceConfig.0"));
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;
