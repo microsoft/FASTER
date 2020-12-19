@@ -17,7 +17,7 @@ namespace FASTER.test
     internal class FasterLogTests
     {
         const int entryLength = 100;
-        const int numEntries = 1000000;
+        const int numEntries = 100000;//1000000;
         private FasterLog log;
         private IDevice device;
         private string commitPath;
