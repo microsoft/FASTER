@@ -7,6 +7,9 @@ jobs:
   pool:
     vmImage: windows-latest
   displayName: 'C# (Windows)'
+- job: Test
+  timeoutInMinutes: 75 # how long to run the job before automatically cancelling
+  cancelTimeoutInMinutes: 5 # how much time to give 'run always even if cancelled tasks' before stopping them
 
   strategy:
     maxParallel: 2
