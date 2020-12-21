@@ -3,6 +3,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 using FASTER.core;
 
 namespace FASTER.libdpr.versiontracking
@@ -31,41 +33,70 @@ namespace FASTER.libdpr.versiontracking
     /// the IStateObject generic type argument to DprWorkerCallback.
     /// </summary>
     /// <typeparam name="TToken">Type of token checkpoints generate</typeparam>
-    internal struct DprWorkerState<TToken>
+    internal class DprWorkerState<TToken>
     {
-        /// <summary>
-        /// 
-        /// </summary>
-        public IDprFinder dprFinder;
-        public LightEpoch epoch;
-        public IStateObject<TToken> stateObject;
-        public ConcurrentDictionary<long, VersionHandle<TToken>> versions;
-        public Worker me;
+        public DprWorkerState(IDprFinder dprFinder, Worker me)
+        {
+            this.dprFinder = dprFinder;
+            this.me = me;
+            epoch = new LightEpoch();
+            versions = new ConcurrentDictionary<long, VersionHandle<TToken>>();
+            nextWorldLine = 0;
+        }
+        
+        public readonly IDprFinder dprFinder;
+        public readonly LightEpoch epoch;
+        public readonly ConcurrentDictionary<long, VersionHandle<TToken>> versions;
+        public readonly Worker me;
         public long nextWorldLine;
     }
     
+    /// <summary>
+    /// DprManager is the primary interface between an underlying state object and the libDPR layer. libDPR expects
+    /// to be called before and after every batch execution.
+    /// </summary>
+    /// <typeparam name="TStateObject"></typeparam>
+    /// <typeparam name="TToken"></typeparam>
     public class DprManager<TStateObject, TToken>
         where TStateObject : IStateObject<TToken>
     {
         private DprWorkerState<TToken> state;
+        private TStateObject stateObject;
+        private Thread refreshThread;
+        private readonly long checkpointPeriodMilli;
+        private ManualResetEventSlim termination;
+
+        public DprManager(IDprFinder dprFinder, Worker me, TStateObject stateObject, long checkpointPeriodMilli)
+        {
+            state = new DprWorkerState<TToken>(dprFinder, me);
+            this.stateObject = stateObject;
+            stateObject.Register(new DprWorkerCallbacks<TToken>(state));
+            this.checkpointPeriodMilli = checkpointPeriodMilli;
+        }
+        
 
         public void Start()
         {
-            
+            termination = new ManualResetEventSlim();
+            refreshThread = new Thread(() =>
+            {
+                var sw = Stopwatch.StartNew();
+                while (!termination.IsSet)
+                {
+                    var expectedVersion = sw.ElapsedMilliseconds / checkpointPeriodMilli + 1;
+                    if (stateObject.Version() < expectedVersion)
+                        stateObject.BeginCheckpoint(expectedVersion);
+                    // TODO(Tianyu): Need to add async or otherwise frequency-limit this invocation?
+                    state.dprFinder.Refresh();
+                }
+            });
+            refreshThread.Start();
         }
 
         public void End()
         {
-            
-        }
-        
-        private void BumpVersion(long target)
-        {
-            if (state.stateObject.BeginCheckpoint(out var token, target))
-            {
-                var versionHandle = state.versions.GetOrAdd(state.stateObject.Version(), version => new VersionHandle<TToken>());
-                versionHandle.token = token;
-            }
+            termination.Set();
+            refreshThread.Join();
         }
 
         private void TryAdvanceWorldLineTo(long targetWorldline)
@@ -73,7 +104,7 @@ namespace FASTER.libdpr.versiontracking
             // Advance world-line one-at-a-time, taking care to make sure that for each target worldline, restore
             // is called only once.
             while (Utility.MonotonicUpdate(ref state.nextWorldLine, Math.Min(state.nextWorldLine + 1, targetWorldline), out _))
-                state.stateObject.BeginRestore(state.versions[state.dprFinder.SafeVersion(state.me)].token);
+                stateObject.BeginRestore(state.versions[state.dprFinder.SafeVersion(state.me)].token);
         }
 
         /// <summary>
@@ -82,15 +113,18 @@ namespace FASTER.libdpr.versiontracking
         /// In the true case, there must eventually be a matching SignalBatchFinish call for DPR to make
         /// progress.
         /// </summary>
-        /// <param name="dprRequest">Dpr request message from user</param>
-        /// <param name="dprResponse">Dpr response message that will be returned to user</param>
+        /// <param name="request">Dpr request message from user</param>
+        /// <param name="response">Dpr response message that will be returned to user</param>
+        /// <param name="tracker">Tracker to use for batch execution</param>
         /// <returns>Whether the batch can be executed</returns>
-        public unsafe bool RequestBatchBegin(ref DprBatchHeader dprRequest, ref DprBatchHeader dprResponse)
+        public unsafe bool RequestBatchBegin(ReadOnlySpan<byte> request, Span<byte> response, out DprBatchVersionTracker tracker)
         {
+            // TODO(Tianyu): Size/Range check on request and response span bytes?
+            ref var dprRequest = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(request));
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
-            while (dprRequest.versionLowerBound > state.stateObject.Version())
-                BumpVersion(dprRequest.versionLowerBound);
+            while (dprRequest.versionLowerBound > stateObject.Version())
+                stateObject.BeginCheckpoint(dprRequest.versionLowerBound);
 
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
             // must not shift while a batch is being processed, otherwise a message from an older world-line may be
@@ -109,13 +143,18 @@ namespace FASTER.libdpr.versiontracking
             // is not executed.
             if (dprRequest.worldLine < state.dprFinder.SystemWorldLine())
             {
+                ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
+                dprResponse.sessionId = dprRequest.sessionId;
                 dprResponse.worldLine = state.dprFinder.SystemWorldLine();
-                dprResponse.size = DprBatchHeader.HeaderSize;
+                dprResponse.batchId = dprRequest.batchId;
                 dprResponse.numMessages = 0;
-                dprResponse.numDeps = 0;
                 state.epoch.Suspend();
+                tracker = default;
                 return false;
             }
+
+            // TODO(Tianyu): Replace with one reused from an object pool
+            tracker = new DprBatchVersionTracker();
             
             // At this point, we are certain that the request world-line and worker world-line match, and worker
             // world-line will not advance until this thread refreshes the epoch. We can proceed to batch execution.
@@ -124,23 +163,45 @@ namespace FASTER.libdpr.versiontracking
             // Update batch dependencies to the current worker-version. This is an over-approximation, as the batch
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
             // issue, nor do we lose precision as batch-level dependency tracking is already an approximation.
+            var versionHandle = state.versions.GetOrAdd(stateObject.Version(), version => new VersionHandle<TToken>());
             fixed (byte* depValues = dprRequest.deps)
             {
                 for (var i = 0; i < dprRequest.numDeps; i++)
-                {
-                    var versionHandle = state.versions.GetOrAdd(state.stateObject.Version(), version => new VersionHandle<TToken>());
                     versionHandle.deps.Add(Unsafe.AsRef<WorkerVersion>(depValues + sizeof(Guid) * i));
-                }
             }
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
             return true;
         }
 
-        public void SignalBatchFinish(ref DprBatchHeader dprRequest, ref DprBatchHeader dprResponse)
+        /// <summary>
+        /// Invoke after processing of a batch is complete, and dprBatchHeader has been populated with a batch offset ->
+        /// executed version mapping. This function must be invoked once for every processed batch for DPR to make
+        /// progress.
+        /// </summary>
+        /// <param name="request">Dpr request message from user</param>
+        /// <param name="response">Dpr response message that will be returned to user</param>
+        /// <param name="tracker">Tracker used in batch processing</param>
+        /// <returns> 0 if successful, size required to hold return if supplied byte span is too small</returns>
+        public int SignalBatchFinish(ReadOnlySpan<byte> request, Span<byte> response, DprBatchVersionTracker tracker)
         {
-            // TODO(Tianyu): This version requires the underlying state object implementation to provide an op -> version
-            // mapping in dprResponse. Can we do better?
+            // TODO(Tianyu): Size/Range check on request and response span bytes?
+            ref var dprRequest = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(request));
+            ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
+            var responseSize = DprBatchResponseHeader.HeaderSize + tracker.EncodingSize();
+            if (response.Length < responseSize) return responseSize;
+            
+            // Signal batch finished so world-lines can advance. Need to make sure not double-invoked, therefore only
+            // called after size validation.
             state.epoch.Suspend();
+            
+            // Populate response
+            dprResponse.sessionId = dprRequest.sessionId;
+            dprResponse.worldLine = dprRequest.worldLine;
+            dprResponse.batchId = dprRequest.batchId;
+            dprResponse.numMessages = dprRequest.numMessages;
+            tracker.AppendOntoResponse(ref dprResponse);
+
+            return 0;
         }
     }
 }

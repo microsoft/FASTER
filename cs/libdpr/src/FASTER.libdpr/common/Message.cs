@@ -1,7 +1,5 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FASTER.libdpr
@@ -17,26 +15,11 @@ namespace FASTER.libdpr
     }
 
     /// <summary>
-    /// A DprMessageHeader is DPR metadata associated with each operation of the state object
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public unsafe struct DprMessageHeader
-    {
-        /// <summary>
-        /// Special value for when the underlying state object implementation rejects an operation for whatever reason.
-        /// This will prompt libDPR client to retry and disregard this failed execution in DPR tracking 
-        /// </summary>
-        public const long NOT_EXECUTED = 0;
-        [FieldOffset(0)]
-        public long data;
-    }
-
-    /// <summary>
     /// DPR metadata associated with each batch. Laid out continuously as:
     /// header | deps (WorkerVersion[]) | message metadata (DprMessageHeader[])
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 44)]
-    public unsafe struct DprBatchHeader
+    public unsafe struct DprBatchRequestHeader
     {
         public const int HeaderSize = 44;
         [FieldOffset(0)]
@@ -50,25 +33,30 @@ namespace FASTER.libdpr
         [FieldOffset(24)]
         public long versionLowerBound;
         [FieldOffset(32)]
-        public int size;
+        public int batchId;
         [FieldOffset(36)]
         public int numMessages;
         [FieldOffset(40)]
         public int numDeps;
         [FieldOffset(44)]
         public fixed byte deps[0];
+    }
 
-        public ref byte MessageHeaderStart()
-        {
-            return ref deps[numDeps * sizeof(WorkerVersion)];
-        }
-
-        public void MarkOperationVersion(int batchOffset, long executedVersion)
-        {
-            fixed (byte* d = deps)
-            {
-                Unsafe.AsRef<DprMessageHeader>(d + numDeps * sizeof(WorkerVersion)).data = executedVersion;
-            }
-        }
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    public unsafe struct DprBatchResponseHeader
+    {
+        public const int HeaderSize = 32;
+        [FieldOffset(0)]
+        public fixed byte data[HeaderSize];
+        [FieldOffset(0)]
+        public Guid sessionId;
+        [FieldOffset(16)]
+        public long worldLine;
+        [FieldOffset(24)]
+        public int batchId;
+        [FieldOffset(28)]
+        public int numMessages;
+        [FieldOffset(32)]
+        public fixed byte versions[0];
     }
 }
