@@ -38,6 +38,7 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
+            log.Dispose();  // just in case log dispose got missed in tests
             manager.Dispose();
             device.Dispose();
 
@@ -169,12 +170,12 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TryEnqueue_VariousConfigs([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TryEnqueueVariousConfigs([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
-            const int dataLength = 10000;
+            const int dataLength = 1000;
             byte[] data1 = new byte[dataLength];
             for (int i = 0; i < dataLength; i++) data1[i] = (byte)i;
 

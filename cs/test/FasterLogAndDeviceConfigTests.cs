@@ -22,8 +22,7 @@ namespace FASTER.test
 
 
 
-    /*  *** Seeing if this is the issue as I have a test that is messing up CI
-       
+     
        
     [TestFixture]
     internal class LogAndDeviceConfigTests
@@ -38,8 +37,12 @@ namespace FASTER.test
         public void Setup()
         {
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
-            catch {} 
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, true);
+            }
+            catch {}
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "DeviceConfig", deleteOnClose: true, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
@@ -53,7 +56,11 @@ namespace FASTER.test
             device.Dispose();
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, true);
+            }
             catch { }
         }
 
@@ -63,7 +70,7 @@ namespace FASTER.test
         public void DeviceAndLogConfig()
         {
 
-            int entryLength = 100;
+            int entryLength = 10;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -93,7 +100,7 @@ namespace FASTER.test
         }
 
     }
-    */
+    
 }
 
 
