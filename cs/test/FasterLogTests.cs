@@ -168,10 +168,9 @@ namespace FASTER.test
             log.Dispose();
         }
 
-        /*
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TryEnqueueVariousConfigs([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TryEnqueue1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -211,7 +210,6 @@ namespace FASTER.test
             }
             log.Dispose();
         }
-        */
 
         [Test]
         [Category("FasterLog")]
@@ -220,8 +218,9 @@ namespace FASTER.test
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
-            byte[] data1 = new byte[10000];
-            for (int i = 0; i < 10000; i++) data1[i] = (byte)i;
+            const int dataLength = 10000;
+            byte[] data1 = new byte[dataLength];
+            for (int i = 0; i < dataLength; i++) data1[i] = (byte)i;
 
             using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
             {
@@ -292,7 +291,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TruncateUntil_Basic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TruncateUntilBasic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -334,7 +333,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsync_Entry([Values]LogChecksumType logChecksum)
+        public async ValueTask EnqueueAndWaitForCommitAsyncEntry([Values]LogChecksumType logChecksum)
         {
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
 
@@ -519,9 +518,8 @@ namespace FASTER.test
             // to make sure it isn't crashing and that it does actually commit it
             // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
             log.Commit(false);
-            Thread.Sleep(1000);
             log.Commit(true);  // makes sure commit eventually succeeds - this is also good aspect to call right after one another
-            Thread.Sleep(1000);
+            Thread.Sleep(2000);
 
             // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
             var endAddress = IsAsync(iteratorType) ? log.TailAddress : long.MaxValue;
