@@ -39,7 +39,7 @@ namespace FASTER.test
             objlog.Dispose();
         }
 
-
+/*
         [Test]
         [Category("FasterKV")]
         public void GenericDiskDeleteTest1()
@@ -103,8 +103,8 @@ namespace FASTER.test
                     val++;
             }
             Assert.IsTrue(totalRecords == val);
-
         }
+
 
         [Test]
         [Category("FasterKV")]
@@ -170,5 +170,7 @@ namespace FASTER.test
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.value == input.value);
         }
+*/
+
     }
 }

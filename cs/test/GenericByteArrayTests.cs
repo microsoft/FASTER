@@ -48,6 +48,7 @@ namespace FASTER.test
             return BitConverter.GetBytes(i);
         }
 
+        /*
         [Test]
         [Category("FasterKV")]
         public void GenericByteArrayTest1()
@@ -78,6 +79,7 @@ namespace FASTER.test
                 }
             }
         }
+        */
 
         class MyByteArrayFuncs : SimpleFunctions<byte[], byte[]>
         {
