@@ -5,23 +5,13 @@ using System.Runtime.InteropServices;
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// We expect underlying systems to implement this interface to allow libDPR to add metadata for DPR tracking.
-    /// </summary>
-    public interface IAppendableMessageBatch<Message> : IEnumerable<Message>
-    {
-        void AddBytes(Span<byte> bytes);
-
-        Span<byte> GetAdditionalBytes();
-    }
-
-    /// <summary>
     /// DPR metadata associated with each batch. Laid out continuously as:
     /// header | deps (WorkerVersion[]) | message metadata (DprMessageHeader[])
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 44)]
+    [StructLayout(LayoutKind.Explicit, Size = 40)]
     public unsafe struct DprBatchRequestHeader
     {
-        public const int HeaderSize = 44;
+        public const int HeaderSize = 40;
         [FieldOffset(0)]
         public fixed byte data[HeaderSize];
         [FieldOffset(0)]
@@ -35,17 +25,15 @@ namespace FASTER.libdpr
         [FieldOffset(32)]
         public int batchId;
         [FieldOffset(36)]
-        public int numMessages;
-        [FieldOffset(40)]
         public int numDeps;
-        [FieldOffset(44)]
+        [FieldOffset(40)]
         public fixed byte deps[0];
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    [StructLayout(LayoutKind.Explicit, Size = 28)]
     public unsafe struct DprBatchResponseHeader
     {
-        public const int HeaderSize = 32;
+        public const int HeaderSize = 28;
         [FieldOffset(0)]
         public fixed byte data[HeaderSize];
         [FieldOffset(0)]
@@ -55,8 +43,6 @@ namespace FASTER.libdpr
         [FieldOffset(24)]
         public int batchId;
         [FieldOffset(28)]
-        public int numMessages;
-        [FieldOffset(32)]
         public fixed byte versions[0];
     }
 }

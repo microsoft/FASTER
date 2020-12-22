@@ -99,6 +99,7 @@ namespace FASTER.libdpr.versiontracking
 
         public void End()
         {
+            // TODO(Tianyu): Implement leaving a DPR cluster
             termination.Set();
             refreshThread.Join();
         }
@@ -149,9 +150,9 @@ namespace FASTER.libdpr.versiontracking
             {
                 ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
                 dprResponse.sessionId = dprRequest.sessionId;
-                dprResponse.worldLine = state.dprFinder.SystemWorldLine();
+                // Use negative to signal that there was a mismatch, which would prompt error handling on client side
+                dprResponse.worldLine = -state.dprFinder.SystemWorldLine();
                 dprResponse.batchId = dprRequest.batchId;
-                dprResponse.numMessages = 0;
                 state.epoch.Suspend();
                 tracker = default;
                 return false;
@@ -199,7 +200,6 @@ namespace FASTER.libdpr.versiontracking
             dprResponse.sessionId = dprRequest.sessionId;
             dprResponse.worldLine = dprRequest.worldLine;
             dprResponse.batchId = dprRequest.batchId;
-            dprResponse.numMessages = dprRequest.numMessages;
             tracker.AppendOntoResponse(ref dprResponse);
             
             trackers.Return(tracker);

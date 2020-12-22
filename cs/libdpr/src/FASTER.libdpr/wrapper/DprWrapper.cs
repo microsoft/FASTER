@@ -8,4 +8,8 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+    public class DprWrapper
+    {
+        
+    }
 }
