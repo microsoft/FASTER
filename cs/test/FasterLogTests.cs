@@ -42,6 +42,8 @@ namespace FASTER.test
             manager.Dispose();
             device.Dispose();
 
+            // Saw timing issues on release build where fasterlog.log was not quite freed up before deleting which caused long delays 
+            Thread.Sleep(1000);
             if (Directory.Exists(commitPath))
                 Directory.Delete(commitPath, true);
         }

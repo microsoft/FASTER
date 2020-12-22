@@ -19,9 +19,9 @@ namespace FASTER.test
     {
         private FasterLog log;
         private IDevice device;
-        private string path = Path.GetTempPath() + "EnqueueTests/";
         static readonly byte[] entry = new byte[100];
         static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
+        private string commitPath;
 
         public enum EnqueueIteratorType
         {
@@ -41,12 +41,15 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
-            catch {} 
+            if (Directory.Exists(commitPath))
+                Directory.Delete(commitPath, true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "Enqueue", deleteOnClose: true);
+            device = Devices.CreateLogDevice(commitPath + "Enqueue", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
@@ -57,12 +60,12 @@ namespace FASTER.test
             device.Dispose();
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            if (Directory.Exists(commitPath))
+                Directory.Delete(commitPath, true);
         }
 
 
-       [Test]
+        [Test]
        [Category("FasterLog")]
        [Category("Smoke")]
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
