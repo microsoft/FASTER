@@ -167,7 +167,7 @@ namespace FASTER.test
 
             log.Dispose();
         }
-/*
+
         [Test]
         [Category("FasterLog")]
         public async ValueTask TryEnqueue1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
@@ -210,7 +210,7 @@ namespace FASTER.test
             }
             log.Dispose();
         }
-*/
+
         [Test]
         [Category("FasterLog")]
         public async ValueTask TryEnqueue2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
