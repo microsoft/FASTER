@@ -29,8 +29,12 @@ namespace FASTER.test
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name +  "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            if (Directory.Exists(commitPath))
-              Directory.Delete(commitPath, true);
+            try
+            {
+                if (Directory.Exists(commitPath))
+                    Directory.Delete(commitPath, true);
+            }
+            catch { }
 
             device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
             manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(commitPath));
@@ -45,8 +49,12 @@ namespace FASTER.test
 
             // Saw timing issues on release build where fasterlog.log was not quite freed up before deleting which caused long delays 
             Thread.Sleep(1000);
-            if (Directory.Exists(commitPath))
-              Directory.Delete(commitPath, true);
+            try
+            {
+                if (Directory.Exists(commitPath))
+                    Directory.Delete(commitPath, true);
+            }
+            catch { }
 
         }
 
