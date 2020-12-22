@@ -5,10 +5,13 @@ namespace FASTER.libdpr.versiontracking
 {
     public class DprBatchVersionTracker
     {
+        /// <summary></summary>
         public const long NOT_EXECUTED = 0;
-        // TODO(Tianyu): Move towards more sophisticated representation if necessary
-        private List<long> versions;
         
+        // TODO(Tianyu): Move towards more sophisticated representation if necessary
+        private const int DEFAULT_BATCH_SIZE = 1024;
+        private List<long> versions = new List<long>(DEFAULT_BATCH_SIZE);
+
         public void MarkOneOperationVersion(int batchOffset, long executedVersion)
         {
             // TODO(Tianyu): Is there no extend method with default value on C# lists?

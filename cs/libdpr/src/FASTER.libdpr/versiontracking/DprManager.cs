@@ -62,14 +62,18 @@ namespace FASTER.libdpr.versiontracking
     {
         private DprWorkerState<TToken> state;
         private TStateObject stateObject;
+        private ThreadLocalObjectPool<DprBatchVersionTracker> trackers;
+            
         private Thread refreshThread;
         private readonly long checkpointPeriodMilli;
         private ManualResetEventSlim termination;
 
         public DprManager(IDprFinder dprFinder, Worker me, TStateObject stateObject, long checkpointPeriodMilli)
         {
+         
             state = new DprWorkerState<TToken>(dprFinder, me);
             this.stateObject = stateObject;
+            trackers = new ThreadLocalObjectPool<DprBatchVersionTracker>(() => new DprBatchVersionTracker());
             stateObject.Register(new DprWorkerCallbacks<TToken>(state));
             this.checkpointPeriodMilli = checkpointPeriodMilli;
         }
@@ -106,6 +110,7 @@ namespace FASTER.libdpr.versiontracking
             while (Utility.MonotonicUpdate(ref state.nextWorldLine, Math.Min(state.nextWorldLine + 1, targetWorldline), out _))
                 stateObject.BeginRestore(state.versions[state.dprFinder.SafeVersion(state.me)].token);
         }
+        
 
         /// <summary>
         /// Invoke before beginning processing of a batch. If the function returns false, the batch must not be
@@ -119,7 +124,6 @@ namespace FASTER.libdpr.versiontracking
         /// <returns>Whether the batch can be executed</returns>
         public unsafe bool RequestBatchBegin(ReadOnlySpan<byte> request, Span<byte> response, out DprBatchVersionTracker tracker)
         {
-            // TODO(Tianyu): Size/Range check on request and response span bytes?
             ref var dprRequest = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(request));
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
@@ -153,9 +157,7 @@ namespace FASTER.libdpr.versiontracking
                 return false;
             }
 
-            // TODO(Tianyu): Replace with one reused from an object pool
-            tracker = new DprBatchVersionTracker();
-            
+            tracker = trackers.Checkout();
             // At this point, we are certain that the request world-line and worker world-line match, and worker
             // world-line will not advance until this thread refreshes the epoch. We can proceed to batch execution.
             Debug.Assert(dprRequest.worldLine == state.dprFinder.SystemWorldLine());
@@ -184,7 +186,6 @@ namespace FASTER.libdpr.versiontracking
         /// <returns> 0 if successful, size required to hold return if supplied byte span is too small</returns>
         public int SignalBatchFinish(ReadOnlySpan<byte> request, Span<byte> response, DprBatchVersionTracker tracker)
         {
-            // TODO(Tianyu): Size/Range check on request and response span bytes?
             ref var dprRequest = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(request));
             ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
             var responseSize = DprBatchResponseHeader.HeaderSize + tracker.EncodingSize();
@@ -200,7 +201,8 @@ namespace FASTER.libdpr.versiontracking
             dprResponse.batchId = dprRequest.batchId;
             dprResponse.numMessages = dprRequest.numMessages;
             tracker.AppendOntoResponse(ref dprResponse);
-
+            
+            trackers.Return(tracker);
             return 0;
         }
     }
