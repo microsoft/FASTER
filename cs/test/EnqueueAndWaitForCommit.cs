@@ -61,7 +61,7 @@ namespace FASTER.test
             catch { }
         }
 
-
+/*
         [Test]
         [Category("FasterLog")]
         public void EnqueueAndWaitForCommitBasicTest([Values] EnqueueIteratorType iteratorType)
@@ -146,7 +146,7 @@ namespace FASTER.test
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
-
+*/
         static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
         {
             // Add to FasterLog on separate threads as it will sit and await until Commit happens
