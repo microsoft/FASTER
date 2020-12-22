@@ -19,9 +19,9 @@ namespace FASTER.test
     {
         public FasterLog log;
         public IDevice device;
-        private string path = Path.GetTempPath() + "EnqueueAndWaitForCommitTests/";
         static readonly byte[] entry = new byte[10];
         static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
+        private string commitPath;
 
         public enum EnqueueIteratorType
         {
@@ -41,12 +41,15 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try { new DirectoryInfo(path).Delete(true); }
+            try { new DirectoryInfo(commitPath).Delete(true); }
             catch { }
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "EnqueueAndWaitForCommit", deleteOnClose: true);
+            device = Devices.CreateLogDevice(commitPath + "EnqueueAndWaitForCommit.log", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
@@ -57,18 +60,17 @@ namespace FASTER.test
             device.Dispose();
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
+            try { new DirectoryInfo(commitPath).Delete(true); }
             catch { }
         }
-
 /*
         [Test]
         [Category("FasterLog")]
         public void EnqueueAndWaitForCommitBasicTest([Values] EnqueueIteratorType iteratorType)
         {
             // make it small since launching each on separate threads 
-            int entryLength = 10;
-            int numEntries = 5;
+            int entryLength = 5;
+            int numEntries = 3;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -147,6 +149,7 @@ namespace FASTER.test
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
 */
+
         static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
         {
             // Add to FasterLog on separate threads as it will sit and await until Commit happens

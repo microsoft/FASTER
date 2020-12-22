@@ -49,7 +49,7 @@ namespace FASTER.test
                 Directory.Delete(commitPath, true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(commitPath + "Enqueue", deleteOnClose: true);
+            device = Devices.CreateLogDevice(commitPath + "Enqueue.log", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
