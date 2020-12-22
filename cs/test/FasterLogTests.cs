@@ -500,15 +500,17 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask CommitFalse([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
+        public void CommitFalse()
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
+
+            int commitFalseEntries = 100;
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
                 entry[i] = (byte)i;
 
-            for (int i = 0; i < numEntries; i++)
+            for (int i = 0; i < commitFalseEntries; i++)
             {
                 log.Enqueue(entry);
             }
@@ -518,45 +520,33 @@ namespace FASTER.test
             // to make sure it isn't crashing and that it does actually commit it
             // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
             log.Commit(false);
-            log.Commit(true);  // makes sure commit eventually succeeds - this is also good aspect to call right after one another
-            Thread.Sleep(2000);
+            Thread.Sleep(4000);
 
-            // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
-            var endAddress = IsAsync(iteratorType) ? log.TailAddress : long.MaxValue;
-            using (var iter = log.Scan(0, endAddress))
+            // flag to make sure data has been checked 
+            bool datacheckrun = false;
+
+            // Read the log - Look for the flag so know each entry is unique
+            int currentEntry = 0;
+            using (var iter = log.Scan(0, 100_000_000))
             {
-                var counter = new Counter(log);
-                switch (iteratorType)
+                while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                    case IteratorType.AsyncByteVector:
-                        await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
-                        {
-                            Assert.IsTrue(result.SequenceEqual(entry));
-                            counter.IncrementAndMaybeTruncateUntil(nextAddress);
-                        }
-                        break;
-                    case IteratorType.AsyncMemoryOwner:
-                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
-                        {
-                            Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
-                            result.Dispose();
-                            counter.IncrementAndMaybeTruncateUntil(nextAddress);
-                        }
-                        break;
-                    case IteratorType.Sync:
-                        while (iter.GetNext(out byte[] result, out _, out _))
-                        {
-                            Assert.IsTrue(result.SequenceEqual(entry));
-                            counter.IncrementAndMaybeTruncateUntil(iter.NextAddress);
-                        }
-                        break;
-                    default:
-                        Assert.Fail("Unknown IteratorType");
-                        break;
+                    if (currentEntry < entryLength)
+                    {
+                        // set check flag to show got in here
+                        datacheckrun = true;
+
+                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
+
+                        currentEntry++;
+                    }
                 }
-                Assert.IsTrue(counter.count == numEntries,"Fail (not equal) - counter count:"+counter.count.ToString()+" numEntries:"+numEntries.ToString());
             }
 
+            // if data verification was skipped, then pop a fail
+            if (datacheckrun == false)
+                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            
             log.Dispose();
         }
 
