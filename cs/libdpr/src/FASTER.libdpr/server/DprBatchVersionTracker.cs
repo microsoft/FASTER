@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
-namespace FASTER.libdpr.versiontracking
+namespace FASTER.libdpr
 {
     public unsafe struct DprBatchVersionVector : IEnumerable<long>
     {

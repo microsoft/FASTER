@@ -1,16 +1,16 @@
-using System.Buffers;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
+using FASTER.core;
 
-namespace FASTER.libdpr.client
+namespace FASTER.libdpr
 {
     public class BatchInfo
     {
         public int batchId;
         public bool allocated;
         public long workerId;
+        public long worldLine;
         public long startSeqNum, endSeqNum;
         public List<WorkerVersion> deps = new List<WorkerVersion>();
     }
@@ -87,6 +87,20 @@ namespace FASTER.libdpr.client
             info.allocated = false;
             info.deps.Clear();
             freeBuffers.Enqueue(info.batchId);
+        }
+
+        public void HandleRollback(ref CommitPoint limit)
+        {
+            // TODO(Tianyu): Eventually need to account for discrepancies between checkpoint and local checkpoint
+            // membership information
+            for (var i = 0; i < buffers.Length; i++)
+            {
+                if (!buffers[i].allocated) continue;
+                // TODO(Tianyu): Perhaps be more efficient here in fixing UntilSerialNo
+                for (var j = buffers[i].startSeqNum; j < buffers[i].endSeqNum; j++)
+                    limit.ExcludedSerialNos.Add(j);
+                FinishBatch(i);
+            }
         }
 
         public IEnumerator<BatchInfo> GetEnumerator()

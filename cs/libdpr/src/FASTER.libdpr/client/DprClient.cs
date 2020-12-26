@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FASTER.libdpr.client
+namespace FASTER.libdpr
 {
     public class DprClient
     {

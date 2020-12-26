@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using FASTER.core;
 
-namespace FASTER.libdpr.versiontracking
+namespace FASTER.libdpr
 {
     /// <summary>
     /// Per-version information needed by DPR

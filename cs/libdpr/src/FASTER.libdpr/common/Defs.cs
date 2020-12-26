@@ -1,7 +1,3 @@
-using System;
-using System.Runtime.CompilerServices;
-using FASTER.core;
-
 namespace FASTER.libdpr
 {
     public struct Worker

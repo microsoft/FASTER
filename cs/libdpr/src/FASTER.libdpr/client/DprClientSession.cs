@@ -1,11 +1,8 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using FASTER.core;
-using FASTER.libdpr.client;
-using FASTER.libdpr.versiontracking;
 
 namespace FASTER.libdpr
 {
@@ -18,7 +15,7 @@ namespace FASTER.libdpr
         private ClientVersionTracker versionTracker;
         private CommitPoint currentCommitPoint;
         
-        private ConcurrentDictionary<WorkerVersion, object> deps;
+        private HashSet<WorkerVersion> deps;
         private long clientVersion = 1, clientWorldLine = 0;
         private ClientBatchTracker batchTracker;
         public DprClientSession(Guid guid, DprClient dprClient)
@@ -27,7 +24,7 @@ namespace FASTER.libdpr
             this.dprClient = dprClient;
             versionTracker = new ClientVersionTracker();
             currentCommitPoint = new CommitPoint();
-            deps = new ConcurrentDictionary<WorkerVersion, object>();
+            deps = new HashSet<WorkerVersion>();
             batchTracker = new ClientBatchTracker();
         }
 
@@ -38,6 +35,7 @@ namespace FASTER.libdpr
             return currentCommitPoint;
         }
         
+        // TODO(Tianyu): Note that this is not thread-safe
         public long IssueBatch(int batchSize, long workerId, ref DprBatchRequestHeader header)
         {
             // Wait for a batch slot to become available
@@ -47,8 +45,9 @@ namespace FASTER.libdpr
                 Thread.Yield();
             // Populate tracking information into the batch
             foreach (var dep in deps)
-                info.deps.Add(dep.Key);
+                info.deps.Add(dep);
             info.workerId = workerId;
+            header.worldLine = clientWorldLine;
             info.startSeqNum = seqNum;
             seqNum += batchSize;
             info.endSeqNum = seqNum;
@@ -69,12 +68,40 @@ namespace FASTER.libdpr
             }
             return info.startSeqNum;
         }
-        
+
+        // TODO(Tianyu): Note that this is not thread-safe
         public unsafe void ResolveBatch(ref DprBatchResponseHeader reply)
         {
             var batchInfo = batchTracker.GetBatch(reply.batchId);
-            // TODO(Tianyu): Check world-line and handle
             
+
+            // Remote machine would not have executed a batch if the world-lines are mismatched
+            if (reply.worldLine != batchInfo.worldLine
+                // These replies are from an earlier world-line that the client has already moved past. We would have
+                // declared these ops lost, and the remote server would have rolled back. It is ok to simply
+                // disregard these replies;
+                || reply.worldLine < clientWorldLine)
+            {
+                // In this case, the remote machine has seen more failures than the client and the client needs to 
+                // catch up 
+                if (reply.worldLine > clientWorldLine)
+                {
+                    // TODO(Tianyu): Recovery codepath
+                    // Wait for a refresh to make sure client is operating on latest DPR information
+                    while (Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _))
+                        Thread.Yield();
+                    var result = new CommitPoint {UntilSerialNo = seqNum, ExcludedSerialNos = new List<long>()};
+                    versionTracker.HandleRollback(dprClient.GetDprFinder().ReadSnapshot(), ref result);
+                    batchTracker.HandleRollback(ref result);
+                    AdjustCommitPoint(ref result);
+                    throw new DprRollbackException(result);
+                }
+                // Otherwise, we would have declared these ops lost, and the remote server
+                // would have rolled back. It is ok to simply disregard these replies
+                batchTracker.FinishBatch(reply.batchId);
+                return;
+            }
+
             // Update versioning information
             long maxVersion = 0;
 
@@ -93,11 +120,13 @@ namespace FASTER.libdpr
                 Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
             }
             
-            // Add largest worker-version as dependency for future ops
-            deps.TryAdd(new WorkerVersion(batchInfo.workerId, maxVersion), null);
+
             // Remove all deps to save space. Future ops will implicitly depend on these by transitivity
             foreach (var dep in batchInfo.deps)
-                deps.Remove(dep, out _);
+                deps.Remove(dep);
+            // Add largest worker-version as dependency for future ops. Must add after removal in case this op has
+            // a version self-dependency (very likely) that would otherwise be erased
+            deps.Add(new WorkerVersion(batchInfo.workerId, maxVersion));
             
             // Free up this batch's tracking space
             batchTracker.FinishBatch(reply.batchId);
