@@ -4,7 +4,7 @@ namespace FASTER.libdpr
 {
     public interface ISimpleStateObject<TToken>
     {
-        void Operate(ref Span<byte> request, out Span<byte> reply);
+        bool ProcessBatch(ReadOnlySpan<byte> request, out Span<byte> reply);
 
         TToken PerformCheckpoint(Action<TToken> onPersist);
 

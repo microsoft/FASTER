@@ -58,6 +58,7 @@ namespace FASTER.libdpr
             header.numDeps = info.deps.Count;
             header.worldLine = clientWorldLine;
             header.versionLowerBound = clientVersion;
+            header.numMessages = batchSize;
             unsafe
             {
                 fixed (byte* start = header.deps)
