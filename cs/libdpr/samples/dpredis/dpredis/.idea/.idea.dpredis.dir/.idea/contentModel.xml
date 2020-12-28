@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ContentModelStore">
+    <e p="C:\Users\lihua\AppData\Local\JetBrains\Rider2020.3\extResources" t="IncludeRecursive" />
+    <e p="C:\Users\lihua\AppData\Local\JetBrains\Rider2020.3\resharper-host\Local\Transient\Rider\v203\SolutionCaches\_.19.00" t="ExcludeRecursive" />
+    <e p="D:\FASTER\tianyu-fork\cs\libdpr\samples\dpredis\dpredis" t="IncludeRecursive">
+      <e p="bin" t="ExcludeRecursive" />
+      <e p="dpredis.csproj" t="IncludeRecursive" />
+      <e p="obj" t="ExcludeRecursive">
+        <e p="Debug" t="Include">
+          <e p="net461" t="Include">
+            <e p="dpredis.AssemblyInfo.cs" t="Include" />
+          </e>
+          <e p="netstandard2.0" t="Include">
+            <e p="dpredis.AssemblyInfo.cs" t="Include" />
+          </e>
+          <e p="netstandard2.1" t="Include">
+            <e p="dpredis.AssemblyInfo.cs" t="Include" />
+          </e>
+        </e>
+      </e>
+      <e p="packages" t="ExcludeRecursive" />
+      <e p="Program.cs" t="Include" />
+    </e>
+  </component>
+</project>

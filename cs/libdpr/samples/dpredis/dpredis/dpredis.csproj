@@ -2,7 +2,14 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net5.0</TargetFramework>
+        <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <LangVersion>8.0</LangVersion>
+        <Platforms>AnyCPU;x64</Platforms>
     </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\..\src\FASTER.libdpr\FASTER.libdpr.csproj" />
+    </ItemGroup>
 
 </Project>
