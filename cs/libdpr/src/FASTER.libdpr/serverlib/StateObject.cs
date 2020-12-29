@@ -1,11 +1,15 @@
 
 namespace FASTER.libdpr
 {
+    /// <summary>
+    /// Abstracts an underlying versioned state-store with non-blocking checkpointing and rollback functionalities.
+    /// </summary>
+    /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
     public interface IStateObject<TToken>
     {
         /// <summary>
         /// Registers a set of callbacks that libDPR expects to be called at certain points by the underlying state
-        /// object. Will only be called once on start up, before any operations are started.
+        /// object. This function will only be called once on start up, before any operations are started.
         /// </summary>
         /// <param name="callbacks">callbacks to be invoked</param>
         void Register(DprWorkerCallbacks<TToken> callbacks);

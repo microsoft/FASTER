@@ -4,6 +4,12 @@ using System.Threading;
 
 namespace FASTER.libdpr
 {
+    /// <summary>
+    /// Wraps DPR components together for easy interface of a SimpleStateObject with a network layer. Do not
+    /// expect this to be performant.
+    /// </summary>
+    /// <typeparam name="TStateObject">Underlying SimpleStateObject</typeparam>
+    /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
     public class DprWrapper<TStateObject, TToken>
         where TStateObject : ISimpleStateObject<TToken>
     {
@@ -24,9 +30,15 @@ namespace FASTER.libdpr
         public void Start() => dprManager.Start();
 
         public void End() => dprManager.End();
-        
-        // TODO(Tianyu): Add in appendable batch abstraction
-        public Span<byte> Process(ReadOnlySpan<byte> request, ReadOnlySpan<byte> dprRequest, Span<byte> dprResponse)
+
+        /// <summary>
+        /// Processes a batch while handling all DPR-related work.
+        /// </summary>
+        /// <param name="request">Client request</param>
+        /// <param name="dprRequest">DPR header that came with the request</param>
+        /// <param name="dprResponse">DPR response header to write to</param>
+        /// <returns>Response to write to client</returns>
+        public IDisposableBuffer Process(ReadOnlySpan<byte> request, ReadOnlySpan<byte> dprRequest, Span<byte> dprResponse)
         {
             ref var castRequest = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(dprRequest));
             // If batch rejected, simply send back dprHeader without executing

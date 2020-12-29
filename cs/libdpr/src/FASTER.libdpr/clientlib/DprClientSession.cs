@@ -28,8 +28,23 @@ namespace FASTER.libdpr
             batchTracker = new ClientBatchTracker();
         }
 
+        private void CheckWorldlineChange()
+        {
+            // Nothing to check if no dpr update
+            if (!Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _)) return;
+            // No failure
+            if (clientWorldLine == dprClient.GetDprFinder().SystemWorldLine()) return;
+            clientWorldLine = dprClient.GetDprFinder().SystemWorldLine();
+            var result = new CommitPoint {UntilSerialNo = seqNum, ExcludedSerialNos = new List<long>()};
+            versionTracker.HandleRollback(dprClient.GetDprFinder().ReadSnapshot(), ref result);
+            batchTracker.HandleRollback(ref result);
+            AdjustCommitPoint(ref result);
+            throw new DprRollbackException(result);
+        }
+
         public CommitPoint GetCommitPoint()
         {
+            CheckWorldlineChange();
             if (Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _))
                 ComputeCurrentCommitPoint();
             return currentCommitPoint;
@@ -38,6 +53,7 @@ namespace FASTER.libdpr
         // TODO(Tianyu): Note that this is not thread-safe
         public long IssueBatch(int batchSize, long workerId, ref DprBatchRequestHeader header)
         {
+            CheckWorldlineChange();
             // Wait for a batch slot to become available
             BatchInfo info;
             while (!batchTracker.TryGetBatchInfo(out info))
@@ -74,7 +90,6 @@ namespace FASTER.libdpr
         public unsafe void ResolveBatch(ref DprBatchResponseHeader reply)
         {
             var batchInfo = batchTracker.GetBatch(reply.batchId);
-            
 
             // Remote machine would not have executed a batch if the world-lines are mismatched
             if (reply.worldLine != batchInfo.worldLine
@@ -87,15 +102,8 @@ namespace FASTER.libdpr
                 // catch up 
                 if (reply.worldLine > clientWorldLine)
                 {
-                    // TODO(Tianyu): Recovery codepath
-                    // Wait for a refresh to make sure client is operating on latest DPR information
-                    while (Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _))
-                        Thread.Yield();
-                    var result = new CommitPoint {UntilSerialNo = seqNum, ExcludedSerialNos = new List<long>()};
-                    versionTracker.HandleRollback(dprClient.GetDprFinder().ReadSnapshot(), ref result);
-                    batchTracker.HandleRollback(ref result);
-                    AdjustCommitPoint(ref result);
-                    throw new DprRollbackException(result);
+                    // Will always throw exception out.
+                    while (true) CheckWorldlineChange();
                 }
                 // Otherwise, we would have declared these ops lost, and the remote server
                 // would have rolled back. It is ok to simply disregard these replies
