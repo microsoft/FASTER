@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using FASTER.core;
 
@@ -28,6 +29,7 @@ namespace FASTER.libdpr
             batchTracker = new ClientBatchTracker();
         }
 
+        // Should only be called on client threads, as it conveys worldline changes through exceptions.
         private void CheckWorldlineChange()
         {
             // Nothing to check if no dpr update
@@ -49,9 +51,34 @@ namespace FASTER.libdpr
                 ComputeCurrentCommitPoint();
             return currentCommitPoint;
         }
+
+        private unsafe void CopyDeps(ref DprBatchRequestHeader header)
+        {
+            lock (deps)
+            {
+                header.numDeps = deps.Count;
+                fixed (byte* d = header.deps)
+                {
+                    var offset = 0;
+                    foreach (var dep in deps)
+                    {
+                        Unsafe.AsRef<WorkerVersion>(d + offset) = dep;
+                        offset += sizeof(WorkerVersion);
+                    }
+                }
+            }
+        }
         
-        // TODO(Tianyu): Note that this is not thread-safe
-        public long IssueBatch(int batchSize, long workerId, ref DprBatchRequestHeader header)
+        // Should be called single-threadedly on client session thread with GetCommitPoint. Can be concurrent
+        // with ResolveBatch calls.
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name="batchSize"></param>
+        /// <param name="workerId"></param>
+        /// <param name="header"></param>
+        /// <returns></returns>
+        public long IssueBatch(int batchSize, Worker workerId, out Span<byte> header)
         {
             CheckWorldlineChange();
             // Wait for a batch slot to become available
@@ -59,86 +86,100 @@ namespace FASTER.libdpr
             while (!batchTracker.TryGetBatchInfo(out info))
                 // TODO(Tianyu): Is this ok?
                 Thread.Yield();
-            // Populate tracking information into the batch
-            foreach (var dep in deps)
-                info.deps.Add(dep);
-            info.workerId = workerId;
-            header.worldLine = clientWorldLine;
-            info.startSeqNum = seqNum;
-            seqNum += batchSize;
-            info.endSeqNum = seqNum;
-            
-            // Populate header with relevant request information
-            header.batchId = info.batchId;
-            header.sessionId = guid;
-            header.numDeps = info.deps.Count;
-            header.worldLine = clientWorldLine;
-            header.versionLowerBound = clientVersion;
-            header.numMessages = batchSize;
             unsafe
             {
-                fixed (byte* start = header.deps)
+                fixed (byte* b = info.header)
                 {
-                    for (var i = 0; i < info.deps.Count; i++)
-                        Unsafe.AsRef<WorkerVersion>(start + sizeof(WorkerVersion) * i) = info.deps[i];
+                    ref var dprHeader = ref Unsafe.AsRef<DprBatchRequestHeader>(b);
+                    // Populate info with relevant request information
+                    info.workerId = workerId;
+                    info.startSeqNum = seqNum;
+                    info.endSeqNum = seqNum + batchSize;
+                    seqNum = info.endSeqNum;
+                    
+                    // Populate header with relevant request information
+                    dprHeader.batchId = info.batchId;
+                    dprHeader.sessionId = guid;
+                    dprHeader.worldLine = clientWorldLine;
+                    dprHeader.versionLowerBound = clientVersion;
+                    dprHeader.numMessages = batchSize;
+                    // Populate tracking information into the batch
+                    CopyDeps(ref dprHeader);
+                    header = new Span<byte>(info.header, 0, dprHeader.Size());
                 }
             }
             return info.startSeqNum;
         }
 
-        // TODO(Tianyu): Note that this is not thread-safe
         public unsafe void ResolveBatch(ref DprBatchResponseHeader reply)
         {
             var batchInfo = batchTracker.GetBatch(reply.batchId);
 
-            // Remote machine would not have executed a batch if the world-lines are mismatched
-            if (reply.worldLine != batchInfo.worldLine
-                // These replies are from an earlier world-line that the client has already moved past. We would have
-                // declared these ops lost, and the remote server would have rolled back. It is ok to simply
-                // disregard these replies;
-                || reply.worldLine < clientWorldLine)
+            fixed (byte* b = batchInfo.header)
             {
-                // In this case, the remote machine has seen more failures than the client and the client needs to 
-                // catch up 
-                if (reply.worldLine > clientWorldLine)
+                ref var request = ref Unsafe.AsRef<DprBatchRequestHeader>(b);
+                // Remote machine would not have executed a batch if the world-lines are mismatched
+                if (reply.worldLine != request.worldLine
+                    // These replies are from an earlier world-line that the client has already moved past. We would have
+                    // declared these ops lost, and the remote server would have rolled back. It is ok to simply
+                    // disregard these replies;
+                    || reply.worldLine < clientWorldLine)
                 {
-                    // Will always throw exception out.
-                    while (true) CheckWorldlineChange();
+                    // In this case, the remote machine has seen more failures than the client and the client needs to 
+                    // catch up 
+                    if (reply.worldLine > clientWorldLine)
+                    {
+                        // Do nothing and wait for client thread to find out about the failure
+                        // TODO(Tianyu): Could set some flags, but probably easier to just let refresh do its thing
+                        return;
+                    }
+                    // Otherwise, we would have declared these ops lost, and the remote server
+                    // would have rolled back. It is ok to simply disregard these replies
+                    batchTracker.FinishBatch(reply.batchId);
+                    return;
                 }
-                // Otherwise, we would have declared these ops lost, and the remote server
-                // would have rolled back. It is ok to simply disregard these replies
+                
+                // Update versioning information
+                long maxVersion = 0;
+
+                lock (versionTracker)
+                {
+                    fixed (byte* v = reply.versions)
+                    {
+                        var offset = 0;
+                        foreach (var version in new DprBatchVersionVector(v))
+                        {
+                            // Not executed for non-dpr related reason.
+                            if (version == 0) continue;
+                            // Otherwise, update client version and add to tracking
+                            maxVersion = Math.Max(maxVersion, version);
+                            versionTracker.Add(batchInfo.startSeqNum + offset,
+                                new WorkerVersion(batchInfo.workerId, version));
+                            offset++;
+                        }
+
+                        Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
+                    }
+                }
+
+
+                lock (deps)
+                {
+                    fixed (byte* d = request.deps)
+                    {
+
+                        // Remove all deps to save space. Future ops will implicitly depend on these by transitivity
+                        for (var i = 0; i < request.numDeps; i++)
+                            deps.Remove(Unsafe.AsRef<WorkerVersion>(d + sizeof(WorkerVersion) * i));
+
+                        // Add largest worker-version as dependency for future ops. Must add after removal in case this op has
+                        // a version self-dependency (very likely) that would otherwise be erased
+                        deps.Add(new WorkerVersion(batchInfo.workerId, maxVersion));
+                    }
+                }
+                // Free up this batch's tracking space
                 batchTracker.FinishBatch(reply.batchId);
-                return;
             }
-
-            // Update versioning information
-            long maxVersion = 0;
-
-            fixed (byte* v = reply.versions)
-            {
-                var offset = 0;
-                foreach (var version in new DprBatchVersionVector(v))
-                {
-                    // Not executed for non-dpr related reason.
-                    if (version == 0) continue;
-                    // Otherwise, update client version and add to tracking
-                    maxVersion = Math.Max(maxVersion, version);
-                    versionTracker.Add(batchInfo.startSeqNum + offset, new WorkerVersion(batchInfo.workerId, version));
-                    offset++;
-                }
-                Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
-            }
-            
-
-            // Remove all deps to save space. Future ops will implicitly depend on these by transitivity
-            foreach (var dep in batchInfo.deps)
-                deps.Remove(dep);
-            // Add largest worker-version as dependency for future ops. Must add after removal in case this op has
-            // a version self-dependency (very likely) that would otherwise be erased
-            deps.Add(new WorkerVersion(batchInfo.workerId, maxVersion));
-            
-            // Free up this batch's tracking space
-            batchTracker.FinishBatch(reply.batchId);
         }
 
         // We may be able to rewrite the computed commit point in a more concise way, e.g. if the computed commit point

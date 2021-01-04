@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -5,14 +6,24 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    public class BatchInfo
+    public struct BatchInfo
     {
         public int batchId;
         public bool allocated;
-        public long workerId;
-        public long worldLine;
+        public Worker workerId;
         public long startSeqNum, endSeqNum;
-        public List<WorkerVersion> deps = new List<WorkerVersion>();
+        // TODO(Tianyu): Magic number for default size
+        public byte[] header;
+
+        public BatchInfo(int batchId)
+        {
+            this.batchId = batchId;
+            allocated = false;
+            workerId = default;
+            startSeqNum = 0;
+            endSeqNum = 0;
+            header = new byte[4096];
+        }
     }
 
     public class ClientBatchTracker : IEnumerable<BatchInfo>
@@ -55,13 +66,13 @@ namespace FASTER.libdpr
             }
         }
 
-        public ClientBatchTracker(int preallocateNumber = 512)
+        public ClientBatchTracker(int preallocateNumber = 1024)
         {
             buffers = new BatchInfo[preallocateNumber];
             freeBuffers = new ConcurrentQueue<int>();
             for (var i = 0; i < preallocateNumber; i++)
             {
-                buffers[i] = new BatchInfo {batchId = i};
+                buffers[i] = new BatchInfo(i);
                 freeBuffers.Enqueue(i);
             }
         }
@@ -85,7 +96,6 @@ namespace FASTER.libdpr
             var info = GetBatch(id);
             // Signals invalid batch
             info.allocated = false;
-            info.deps.Clear();
             freeBuffers.Enqueue(info.batchId);
         }
 

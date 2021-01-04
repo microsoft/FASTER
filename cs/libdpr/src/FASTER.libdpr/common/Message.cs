@@ -29,12 +29,14 @@ namespace FASTER.libdpr
         public int numMessages;
         [FieldOffset(44)]
         public fixed byte deps[0];
+
+        public int Size() => HeaderSize + numDeps * sizeof(WorkerVersion);
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = 28)]
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
     public unsafe struct DprBatchResponseHeader
     {
-        public const int HeaderSize = 28;
+        public const int HeaderSize = 32;
         [FieldOffset(0)]
         public fixed byte data[HeaderSize];
         [FieldOffset(0)]
@@ -44,6 +46,11 @@ namespace FASTER.libdpr
         [FieldOffset(24)]
         public int batchId;
         [FieldOffset(28)]
+        public int batchSize;
+        [FieldOffset(32)]
         public fixed byte versions[0];
+        
+        public int Size() => batchSize;
+
     }
 }

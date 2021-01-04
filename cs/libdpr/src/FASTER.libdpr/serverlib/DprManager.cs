@@ -39,13 +39,16 @@ namespace FASTER.libdpr
         {
             this.dprFinder = dprFinder;
             this.me = me;
-            epoch = new LightEpoch();
+            // epoch = new LightEpoch();
+            worldlineLatch = new ReaderWriterLockSlim();
             versions = new ConcurrentDictionary<long, VersionHandle<TToken>>();
             nextWorldLine = 0;
         }
         
         public readonly IDprFinder dprFinder;
-        public readonly LightEpoch epoch;
+        // TODO(Tianyu): Epoch is highly specialized for a system like FASTER. Maybe add back in later.
+        // public readonly LightEpoch epoch;
+        public ReaderWriterLockSlim worldlineLatch;
         public readonly ConcurrentDictionary<long, VersionHandle<TToken>> versions;
         public readonly Worker me;
         public long nextWorldLine;
@@ -134,13 +137,16 @@ namespace FASTER.libdpr
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
             // must not shift while a batch is being processed, otherwise a message from an older world-line may be
             // processed in a new one. 
-            state.epoch.Resume();
+            // state.epoch.Resume();
+            state.worldlineLatch.EnterReadLock();
             // If the worker world-line is behind, wait for worker to recover up to the same point as the client,
             // so client operation is not lost in a rollback that the client has already observed.
             while (dprRequest.worldLine >= state.dprFinder.SystemWorldLine())
             {
+                state.worldlineLatch.ExitReadLock();
                 TryAdvanceWorldLineTo(dprRequest.worldLine);
-                state.epoch.ProtectAndDrain();
+                // state.epoch.ProtectAndDrain();
+                state.worldlineLatch.EnterReadLock();
             }
             
             // If the worker world-line is newer, the request must be rejected so the client can observe failure
@@ -153,7 +159,8 @@ namespace FASTER.libdpr
                 // Use negative to signal that there was a mismatch, which would prompt error handling on client side
                 dprResponse.worldLine = -state.dprFinder.SystemWorldLine();
                 dprResponse.batchId = dprRequest.batchId;
-                state.epoch.Suspend();
+                state.worldlineLatch.ExitReadLock();
+                // state.epoch.Suspend();
                 tracker = default;
                 return false;
             }
@@ -194,12 +201,14 @@ namespace FASTER.libdpr
             
             // Signal batch finished so world-lines can advance. Need to make sure not double-invoked, therefore only
             // called after size validation.
-            state.epoch.Suspend();
+            // state.epoch.Suspend();
+            state.worldlineLatch.ExitReadLock();
             
             // Populate response
             dprResponse.sessionId = dprRequest.sessionId;
             dprResponse.worldLine = dprRequest.worldLine;
             dprResponse.batchId = dprRequest.batchId;
+            dprResponse.batchSize = responseSize;
             tracker.AppendOntoResponse(ref dprResponse);
             
             trackers.Return(tracker);

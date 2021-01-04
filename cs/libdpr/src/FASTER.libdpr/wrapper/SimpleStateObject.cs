@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 
 namespace FASTER.libdpr
 {
@@ -33,7 +34,8 @@ namespace FASTER.libdpr
         /// <param name="request">Bytes from client encoding the request to underlying state-store</param>
         /// <param name="reply">Replies to send back to the client</param>
         /// <returns>Whether the batch was executed</returns>
-        bool ProcessBatch(ReadOnlySpan<byte> request, out IDisposableBuffer reply);
+        // TODO(Tianyu): This is not exactly useful for Redis, it turns out.
+        // bool ProcessBatch(ReadOnlySpan<byte> request, out IDisposableBuffer reply);
 
         /// <summary>
         /// Blockingly performs a checkpoint. Invokes the supplied callback when contents of checkpoint are on

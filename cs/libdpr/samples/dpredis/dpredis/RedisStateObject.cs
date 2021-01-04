@@ -32,7 +32,8 @@ namespace dpredis
                 return new Span<byte>(underlying);
             }
         }
-        
+
+        private RedisShard shard;
         private ThreadLocalObjectPool<byte[]> reusableBuffers;
         private IPEndPoint redisBackend;
         private long lastCheckpointTime = 0;
@@ -40,10 +41,11 @@ namespace dpredis
         
         private ThreadLocal<Socket> conn;
 
-        public RedisStateObject(string name, int port, string auth)
+        public RedisStateObject(RedisShard shard)
         {
+            this.shard = shard;
             reusableBuffers = new ThreadLocalObjectPool<byte[]>(() => new byte[4096]);
-            redisBackend = new IPEndPoint(Dns.GetHostAddresses(name)[0], port);
+            redisBackend = new IPEndPoint(Dns.GetHostAddresses(shard.name)[0], shard.port);
             this.auth = auth;
             conn = new ThreadLocal<Socket>(() =>
             {
@@ -58,15 +60,15 @@ namespace dpredis
             }, true);
         }
         
-        public bool ProcessBatch(ReadOnlySpan<byte> request, out IDisposableBuffer reply)
-        {
-            var sock = conn.Value;
-            var buffer = reusableBuffers.Checkout();
-            sock.Send(request);
-            sock.Receive(buffer);
-            reply = new ReusableBuffer(reusableBuffers, buffer);
-            return true;
-        }
+        // public bool ProcessBatch(ReadOnlySpan<byte> request, out IDisposableBuffer reply)
+        // {
+        //     var sock = conn.Value;
+        //     var buffer = reusableBuffers.Checkout();
+        //     sock.Send(request);
+        //     sock.Receive(buffer);
+        //     reply = new ReusableBuffer(reusableBuffers, buffer);
+        //     return true;
+        // }
 
         public void PerformCheckpoint(Action<long> onPersist)
         {
