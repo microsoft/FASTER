@@ -15,6 +15,9 @@ namespace FASTER.test
 {
 
 
+    //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
+    //** These tests ensure the basics are fully covered
+
     [TestFixture]
     internal class BasicFASTERTests
     {
@@ -488,6 +491,66 @@ namespace FASTER.test
 
             Assert.IsTrue(status.Item2.value.vfield1 == value.vfield1);
             Assert.IsTrue(status.Item2.value.vfield2 == value.vfield2);
+            Assert.IsTrue(13 == key1.kfield1);
+            Assert.IsTrue(14 == key1.kfield2);
+        }
+
+        // Test the ReadAtAddress where ReadFlags = ReadFlags.none
+        [Test]
+        [Category("FasterKV")]
+        public void ReadAtAddressReadFlagsNone()
+        {
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+            var readAtAddress = fht.Log.BeginAddress;
+
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.None,Empty.Default,0);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.IsTrue(13 == key1.kfield1);
+            Assert.IsTrue(14 == key1.kfield2);
+        }
+
+        // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
+        [Test]
+        [Category("FasterKV")]
+        public void ReadAtAddressReadFlagsSkipReadCache()
+        {
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+            var readAtAddress = fht.Log.BeginAddress;
+
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.SkipReadCache);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
             Assert.IsTrue(13 == key1.kfield1);
             Assert.IsTrue(14 == key1.kfield2);
         }
