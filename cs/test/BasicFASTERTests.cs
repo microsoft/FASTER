@@ -280,7 +280,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public unsafe void NativeInMemRMW1()
+        public unsafe void NativeInMemRMWRefKeys()
         {
             InputStruct input = default;
 
@@ -346,6 +346,79 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
         }
+
+
+        // Tests the overload where no reference params used: key,input,userContext,serialNo
+
+        [Test]
+        [Category("FasterKV")]
+        public unsafe void NativeInMemRMWNoRefKeys()
+        {
+            InputStruct input = default;
+
+            var nums = Enumerable.Range(0, 1000).ToArray();
+            var rnd = new Random(11);
+            for (int i = 0; i < nums.Length; ++i)
+            {
+                int randomIndex = rnd.Next(nums.Length);
+                int temp = nums[randomIndex];
+                nums[randomIndex] = nums[i];
+                nums[i] = temp;
+            }
+
+            for (int j = 0; j < nums.Length; ++j)
+            {
+                var i = nums[j];
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
+                session.RMW(ref key1, ref input, Empty.Default, 0);
+            }
+            for (int j = 0; j < nums.Length; ++j)
+            {
+                var i = nums[j];
+                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
+                session.RMW(key1, input);  // no ref and do not set any other params
+            }
+
+            OutputStruct output = default;
+            Status status;
+            KeyStruct key;
+
+            for (int j = 0; j < nums.Length; ++j)
+            {
+                var i = nums[j];
+
+                key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                ValueStruct value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
+                status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+
+                if (status == Status.PENDING)
+                {
+                    session.CompletePending(true);
+                }
+                else
+                {
+                    Assert.IsTrue(status == Status.OK);
+                }
+                Assert.IsTrue(output.value.vfield1 == 2 * value.vfield1, "found " + output.value.vfield1 + ", expected " + 2 * value.vfield1);
+                Assert.IsTrue(output.value.vfield2 == 2 * value.vfield2);
+            }
+
+            key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
+            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.NOTFOUND);
+            }
+        }
+
 
 
         // Tests the overload of .Read(key, input, out output,  context, serialNo)
@@ -554,6 +627,103 @@ namespace FASTER.test
             Assert.IsTrue(13 == key1.kfield1);
             Assert.IsTrue(14 == key1.kfield2);
         }
+
+        // Simple Upsert test where ref key and ref value but nothing else set
+        [Test]
+        [Category("FasterKV")]
+        public void UpsertDefaultsTest()
+        {
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            session.Upsert(ref key1, ref value);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+        }
+
+        // Simple Upsert test of overload where not using Ref for key and value and setting all parameters
+        [Test]
+        [Category("FasterKV")]
+        public void UpsertNoRefNoDefaultsTest()
+        {
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            session.Upsert(key1, value, Empty.Default,0);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default,0);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+        }
+
+
+        // Upsert Test using Serial Numbers ... based on the VersionedRead Sample
+        [Test]
+        [Category("FasterKV")]
+        public void UpsertSerialNumberTest()
+        {
+
+            int numKeys = 100;
+            int keyMod = 10;
+            int maxLap = numKeys / keyMod;
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+            var key = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+
+            for (int i = 0; i < numKeys; i++)
+            {
+                // lap is used to illustrate the changing values
+                var lap = i / keyMod;
+                session.Upsert(ref key, ref value, serialNo: lap);
+            }
+
+            // Now verify 
+            for (int j = 0; j < numKeys; j++)
+            {
+                var status = session.Read(ref key, ref input, ref output, serialNo: maxLap + 1);
+
+                if (status == Status.PENDING)
+                {
+                    session.CompletePending(true);
+                }
+                else
+                {
+                    Assert.IsTrue(status == Status.OK);
+                }
+
+                Assert.IsTrue(output.value.vfield1 == value.vfield1);
+                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            }
+        }
+
 
 
         // Sample code from help docs: https://microsoft.github.io/FASTER/docs/fasterkv-basics/
