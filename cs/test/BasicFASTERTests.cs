@@ -14,6 +14,7 @@ using NUnit.Framework;
 namespace FASTER.test
 {
 
+
     [TestFixture]
     internal class BasicFASTERTests
     {
@@ -24,7 +25,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicFasterTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
             session = fht.For(new Functions()).NewSession<Functions>();
@@ -342,5 +343,177 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
         }
+
+
+        // Tests the overload of .Read(key, input, out output,  context, serialNo)
+        [Test]
+        [Category("FasterKV")]
+        public void ReadNoRefKeyInputOutput()
+        {
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.Read(key1, input, out output, Empty.Default, 111);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            // Verify the read data
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.IsTrue(13 == key1.kfield1);
+            Assert.IsTrue(14 == key1.kfield2);
+        }
+
+
+        // Test the overload call of .Read (key, out output, userContext, serialNo)
+        [Test]
+        [Category("FasterKV")]
+        public void ReadNoRefKey()
+        {
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.Read(key1, out output, Empty.Default, 1);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            // Verify the read data
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.IsTrue(13 == key1.kfield1);
+            Assert.IsTrue(14 == key1.kfield2);
+        }
+
+
+        // Test the overload call of .Read (ref key, ref output, userContext, serialNo)
+        [Test]
+        [Category("FasterKV")]
+        public void ReadWithoutInput()
+        {
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.Read(ref key1, ref output, Empty.Default,99);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            // Verify the read data
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.IsTrue(13 == key1.kfield1);
+            Assert.IsTrue(14 == key1.kfield2);
+        }
+
+
+        // Test the overload call of .Read (ref key, ref input, ref output, ref recordInfo, userContext: context)
+        [Test]
+        [Category("FasterKV")]
+        public void ReadWithoutSerialID()
+        {
+            InputStruct input = default;
+            OutputStruct output = default;
+
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
+
+            if (status == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status == Status.OK);
+            }
+
+            Assert.IsTrue(output.value.vfield1 == value.vfield1);
+            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.IsTrue(13 == key1.kfield1);
+            Assert.IsTrue(14 == key1.kfield2);
+        }
+
+
+        // Test the overload call of .Read (key)
+        [Test]
+        [Category("FasterKV")]
+        public void ReadBareMinParams()
+        {
+            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
+            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
+
+            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            var status = session.Read(key1);
+           
+            if (status.Item1 == Status.PENDING)
+            {
+                session.CompletePending(true);
+            }
+            else
+            {
+                Assert.IsTrue(status.Item1 == Status.OK);
+            }
+
+            Assert.IsTrue(status.Item2.value.vfield1 == value.vfield1);
+            Assert.IsTrue(status.Item2.value.vfield2 == value.vfield2);
+            Assert.IsTrue(13 == key1.kfield1);
+            Assert.IsTrue(14 == key1.kfield2);
+        }
+
+
+        // Sample code from help docs: https://microsoft.github.io/FASTER/docs/fasterkv-basics/
+        // Very minor changes to LogDevice call and type of Asserts to use but basically code from Sample code in docs
+        // Also tests the overload call of .Read (ref key ref output) 
+        [Test]
+        [Category("FasterKV")]
+        public static void ReadSampleCodeInDocs()
+        {
+            string testDir = $"{TestContext.CurrentContext.TestDirectory}";
+            using var log = Devices.CreateLogDevice($"{testDir}/hlog.log", deleteOnClose: true);
+            using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
+            using var s = store.NewSession(new SimpleFunctions<long, long>());
+            long key = 1, value = 1, input = 10, output = 0;
+            s.Upsert(ref key, ref value);
+            s.Read(ref key, ref output);
+            Assert.IsTrue(output == value);
+            s.RMW(ref key, ref input);
+            s.RMW(ref key, ref input);
+            s.Read(ref key, ref output);
+            Assert.IsTrue(output == 10);
+        }
+
+
     }
 }
