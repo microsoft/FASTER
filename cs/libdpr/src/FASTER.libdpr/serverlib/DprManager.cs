@@ -65,7 +65,7 @@ namespace FASTER.libdpr
     {
         private DprWorkerState<TToken> state;
         private TStateObject stateObject;
-        private ThreadLocalObjectPool<DprBatchVersionTracker> trackers;
+        private SimpleObjectPool<DprBatchVersionTracker> trackers;
             
         private Thread refreshThread;
         private readonly long checkpointPeriodMilli;
@@ -76,12 +76,13 @@ namespace FASTER.libdpr
          
             state = new DprWorkerState<TToken>(dprFinder, me);
             this.stateObject = stateObject;
-            trackers = new ThreadLocalObjectPool<DprBatchVersionTracker>(() => new DprBatchVersionTracker());
+            trackers = new SimpleObjectPool<DprBatchVersionTracker>(() => new DprBatchVersionTracker());
             stateObject.Register(new DprWorkerCallbacks<TToken>(state));
             this.checkpointPeriodMilli = checkpointPeriodMilli;
         }
-        
 
+        public TStateObject StateObject() => stateObject;
+        
         public void Start()
         {
             termination = new ManualResetEventSlim();

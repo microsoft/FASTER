@@ -8,31 +8,16 @@ using FASTER.libdpr;
 
 namespace dpredis
 {
-    public class RedisStateObject : ISimpleStateObject<long>, IDisposable
+    public struct RedisShard
     {
-        private struct ReusableBuffer : IDisposableBuffer
-        {
-            // TODO(Tianyu): This will not handle situation where buffer is not returned on the same thread very well
-            private ThreadLocalObjectPool<byte[]> pool;
-            private byte[] underlying;
+        public string name;
+        public int port;
+        public long id;
+        public string auth;
+    }
 
-            public ReusableBuffer(ThreadLocalObjectPool<byte[]> pool, byte[] underlying)
-            {
-                this.pool = pool;
-                this.underlying = underlying;
-            }
-
-            public void Dispose()
-            {
-                pool.Return(underlying);    
-            }
-
-            public Span<byte> Bytes()
-            {
-                return new Span<byte>(underlying);
-            }
-        }
-
+    public class RedisStateObject : SimpleStateObject<long>, IDisposable
+    {
         private RedisShard shard;
         private ThreadLocalObjectPool<byte[]> reusableBuffers;
         private IPEndPoint redisBackend;
@@ -40,6 +25,10 @@ namespace dpredis
         private string auth;
         
         private ThreadLocal<Socket> conn;
+        
+        private DprWorkerCallbacks<long> callbacks;
+        private long versionCounter;
+        private ReaderWriterLockSlim opLatch;
 
         public RedisStateObject(RedisShard shard)
         {
@@ -47,30 +36,22 @@ namespace dpredis
             reusableBuffers = new ThreadLocalObjectPool<byte[]>(() => new byte[4096]);
             redisBackend = new IPEndPoint(Dns.GetHostAddresses(shard.name)[0], shard.port);
             this.auth = auth;
-            conn = new ThreadLocal<Socket>(() =>
-            {
-                var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                socket.Connect(redisBackend);
-                socket.Send(System.Text.Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${auth.Length}\r\n{auth}\r\n"));
-                var buffer = reusableBuffers.Checkout();
-                var len = socket.Receive(buffer);
-                Debug.Assert(System.Text.Encoding.ASCII.GetString(buffer, 0, len).Equals("+OK"));
-                reusableBuffers.Return(buffer);
-                return socket;
-            }, true);
+            conn = new ThreadLocal<Socket>(GetNewRedisConnection, true);
+        }
+
+        public Socket GetNewRedisConnection()
+        {
+            var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            socket.Connect(redisBackend);
+            socket.Send(System.Text.Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${auth.Length}\r\n{auth}\r\n"));
+            var buffer = reusableBuffers.Checkout();
+            var len = socket.Receive(buffer);
+            Debug.Assert(System.Text.Encoding.ASCII.GetString(buffer, 0, len).Equals("+OK"));
+            reusableBuffers.Return(buffer);
+            return socket;
         }
         
-        // public bool ProcessBatch(ReadOnlySpan<byte> request, out IDisposableBuffer reply)
-        // {
-        //     var sock = conn.Value;
-        //     var buffer = reusableBuffers.Checkout();
-        //     sock.Send(request);
-        //     sock.Receive(buffer);
-        //     reply = new ReusableBuffer(reusableBuffers, buffer);
-        //     return true;
-        // }
-
-        public void PerformCheckpoint(Action<long> onPersist)
+        protected override void PerformCheckpoint(Action<long> onPersist)
         {
             var sock = conn.Value;
             var buffer = reusableBuffers.Checkout();
@@ -105,7 +86,7 @@ namespace dpredis
             });
         }
 
-        public void RestoreCheckpoint(long token)
+        protected override void RestoreCheckpoint(long token)
         {
             // TODO(Tianyu): Apparently will need to restart Redis for this...
             throw new NotImplementedException();

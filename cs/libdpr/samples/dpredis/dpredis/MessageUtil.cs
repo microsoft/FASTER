@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Text;
 using FASTER.libdpr;
 
@@ -7,9 +9,9 @@ namespace dpredis
 {
     public static class MessageUtil
     {
-        public abstract class AbstractConnState
+        public abstract class AbstractDprConnState
         {
-            private Socket socket;
+            protected Socket socket;
             private int bytesRead;
             private int readHead;
 
@@ -20,12 +22,10 @@ namespace dpredis
 
             protected abstract void HandleMessage(byte[] buf, int offset, int size);
 
-            public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
-            
             private int TryConsumeMessages(byte[] buf)
             {
                 while (TryReadMessages(buf, out var offset, out var size))
-                   HandleMessage(buf, offset, size);
+                    HandleMessage(buf, offset, size);
 
                 // The bytes left in the current buffer not consumed by previous operations
                 var bytesLeft = bytesRead - readHead;
@@ -59,42 +59,121 @@ namespace dpredis
                 return true;
             }
 
-            private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
+            private static void HandleReceiveCompletion(SocketAsyncEventArgs e)
             {
-                var connState = (AbstractConnState) e.UserToken;
+                var connState = (AbstractDprConnState) e.UserToken;
                 if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
                 {
                     connState.socket.Dispose();
                     e.Dispose();
-                    return false;
+                    return;
                 }
 
-                connState.AddBytesRead(e.BytesTransferred);
+                connState.bytesRead += e.BytesTransferred;
                 var newHead = connState.TryConsumeMessages(e.Buffer);
                 e.SetBuffer(newHead, e.Buffer.Length - newHead);
-                return true;
             }
 
             public static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
             {
-                var connState = (AbstractConnState) e.UserToken;
+                var connState = (AbstractDprConnState) e.UserToken;
                 do
                 {
                     // No more things to receive
-                    if (!HandleReceiveCompletion(e)) break;
+                    HandleReceiveCompletion(e);
                 } while (!connState.socket.ReceiveAsync(e));
             }
         }
 
-        public static void SendDpredisMessage(this Socket socket, ReadOnlySpan<byte> dprHeader, string body)
+        public abstract class AbstractRedisConnState
         {
-            var totalSize = dprHeader.Length + body.Length;
-            unsafe
+            private Socket socket;
+            private int readHead, bytesRead, currentStringStart;
+
+            public void Reset(Socket socket)
             {
-                socket.Send(new Span<byte>(&totalSize, sizeof(int)));
+                this.socket = socket;
             }
-            socket.Send(dprHeader);
-            socket.Send(Encoding.ASCII.GetBytes(body));
+
+            // Return whether we should reset the buffer or keep message buffered
+            protected abstract bool HandleSimpleString(byte[] buf, int start, int end);
+
+            private static void HandleReceiveCompletion(SocketAsyncEventArgs e)
+            {
+                var connState = (AbstractRedisConnState) e.UserToken;
+                if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
+                {
+                    connState.socket.Dispose();
+                    e.Dispose();
+                    return;
+                }
+
+                connState.bytesRead += e.BytesTransferred;
+                // TODO(Tianyu): Only supports simple interface for now
+                for (; connState.readHead >= connState.bytesRead; connState.readHead++)
+                {
+                    // Beginning a simple string with +
+                    if (e.Buffer[connState.readHead] == '+')
+                    {
+                        Debug.Assert(connState.currentStringStart == -1);
+                        connState.currentStringStart = connState.readHead;
+                    }
+                    // Ending a simple string with \r\n
+                    else if (e.Buffer[connState.readHead] == '\n'
+                             // Never yields out-of-bound because no well-formed buffer starts with \n
+                             && e.Buffer[connState.readHead - 1] == '\r')
+                    {
+                        Debug.Assert(connState.currentStringStart != -1);
+                        var nextHead = connState.readHead + 1;
+                        if (connState.HandleSimpleString(e.Buffer, connState.currentStringStart, nextHead))
+                        {
+                            var bytesLeft = connState.bytesRead - nextHead;
+                            // Shift buffer to front
+                            Array.Copy(e.Buffer, connState.readHead, e.Buffer, 0, bytesLeft);
+                            connState.bytesRead = bytesLeft;
+                            connState.readHead = 0;
+                        }
+
+                        connState.currentStringStart = -1;
+                    }
+                }
+
+                e.SetBuffer(connState.readHead, e.Buffer.Length - connState.bytesRead);
+            }
+
+            public static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
+            {
+                var connState = (AbstractRedisConnState) e.UserToken;
+                do
+                {
+                    // No more things to receive
+                    HandleReceiveCompletion(e);
+                } while (!connState.socket.ReceiveAsync(e));
+            }
+        }
+
+        public static unsafe void SendDpredisRequest(this Socket socket, ReadOnlySpan<byte> dprHeader, string body)
+        {
+            fixed (byte* h = dprHeader)
+            {
+                ref var request = ref Unsafe.AsRef<DprBatchRequestHeader>(h);
+                var totalSize = request.Size() + body.Length;
+                socket.Send(new Span<byte>(&totalSize, sizeof(int)));
+                socket.Send(dprHeader.Slice(0, request.Size()));
+                socket.Send(Encoding.ASCII.GetBytes(body));
+            }
+        }
+
+        public static unsafe void SendDpredisResponse(this Socket socket, ReadOnlySpan<byte> dprHeader, ReadOnlySpan<byte> body)
+        {
+            fixed (byte* h = dprHeader)
+            {
+                ref var request = ref Unsafe.AsRef<DprBatchResponseHeader>(h);
+                var totalSize = request.Size() + body.Length;
+                socket.Send(new Span<byte>(&totalSize, sizeof(int)));
+                socket.Send(dprHeader.Slice(0, request.Size()));
+                socket.Send(body);
+            }
         }
     }
 }

@@ -59,13 +59,13 @@ namespace dpredis
         }
     }
 
-    internal class DpredisClientConnState : MessageUtil.AbstractConnState
+    internal class DpredisClientDprConnState : MessageUtil.AbstractDprConnState
     {
         private DprClientSession dprSession;
         private DpredisClientSession redisSession;
         private static readonly char[] redisSeparators = {'+', '\r', '\n'};
 
-        public DpredisClientConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession)
+        public DpredisClientDprConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession)
         {
             Reset(socket);
             this.dprSession = dprSession;
@@ -133,10 +133,10 @@ namespace dpredis
             var saea = new SocketAsyncEventArgs();
             // TODO(Tianyu): Magic number buffer size
             saea.SetBuffer(new byte[1 << 20]);
-            saea.Completed += MessageUtil.AbstractConnState.RecvEventArg_Completed;
-            saea.UserToken = new DpredisClientConnState(result, dprSession, this);
+            saea.Completed += MessageUtil.AbstractDprConnState.RecvEventArg_Completed;
+            saea.UserToken = new DpredisClientDprConnState(result, dprSession, this);
             while (!result.ReceiveAsync(saea))
-                MessageUtil.AbstractConnState.RecvEventArg_Completed(null, saea);
+                MessageUtil.AbstractDprConnState.RecvEventArg_Completed(null, saea);
             return result;
         }
 
@@ -155,7 +155,7 @@ namespace dpredis
         {
             dprSession.IssueBatch(batch.CommandCount(), worker, out var dprBytes);
             var sock = GetRedisConnection(worker);
-            sock.SendDpredisMessage(dprBytes, batch.Body().ToString());
+            sock.SendDpredisRequest(dprBytes, batch.Body().ToString());
             unsafe
             {
                 fixed (byte* header = dprBytes)

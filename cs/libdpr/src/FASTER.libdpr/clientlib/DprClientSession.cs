@@ -111,7 +111,7 @@ namespace FASTER.libdpr
             return info.startSeqNum;
         }
 
-        public unsafe void ResolveBatch(ref DprBatchResponseHeader reply)
+        public unsafe bool ResolveBatch(ref DprBatchResponseHeader reply)
         {
             var batchInfo = batchTracker.GetBatch(reply.batchId);
 
@@ -131,12 +131,12 @@ namespace FASTER.libdpr
                     {
                         // Do nothing and wait for client thread to find out about the failure
                         // TODO(Tianyu): Could set some flags, but probably easier to just let refresh do its thing
-                        return;
+                        return false;
                     }
                     // Otherwise, we would have declared these ops lost, and the remote server
                     // would have rolled back. It is ok to simply disregard these replies
                     batchTracker.FinishBatch(reply.batchId);
-                    return;
+                    return false;
                 }
                 
                 // Update versioning information
@@ -180,6 +180,8 @@ namespace FASTER.libdpr
                 // Free up this batch's tracking space
                 batchTracker.FinishBatch(reply.batchId);
             }
+
+            return true;
         }
 
         // We may be able to rewrite the computed commit point in a more concise way, e.g. if the computed commit point
