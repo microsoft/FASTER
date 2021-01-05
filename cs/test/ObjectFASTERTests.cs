@@ -166,7 +166,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public async Task AsyncObjectDiskWriteRead()
+        public async Task ReadAsyncObjectDiskWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
 

@@ -51,7 +51,7 @@ namespace FASTER.test.async
         // Test that does .ReadAsync with minimum parameters (ref key)
         [Test]
         [Category("FasterKV")]
-        public async Task AsyncMinParamTest()
+        public async Task ReadAsyncMinParamTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
@@ -69,7 +69,7 @@ namespace FASTER.test.async
         // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, serialNo, token)
         [Test]
         [Category("FasterKV")]
-        public async Task AsyncMinParamTestNoDefault()
+        public async Task ReadAsyncMinParamTestNoDefaultTest()
         {
             CancellationToken cancellationToken;
 
@@ -89,7 +89,7 @@ namespace FASTER.test.async
         // Test that does .ReadAsync no ref key (key)
         [Test]
         [Category("FasterKV")]
-        public async Task AsyncNoRefKeyTest()
+        public async Task ReadAsyncNoRefKeyTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
@@ -107,7 +107,7 @@ namespace FASTER.test.async
         // Test that does .ReadAsync ref key and ref input (ref key, ref input)
         [Test]
         [Category("FasterKV")]
-        public async Task AsyncRefKeyRefInputTest()
+        public async Task ReadAsyncRefKeyRefInputTest()
         {
             Status status;
             long key = default, input = default, output = default;
@@ -140,7 +140,7 @@ namespace FASTER.test.async
         // Test that does .ReadAsync no ref key and no ref input (key, input)
         [Test]
         [Category("FasterKV")]
-        public async Task AsyncNoRefKeyNoRefInputTest()
+        public async Task ReadAsyncNoRefKeyNoRefInputTest()
         {
             Status status;
             long key = default, input = default, output = default;
@@ -210,7 +210,7 @@ namespace FASTER.test.async
         // Test of RMWAsync where No ref used
         [Test]
         [Category("FasterKV")]
-        public async Task AsyncRMWAsyncNoRefTest()
+        public async Task ReadAsyncRMWAsyncNoRefTest()
         {
             Status status;
             long key = default, input = default, output = default;
