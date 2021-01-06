@@ -239,5 +239,42 @@ namespace FASTER.test.async
             Assert.IsTrue(status == Status.OK && output == key + input + input);
         }
 
+        // Test of ReadyToCompletePendingAsync
+        // Note: This should be looked into more to make it more of a "test" with proper verfication vs calling it to make sure just pop exception
+        [Test]
+        [Category("FasterKV")]
+        public async Task ReadyToCompletePendingAsyncTest()
+        {
+            Status status;
+            long key = default, input = default, output = default;
+
+            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
+            for (key = 0; key < numOps; key++)
+            {
+                (await s1.RMWAsync(key, key)).Complete();
+
+                await s1.ReadyToCompletePendingAsync();
+            }
+
+            for (key = 0; key < numOps; key++)
+            {
+                (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+                Assert.IsTrue(status == Status.OK && output == key);
+            }
+
+            key = 0;
+            input = 35;
+            var t1 = s1.RMWAsync(key, input);
+            var t2 = s1.RMWAsync(key, input);
+
+            (await t1).Complete();
+            (await t2).Complete(); // should trigger RMW re-do
+
+            (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+            Assert.IsTrue(status == Status.OK && output == key + input + input);
+        }
+
+
+
     }
 }
