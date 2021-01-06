@@ -724,14 +724,12 @@ namespace FASTER.test
             }
         }
 
-
-
-        // Sample code from help docs: https://microsoft.github.io/FASTER/docs/fasterkv-basics/
+        //**** Quick End to End Sample code from help docs: https://microsoft.github.io/FASTER/docs/fasterkv-basics/  ***
         // Very minor changes to LogDevice call and type of Asserts to use but basically code from Sample code in docs
         // Also tests the overload call of .Read (ref key ref output) 
         [Test]
         [Category("FasterKV")]
-        public static void ReadSampleCodeInDocs()
+        public static void KVBasicsSampleEndToEndInDocs()
         {
             string testDir = $"{TestContext.CurrentContext.TestDirectory}";
             using var log = Devices.CreateLogDevice($"{testDir}/hlog.log", deleteOnClose: true);
@@ -746,7 +744,7 @@ namespace FASTER.test
             s.Read(ref key, ref output);
             Assert.IsTrue(output == 10);
         }
-
+     
 
     }
 }

@@ -42,7 +42,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void GenericDiskDeleteTest1()
+        public void DiskDeleteBasicTest1()
         {
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;
@@ -108,7 +108,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void GenericDiskDeleteTest2()
+        public void DiskDeleteBasicTest2()
         {
             const int totalRecords = 2000;
             for (int i = 0; i < totalRecords; i++)

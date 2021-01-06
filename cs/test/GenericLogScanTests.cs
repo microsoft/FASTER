@@ -47,7 +47,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void GenericDiskWriteScan()
+        public void DiskWriteScanBasicTest()
         {
             using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
 

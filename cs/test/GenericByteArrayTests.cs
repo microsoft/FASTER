@@ -50,7 +50,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void GenericByteArrayTest1()
+        public void ByteArrayBasicTest()
         {
             const int totalRecords = 2000;
             for (int i = 0; i < totalRecords; i++)

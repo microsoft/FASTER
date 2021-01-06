@@ -115,7 +115,7 @@ namespace FASTER.test.recovery.objectstore
 
                 if (i % completePendingInterval == 0)
                 {
-                    session.CompletePending(false);
+                    session.CompletePending(false,false);
                 }
             }
 

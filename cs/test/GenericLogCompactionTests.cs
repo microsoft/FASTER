@@ -14,6 +14,7 @@ using NUnit.Framework;
 namespace FASTER.test
 {
 
+
     [TestFixture]
     internal class GenericLogCompactionTests
     {
@@ -46,9 +47,10 @@ namespace FASTER.test
             objlog.Dispose();
         }
 
+        // Basic test that where shift begin address to untilAddress after compact
         [Test]
         [Category("FasterKV")]
-        public void GenericLogCompactionTest1()
+        public void LogCompactBasicTest()
         {
             MyInput input = new MyInput();
 
@@ -87,10 +89,53 @@ namespace FASTER.test
             }
         }
 
+        // Basic test where DO NOT shift begin address to untilAddress after compact 
+        [Test]
+        [Category("FasterKV")]
+        public void LogCompactNotShiftBeginAddrTest()
+        {
+            MyInput input = new MyInput();
+
+            const int totalRecords = 2000;
+            long compactUntil = 0;
+
+            for (int i = 0; i < totalRecords; i++)
+            {
+                if (i == 1000)
+                    compactUntil = fht.Log.TailAddress;
+
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+                session.Upsert(ref key1, ref value, 0, 0);
+            }
+
+            // Do not shift begin to until address ... verify that is the case and verify all the keys
+            compactUntil = session.Compact(compactUntil, false);
+            Assert.IsFalse(fht.Log.BeginAddress == compactUntil);
+
+            // Read 2000 keys - all should be present
+            for (int i = 0; i < totalRecords; i++)
+            {
+                MyOutput output = new MyOutput();
+
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                var status = session.Read(ref key1, ref input, ref output, 0, 0);
+                if (status == Status.PENDING)
+                    session.CompletePending(true);
+                else
+                {
+                    Assert.IsTrue(status == Status.OK);
+                    Assert.IsTrue(output.value.value == value.value);
+                }
+            }
+        }
+
 
         [Test]
         [Category("FasterKV")]
-        public void GenericLogCompactionTest2()
+        public void LogCompactTestNewEntries()
         {
             MyInput input = new MyInput();
 
@@ -142,7 +187,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void GenericLogCompactionTest3()
+        public void LogCompactAfterDeleteTest()
         {
             MyInput input = new MyInput();
 
@@ -198,7 +243,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void GenericLogCompactionCustomFunctionsTest1()
+        public void LogCompactBasicCustomFctnTest()
         {
             MyInput input = new MyInput();
 
@@ -247,9 +292,65 @@ namespace FASTER.test
             }
         }
 
+        // Same as basic test of Custom Functions BUT this will NOT shift begin address to untilAddress after compact
         [Test]
         [Category("FasterKV")]
-        public void GenericLogCompactionCustomFunctionsTest2()
+        public void LogCompactCustomFctnNotShiftBeginTest()
+        {
+            MyInput input = new MyInput();
+
+            const int totalRecords = 2000;
+            var compactUntil = 0L;
+
+            for (var i = 0; i < totalRecords; i++)
+            {
+                if (i == totalRecords / 2)
+                    compactUntil = fht.Log.TailAddress;
+
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+                session.Upsert(ref key1, ref value, 0, 0);
+            }
+
+            compactUntil = session.Compact(compactUntil, false, default(EvenCompactionFunctions));
+            Assert.IsFalse(fht.Log.BeginAddress == compactUntil);
+
+            // Verified that begin address not changed so now compact and change Begin to untilAddress
+            compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
+            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+
+            // Read 2000 keys - all should be present
+            for (var i = 0; i < totalRecords; i++)
+            {
+                var output = new MyOutput();
+                var key1 = new MyKey { key = i };
+                var value = new MyValue { value = i };
+
+                var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
+
+                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
+                if (status == Status.PENDING)
+                {
+                    session.CompletePending(true);
+                }
+                else
+                {
+                    if (ctx == 0)
+                    {
+                        Assert.IsTrue(status == Status.OK);
+                        Assert.IsTrue(output.value.value == value.value);
+                    }
+                    else
+                    {
+                        Assert.IsTrue(status == Status.NOTFOUND);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public void LogCompactCopyInPlaceCustomFctnTest()
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy

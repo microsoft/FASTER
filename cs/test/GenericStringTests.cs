@@ -43,7 +43,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void GenericStringTest1()
+        public void StringBasicTest()
         {
             const int totalRecords = 2000;
             for (int i = 0; i < totalRecords; i++)
