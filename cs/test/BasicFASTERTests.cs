@@ -551,6 +551,10 @@ namespace FASTER.test
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
+
+            // Extra check just to make sure
+            var sessionsize = session.GetSize();
+
             var status = session.Read(key1);
            
             if (status.Item1 == Status.PENDING)
@@ -562,6 +566,7 @@ namespace FASTER.test
                 Assert.IsTrue(status.Item1 == Status.OK);
             }
 
+            Assert.IsTrue(8 == sessionsize);
             Assert.IsTrue(status.Item2.value.vfield1 == value.vfield1);
             Assert.IsTrue(status.Item2.value.vfield2 == value.vfield2);
             Assert.IsTrue(13 == key1.kfield1);

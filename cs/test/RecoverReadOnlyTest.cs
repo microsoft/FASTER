@@ -94,10 +94,11 @@ namespace FASTER.test
         //**** Helper Functions - based off of FasterLogPubSub sample ***
         static async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
         {
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
-                await log.CommitAsync();
+                await log.CommitAsync(cancellationToken);
             }
         }
 
