@@ -23,17 +23,17 @@ namespace dpredis
         private SemaphoreSlim queueLatch;
         private Queue<DpredisBatchHandle> outstandingBatches;
         private SimpleObjectPool<DpredisBatchHandle> batchHandlePool;
-        private DprManager<RedisStateObject, long> dprManager;
+        private DprServer<RedisStateObject, long> dprServer;
 
         public RedisMiddleMan(Socket clientSocket, Socket redisSocket, SimpleObjectPool<DpredisBatchHandle> batchHandlePool,
-            DprManager<RedisStateObject, long> dprManager)
+            DprServer<RedisStateObject, long> dprServer)
         {
             this.clientSocket = clientSocket;
             this.redisSocket = redisSocket;
             queueLatch = new SemaphoreSlim(1, 1);
             outstandingBatches = new Queue<DpredisBatchHandle>();
             this.batchHandlePool = batchHandlePool;
-            this.dprManager = dprManager;
+            this.dprServer = dprServer;
         }
 
         public void Dispose()
@@ -51,7 +51,7 @@ namespace dpredis
             {
                 ref var requestHeader = ref Unsafe.AsRef<DprBatchRequestHeader>(b + offset);
                 var batchHandle = batchHandlePool.Checkout();
-                var allowed = dprManager.RequestBatchBegin(
+                var allowed = dprServer.RequestBatchBegin(
                     new Span<byte>(b + offset, requestHeader.Size()),
                     new Span<byte>(batchHandle.responseHeader),
                     out var tracker);
@@ -76,7 +76,7 @@ namespace dpredis
                 queueLatch.Wait();
                 outstandingBatches.Enqueue(batchHandle);
                 queueLatch.Release();
-                dprManager.StateObject().OperationLatch().EnterReadLock();
+                dprServer.StateObject().OperationLatch().EnterReadLock();
                 redisSocket.Send(new Span<byte>(buf, offset + requestHeader.Size(), size - requestHeader.Size()));
             }
         }
@@ -91,9 +91,9 @@ namespace dpredis
             // Otherwise, an entire batch has been acked. Signal batch finish to dpr and forward reply to client
             outstandingBatches.Dequeue();
             currentBatch.tracker.MarkOperationRangesVersion(0, currentBatch.batchSize,
-                dprManager.StateObject().Version());
-            dprManager.StateObject().OperationLatch().ExitReadLock();
-            var ret = dprManager.SignalBatchFinish(
+                dprServer.StateObject().Version());
+            dprServer.StateObject().OperationLatch().ExitReadLock();
+            var ret = dprServer.SignalBatchFinish(
                 new Span<byte>(currentBatch.requestHeader),
                 new Span<byte>(currentBatch.responseHeader), currentBatch.tracker);
             Debug.Assert(ret == 0);

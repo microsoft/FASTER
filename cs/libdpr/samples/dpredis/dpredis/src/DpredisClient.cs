@@ -75,7 +75,7 @@ namespace dpredis
 
     public class DpredisClientSession
     {
-        private long seqNum;
+        private long seqNum = 0;
         private int batchSize;
 
         private SimpleObjectPool<DpredisBatch> batchPool;
@@ -177,5 +177,32 @@ namespace dpredis
         }
 
         internal void ReturnResolvedBatch(DpredisBatch batch) => batchPool.Return(batch);
+    }
+
+    public class DpredisClient
+    {
+        private DprClient dprClient;
+        private ConcurrentDictionary<Worker, (string, int)> routingTable;
+
+        public DpredisClient(IDprFinder dprFinder, ConcurrentDictionary<Worker, (string, int)> routingTable)
+        {
+            dprClient = new DprClient(dprFinder);
+            this.routingTable = routingTable;
+        }
+
+        public void Start()
+        {
+            dprClient.Start();
+        }
+
+        public void End()
+        {
+            dprClient.End();
+        }
+
+        public DpredisClientSession NewSession(int batchSize)
+        {
+            return new DpredisClientSession(dprClient, Guid.NewGuid(), routingTable, batchSize);
+        }
     }
 }

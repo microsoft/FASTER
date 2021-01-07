@@ -43,18 +43,16 @@ namespace dpredis
         private Socket servSocket;
         private string ip;
         private int port;
-        private RedisShard backend;
-        private DprManager<RedisStateObject, long> dprManager;
+        private DprServer<RedisStateObject, long> dprServer;
         private SimpleObjectPool<DpredisBatchHandle> batchHandlePool;
 
         private ConcurrentDictionary<RedisMiddleMan, object> middleMen;
 
-        public DpredisProxy(string ip, int port, RedisShard backend, DprManager<RedisStateObject, long> dprManager)
+        public DpredisProxy(string ip, int port, DprServer<RedisStateObject, long> dprServer)
         {
             this.ip = ip;
             this.port = port;
-            this.backend = backend;
-            this.dprManager = dprManager;
+            this.dprServer = dprServer;
             batchHandlePool = new SimpleObjectPool<DpredisBatchHandle>(() => new DpredisBatchHandle());
             middleMen = new ConcurrentDictionary<RedisMiddleMan, object>();
         }
@@ -89,8 +87,8 @@ namespace dpredis
             }
 
             // Establish a redis connection for every client connection
-            var redisConn = dprManager.StateObject().GetNewRedisConnection();
-            var middleMan = new RedisMiddleMan(e.AcceptSocket, redisConn, batchHandlePool, dprManager);
+            var redisConn = dprServer.StateObject().GetNewRedisConnection();
+            var middleMan = new RedisMiddleMan(e.AcceptSocket, redisConn, batchHandlePool, dprServer);
             middleMen.TryAdd(middleMan, null);
             // Set up listening events on redis socket
             var redisSaea = new SocketAsyncEventArgs();

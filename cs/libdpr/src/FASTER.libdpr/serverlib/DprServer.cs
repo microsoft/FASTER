@@ -60,7 +60,7 @@ namespace FASTER.libdpr
     /// </summary>
     /// <typeparam name="TStateObject"></typeparam>
     /// <typeparam name="TToken"></typeparam>
-    public class DprManager<TStateObject, TToken>
+    public class DprServer<TStateObject, TToken>
         where TStateObject : IStateObject<TToken>
     {
         private DprWorkerState<TToken> state;
@@ -71,7 +71,7 @@ namespace FASTER.libdpr
         private readonly long checkpointPeriodMilli;
         private ManualResetEventSlim termination;
 
-        public DprManager(IDprFinder dprFinder, Worker me, TStateObject stateObject, long checkpointPeriodMilli)
+        public DprServer(IDprFinder dprFinder, Worker me, TStateObject stateObject, long checkpointPeriodMilli)
         {
          
             state = new DprWorkerState<TToken>(dprFinder, me);

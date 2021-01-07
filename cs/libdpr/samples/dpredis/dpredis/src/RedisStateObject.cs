@@ -12,7 +12,6 @@ namespace dpredis
     {
         public string name;
         public int port;
-        public long id;
         public string auth;
     }
 
@@ -22,7 +21,6 @@ namespace dpredis
         private ThreadLocalObjectPool<byte[]> reusableBuffers;
         private IPEndPoint redisBackend;
         private long lastCheckpointTime = 0;
-        private string auth;
         
         private ThreadLocal<Socket> conn;
         
@@ -35,7 +33,6 @@ namespace dpredis
             this.shard = shard;
             reusableBuffers = new ThreadLocalObjectPool<byte[]>(() => new byte[4096]);
             redisBackend = new IPEndPoint(Dns.GetHostAddresses(shard.name)[0], shard.port);
-            this.auth = auth;
             conn = new ThreadLocal<Socket>(GetNewRedisConnection, true);
         }
 
@@ -43,7 +40,7 @@ namespace dpredis
         {
             var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             socket.Connect(redisBackend);
-            socket.Send(System.Text.Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${auth.Length}\r\n{auth}\r\n"));
+            socket.Send(System.Text.Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${shard.auth.Length}\r\n{shard.auth}\r\n"));
             var buffer = reusableBuffers.Checkout();
             var len = socket.Receive(buffer);
             Debug.Assert(System.Text.Encoding.ASCII.GetString(buffer, 0, len).Equals("+OK"));
