@@ -26,8 +26,6 @@ namespace FASTER.test
 
         static readonly byte[] entry = new byte[100];
         static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
-        //private Span spanEntry;
-
 
         private struct ReadOnlySpanBatch : IReadOnlySpanBatch
         {
@@ -360,42 +358,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsyncEntry([Values]LogChecksumType logChecksum)
-        {
-            CancellationToken cancellationToken;
-
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
-
-            int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
-            bool _disposed = false;
-            var commit = new Thread(() => { while (!_disposed) { log.Commit(true); Thread.Sleep(1); } });
-
-            commit.Start();
-
-            // 65536=page size|headerSize|64=log header - add cancellation token on end just so not assuming default on at least one 
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
-
-            _disposed = true;
-
-            commit.Join();
-            log.Dispose();
-        }
-
-        [Test]
-        [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsyncReadOnlySpanBatch([Values] LogChecksumType logChecksum)
+        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values]LogChecksumType logChecksum)
         {
             CancellationToken cancellationToken;
 
@@ -407,16 +370,28 @@ namespace FASTER.test
             bool _disposed = false;
             var commit = new Thread(() => { while (!_disposed) { log.Commit(true); Thread.Sleep(1); } });
 
+            // create the read only memory byte that will enqueue and commit async
+            ReadOnlyMemory<byte> readOnlyMemoryByte = new byte[65536 - headerSize - 64];
+
             commit.Start();
 
-            // 65536=page size|headerSize|64=log header - typical entry just to add couple types in there
+            // 65536=page size|headerSize|64=log header - add cancellation token on end just so not assuming default on at least one 
             await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
 
             // 65536=page size|headerSize
             await log.EnqueueAndWaitForCommitAsync(spanBatch);
 
             // 65536=page size|headerSize
             await log.EnqueueAndWaitForCommitAsync(spanBatch, cancellationToken);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte);
+
+            // 65536=page size|headerSize
+            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken);
 
             // TO DO: Probably do more verification - could read it but in reality, if fails it locks up waiting
 
@@ -425,39 +400,6 @@ namespace FASTER.test
             commit.Join();
             log.Dispose();
         }
-
-        [Test]
-        [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsyncReadOnlyMemory([Values] LogChecksumType logChecksum)
-        {
-            CancellationToken cancellationToken;
-
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
-
-            int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
-            bool _disposed = false;
-            var commit = new Thread(() => { while (!_disposed) { log.Commit(true); Thread.Sleep(1); } });
-            
-            // create the read only memory byte that will enqueue and commit async
-            ReadOnlyMemory<byte> readOnlyMemoryByte = new byte[65536 - headerSize - 64];
-
-            commit.Start();
-
-            // 65536=page size|headerSize|64=log header
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken);
-
-            _disposed = true;
-
-            commit.Join();
-            log.Dispose();
-        }
-
 
         [Test]
         [Category("FasterLog")]

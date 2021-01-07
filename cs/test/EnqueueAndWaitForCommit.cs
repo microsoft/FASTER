@@ -63,14 +63,14 @@ namespace FASTER.test
             try { new DirectoryInfo(commitPath).Delete(true); }
             catch { }
         }
-/*
         [Test]
         [Category("FasterLog")]
         public void EnqueueAndWaitForCommitBasicTest([Values] EnqueueIteratorType iteratorType)
         {
-            // make it small since launching each on separate threads 
+
+            // make it very small to keep run time down
             int entryLength = 5;
-            int numEntries = 3;
+            int numEntries = 2;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -91,25 +91,17 @@ namespace FASTER.test
                 switch (iteratorType)
                 {
                     case EnqueueIteratorType.Byte:
+
                         // Launch on separate thread so it can sit until commit
-                        new Thread(delegate () 
-                        {
-                            LogWriter(log, entry, EnqueueIteratorType.Byte); 
-                        }).Start();
-                        
+                        Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.Byte));
                         break;
                     case EnqueueIteratorType.SpanByte:
                         // Could slice the span but for basic test just pass span of full entry - easier verification
                         Span<byte> spanEntry = entry;
-
-                        new Thread(delegate (){
-                            LogWriter(log, entry, EnqueueIteratorType.SpanByte);
-                        }).Start();
+                        Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanByte));
                         break;
                     case EnqueueIteratorType.SpanBatch:
-                        new Thread(delegate (){
-                            LogWriter(log, entry, EnqueueIteratorType.SpanBatch);
-                        }).Start();
+                        Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanBatch));
                         break;
                     default:
                         Assert.Fail("Unknown EnqueueIteratorType");
@@ -148,10 +140,11 @@ namespace FASTER.test
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
-*/
 
-        static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
+
+        public static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
         {
+
             // Add to FasterLog on separate threads as it will sit and await until Commit happens
             switch (iteratorType)
             {
