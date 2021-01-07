@@ -65,10 +65,10 @@ namespace FASTER.test
         }
 
  // The CIs in Azure Dev Ops time out when this runs under Release. Until figure out what is going on, put this as Debug only
-#if DEBUG
+//#if DEBUG
         [Test]
         [Category("FasterLog")]
-        public void EnqueueAndWaitForCommitBasicTest([Values] EnqueueIteratorType iteratorType)
+        public void EnqWaitCommitBasicTest([Values] EnqueueIteratorType iteratorType)
         {
 
             // make it very small to keep run time down
@@ -143,7 +143,7 @@ namespace FASTER.test
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
-#endif
+//#endif
 
         public static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
         {
