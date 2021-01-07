@@ -75,7 +75,7 @@ namespace FASTER.test
             for (int i = 0; i < 10; i++)
             {
                 logUncommitted.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-                logUncommitted.RefreshUncommitted();
+                logUncommitted.RefreshUncommitted(true);
             }
 
             //****** For the NoBuffer test

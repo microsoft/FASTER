@@ -72,7 +72,7 @@ namespace FASTER.test.recovery
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(CommitPeriodMs), cancellationToken);
-                    await log.CommitAsync();
+                    await log.CommitAsync(cancellationToken);
                 }
             } catch (OperationCanceledException) { }
         }

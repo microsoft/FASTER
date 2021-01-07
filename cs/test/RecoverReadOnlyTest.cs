@@ -108,7 +108,7 @@ namespace FASTER.test
             while (!cancellationToken.IsCancellationRequested)
             {
                 log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-                log.RefreshUncommitted();
+                log.RefreshUncommitted(true);
 
                 i++;
 
