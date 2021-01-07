@@ -15,7 +15,7 @@ namespace FASTER.test
 {
 
     [TestFixture]
-    internal class EnqueueAndWaitForCommitTests
+    internal class EnqWaitCommitTest
     {
         public FasterLog log;
         public IDevice device;
