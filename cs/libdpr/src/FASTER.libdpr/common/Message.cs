@@ -28,7 +28,7 @@ namespace FASTER.libdpr
         [FieldOffset(40)]
         public int numMessages;
         [FieldOffset(44)]
-        public fixed byte deps[0];
+        public fixed byte deps[1];
 
         public int Size() => HeaderSize + numDeps * sizeof(WorkerVersion);
     }
@@ -48,7 +48,7 @@ namespace FASTER.libdpr
         [FieldOffset(28)]
         public int batchSize;
         [FieldOffset(32)]
-        public fixed byte versions[0];
+        public fixed byte versions[1];
         
         public int Size() => batchSize;
 
