@@ -50,9 +50,12 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void WaitForCommitBasicTest()
         {
+
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
             // make it small since launching each on separate threads 
             int entryLength = 10;
-            int numEntries = 5;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -60,26 +63,16 @@ namespace FASTER.test
                 entry[i] = (byte)i;
             }
 
-            // Fill the log
-            for (int i = 0; i < numEntries; i++)
-            {
-                // Fill entry for the log
-                if (i < entryLength)
-                    entry[i] = (byte)i;
-                
-                //Launch on separate thread so it can sit until commit
-                new Thread(delegate () 
-                {
-                    LogWriter(log, entry); 
-                }).Start();
-                
-            }
-
-            // Give all a second or so to queue up
-            Thread.Sleep(2000);
+            // Enqueue and Commit in a separate thread (wait there until commit is done though).
+            Task currentTask = Task.Run(() => LogWriter(log, entry), token);
 
             // Commit to the log
             log.Commit(true);
+            currentTask.Wait(token);
+
+            // double check to make sure finished
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+                cts.Cancel();
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
