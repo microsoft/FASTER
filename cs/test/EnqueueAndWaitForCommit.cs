@@ -19,7 +19,7 @@ namespace FASTER.test
     {
         public FasterLog log;
         public IDevice device;
-        static readonly byte[] entry = new byte[10];
+        static readonly byte[] entry = new byte[5];
         static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(100); 
         private string commitPath;
 
@@ -64,16 +64,18 @@ namespace FASTER.test
             catch { }
         }
 
- // The CIs in Azure Dev Ops time out when this runs under Release. Until figure out what is going on, put this as Debug only
-//#if DEBUG
         [Test]
         [Category("FasterLog")]
-        public void EnqWaitCommitBasicTest([Values] EnqueueIteratorType iteratorType)
+        public void EnqueueWaitCommitBasicTest([Values] EnqueueIteratorType iteratorType)
         {
 
-            // make it very small to keep run time down
+            // keep it simple by just adding one entry
             int entryLength = 5;
-            int numEntries = 2;
+            int numEntries = 1;
+
+            CancellationTokenSource ts = new CancellationTokenSource();
+            ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
+            Task currentTask = null;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -81,42 +83,33 @@ namespace FASTER.test
                 entry[i] = (byte)i;
             }
 
-            ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
-
-            // Fill Log
-            for (int i = 0; i < numEntries; i++)
+            // Add to FasterLog
+            switch (iteratorType)
             {
-                // Fill log entry
-                if (i < entryLength)
-                    entry[i] = (byte)i;
+                case EnqueueIteratorType.Byte:
+                    // Launch on separate thread so it can sit until commit
+                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.Byte));
+                    break;
+                case EnqueueIteratorType.SpanByte:
+                    // Could slice the span but for basic test just pass span of full entry - easier verification
+                    Span<byte> spanEntry = entry;
+                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanByte));
+                    break;
+                case EnqueueIteratorType.SpanBatch:
+                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanBatch));
+                    break;
 
-                // Add to FasterLog
-                switch (iteratorType)
-                {
-                    case EnqueueIteratorType.Byte:
-                        // Launch on separate thread so it can sit until commit
-                        Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.Byte));
-                        break;
-                    case EnqueueIteratorType.SpanByte:
-                        // Could slice the span but for basic test just pass span of full entry - easier verification
-                        Span<byte> spanEntry = entry;
-                        Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanByte));
-                        break;
-                    case EnqueueIteratorType.SpanBatch:
-                        Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanBatch));
-                        break;
-
-                    default:
-                        Assert.Fail("Unknown EnqueueIteratorType");
-                        break;
-                }
+                default:
+                    Assert.Fail("Unknown EnqueueIteratorType");
+                    break;
             }
 
             // Give all a second or so to queue up
-            Thread.Sleep(1000);
+            Thread.Sleep(2000);
 
-            // Commit to the log
+            // Commit to the log and wait for tasks to finish
             log.Commit(true);
+            currentTask.Wait(5000,ts.Token);
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -143,7 +136,6 @@ namespace FASTER.test
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
-//#endif
 
         public static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
         {
