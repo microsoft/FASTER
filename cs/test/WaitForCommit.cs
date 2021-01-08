@@ -30,7 +30,7 @@ namespace FASTER.test
             catch { }
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "EnqueueAndWaitForCommit", deleteOnClose: true);
+            device = Devices.CreateLogDevice(path + "WaitForCommit", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
@@ -70,9 +70,13 @@ namespace FASTER.test
             log.Commit(true);
             currentTask.Wait(token);
 
-            // double check to make sure finished
+            // double check to make sure finished - seen cases where timing kept running even after commit done
             if (currentTask.Status != TaskStatus.RanToCompletion)
                 cts.Cancel();
+
+            // If still running at this point, fail
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+                Assert.Fail("WaitForCommitBasicTest: Task is still running when it should be stopped. TaskStatus:"+ currentTask.Status.ToString());
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
