@@ -73,7 +73,8 @@ namespace FASTER.test
             int entryLength = 5;
             int numEntries = 1;
 
-            CancellationTokenSource ts = new CancellationTokenSource();
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
             Task currentTask = null;
 
@@ -88,15 +89,15 @@ namespace FASTER.test
             {
                 case EnqueueIteratorType.Byte:
                     // Launch on separate thread so it can sit until commit
-                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.Byte));
+                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.Byte), token);
                     break;
                 case EnqueueIteratorType.SpanByte:
                     // Could slice the span but for basic test just pass span of full entry - easier verification
                     Span<byte> spanEntry = entry;
-                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanByte));
+                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanByte), token);
                     break;
                 case EnqueueIteratorType.SpanBatch:
-                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanBatch));
+                    currentTask = Task.Run(() => LogWriter(log, entry, EnqueueIteratorType.SpanBatch), token);
                     break;
 
                 default:
@@ -105,11 +106,31 @@ namespace FASTER.test
             }
 
             // Give all a second or so to queue up
-            Thread.Sleep(2000);
+            Thread.Sleep(1000);
 
             // Commit to the log and wait for tasks to finish
-            log.Commit(true);
-            currentTask.Wait(5000,ts.Token);
+            log.Commit(false);
+            currentTask.Wait(4000,token);
+
+            //*#*#* Debug Code
+            string Message = "";
+            //*#*#* Debug Code
+
+            // double check to make sure finished
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                //*#*#* Debug Code
+                Message = "OrigStatus:" + currentTask.Status.ToString();
+                //*#*#* Debug Code
+
+                cts.Cancel();
+            }
+
+            //*#*#* Debug Code
+            Message = Message+" CurrentStatus:" + currentTask.Status.ToString();
+            //Assert.Fail("Message:"+ Message);
+            //*#*#* Debug Code
+
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -132,6 +153,13 @@ namespace FASTER.test
                 }
             }
 
+            //*#*#* Debug Code
+            //Message for Release: Message:OrigStatus:Running CurrentStatus:Running CurrentStatus:Running   DataCheckRun:True
+            //Message for Debug: 
+            Message = Message + " CurrentStatus:" + currentTask.Status.ToString() + "   DataCheckRun:" + datacheckrun.ToString();
+            Assert.Fail("Message:"+ Message);
+            //*#*#* Debug Code
+
             // if data verification was skipped, then pop a fail
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
@@ -140,23 +168,37 @@ namespace FASTER.test
         public static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
         {
 
-            // Add to FasterLog on separate threads as it will sit and await until Commit happens
-            switch (iteratorType)
+            try
             {
-                case EnqueueIteratorType.Byte:
-                    var rc = log.EnqueueAndWaitForCommit(entry);
-                    break;
-                case EnqueueIteratorType.SpanByte:
-                    Span<byte> spanEntry = entry;
-                    rc = log.EnqueueAndWaitForCommit(spanEntry);
-                    break;
-                case EnqueueIteratorType.SpanBatch:
-                    rc = log.EnqueueAndWaitForCommit(spanBatch);
-                    break;
-                default:
-                    Assert.Fail("Unknown EnqueueIteratorType");
-                    break;
+                long returnLogicalAddress = 0;
+
+                // Add to FasterLog on separate threads as it will sit and await until Commit happens
+                switch (iteratorType)
+                {
+                    case EnqueueIteratorType.Byte:
+                        returnLogicalAddress = log.EnqueueAndWaitForCommit(entry);
+//                        returnLogicalAddress = 1;
+                        break;
+                    case EnqueueIteratorType.SpanByte:
+                        Span<byte> spanEntry = entry;
+                        returnLogicalAddress = log.EnqueueAndWaitForCommit(spanEntry);
+                        break;
+                    case EnqueueIteratorType.SpanBatch:
+                        returnLogicalAddress = log.EnqueueAndWaitForCommit(spanBatch);
+                        break;
+                    default:
+                        Assert.Fail("Unknown EnqueueIteratorType");
+                        break;
+                }
+
+                if (returnLogicalAddress == 0)
+                    Assert.Fail("LogWriter: Returned Logical Address = 0");
             }
+            catch (Exception ex)
+            {
+                Assert.Fail("EnqueueAndWaitForCommit had exception:" + ex.Message);
+            }
+
         }
 
     }

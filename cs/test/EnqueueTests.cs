@@ -158,6 +158,52 @@ namespace FASTER.test
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
 
+        [Test]
+        [Category("FasterLog")]
+        public async Task EnqueueAsyncBasicTest()
+        {
+
+            //int entryLength = 20;
+            //int numEntries = 1000;
+
+            CancellationToken cancellationToken;
+            ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
+            ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(5);
+
+            var input1 = new byte[] { 0, 1, 2, 3 };
+            var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
+            var input3 = new byte[] { 11, 12 };
+            string readerName = "abc";
+
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogCommitFile = commitPath }))
+            {
+                await l.EnqueueAsync(input1, cancellationToken);
+                await l.EnqueueAsync(input2);
+                await l.EnqueueAsync(input3);
+                await l.EnqueueAsync(readOnlyMemoryEntry);
+                await l.EnqueueAsync(spanBatch);
+                await l.CommitAsync();
+
+                //*#*#*#* NEED THESE LINES??? Doubt it
+                using var originalIterator = l.Scan(0, long.MaxValue, readerName);
+                Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
+                originalIterator.CompleteUntil(recoveryAddress);
+                Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
+                await l.CommitAsync();
+            }
+
+            //*#*#*#* READ THE BYTES!!!
+
+//            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitPath }))
+  //          {
+    //            using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
+      //          Assert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
+        //        Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
+          //  }
+        }
+
+
+
     }
 }
 

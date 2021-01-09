@@ -66,9 +66,12 @@ namespace FASTER.test
             // Enqueue and Commit in a separate thread (wait there until commit is done though).
             Task currentTask = Task.Run(() => LogWriter(log, entry), token);
 
+            // Give all a second or so to queue up
+            Thread.Sleep(2000);
+
             // Commit to the log
             log.Commit(true);
-            currentTask.Wait(token);
+            currentTask.Wait(4000, token);
 
             // double check to make sure finished - seen cases where timing kept running even after commit done
             if (currentTask.Status != TaskStatus.RanToCompletion)
