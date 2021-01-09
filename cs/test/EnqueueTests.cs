@@ -34,7 +34,7 @@ namespace FASTER.test
         {
             private readonly int batchSize;
             public ReadOnlySpanBatch(int batchSize) => this.batchSize = batchSize;
-            public ReadOnlySpan<byte> Get(int index) => entry; 
+            public ReadOnlySpan<byte> Get(int index) => entry;
             public int TotalEntries() => batchSize;
         }
 
@@ -66,12 +66,12 @@ namespace FASTER.test
 
 
         [Test]
-       [Category("FasterLog")]
-       [Category("Smoke")]
+        [Category("FasterLog")]
+        [Category("Smoke")]
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
         {
             int entryLength = 20;
-            int numEntries = 1000; 
+            int numEntries = 1000;
             int entryFlag = 9999;
 
             // Reduce SpanBatch to make sure entry fits on page
@@ -129,7 +129,7 @@ namespace FASTER.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))  
+            using (var iter = log.Scan(0, 100_000_000))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -141,11 +141,11 @@ namespace FASTER.test
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
                         {
-                            Assert.IsTrue(result[0] == (byte)entryFlag, "Fail - Result[0]:"+result[0].ToString()+"  entryFlag:"+entryFlag);  
+                            Assert.IsTrue(result[0] == (byte)entryFlag, "Fail - Result[0]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
                         }
                         else
                         {
-                            Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                            Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
                         }
 
                         currentEntry++;
@@ -158,13 +158,13 @@ namespace FASTER.test
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
 
+
         [Test]
         [Category("FasterLog")]
         public async Task EnqueueAsyncBasicTest()
         {
 
-            //int entryLength = 20;
-            //int numEntries = 1000;
+            bool datacheckrun = false;
 
             CancellationToken cancellationToken;
             ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
@@ -175,35 +175,54 @@ namespace FASTER.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogCommitFile = commitPath }))
-            {
-                await l.EnqueueAsync(input1, cancellationToken);
-                await l.EnqueueAsync(input2);
-                await l.EnqueueAsync(input3);
-                await l.EnqueueAsync(readOnlyMemoryEntry);
-                await l.EnqueueAsync(spanBatch);
-                await l.CommitAsync();
+            await log.EnqueueAsync(input1, cancellationToken);
+            await log.EnqueueAsync(input2);
+            await log.EnqueueAsync(input3);
+            await log.EnqueueAsync(readOnlyMemoryEntry);
+            await log.EnqueueAsync(spanBatch);
+            await log.CommitAsync();
 
-                //*#*#*#* NEED THESE LINES??? Doubt it
-                using var originalIterator = l.Scan(0, long.MaxValue, readerName);
-                Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
-                originalIterator.CompleteUntil(recoveryAddress);
-                Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
-                await l.CommitAsync();
+            // Read the log to make sure all entries are put in
+            int currentEntry = 1;
+            using (var iter = log.Scan(0, long.MaxValue, readerName))
+            {
+                while (iter.GetNext(out byte[] result, out _, out _))
+                {
+
+                    // set check flag to show got in here
+                    datacheckrun = true;
+
+                    // Verify based on which input read
+                    switch (currentEntry)
+                    {
+                        case 1:
+                            // result compared to input1
+                            Assert.IsTrue(result.SequenceEqual(input1), "Fail - Result does not equal Input1. result[0]="+result[0].ToString()+"  result[1]="+result[1].ToString() );
+                            break;
+                        case 2:
+                            Assert.IsTrue(result.SequenceEqual(input2), "Fail - Result does not equal Input2. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            break;
+                        case 3:
+                            Assert.IsTrue(result.SequenceEqual(input3), "Fail - Result does not equal Input3. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            break;
+                        case 4:
+                            Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal ReadOnlyMemoryEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            break;
+                        case 5:
+                            Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal SpanBatchEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            break;
+
+                    }
+                    currentEntry++;
+
+                }
+
+                // if data verification was skipped, then pop a fail
+                if (datacheckrun == false)
+                    Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
             }
 
-            //*#*#*#* READ THE BYTES!!!
-
-//            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitPath }))
-  //          {
-    //            using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
-      //          Assert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
-        //        Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
-          //  }
         }
-
-
-
     }
 }
 
