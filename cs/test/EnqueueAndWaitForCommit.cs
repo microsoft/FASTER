@@ -109,7 +109,7 @@ namespace FASTER.test
             Thread.Sleep(2000);
 
             // Commit to the log and wait for tasks to finish
-            log.Commit(false);
+            log.Commit(true);
             currentTask.Wait(4000,token);
 
             // double check to make sure finished
