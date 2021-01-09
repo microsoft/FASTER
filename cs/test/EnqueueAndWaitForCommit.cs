@@ -105,32 +105,18 @@ namespace FASTER.test
                     break;
             }
 
-            // Give all a second or so to queue up
-            Thread.Sleep(1000);
+            // Give all a second or so to make sure LogWriter got called first - if things working right, wouldn't need this
+            Thread.Sleep(2000);
 
             // Commit to the log and wait for tasks to finish
             log.Commit(false);
             currentTask.Wait(4000,token);
 
-            //*#*#* Debug Code
-            string Message = "";
-            //*#*#* Debug Code
-
             // double check to make sure finished
             if (currentTask.Status != TaskStatus.RanToCompletion)
             {
-                //*#*#* Debug Code
-                Message = "OrigStatus:" + currentTask.Status.ToString();
-                //*#*#* Debug Code
-
                 cts.Cancel();
             }
-
-            //*#*#* Debug Code
-            Message = Message+" CurrentStatus:" + currentTask.Status.ToString();
-            //Assert.Fail("Message:"+ Message);
-            //*#*#* Debug Code
-
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -153,16 +139,21 @@ namespace FASTER.test
                 }
             }
 
-            //*#*#* Debug Code
-            //Message for Release: Message:OrigStatus:Running CurrentStatus:Running CurrentStatus:Running   DataCheckRun:True
-            //Message for Debug: 
-            Message = Message + " CurrentStatus:" + currentTask.Status.ToString() + "   DataCheckRun:" + datacheckrun.ToString();
-            Assert.Fail("Message:"+ Message);
-            //*#*#* Debug Code
-
             // if data verification was skipped, then pop a fail
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+
+
+            // NOTE: seeing issues where task is not running to completion on Release builds
+            // This is a final check to make sure task finished. If didn't then assert
+            // One note - if made it this far, know that data was Enqueue and read properly, so just
+            // case of task not stopping
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                Assert.Fail("Final Status check Failure -- Task should be 'RanToCompletion' but current Status is:"+ currentTask.Status);
+            }
+
+
         }
 
         public static void LogWriter(FasterLog log, byte[] entry, EnqueueIteratorType iteratorType)
@@ -177,7 +168,6 @@ namespace FASTER.test
                 {
                     case EnqueueIteratorType.Byte:
                         returnLogicalAddress = log.EnqueueAndWaitForCommit(entry);
-//                        returnLogicalAddress = 1;
                         break;
                     case EnqueueIteratorType.SpanByte:
                         Span<byte> spanEntry = entry;

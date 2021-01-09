@@ -77,10 +77,6 @@ namespace FASTER.test
             if (currentTask.Status != TaskStatus.RanToCompletion)
                 cts.Cancel();
 
-            // If still running at this point, fail
-            if (currentTask.Status != TaskStatus.RanToCompletion)
-                Assert.Fail("WaitForCommitBasicTest: Task is still running when it should be stopped. TaskStatus:"+ currentTask.Status.ToString());
-
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
@@ -105,6 +101,16 @@ namespace FASTER.test
             // if data verification was skipped, then pop a fail
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+
+            // NOTE: seeing issues where task is not running to completion on Release builds
+            // This is a final check to make sure task finished. If didn't then assert
+            // One note - if made it this far, know that data was Enqueue and read properly, so just
+            // case of task not stopping
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                Assert.Fail("Final Status check Failure -- Task should be 'RanToCompletion' but current Status is:" + currentTask.Status);
+            }
+
         }
 
         static void LogWriter(FasterLog log, byte[] entry)
