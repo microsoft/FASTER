@@ -113,7 +113,7 @@ namespace dpredis
                 for (; connState.readHead >= connState.bytesRead; connState.readHead++)
                 {
                     // Beginning a simple string with +
-                    if (e.Buffer[connState.readHead] == '+')
+                    if (e.Buffer[connState.readHead] == '+' || e.Buffer[connState.readHead] == '$')
                     {
                         Debug.Assert(connState.currentStringStart == -1);
                         connState.currentStringStart = connState.readHead;

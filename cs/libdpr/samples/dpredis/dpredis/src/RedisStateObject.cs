@@ -43,7 +43,7 @@ namespace dpredis
             socket.Send(System.Text.Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${shard.auth.Length}\r\n{shard.auth}\r\n"));
             var buffer = reusableBuffers.Checkout();
             var len = socket.Receive(buffer);
-            Debug.Assert(System.Text.Encoding.ASCII.GetString(buffer, 0, len).Equals("+OK"));
+            Debug.Assert(System.Text.Encoding.ASCII.GetString(buffer, 0, len).Equals("+OK\r\n"));
             reusableBuffers.Return(buffer);
             return socket;
         }

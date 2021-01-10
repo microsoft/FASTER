@@ -25,10 +25,10 @@ namespace dpredis.ycsb
 
             var client = new DpredisClient(dprFinder, routingTable);
             var clientSession = client.NewSession(config.batchSize);
-            var res = clientSession.IssueCommand(new Worker(0), "SET foo bar");
+            var res = clientSession.IssueCommand(new Worker(0), "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n");
             clientSession.FlushAll();
             Console.WriteLine(res.Result.Item2);
-            res = clientSession.IssueCommand(new Worker(0), "GET foo");
+            res = clientSession.IssueCommand(new Worker(0), "*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n");
             clientSession.FlushAll();
             Console.WriteLine(res.Result.Item2);
         }
