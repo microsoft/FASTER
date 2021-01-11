@@ -48,6 +48,7 @@ namespace dpredis.ycsb
             var dprManager = new DprServer<RedisStateObject, long>(new TestDprFinder(config.dprFinderIP, config.dprFinderPort), me, redisBackend, config.checkpointMilli);
             var proxy = new DpredisProxy(info.ip, info.port, dprManager);
             proxy.StartServer();
+            // TODO(Tianyu): Load initial keys into Redis here / make sure right checkpoint is loaded
             coordinatorConn.SendBenchmarkControlMessage("setup finished");
             coordinatorConn.ReceiveBenchmarkMessage();
             dprManager.Start();

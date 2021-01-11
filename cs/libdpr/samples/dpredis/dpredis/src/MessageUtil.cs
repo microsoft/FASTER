@@ -85,10 +85,72 @@ namespace dpredis
             }
         }
 
+        internal enum RedisMessageType
+        {
+            // TODO(Tianyu): Add more
+            SIMPLE_STRING, ERROR, BULK_STRING 
+        }
+
+        internal struct RedisParserState
+        {
+            internal RedisMessageType type;
+            internal int currentMessageStart;
+            internal int subMessageCount;
+
+            public bool ProcessChar(int readHead, byte[] buf)
+            {
+                switch ((char) buf[readHead])
+                {
+                    case '+':
+                        if (currentMessageStart != -1) return false;
+                        currentMessageStart = readHead;
+                        type = RedisMessageType.SIMPLE_STRING;
+                        subMessageCount = 1;
+                        return false;
+                    case '-':
+                        // Special case for null bulk string
+                        if (type == RedisMessageType.BULK_STRING && readHead == currentMessageStart + 1)
+                            subMessageCount = 1;
+                        if (currentMessageStart != -1) return false;
+                        currentMessageStart = readHead;
+                        type = RedisMessageType.ERROR;
+                        subMessageCount = 1;
+                        return false;
+                    case '$':
+                        if (currentMessageStart != -1) return false;
+                        Debug.Assert(currentMessageStart == -1);
+                        currentMessageStart = readHead;
+                        type = RedisMessageType.BULK_STRING;
+                        subMessageCount = 2;
+                        return false;
+                    case ':':
+                    case '*':
+                        if (currentMessageStart != -1) return false;
+                        throw new NotImplementedException();
+                    // TODO(Tianyu): Wouldn't technically work if \r\n in value, but I am not planning to put any so who cares
+                    case '\n':
+                        if (buf[readHead - 1] != '\r') return false;
+                        Debug.Assert(currentMessageStart != -1);
+                        // Special case for null string
+                        return --subMessageCount == 0;
+                    default:
+                        // Nothing to do
+                        return false;
+                }
+            }
+        }
+
         public abstract class AbstractRedisConnState
         {
             private Socket socket;
-            private int readHead, bytesRead, currentStringStart;
+            private int readHead, bytesRead;
+            private RedisParserState parserState = new RedisParserState
+            {
+                type = default,
+                currentMessageStart = -1,
+                subMessageCount = 0
+            };
+            
 
             public void Reset(Socket socket)
             {
@@ -96,7 +158,7 @@ namespace dpredis
             }
 
             // Return whether we should reset the buffer or keep message buffered
-            protected abstract bool HandleSimpleString(byte[] buf, int start, int end);
+            protected abstract bool HandleRespMessage(byte[] buf, int start, int end);
 
             private static void HandleReceiveCompletion(SocketAsyncEventArgs e)
             {
@@ -109,23 +171,12 @@ namespace dpredis
                 }
 
                 connState.bytesRead += e.BytesTransferred;
-                // TODO(Tianyu): Only supports simple interface for now
                 for (; connState.readHead >= connState.bytesRead; connState.readHead++)
                 {
-                    // Beginning a simple string with +
-                    if (e.Buffer[connState.readHead] == '+' || e.Buffer[connState.readHead] == '$')
+                    if (connState.parserState.ProcessChar(connState.readHead, e.Buffer))
                     {
-                        Debug.Assert(connState.currentStringStart == -1);
-                        connState.currentStringStart = connState.readHead;
-                    }
-                    // Ending a simple string with \r\n
-                    else if (e.Buffer[connState.readHead] == '\n'
-                             // Never yields out-of-bound because no well-formed buffer starts with \n
-                             && e.Buffer[connState.readHead - 1] == '\r')
-                    {
-                        Debug.Assert(connState.currentStringStart != -1);
                         var nextHead = connState.readHead + 1;
-                        if (connState.HandleSimpleString(e.Buffer, connState.currentStringStart, nextHead))
+                        if (connState.HandleRespMessage(e.Buffer, connState.parserState.currentMessageStart, nextHead))
                         {
                             var bytesLeft = connState.bytesRead - nextHead;
                             // Shift buffer to front
@@ -134,7 +185,7 @@ namespace dpredis
                             connState.readHead = 0;
                         }
 
-                        connState.currentStringStart = -1;
+                        connState.parserState.currentMessageStart = -1;
                     }
                 }
 

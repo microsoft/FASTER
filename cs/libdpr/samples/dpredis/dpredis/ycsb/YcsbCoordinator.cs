@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
-using FASTER.libdpr;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
 
 namespace dpredis.ycsb
 {
@@ -43,16 +46,23 @@ namespace dpredis.ycsb
     public class ClusterConfiguration
     {
         public List<ClusterWorker> workers = new List<ClusterWorker>();
+        public List<ClusterWorker> clients = new List<ClusterWorker>();
+        public List<ClusterWorker> proxies = new List<ClusterWorker>();
 
         public ClusterConfiguration AddClient(string ip, int port)
         {
-            workers.Add(new ClusterWorker {type = WorkerType.CLIENT, id = workers.Count, ip = ip, port = port});
+            var worker = new ClusterWorker {type = WorkerType.CLIENT, id = workers.Count, ip = ip, port = port};
+            workers.Add(worker);
+            clients.Add(worker);
             return this;
         }
 
         public ClusterConfiguration AddProxy(string ip, int port, RedisShard redisBackend)
         {
-            workers.Add(new ClusterWorker{type = WorkerType.PROXY, id = workers.Count, ip = ip, port = port, redisBackend = redisBackend});
+            var worker = new ClusterWorker
+                {type = WorkerType.PROXY, id = workers.Count, ip = ip, port = port, redisBackend = redisBackend};
+            workers.Add(worker);
+            proxies.Add(worker);
             return this;
         }
 
@@ -77,7 +87,99 @@ namespace dpredis.ycsb
         {
             this.config = config;
         }
-        
-        public void Run() {}
+
+        public void Run()
+        {
+            var handlerThreads = new List<Thread>();
+            var setupFinished = new CountdownEvent(clusterConfig.workers.Count);
+            var clientCountdown = new CountdownEvent(clusterConfig.clients.Count);
+            var shutdown = new ManualResetEventSlim();
+            long totalOps = 0;
+            var stopwatch = new Stopwatch();
+
+            foreach (var memberInfo in clusterConfig.clients)
+            {
+                var ip = IPAddress.Parse(memberInfo.ip);
+                var endPoint = new IPEndPoint(ip, memberInfo.port + 1);
+                var sender = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                sender.Connect(endPoint);
+                
+                sender.SendBenchmarkControlMessage(config);
+                var handlerThread = new Thread(() =>
+                {
+                    while (true)
+                    {
+                        var message = sender.ReceiveBenchmarkMessage();
+                        if (message.type == 1)
+                        {
+                            if (setupFinished.Signal())
+                                stopwatch.Start();
+                            break;
+                        }
+                    }
+
+                    setupFinished.Wait();
+                    sender.SendBenchmarkControlMessage("start benchmark");
+
+                    while (true)
+                    {
+                        var message = sender.ReceiveBenchmarkMessage();
+                        if (message == null) break;
+                        if (message.type == 1)
+                        {
+                            var ops = (long) message.content;
+                            lock (this)
+                            {
+                                totalOps += ops;
+                            }
+                            clientCountdown.Signal();
+                            shutdown.Wait();
+                            sender.SendBenchmarkControlMessage("shutdown");
+                        }
+                    }
+                    sender.Close();
+                });
+                handlerThreads.Add(handlerThread);
+                handlerThread.Start();
+            }
+            
+            foreach (var memberInfo in clusterConfig.proxies)
+            {
+                var ip = IPAddress.Parse(memberInfo.ip);
+                var endPoint = new IPEndPoint(ip, memberInfo.port + 1);
+                var sender = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                sender.Connect(endPoint);
+
+                sender.SendBenchmarkControlMessage(config);
+                var handlerThread = new Thread(() =>
+                {
+                    while (true)
+                    {
+                        var message = sender.ReceiveBenchmarkMessage();
+                        if (message.type == 1)
+                        {
+                            if (setupFinished.Signal())
+                                stopwatch.Start();
+                            break;
+                        }
+                    }
+
+                    setupFinished.Wait();
+                    sender.SendBenchmarkControlMessage("start benchmark");
+                    
+                    shutdown.Wait();
+                    sender.SendBenchmarkControlMessage("shutdown");
+                    sender.Close();
+                });
+                handlerThreads.Add(handlerThread);
+                handlerThread.Start();
+            }
+            
+            clientCountdown.Wait();
+            stopwatch.Stop();
+            shutdown.Set();
+            foreach (var thread in handlerThreads)
+                thread.Join();
+        }
     }
 }

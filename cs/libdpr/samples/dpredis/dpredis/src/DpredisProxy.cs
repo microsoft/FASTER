@@ -31,7 +31,7 @@ namespace dpredis
         {
             this.middleMan = middleMan;
         }
-        protected override bool HandleSimpleString(byte[] buf, int start, int end)
+        protected override bool HandleRespMessage(byte[] buf, int start, int end)
         {
             return middleMan.HandleNewResponse(buf, end);
         }
