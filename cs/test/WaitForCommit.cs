@@ -45,11 +45,13 @@ namespace FASTER.test
             catch { }
         }
 
-// NOTE: Having issues where Tasks aren't stopping on Release which kills the CIs - only run in debug until figure it out why
+        // NOTE: Having issues where Tasks aren't stopping on Release which kills the CIs - only run in debug until figure it out why
 #if DEBUG
+        [TestCase("Sync")]  // use string here instead of Bool so shows up in Test Explorer with more descriptive name
+        [TestCase("Async")]
         [Test]
         [Category("FasterLog")]
-        public void WaitForCommitBasicTest()
+        public void WaitForCommitBasicTest(string SyncTest)
         {
 
             CancellationTokenSource cts = new CancellationTokenSource();
@@ -64,10 +66,19 @@ namespace FASTER.test
                 entry[i] = (byte)i;
             }
 
-            // Enqueue and Commit in a separate thread (wait there until commit is done though).
-            Task currentTask = Task.Run(() => LogWriter(log, entry), token);
+            Task currentTask;
 
-            // Give all a second or so to queue up
+            // Enqueue and Commit in a separate thread (wait there until commit is done though).
+            if (SyncTest == "Sync")
+            {
+                currentTask = Task.Run(() => LogWriter(log, entry), token);
+            }
+            else
+            {
+                currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
+            }
+
+            // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
             Thread.Sleep(2000);
 
             // Commit to the log
@@ -121,6 +132,15 @@ namespace FASTER.test
             log.Enqueue(entry);
             log.Enqueue(entry);
             log.WaitForCommit(log.TailAddress);
+        }
+
+        static async Task LogWriterAsync(FasterLog log, byte[] entry)
+        {
+            // Enter in some entries then wait on this separate thread
+            await log.EnqueueAsync(entry);
+            await log.EnqueueAsync(entry);
+            await log.EnqueueAsync(entry);
+            await log.WaitForCommitAsync(log.TailAddress);
         }
 
     }

@@ -43,7 +43,6 @@ namespace FASTER.test
         {
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
-
             // Clean up log files from previous test runs in case they weren't cleaned up
             try { new DirectoryInfo(commitPath).Delete(true); }
             catch { }
@@ -190,7 +189,6 @@ namespace FASTER.test
             }
 
         }
-
     }
 }
 
