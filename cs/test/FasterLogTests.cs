@@ -677,6 +677,81 @@ namespace FASTER.test
         }
 
 
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType)
+        {
+
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager });
+            byte[] data1 = new byte[1000];
+            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
+
+            for (int i = 0; i < 100; i++)
+            {
+                log.Enqueue(data1);
+            }
+
+            // Actual tess is here 
+            await log.RefreshUncommittedAsync();
+
+            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
+            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+
+            using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
+            {
+                var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
+
+                switch (iteratorType)
+                {
+                    case IteratorType.Sync:
+                        while (iter.GetNext(out _, out _, out _))
+                            log.TruncateUntilPageStart(iter.NextAddress);
+                        Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                        break;
+                    case IteratorType.AsyncByteVector:
+                        {
+                            while (await asyncByteVectorIter.MoveNextAsync() && asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
+                                log.TruncateUntilPageStart(asyncByteVectorIter.Current.nextAddress);
+                        }
+                        break;
+                    case IteratorType.AsyncMemoryOwner:
+                        {
+                            while (await asyncMemoryOwnerIter.MoveNextAsync())
+                            {
+                                log.TruncateUntilPageStart(asyncMemoryOwnerIter.Current.nextAddress);
+                                asyncMemoryOwnerIter.Current.entry.Dispose();
+                                if (asyncMemoryOwnerIter.Current.nextAddress == log.SafeTailAddress)
+                                    break;
+                            }
+                        }
+                        break;
+                    default:
+                        Assert.Fail("Unknown IteratorType");
+                        break;
+                }
+
+                // Enqueue data but do not make it visible
+                log.Enqueue(data1);
+
+                // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
+                if (!IsAsync(iteratorType))
+                    Assert.IsFalse(iter.GetNext(out _, out _, out _));
+
+                // Actual tess is here 
+                await log.RefreshUncommittedAsync(token);
+
+                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+            }
+            log.Dispose();
+        }
+
+
+
+
 
     }
 }
