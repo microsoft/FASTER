@@ -38,14 +38,7 @@ namespace dpredis
 
         public Socket GetNewRedisConnection()
         {
-            var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(redisBackend);
-            socket.Send(System.Text.Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${shard.auth.Length}\r\n{shard.auth}\r\n"));
-            var buffer = reusableBuffers.Checkout();
-            var len = socket.Receive(buffer);
-            Debug.Assert(System.Text.Encoding.ASCII.GetString(buffer, 0, len).Equals("+OK\r\n"));
-            reusableBuffers.Return(buffer);
-            return socket;
+            return MessageUtil.GetNewRedisConnection(shard);
         }
         
         protected override void PerformCheckpoint(Action<long> onPersist)

@@ -18,6 +18,7 @@ namespace dpredis.ycsb
         public int batchSize;
         public string dprFinderIP;
         public int dprFinderPort;
+        public bool load;
 
         public override string ToString()
         {
@@ -72,14 +73,6 @@ namespace dpredis.ycsb
     public class YcsbCoordinator
     {
         public static ClusterConfiguration clusterConfig;
-
-        static YcsbCoordinator()
-        {
-            clusterConfig = new ClusterConfiguration();
-            // TODO(Tianyu): Example config
-            clusterConfig.AddProxy("10.0.1.8", 15721, new RedisShard {name = "", port = 6379, auth = ""})
-                .AddClient("10.0.1.9", 15721);
-        }
 
         private BenchmarkConfiguration config;
 

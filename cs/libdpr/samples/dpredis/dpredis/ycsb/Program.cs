@@ -3,6 +3,29 @@ using CommandLine;
 
 namespace dpredis.ycsb
 {
+    public class BenchmarkConsts
+    {
+#if DEBUG
+        public const bool kUseSmallData = true;
+        public const bool kUseSyntheticData = true;
+#else
+        public const bool kUseSmallData = false;
+        public const bool kUseSyntheticData = false;
+#endif
+        public const long kInitCount = kUseSmallData ? 2500480 : 250000000;
+        public const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
+        public const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
+
+        public const int kFileChunkSize = 4096;
+        public const long kChunkSize = 640;
+        public const int kRunSeconds = 30;
+
+        public const int kWorkerIdBits = 3;
+
+        public const bool kCollectLatency = true;
+        public const bool kTriggerRecovery = false;
+    }
+    
     class Options
     {
         [Option('t', "type", Required = true, HelpText = "worker or coordinator")]
@@ -32,12 +55,20 @@ namespace dpredis.ycsb
 
         [Option('w', "window_size", Required = false, Default = 4096)]
         public int WindowSize { get; set; }
+        
+        [Option('l', "load_data", Required = false, Default = true)]
+        public bool LoadDatabase { get; set; }
     }
 
     class Program
     {
         static void Main(string[] args)
         {
+            YcsbCoordinator.clusterConfig = new ClusterConfiguration();
+            // TODO(Tianyu): Example config
+            YcsbCoordinator.clusterConfig.AddProxy("10.0.1.8", 15721, new RedisShard {name = "", port = 6379, auth = ""})
+                .AddClient("10.0.1.9", 15721);
+            
             var result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed) throw new Exception();
 
@@ -52,6 +83,7 @@ namespace dpredis.ycsb
                     checkpointMilli = options.CheckpointInterval, // no checkpoints
                     windowSize = options.WindowSize,
                     batchSize = options.BatchSize,
+                    load = true
                 });
                 c.Run();
             }
@@ -61,17 +93,7 @@ namespace dpredis.ycsb
                 if (info.type == WorkerType.PROXY)
                     new YcsbProxy(options.WorkerId).Run();
                 else
-                    new YcsbClient(options.WorkerId).Run(new BenchmarkConfiguration
-                    {
-                        clientThreadCount =  options.ClientThreadCount,
-                        distribution = options.Distribution,
-                        readPercent = options.ReadPercent,
-                        checkpointMilli = options.CheckpointInterval, // no checkpoints
-                        windowSize = options.WindowSize,
-                        batchSize = options.BatchSize,
-                        dprFinderIP = "10.0.1.7",
-                        dprFinderPort = 15721
-                    });
+                    new YcsbClient(options.WorkerId).Run();
             }
             else
             {

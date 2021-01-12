@@ -37,6 +37,8 @@ namespace dpredis
         }
     }
 
+
+
     public class DpredisProxy
     {
         private const int batchMaxSize = 1 << 20;
@@ -57,6 +59,7 @@ namespace dpredis
             middleMen = new ConcurrentDictionary<RedisMiddleMan, object>();
         }
 
+        
         public void StartServer()
         {
             var ipAddr = IPAddress.Parse(ip);

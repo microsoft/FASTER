@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -9,6 +10,156 @@ namespace dpredis
 {
     public static class MessageUtil
     {
+        private unsafe static int IntToDecimalString(int a, byte[] buf, int offset)
+        {
+            var digits = stackalloc byte[20];
+            var i = 0;
+            do
+            {
+                digits[i] = (byte) ((a % 10) + 48);
+                i++;
+                a /= 10;
+            } while (a > 0);
+
+            var head = offset;
+
+            if (head + i + 1 >= buf.Length) return 0;
+            for (; i >= 0; i--)
+                buf[head++] = digits[i];
+            return head - offset;
+        }
+
+        private static byte HexDigitToChar(ulong a)
+        {
+            Debug.Assert(a >= 0 && a < 16);
+            if (a < 10) return (byte) (a + 48);
+            return (byte) (a + 55);
+        }
+
+        private unsafe static int LongToHexString(ulong a, byte[] buf, int offset)
+        {
+            var digits = stackalloc byte[16];
+            var i = 0;
+            do 
+            {
+                digits[i] = HexDigitToChar(a % 16);
+                i++;
+                a /= 16;
+            } while (a > 0);
+
+            var head = offset;
+
+            if (head + i + 1 >= buf.Length) return 0;
+            for (; i >= 0; i--)
+                buf[head++] = digits[i];
+            return head - offset;
+        }
+
+        private static int HexStringLength(ulong a)
+        {
+            for (int i = 16; i > 0; i--)
+            {
+                // number of bytes to shift to get the ith 4 bits (hex digit) to the least significant
+                var toShift = 4 * (i - 1);
+                // If any bit is not 0, this is the most significant digit in hex representation
+                if (((a >> toShift) & 0xF) != 0) return i;
+            }
+
+            return 1;
+        }
+
+
+        // Writes long val as a hex string with full 8 bytes (e.g 42 -> 2A) 
+        public static int WriteRedisBulkString(ulong val, byte[] buf, int offset)
+        {
+            var head = offset;
+            if (head + 1 >= buf.Length) return 0;
+            buf[head++] = (byte) '$';
+
+            var size = IntToDecimalString(HexStringLength(val), buf, head);
+            if (size == 0) return 0;
+            head += size;
+
+            if (head + 2 >= buf.Length) return 0;
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+
+            size = LongToHexString(val, buf, head);
+            if (size == 0) return 0;
+            head += size;
+
+            if (head + 2 >= buf.Length) return 0;
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+            return head - offset;
+        }
+
+        public static int WriteRedisBulkString(string val, byte[] buf, int offset)
+        {
+            var head = offset;
+            if (head + 1 >= buf.Length) return 0;
+            buf[head++] = (byte) '$';
+
+            var size = IntToDecimalString(val.Length, buf, head);
+            if (size == 0) return 0;
+            head += size;
+
+            if (head + 4 + val.Length >= buf.Length) return 0;
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+
+            foreach (var t in val)
+                buf[head++] = (byte) t;
+
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+            return head - offset;
+        }
+
+        public static int WriteRedisArrayHeader(int numElems, byte[] buf, int offset)
+        {
+            var head = offset;
+            if (head + 1 >= buf.Length) return 0;
+            buf[head++] = (byte) '*';
+
+            var size = IntToDecimalString(numElems, buf, head);
+            if (size == 0) return 0;
+            head += size;
+
+            if (head + 2 >= buf.Length) return 0;
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+            return head - offset;
+        }
+
+        private static bool StringEqual(ReadOnlySpan<byte> bytes, int size, string comparand)
+        {
+            if (size != comparand.Length) return false;
+            for (var i = 0; i < size; i++)
+                if (bytes[i] != (byte) comparand[i])
+                    return false;
+            return true;
+        }
+
+        public static Socket GetNewRedisConnection(RedisShard shard)
+        {
+            var redisBackend = new IPEndPoint(Dns.GetHostAddresses(shard.name)[0], shard.port);
+            var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            socket.Connect(redisBackend);
+            socket.Send(Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${shard.auth.Length}\r\n{shard.auth}\r\n"));
+
+            // TODO(Tianyu): Hacky
+            unsafe
+            {
+                long buf;
+                var span = new Span<byte>(&buf, sizeof(long));
+                var len = socket.Receive(span);
+                Debug.Assert(StringEqual(span, len, "+OK\r\n"));
+            }
+
+            return socket;
+        }
+
         public abstract class AbstractDprConnState
         {
             protected Socket socket;
@@ -88,7 +239,9 @@ namespace dpredis
         internal enum RedisMessageType
         {
             // TODO(Tianyu): Add more
-            SIMPLE_STRING, ERROR, BULK_STRING 
+            SIMPLE_STRING,
+            ERROR,
+            BULK_STRING
         }
 
         internal struct RedisParserState
@@ -144,13 +297,14 @@ namespace dpredis
         {
             private Socket socket;
             private int readHead, bytesRead;
+
             private RedisParserState parserState = new RedisParserState
             {
                 type = default,
                 currentMessageStart = -1,
                 subMessageCount = 0
             };
-            
+
 
             public void Reset(Socket socket)
             {
@@ -215,7 +369,8 @@ namespace dpredis
             }
         }
 
-        public static unsafe void SendDpredisResponse(this Socket socket, ReadOnlySpan<byte> dprHeader, ReadOnlySpan<byte> body)
+        public static unsafe void SendDpredisResponse(this Socket socket, ReadOnlySpan<byte> dprHeader,
+            ReadOnlySpan<byte> body)
         {
             fixed (byte* h = dprHeader)
             {
