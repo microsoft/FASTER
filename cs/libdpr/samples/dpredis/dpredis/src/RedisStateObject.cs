@@ -35,7 +35,7 @@ namespace dpredis
             redisBackend = new IPEndPoint(Dns.GetHostAddresses(shard.name)[0], shard.port);
             conn = new ThreadLocal<Socket>(GetNewRedisConnection, true);
         }
-
+        
         public Socket GetNewRedisConnection()
         {
             return MessageUtil.GetNewRedisConnection(shard);

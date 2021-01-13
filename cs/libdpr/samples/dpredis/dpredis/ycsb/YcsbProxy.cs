@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using FASTER.core;
 using FASTER.libdpr;
 
 namespace dpredis.ycsb
@@ -12,7 +14,7 @@ namespace dpredis.ycsb
     public class YcsbProxy
     {
         private int workerId;
-        internal long[] init_keys_;
+        internal ulong[] init_keys_;
 
         public YcsbProxy(int workerId)
         {
@@ -55,7 +57,6 @@ namespace dpredis.ycsb
             if (config.load)
             {
                 LoadData(config, coordinatorConn);
-                
             }
 
             coordinatorConn.SendBenchmarkControlMessage("setup finished");
@@ -67,61 +68,29 @@ namespace dpredis.ycsb
         }
 
         #region Load Data
-        private void Setup(DpredisProxy proxy, BenchmarkConfiguration configuration)
+        internal long idx_;
+
+        private void Setup(RedisShard shard)
         {
-            var socket = proxy.GetDirectConnection();
-            var buffer = new byte[1 << 20];
-            Array.Copy(Encoding.ASCII.GetBytes("*3\r\n$3\r\nSET\r\n"), buffer, 12);
-            
-            var setupSessions = new Thread[Environment.ProcessorCount];
-            var countdown = new CountdownEvent(setupSessions.Length);
-            var completed = new ManualResetEventSlim();
-            for (var idx = 0; idx < setupSessions.Length; ++idx)
+            using var socket = new RedisDirectConnection(shard, 1024, 65536);
+            for (var chunkStart = Interlocked.Add(ref idx_, BenchmarkConsts.kChunkSize) -
+                                  BenchmarkConsts.kChunkSize;
+                chunkStart < BenchmarkConsts.kInitCount;
+                chunkStart = Interlocked.Add(ref idx_, BenchmarkConsts.kChunkSize) -
+                             BenchmarkConsts.kChunkSize)
             {
-                var x = idx;
-                setupSessions[idx] = new Thread(() =>
-                {
-                    var s = fasterServerless.NewServerlessSession(configuration.windowSize,
-                        configuration.batchSize, configuration.checkpointMilli != -1);
-
-                    Value value = default;
-                    for (var chunkStart = Interlocked.Add(ref idx_, BenchmarkConsts.kChunkSize) -
-                                          BenchmarkConsts.kChunkSize;
-                        chunkStart < BenchmarkConsts.kInitCount;
-                        chunkStart = Interlocked.Add(ref idx_, BenchmarkConsts.kChunkSize) -
-                                     BenchmarkConsts.kChunkSize)
-                    {
-                        for (var idx = chunkStart; idx < chunkStart + BenchmarkConsts.kChunkSize; ++idx)
-                        {
-                            if (idx % 256 == 0)
-                            {
-                                s.Refresh();
-                            }
-
-                            var status = s.Upsert(ref init_keys_[idx], ref value, out _);
-                            Debug.Assert(status == Status.OK);
-                        }
-                    }
-
-                    countdown.Signal();
-                    while (!completed.IsSet) s.Refresh(); 
-                    s.Dispose();
-                });
-                setupSessions[idx].Start();
+                for (var idx = chunkStart; idx < chunkStart + BenchmarkConsts.kChunkSize; ++idx)
+                    socket.SendSetCommand(init_keys_[idx], 0);
             }
+            socket.Flush();
+            socket.WaitAll();
+        }
 
-            countdown.Wait();
-            AsyncContext.Run(async () => await fasterServerless.PerformCheckpoint());
-            completed.Set();
-            foreach (var s in setupSessions)
-                s.Join();
-        }          
-
-        public static long KeyForWorker(long original, int workerId)
+        public static ulong KeyForWorker(ulong original, int workerId)
         {
             // Construct the local key by dropping the highest-order 8 bits and replacing with worker id
-            return (long) ((ulong) original >> BenchmarkConsts.kWorkerIdBits) |
-                   ((long) workerId << (64 - BenchmarkConsts.kWorkerIdBits));
+            return (original >> BenchmarkConsts.kWorkerIdBits) |
+                   ((ulong) workerId << (64 - BenchmarkConsts.kWorkerIdBits));
         }
 
         private unsafe void LoadDataFromFile(string filePath, BenchmarkConfiguration configuration,
@@ -135,7 +104,7 @@ namespace dpredis.ycsb
                 FileShare.Read))
             {
                 PrintToCoordinator("loading keys from " + init_filename + " into memory...", coordinatorConn);
-                init_keys_ = new long[BenchmarkConsts.kInitCount];
+                init_keys_ = new ulong[BenchmarkConsts.kInitCount];
 
                 var chunk = new byte[BenchmarkConsts.kFileChunkSize];
                 var chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
@@ -149,7 +118,7 @@ namespace dpredis.ycsb
                     int size = stream.Read(chunk, 0, BenchmarkConsts.kFileChunkSize);
                     for (int idx = 0; idx < size; idx += 8)
                     {
-                        init_keys_[count] = KeyForWorker(*(long*) (chunk_ptr + idx), workerId);
+                        init_keys_[count] = KeyForWorker(*(ulong*) (chunk_ptr + idx), workerId);
                         ++count;
                     }
 
@@ -187,8 +156,8 @@ namespace dpredis.ycsb
         {
             PrintToCoordinator("Loading synthetic data (uniform distribution)", coordinatorConn);
 
-            init_keys_ = new long[BenchmarkConsts.kInitCount];
-            long val = 0;
+            init_keys_ = new ulong[BenchmarkConsts.kInitCount];
+            ulong val = 0;
             for (var idx = 0; idx < BenchmarkConsts.kInitCount; idx++)
             {
                 var generatedValue = val++;

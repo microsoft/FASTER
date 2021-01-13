@@ -5,7 +5,8 @@ using System.Threading;
 namespace dpredis
 {
 
-    public class RedisDirectConnection
+    
+    public class RedisDirectConnection : IDisposable
     {
         internal class ConnState : MessageUtil.AbstractRedisConnState
         {
@@ -25,87 +26,60 @@ namespace dpredis
         }
         
         private Socket socket;
-        private byte[] messageBuffer;
-        private int head = 0, commandCount = 0, outstandingCount = 0;
+        private RedisClientBuffer clientBuffer;
+        private int outstandingCount = 0;
 
         private int batchSize, windowSize;
+
+        public void Dispose()
+        {
+            Flush();
+            WaitAll();
+            socket.Dispose();
+        }
         
         public RedisDirectConnection(RedisShard shard, int batchSize = 1024, int windowSize = -1)
         {
             socket = MessageUtil.GetNewRedisConnection(shard);
             socket.NoDelay = true;
             var redisSaea = new SocketAsyncEventArgs();
-            redisSaea.SetBuffer(new byte[1 << 20], 0, 1 << 20);
+            redisSaea.SetBuffer(new byte[RedisClientBuffer.MAX_BUFFER_SIZE]);
             redisSaea.UserToken = new ConnState(this);
             redisSaea.Completed += MessageUtil.AbstractRedisConnState.RecvEventArg_Completed;
             socket.ReceiveAsync(redisSaea);
 
-            messageBuffer = new byte[1 << 20];
+            clientBuffer = new RedisClientBuffer();
             this.batchSize = batchSize;
             this.windowSize = windowSize;
         }
 
         public void Flush()
         {
-            socket.Send(new Span<byte>(messageBuffer, 0, head));
-            head = 0;
-            commandCount = 0;
+            socket.Send(clientBuffer.GetCurrentBytes());
+            clientBuffer.Reset();
         }
 
-        public void SendSetCommand(long key, long value)
+        public void SendSetCommand(ulong key, ulong value)
         {
             // Hold off while window is full
             while (outstandingCount == windowSize)
                 Thread.Yield();
             
-            while (true)
-            {
-                var newHead = head;
-                newHead += MessageUtil.WriteRedisArrayHeader(3, messageBuffer, head);
-                newHead += MessageUtil.WriteRedisBulkString("SET", messageBuffer, head);
-                newHead += MessageUtil.WriteRedisBulkString(key, messageBuffer, head);
-                newHead += MessageUtil.WriteRedisBulkString(value, messageBuffer, head);
-                if (newHead == head)
-                {
-                    Flush();
-                    continue;
-                }
-
-                head = newHead;
-                commandCount++;
-                Interlocked.Increment(ref outstandingCount);
-                break;
-            }
-            
-            if (commandCount == batchSize)
+            while (!clientBuffer.TryAddSetCommand(key, value)) Flush();
+    
+            if (clientBuffer.CommandCount() == batchSize)
                 Flush();
         }
 
-        public void SendGetCommand(string key)
+        public void SendGetCommand(ulong key)
         {
             // Hold off while window is full
             while (outstandingCount == windowSize)
                 Thread.Yield();
             
-            while (true)
-            {
-                var newHead = head;
-                newHead += MessageUtil.WriteRedisArrayHeader(2, messageBuffer, head);
-                newHead += MessageUtil.WriteRedisBulkString("GET", messageBuffer, head);
-                newHead += MessageUtil.WriteRedisBulkString(key, messageBuffer, head);
-                if (newHead == head)
-                {
-                    Flush();
-                    continue;
-                }
-
-                head = newHead;
-                commandCount++;
-                Interlocked.Increment(ref outstandingCount);
-                break;
-            }
-            
-            if (commandCount == batchSize)
+            while (!clientBuffer.TryAddGetCommand(key)) Flush();
+    
+            if (clientBuffer.CommandCount() == batchSize)
                 Flush();
         }
 

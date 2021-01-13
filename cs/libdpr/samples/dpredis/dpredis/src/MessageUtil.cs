@@ -36,61 +36,35 @@ namespace dpredis
             return (byte) (a + 55);
         }
 
-        private unsafe static int LongToHexString(ulong a, byte[] buf, int offset)
-        {
-            var digits = stackalloc byte[16];
-            var i = 0;
-            do 
-            {
-                digits[i] = HexDigitToChar(a % 16);
-                i++;
-                a /= 16;
-            } while (a > 0);
-
-            var head = offset;
-
-            if (head + i + 1 >= buf.Length) return 0;
-            for (; i >= 0; i--)
-                buf[head++] = digits[i];
-            return head - offset;
-        }
-
-        private static int HexStringLength(ulong a)
-        {
-            for (int i = 16; i > 0; i--)
-            {
-                // number of bytes to shift to get the ith 4 bits (hex digit) to the least significant
-                var toShift = 4 * (i - 1);
-                // If any bit is not 0, this is the most significant digit in hex representation
-                if (((a >> toShift) & 0xF) != 0) return i;
-            }
-
-            return 1;
-        }
-
-
         // Writes long val as a hex string with full 8 bytes (e.g 42 -> 2A) 
         public static int WriteRedisBulkString(ulong val, byte[] buf, int offset)
         {
             var head = offset;
             if (head + 1 >= buf.Length) return 0;
             buf[head++] = (byte) '$';
-
-            var size = IntToDecimalString(HexStringLength(val), buf, head);
-            if (size == 0) return 0;
-            head += size;
-
-            if (head + 2 >= buf.Length) return 0;
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-
-            size = LongToHexString(val, buf, head);
-            if (size == 0) return 0;
-            head += size;
-
-            if (head + 2 >= buf.Length) return 0;
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
+            unsafe
+            {
+                var digits = stackalloc byte[16];
+                var numDigits = 1;
+                do
+                {
+                    digits[numDigits - 1] = HexDigitToChar(val % 16);
+                    numDigits++;
+                    val /= 16;
+                } while (val > 0);
+                
+                var size = IntToDecimalString(numDigits, buf, head);
+                if (size == 0) return 0;
+                head += size;
+                
+                if (head + 4 + numDigits >= buf.Length) return 0;
+                buf[head++] = (byte) '\r';
+                buf[head++] = (byte) '\n';
+                for (var i = numDigits - 1; i >= 0; i--)
+                    buf[head++] = digits[i];
+                buf[head++] = (byte) '\r';
+                buf[head++] = (byte) '\n';
+            }
             return head - offset;
         }
 
@@ -357,7 +331,7 @@ namespace dpredis
             }
         }
 
-        public static unsafe void SendDpredisRequest(this Socket socket, ReadOnlySpan<byte> dprHeader, string body)
+        public static unsafe void SendDpredisRequest(this Socket socket, ReadOnlySpan<byte> dprHeader, ReadOnlySpan<byte> body)
         {
             fixed (byte* h = dprHeader)
             {
@@ -365,7 +339,7 @@ namespace dpredis
                 var totalSize = request.Size() + body.Length;
                 socket.Send(new Span<byte>(&totalSize, sizeof(int)));
                 socket.Send(dprHeader.Slice(0, request.Size()));
-                socket.Send(Encoding.ASCII.GetBytes(body));
+                socket.Send(body);
             }
         }
 

@@ -13,19 +13,28 @@ namespace dpredis
 {
     internal class DpredisBatch
     {
-        private StringBuilder body = new StringBuilder();
-        private int commandCount;
+        private RedisClientBuffer clientBuffer = new RedisClientBuffer();
         private List<TaskCompletionSource<(long, string)>> tcs = new List<TaskCompletionSource<(long, string)>>();
 
-        public void AddCommand(string command, TaskCompletionSource<(long, string)> tcs)
+        public void AddGetCommand(ulong key, TaskCompletionSource<(long, string)> tcs)
         {
-            body.Append(command);
-            commandCount++;
+            
+            var ret = clientBuffer.TryAddGetCommand(key);
+            if (!ret) throw new NotImplementedException();
+            this.tcs.Add(tcs);
+        }
+        
+        public void AddSetCommand(ulong key, ulong value, TaskCompletionSource<(long, string)> tcs)
+        {
+            
+            var ret = clientBuffer.TryAddSetCommand(key, value);
+            if (!ret) throw new NotImplementedException();
             this.tcs.Add(tcs);
         }
 
-        public StringBuilder Body() => body;
-        public int CommandCount() => commandCount;
+        public Span<byte> Body() => clientBuffer.GetCurrentBytes();
+
+        public int CommandCount() => clientBuffer.CommandCount();
 
         public long StartSeq { get; set; }
 
@@ -33,8 +42,7 @@ namespace dpredis
 
         public void Reset()
         {
-            body.Clear();
-            commandCount = 0;
+            clientBuffer.Reset();
             // Have to create new one. Old one is referred to by responses.
             tcs.Clear();
         }
@@ -77,6 +85,7 @@ namespace dpredis
     {
         private long seqNum = 0;
         private int batchSize;
+        private int numOutstanding;
 
         private SimpleObjectPool<DpredisBatch> batchPool;
         private Dictionary<Worker, DpredisBatch> batches;
@@ -108,7 +117,6 @@ namespace dpredis
             var ipAddr = IPAddress.Parse(ip);
             result = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             result.Connect(new IPEndPoint(ipAddr, port));
-            result.NoDelay = true;
             conns.Add(worker, result);
             
             var saea = new SocketAsyncEventArgs();
@@ -138,7 +146,7 @@ namespace dpredis
             seqNum += batch.CommandCount();
             dprSession.IssueBatch(batch.CommandCount(), worker, out var dprBytes);
             var sock = GetRedisConnection(worker);
-            sock.SendDpredisRequest(dprBytes, batch.Body().ToString());
+            sock.SendDpredisRequest(dprBytes, batch.Body());
             unsafe
             {
                 fixed (byte* header = dprBytes)
@@ -151,11 +159,23 @@ namespace dpredis
             batches.Add(worker, batch);
         }
 
-        public Task<(long, string)> IssueCommand(Worker worker, string command)
+        public Task<(long, string)> IssueGetCommand(Worker worker, ulong key)
         {
+            numOutstanding++;
             var tcs = new TaskCompletionSource<(long, string)>();
             var batch = GetCurrentBatch(worker);
-            batch.AddCommand(command, tcs);
+            batch.AddGetCommand(key, tcs);
+            if (batch.CommandCount() == batchSize)
+                IssueBatch(worker, batch);
+            return tcs.Task;
+        }
+        
+        public Task<(long, string)> IssueSetCommand(Worker worker, ulong key, ulong value)
+        {
+            numOutstanding++;
+            var tcs = new TaskCompletionSource<(long, string)>();
+            var batch = GetCurrentBatch(worker);
+            batch.AddSetCommand(key, value, tcs);
             if (batch.CommandCount() == batchSize)
                 IssueBatch(worker, batch);
             return tcs.Task;
@@ -170,13 +190,21 @@ namespace dpredis
             }
         }
 
+        public int NumOutstanding() => numOutstanding;
+
+        public long IssuedOps() => seqNum;
+
         internal DpredisBatch GetOutstandingBatch(int batchId)
         {
             outstandingBatches.Remove(batchId, out var result);
             return result;
         }
 
-        internal void ReturnResolvedBatch(DpredisBatch batch) => batchPool.Return(batch);
+        internal void ReturnResolvedBatch(DpredisBatch batch)
+        {
+            numOutstanding -= batch.CommandCount();
+            batchPool.Return(batch);
+        } 
     }
 
     public class DpredisClient

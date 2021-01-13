@@ -58,7 +58,6 @@ namespace dpredis
             batchHandlePool = new SimpleObjectPool<DpredisBatchHandle>(() => new DpredisBatchHandle());
             middleMen = new ConcurrentDictionary<RedisMiddleMan, object>();
         }
-
         
         public void StartServer()
         {
