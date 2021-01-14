@@ -45,8 +45,6 @@ namespace FASTER.test
             catch { }
         }
 
-        // NOTE: Having issues where Tasks aren't stopping on Release which kills the CIs - only run in debug until figure it out why
-#if DEBUG
         [TestCase("Sync")]  // use string here instead of Bool so shows up in Test Explorer with more descriptive name
         [TestCase("Async")]
         [Test]
@@ -123,7 +121,6 @@ namespace FASTER.test
                 Assert.Fail("Final Status check Failure -- Task should be 'RanToCompletion' but current Status is:" + currentTask.Status);
             }
         }
-#endif
 
         static void LogWriter(FasterLog log, byte[] entry)
         {
