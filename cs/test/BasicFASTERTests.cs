@@ -629,11 +629,6 @@ namespace FASTER.test
             //For now, write the same test, and instead of testing for address == kInvalidAddress, 
             //test for (address & Constants.kReadCacheBitMask) != 0.
 
-            //*** TO DO ***
-            // Merge Master into Test
-            // Check the "Release of 
-            // Fix ReadAtAddressReadFlagsSkipReadCache - probably not fixed 
-
 
             //var status = session.ReadAtAddress(invalidAddress, ref input, ref output, ReadFlags.SkipReadCache);
             var status = session.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.SkipReadCache);
