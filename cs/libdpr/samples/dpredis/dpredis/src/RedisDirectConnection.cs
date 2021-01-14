@@ -12,7 +12,7 @@ namespace dpredis
         {
             private RedisDirectConnection conn;
 
-            internal ConnState(RedisDirectConnection conn)
+            internal ConnState(RedisDirectConnection conn) : base(conn.socket)
             {
                 this.conn = conn;
             }
