@@ -19,20 +19,14 @@ namespace dpredis
     {
         private RedisShard shard;
         private ThreadLocalObjectPool<byte[]> reusableBuffers;
-        private IPEndPoint redisBackend;
         private long lastCheckpointTime = 0;
         
         private ThreadLocal<Socket> conn;
-        
-        private DprWorkerCallbacks<long> callbacks;
-        private long versionCounter;
-        private ReaderWriterLockSlim opLatch;
 
         public RedisStateObject(RedisShard shard)
         {
             this.shard = shard;
             reusableBuffers = new ThreadLocalObjectPool<byte[]>(() => new byte[4096]);
-            redisBackend = new IPEndPoint(Dns.GetHostAddresses(shard.name)[0], shard.port);
             conn = new ThreadLocal<Socket>(GetNewRedisConnection, true);
         }
         

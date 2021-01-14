@@ -12,7 +12,7 @@ namespace dpredis
     {
         private RedisMiddleMan middleMan;
 
-        public ProxyClientConnState(RedisMiddleMan middleMan)
+        public ProxyClientConnState(RedisMiddleMan middleMan) : base(middleMan.clientSocket)
         {
             this.middleMan = middleMan;
         }
@@ -27,10 +27,11 @@ namespace dpredis
     {
         private RedisMiddleMan middleMan;
 
-        public ProxyRedisConnState(RedisMiddleMan middleMan)
+        public ProxyRedisConnState(RedisMiddleMan middleMan) : base(middleMan.redisSocket)
         {
             this.middleMan = middleMan;
         }
+        
         protected override bool HandleRespMessage(byte[] buf, int start, int end)
         {
             return middleMan.HandleNewResponse(buf, end);
@@ -97,9 +98,9 @@ namespace dpredis
             redisSaea.SetBuffer(new byte[batchMaxSize], 0, batchMaxSize);
             redisSaea.UserToken = new ProxyRedisConnState(middleMan);
             redisSaea.Completed += MessageUtil.AbstractRedisConnState.RecvEventArg_Completed;
-            var bytesAvailable = redisConn.ReceiveAsync(redisSaea);
+            var async = redisConn.ReceiveAsync(redisSaea);
             // Server side should not have anything available yet
-            Debug.Assert(!bytesAvailable);
+            Debug.Assert(async);
             
             // Set up listening events on client socket
             var clientSaea = new SocketAsyncEventArgs();
@@ -109,9 +110,7 @@ namespace dpredis
             e.AcceptSocket.NoDelay = true;
             // If the client already have packets, avoid handling it here on the handler thread so we don't block future accepts.
             if (e.AcceptSocket.ReceiveAsync(clientSaea))
-            {
                 Task.Run(() =>  MessageUtil.AbstractDprConnState.RecvEventArg_Completed(null, clientSaea));
-            }
             return true;
         }
         

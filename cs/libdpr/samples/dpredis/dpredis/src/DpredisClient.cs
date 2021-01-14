@@ -54,9 +54,8 @@ namespace dpredis
         private DpredisClientSession redisSession;
         private static readonly char[] redisSeparators = {'+', '\r', '\n'};
 
-        public DpredisClientDprConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession)
+        public DpredisClientDprConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession) : base(socket)
         {
-            Reset(socket);
             this.dprSession = dprSession;
             this.redisSession = redisSession;
         }
@@ -156,7 +155,7 @@ namespace dpredis
             }
             batch = batchPool.Checkout();
             batch.Reset();
-            batches.Add(worker, batch);
+            batches[worker] = batch;
         }
 
         public Task<(long, string)> IssueGetCommand(Worker worker, ulong key)

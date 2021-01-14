@@ -19,7 +19,7 @@ namespace dpredis
 
     internal class RedisMiddleMan : IDisposable
     {
-        private Socket clientSocket, redisSocket;
+        internal Socket clientSocket, redisSocket;
         private SemaphoreSlim queueLatch;
         private Queue<DpredisBatchHandle> outstandingBatches;
         private SimpleObjectPool<DpredisBatchHandle> batchHandlePool;

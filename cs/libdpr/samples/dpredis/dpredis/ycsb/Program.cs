@@ -1,5 +1,7 @@
 using System;
+using System.Threading;
 using CommandLine;
+using FASTER.libdpr;
 
 namespace dpredis.ycsb
 {
@@ -75,6 +77,9 @@ namespace dpredis.ycsb
             var options = result.MapResult(o => o, xs => new Options());
             if (options.Type.Equals("coordinator"))
             {
+                var dprFinder = new TestDprFinderServer();
+
+                dprFinder.StartServer("10.0.1.7", 15445);
                 var c = new YcsbCoordinator(new BenchmarkConfiguration
                 {
                     clientThreadCount = options.ClientThreadCount,
@@ -83,9 +88,12 @@ namespace dpredis.ycsb
                     checkpointMilli = options.CheckpointInterval, // no checkpoints
                     windowSize = options.WindowSize,
                     batchSize = options.BatchSize,
+                    dprFinderIP = "10.0.1.7",
+                    dprFinderPort = 15445,
                     load = true
                 });
                 c.Run();
+                dprFinder.EndServer();
             }
             else if (options.Type.Equals("worker"))
             {

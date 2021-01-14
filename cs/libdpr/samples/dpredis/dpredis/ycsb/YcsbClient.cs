@@ -72,6 +72,7 @@ namespace dpredis.ycsb
             var execThreads = new Thread[config.clientThreadCount];
             var localSessions = new DpredisClientSession[config.clientThreadCount];
             var client = new DpredisClient(dprFinder, routingTable);
+            client.Start();
             var sw = new Stopwatch();
             long totalOps = 0;
             sw.Start();
@@ -132,6 +133,8 @@ namespace dpredis.ycsb
                 execThreads[idx].Start();
             }
 
+            while (sw.ElapsedMilliseconds < BenchmarkConsts.kRunSeconds * 1000)
+                Thread.Sleep(1000);
             done = true;
             PrintToCoordinator($"Done issuing operations", coordinatorConn);
             foreach (var session in execThreads)
@@ -141,7 +144,7 @@ namespace dpredis.ycsb
 
             // Signal completion
             PrintToCoordinator($"##, {totalOps / seconds}", coordinatorConn);
-            coordinatorConn.SendBenchmarkControlMessage(totalOps / seconds);
+            coordinatorConn.SendBenchmarkControlMessage(totalOps);
             coordinatorConn.ReceiveBenchmarkMessage();
             dprFinder.Clear();
             client.End();

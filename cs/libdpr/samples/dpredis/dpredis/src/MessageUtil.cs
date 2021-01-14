@@ -140,7 +140,8 @@ namespace dpredis
             private int bytesRead;
             private int readHead;
 
-            public void Reset(Socket socket)
+
+            protected AbstractDprConnState(Socket socket)
             {
                 this.socket = socket;
             }
@@ -280,7 +281,7 @@ namespace dpredis
             };
 
 
-            public void Reset(Socket socket)
+            protected AbstractRedisConnState(Socket socket)
             {
                 this.socket = socket;
             }

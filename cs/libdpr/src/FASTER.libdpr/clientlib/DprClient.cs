@@ -20,6 +20,7 @@ namespace FASTER.libdpr
             this.dprFinder = dprFinder;
             sessions = new ConcurrentDictionary<Guid, DprClientSession>();
             this.refreshMilli = refreshMilli;
+            termination = new ManualResetEventSlim();
         }
         
         public void Start()
