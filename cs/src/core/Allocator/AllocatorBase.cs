@@ -845,7 +845,7 @@ namespace FASTER.core
             epoch.Suspend();
 
             // Wait for flush to complete
-            while (FlushedUntilAddress < newBeginAddress) ;
+            while (FlushedUntilAddress < newBeginAddress) Thread.Yield();
 
             // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
