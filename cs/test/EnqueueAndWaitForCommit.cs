@@ -60,6 +60,7 @@ namespace FASTER.test
             catch { }
         }
 
+#if DEBUG
         [Test]
         [Category("FasterLog")]
         public async ValueTask EnqueueWaitCommitBasicTest([Values] EnqueueIteratorType iteratorType)
@@ -113,5 +114,7 @@ namespace FASTER.test
                 Assert.Fail("EnqueueAndWaitForCommit had exception:" + ex.Message);
             }
         }
+#endif
+
     }
 }
