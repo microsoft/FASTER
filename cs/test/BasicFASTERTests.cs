@@ -600,6 +600,7 @@ namespace FASTER.test
         }
 
         // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
+
         [Test]
         [Category("FasterKV")]
         public void ReadAtAddressReadFlagsSkipReadCache()
@@ -607,11 +608,34 @@ namespace FASTER.test
             InputStruct input = default;
             OutputStruct output = default;
 
+            long invalidAddress = Constants.kInvalidAddress;
+
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             var readAtAddress = fht.Log.BeginAddress;
 
+
+
             session.Upsert(ref key1, ref value, Empty.Default, 0);
+            //**** When Bug Fixed ... use the invalidAddress line
+            // Bug #136259
+            //        Ah—slight bug here.I took a quick look to verify that the logicalAddress passed to SingleReader was kInvalidAddress(0), 
+            //and while I got that right for the SingleWriter call, I missed it on the SingleReader.
+            //This is because we streamlined it to no longer expose RecordAccessor.IsReadCacheAddress, and I missed it here.
+            //   test that the record retrieved on Read variants that do find the record in the readCache 
+            //pass Constants.kInvalidAddress as the ‘address’ parameter to SingleReader.
+            // Reading the same record using Read(…, ref RecordInfo…) 
+            //and ReadFlags.SkipReadCache should return a valid record there. 
+            //For now, write the same test, and instead of testing for address == kInvalidAddress, 
+            //test for (address & Constants.kReadCacheBitMask) != 0.
+
+            //*** TO DO ***
+            // Merge Master into Test
+            // Check the "Release of 
+            // Fix ReadAtAddressReadFlagsSkipReadCache - probably not fixed 
+
+
+            //var status = session.ReadAtAddress(invalidAddress, ref input, ref output, ReadFlags.SkipReadCache);
             var status = session.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.SkipReadCache);
 
             if (status == Status.PENDING)
