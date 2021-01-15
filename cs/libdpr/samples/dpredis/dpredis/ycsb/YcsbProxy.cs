@@ -57,6 +57,7 @@ namespace dpredis.ycsb
             if (config.load)
             {
                 LoadData(config, coordinatorConn);
+                Setup(info.redisBackend);
             }
 
             coordinatorConn.SendBenchmarkControlMessage("setup finished");

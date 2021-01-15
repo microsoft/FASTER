@@ -109,7 +109,7 @@ namespace dpredis
             dprSession = client.GetSession(id);
         }
 
-        private Socket GetRedisConnection(Worker worker)
+        private Socket GetProxyConnection(Worker worker)
         {
             if (conns.TryGetValue(worker, out var result)) return result;
             var (ip, port) = routingTable[worker];
@@ -120,7 +120,7 @@ namespace dpredis
             
             var saea = new SocketAsyncEventArgs();
             // TODO(Tianyu): Magic number buffer size
-            saea.SetBuffer(new byte[1 << 20]);
+            saea.SetBuffer(new byte[1 << 20], 0, 1 << 20);
             saea.Completed += MessageUtil.AbstractDprConnState.RecvEventArg_Completed;
             saea.UserToken = new DpredisClientDprConnState(result, dprSession, this);
             while (!result.ReceiveAsync(saea))
@@ -144,7 +144,7 @@ namespace dpredis
             batch.StartSeq = seqNum;
             seqNum += batch.CommandCount();
             dprSession.IssueBatch(batch.CommandCount(), worker, out var dprBytes);
-            var sock = GetRedisConnection(worker);
+            var sock = GetProxyConnection(worker);
             sock.SendDpredisRequest(dprBytes, batch.Body());
             unsafe
             {

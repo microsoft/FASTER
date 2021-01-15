@@ -43,7 +43,7 @@ namespace dpredis
             socket = MessageUtil.GetNewRedisConnection(shard);
             socket.NoDelay = true;
             var redisSaea = new SocketAsyncEventArgs();
-            redisSaea.SetBuffer(new byte[RedisClientBuffer.MAX_BUFFER_SIZE]);
+            redisSaea.SetBuffer(new byte[RedisClientBuffer.MAX_BUFFER_SIZE], 0, RedisClientBuffer.MAX_BUFFER_SIZE);
             redisSaea.UserToken = new ConnState(this);
             redisSaea.Completed += MessageUtil.AbstractRedisConnState.RecvEventArg_Completed;
             socket.ReceiveAsync(redisSaea);
