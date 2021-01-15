@@ -11,14 +11,13 @@ namespace FASTER.libdpr
     public abstract class SimpleStateObject<TToken> : IStateObject<TToken>
     {
         private DprWorkerCallbacks<TToken> callbacks;
-        private long versionCounter = 0;
-        private ReaderWriterLockSlim opLatch = new ReaderWriterLockSlim();
+        private SimpleVersionScheme versionScheme = new SimpleVersionScheme();
 
         /// <summary>
         /// Process batches under shared latch for correcness
         /// </summary>
         /// <returns></returns>
-        public ReaderWriterLockSlim OperationLatch() => opLatch;
+        public SimpleVersionScheme VersionScheme() => versionScheme;
         
         /// <summary>
         /// Blockingly performs a checkpoint. Invokes the supplied callback when contents of checkpoint are on
@@ -46,38 +45,31 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public long Version()
         {
-            return versionCounter;
+            return versionScheme.Version();
         }
         
         /// <inheritdoc/>
         public void BeginCheckpoint(long targetVersion = -1)
         {
-            opLatch.EnterWriteLock();
-            try
+            versionScheme.AdvanceVersion(v =>
             {
-                if (targetVersion <= versionCounter) return;
-
-                versionCounter = targetVersion == -1 ? versionCounter + 1 : targetVersion;
                 PerformCheckpoint(token =>
                 {
-                    callbacks.OnVersionEnd(versionCounter, token);
-                    callbacks.OnVersionPersistent(versionCounter, token);
+                    callbacks.OnVersionEnd(v, token);
+                    callbacks.OnVersionPersistent(v, token);
                 });
-            }
-            finally
-            {
-                opLatch.ExitWriteLock();
-            }
+            }, targetVersion);
+            
         }
         
         /// <inheritdoc/>
         public void BeginRestore(TToken token)
         {
-            opLatch.EnterWriteLock();
-            versionCounter++;
-            RestoreCheckpoint(token);
-            callbacks.OnRollbackComplete();
-            opLatch.ExitWriteLock();
+            versionScheme.AdvanceVersion(v =>
+            {
+                RestoreCheckpoint(token);
+                callbacks.OnRollbackComplete();
+            });
         }
     }
 }

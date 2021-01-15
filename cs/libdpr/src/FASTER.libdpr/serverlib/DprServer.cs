@@ -40,18 +40,17 @@ namespace FASTER.libdpr
             this.dprFinder = dprFinder;
             this.me = me;
             // epoch = new LightEpoch();
-            worldlineLatch = new ReaderWriterLockSlim();
+            worldlineTracker = new SimpleVersionScheme();
             versions = new ConcurrentDictionary<long, VersionHandle<TToken>>();
-            nextWorldLine = 0;
         }
         
         public readonly IDprFinder dprFinder;
         // TODO(Tianyu): Epoch is highly specialized for a system like FASTER. Maybe add back in later.
         // public readonly LightEpoch epoch;
-        public ReaderWriterLockSlim worldlineLatch;
+        public SimpleVersionScheme worldlineTracker;
+        public ManualResetEventSlim rollbackProgress;
         public readonly ConcurrentDictionary<long, VersionHandle<TToken>> versions;
         public readonly Worker me;
-        public long nextWorldLine;
     }
     
     /// <summary>
@@ -85,6 +84,8 @@ namespace FASTER.libdpr
         
         public void Start()
         {
+            if (checkpointPeriodMilli == -1) return;
+
             termination = new ManualResetEventSlim();
             refreshThread = new Thread(() =>
             {
@@ -103,6 +104,8 @@ namespace FASTER.libdpr
 
         public void End()
         {
+            if (checkpointPeriodMilli == -1) return;
+
             // TODO(Tianyu): Implement leaving a DPR cluster
             termination.Set();
             refreshThread.Join();
@@ -110,10 +113,16 @@ namespace FASTER.libdpr
 
         private void TryAdvanceWorldLineTo(long targetWorldline)
         {
-            // Advance world-line one-at-a-time, taking care to make sure that for each target worldline, restore
-            // is called only once.
-            while (Utility.MonotonicUpdate(ref state.nextWorldLine, Math.Min(state.nextWorldLine + 1, targetWorldline), out _))
-                stateObject.BeginRestore(state.versions[state.dprFinder.SafeVersion(state.me)].token);
+            while (state.worldlineTracker.Version() != targetWorldline)
+            {
+                state.worldlineTracker.AdvanceVersion(_ =>
+                {
+                    state.rollbackProgress = new ManualResetEventSlim();
+                    stateObject.BeginRestore(state.versions[state.dprFinder.SafeVersion(state.me)].token);
+                    // Wait for user to signal end of restore;
+                    state.rollbackProgress.Wait();
+                });
+            }
         }
         
 
@@ -139,15 +148,15 @@ namespace FASTER.libdpr
             // must not shift while a batch is being processed, otherwise a message from an older world-line may be
             // processed in a new one. 
             // state.epoch.Resume();
-            state.worldlineLatch.EnterReadLock();
+            state.worldlineTracker.Enter();
             // If the worker world-line is behind, wait for worker to recover up to the same point as the client,
             // so client operation is not lost in a rollback that the client has already observed.
-            while (dprRequest.worldLine >= state.dprFinder.SystemWorldLine())
+            while (dprRequest.worldLine > state.dprFinder.SystemWorldLine())
             {
-                state.worldlineLatch.ExitReadLock();
+                state.worldlineTracker.Leave();
                 TryAdvanceWorldLineTo(dprRequest.worldLine);
                 // state.epoch.ProtectAndDrain();
-                state.worldlineLatch.EnterReadLock();
+                state.worldlineTracker.Enter();
             }
             
             // If the worker world-line is newer, the request must be rejected so the client can observe failure
@@ -160,7 +169,7 @@ namespace FASTER.libdpr
                 // Use negative to signal that there was a mismatch, which would prompt error handling on client side
                 dprResponse.worldLine = -state.dprFinder.SystemWorldLine();
                 dprResponse.batchId = dprRequest.batchId;
-                state.worldlineLatch.ExitReadLock();
+                state.worldlineTracker.Leave();
                 // state.epoch.Suspend();
                 tracker = default;
                 return false;
@@ -203,7 +212,7 @@ namespace FASTER.libdpr
             // Signal batch finished so world-lines can advance. Need to make sure not double-invoked, therefore only
             // called after size validation.
             // state.epoch.Suspend();
-            state.worldlineLatch.ExitReadLock();
+            state.worldlineTracker.Leave();
             
             // Populate response
             dprResponse.sessionId = dprRequest.sessionId;

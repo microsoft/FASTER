@@ -76,7 +76,8 @@ namespace dpredis
                 queueLatch.Wait();
                 outstandingBatches.Enqueue(batchHandle);
                 queueLatch.Release();
-                dprServer.StateObject().OperationLatch().EnterReadLock();
+                var version = dprServer.StateObject().VersionScheme().Enter();
+                batchHandle.tracker.MarkOperationRangesVersion(0, batchHandle.batchSize, version);
                 redisSocket.Send(new Span<byte>(buf, offset + requestHeader.Size(), size - requestHeader.Size()));
             }
         }
@@ -90,9 +91,8 @@ namespace dpredis
             if (currentBatch.messagesLeft != 0) return false;
             // Otherwise, an entire batch has been acked. Signal batch finish to dpr and forward reply to client
             outstandingBatches.Dequeue();
-            currentBatch.tracker.MarkOperationRangesVersion(0, currentBatch.batchSize,
-                dprServer.StateObject().Version());
-            dprServer.StateObject().OperationLatch().ExitReadLock();
+
+            dprServer.StateObject().VersionScheme().Leave();
             var ret = dprServer.SignalBatchFinish(
                 new Span<byte>(currentBatch.requestHeader),
                 new Span<byte>(currentBatch.responseHeader), currentBatch.tracker);

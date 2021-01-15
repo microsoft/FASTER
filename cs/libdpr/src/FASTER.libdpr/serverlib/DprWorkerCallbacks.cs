@@ -44,10 +44,7 @@ namespace FASTER.libdpr
         /// </summary>
         public void OnRollbackComplete()
         {
-            state.worldlineLatch.EnterWriteLock();
-            state.nextWorldLine++;
-            state.worldlineLatch.ExitWriteLock();
-            // state.epoch.BumpCurrentEpoch(() => state.nextWorldLine++);
+            state.rollbackProgress.Set();
         }
     }
 }
