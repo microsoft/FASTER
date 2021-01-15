@@ -659,6 +659,8 @@ namespace FASTER.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
+            Assert.IsTrue(fht.EntryCount == 0);
+
             session.Upsert(ref key1, ref value);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
@@ -671,6 +673,7 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.OK);
             }
 
+            Assert.IsTrue(fht.EntryCount == 1);
             Assert.IsTrue(output.value.vfield1 == value.vfield1);
             Assert.IsTrue(output.value.vfield2 == value.vfield2);
         }

@@ -53,6 +53,7 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, Empty.Default, 0);
             }
             session.CompletePending(true);
+            Assert.IsTrue(fht.EntryCount == totalRecords);
 
             for (int i = 0; i < totalRecords; i++)
             {
