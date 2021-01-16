@@ -45,10 +45,10 @@ namespace dpredis
             unsafe
             {
                 var digits = stackalloc byte[16];
-                var numDigits = 1;
+                var numDigits = 0;
                 do
                 {
-                    digits[numDigits - 1] = HexDigitToChar(val % 16);
+                    digits[numDigits] = HexDigitToChar(val % 16);
                     numDigits++;
                     val /= 16;
                 } while (val > 0);
@@ -300,7 +300,7 @@ namespace dpredis
                 }
 
                 connState.bytesRead += e.BytesTransferred;
-                for (; connState.readHead >= connState.bytesRead; connState.readHead++)
+                for (; connState.readHead < connState.bytesRead; connState.readHead++)
                 {
                     if (connState.parserState.ProcessChar(connState.readHead, e.Buffer))
                     {

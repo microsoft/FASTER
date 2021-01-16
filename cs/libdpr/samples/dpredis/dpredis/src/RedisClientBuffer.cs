@@ -22,10 +22,10 @@ namespace dpredis
         public bool TryAddSetCommand(ulong key, ulong value)
         {
             var newHead = head;
-            newHead += MessageUtil.WriteRedisArrayHeader(3, messageBuffer, head);
-            newHead += MessageUtil.WriteRedisBulkString("SET", messageBuffer, head);
-            newHead += MessageUtil.WriteRedisBulkString(key, messageBuffer, head);
-            newHead += MessageUtil.WriteRedisBulkString(value, messageBuffer, head);
+            newHead += MessageUtil.WriteRedisArrayHeader(3, messageBuffer, newHead);
+            newHead += MessageUtil.WriteRedisBulkString("SET", messageBuffer, newHead);
+            newHead += MessageUtil.WriteRedisBulkString(key, messageBuffer, newHead);
+            newHead += MessageUtil.WriteRedisBulkString(value, messageBuffer, newHead);
             if (newHead == head)
                 return false;
 
@@ -37,9 +37,9 @@ namespace dpredis
         public bool TryAddGetCommand(ulong key)
         {
             var newHead = head;
-            newHead += MessageUtil.WriteRedisArrayHeader(2, messageBuffer, head);
-            newHead += MessageUtil.WriteRedisBulkString("GET", messageBuffer, head);
-            newHead += MessageUtil.WriteRedisBulkString(key, messageBuffer, head);
+            newHead += MessageUtil.WriteRedisArrayHeader(2, messageBuffer, newHead);
+            newHead += MessageUtil.WriteRedisBulkString("GET", messageBuffer, newHead);
+            newHead += MessageUtil.WriteRedisBulkString(key, messageBuffer, newHead);
             if (newHead == head)
                 return false;
 
