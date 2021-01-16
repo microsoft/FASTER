@@ -64,7 +64,8 @@ namespace dpredis
             // Hold off while window is full
             while (outstandingCount == windowSize)
                 Thread.Yield();
-            
+
+            Interlocked.Increment(ref outstandingCount);
             while (!clientBuffer.TryAddSetCommand(key, value)) Flush();
     
             if (clientBuffer.CommandCount() == batchSize)
@@ -77,6 +78,7 @@ namespace dpredis
             while (outstandingCount == windowSize)
                 Thread.Yield();
             
+            Interlocked.Increment(ref outstandingCount);
             while (!clientBuffer.TryAddGetCommand(key)) Flush();
     
             if (clientBuffer.CommandCount() == batchSize)

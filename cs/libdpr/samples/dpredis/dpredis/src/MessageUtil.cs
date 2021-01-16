@@ -315,14 +315,14 @@ namespace dpredis
 
                 // TODO(Tianyu): Magic number
                 // If less than some certain number of bytes left in the buffer, shift buffer content to head to free
-                // up some space. Don't want to do this too often.
-                if (e.Buffer.Length - connState.readHead < 4096)
+                // up some space. Don't want to do this too often. Obviously ok to do if no bytes need to be copied.
+                if (e.Buffer.Length - connState.readHead < 4096 || connState.readHead == connState.contentStart)
                 {
                     var bytesLeft = connState.bytesRead - connState.contentStart;
                     // Shift buffer to front
                     Array.Copy(e.Buffer, connState.contentStart, e.Buffer, 0, bytesLeft);
                     connState.bytesRead = bytesLeft;
-                    connState.readHead = -1; // Want to be 0 at the start of next loop after increment
+                    connState.readHead = 0;
                 }
                 e.SetBuffer(connState.readHead, e.Buffer.Length - connState.readHead);
             }

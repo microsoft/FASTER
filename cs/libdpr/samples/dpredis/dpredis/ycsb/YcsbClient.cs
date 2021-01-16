@@ -155,8 +155,9 @@ namespace dpredis.ycsb
 
         public static ulong KeyForWorker(ulong original, int workerId)
         {
+            var mask = ((ulong)1 << (64 - BenchmarkConsts.kWorkerIdBits)) - 1;
             // Construct the local key by dropping the highest-order 8 bits and replacing with worker id
-            return (original >> BenchmarkConsts.kWorkerIdBits) |
+            return (original & mask) |
                    ((ulong) workerId << (64 - BenchmarkConsts.kWorkerIdBits));
         }
 
