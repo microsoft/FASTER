@@ -34,11 +34,9 @@ namespace dpredis
         
         protected override bool HandleRespMessage(byte[] buf, int start, int end)
         {
-            return middleMan.HandleNewResponse(buf, end);
+            return middleMan.HandleNewResponse(buf, start, end);
         }
     }
-
-
 
     public class DpredisProxy
     {

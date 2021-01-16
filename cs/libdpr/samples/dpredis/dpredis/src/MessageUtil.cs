@@ -13,25 +13,25 @@ namespace dpredis
         private unsafe static int IntToDecimalString(int a, byte[] buf, int offset)
         {
             var digits = stackalloc byte[20];
-            var i = 0;
+            var numDigits = 0;
             do
             {
-                digits[i] = (byte) ((a % 10) + 48);
-                i++;
+                digits[numDigits] = (byte) ((a % 10) + 48);
+                numDigits++;
                 a /= 10;
             } while (a > 0);
 
             var head = offset;
 
-            if (head + i + 1 >= buf.Length) return 0;
-            for (; i >= 0; i--)
+            if (head + numDigits >= buf.Length) return 0;
+            for (var i = numDigits - 1; i >= 0; i--)
                 buf[head++] = digits[i];
             return head - offset;
         }
 
         private static byte HexDigitToChar(ulong a)
         {
-            Debug.Assert(a >= 0 && a < 16);
+            Debug.Assert(a < 16);
             if (a < 10) return (byte) (a + 48);
             return (byte) (a + 55);
         }
@@ -271,7 +271,7 @@ namespace dpredis
         public abstract class AbstractRedisConnState
         {
             private Socket socket;
-            private int readHead, bytesRead;
+            private int readHead, bytesRead, contentStart;
 
             private RedisParserState parserState = new RedisParserState
             {
@@ -306,19 +306,25 @@ namespace dpredis
                     {
                         var nextHead = connState.readHead + 1;
                         if (connState.HandleRespMessage(e.Buffer, connState.parserState.currentMessageStart, nextHead))
-                        {
-                            var bytesLeft = connState.bytesRead - nextHead;
-                            // Shift buffer to front
-                            Array.Copy(e.Buffer, connState.readHead, e.Buffer, 0, bytesLeft);
-                            connState.bytesRead = bytesLeft;
-                            connState.readHead = 0;
-                        }
+                            connState.contentStart = nextHead;
+                        
 
                         connState.parserState.currentMessageStart = -1;
                     }
                 }
 
-                e.SetBuffer(connState.readHead, e.Buffer.Length - connState.bytesRead);
+                // TODO(Tianyu): Magic number
+                // If less than some certain number of bytes left in the buffer, shift buffer content to head to free
+                // up some space. Don't want to do this too often.
+                if (e.Buffer.Length - connState.readHead < 4096)
+                {
+                    var bytesLeft = connState.bytesRead - connState.contentStart;
+                    // Shift buffer to front
+                    Array.Copy(e.Buffer, connState.contentStart, e.Buffer, 0, bytesLeft);
+                    connState.bytesRead = bytesLeft;
+                    connState.readHead = -1; // Want to be 0 at the start of next loop after increment
+                }
+                e.SetBuffer(connState.readHead, e.Buffer.Length - connState.readHead);
             }
 
             public static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
