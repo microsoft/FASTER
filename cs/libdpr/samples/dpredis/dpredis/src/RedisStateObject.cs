@@ -26,7 +26,7 @@ namespace dpredis
         public RedisStateObject(RedisShard shard)
         {
             this.shard = shard;
-            reusableBuffers = new ThreadLocalObjectPool<byte[]>(() => new byte[4096]);
+            reusableBuffers = new ThreadLocalObjectPool<byte[]>(() => new byte[16384]);
             conn = new ThreadLocal<Socket>(GetNewRedisConnection, true);
         }
         

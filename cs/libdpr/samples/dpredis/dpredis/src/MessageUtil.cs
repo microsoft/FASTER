@@ -185,19 +185,20 @@ namespace dpredis
                 return true;
             }
 
-            private static void HandleReceiveCompletion(SocketAsyncEventArgs e)
+            private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
             {
                 var connState = (AbstractDprConnState) e.UserToken;
                 if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
                 {
                     connState.socket.Dispose();
                     e.Dispose();
-                    return;
+                    return false;
                 }
 
                 connState.bytesRead += e.BytesTransferred;
                 var newHead = connState.TryConsumeMessages(e.Buffer);
                 e.SetBuffer(newHead, e.Buffer.Length - newHead);
+                return true;
             }
 
             public static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
@@ -206,7 +207,7 @@ namespace dpredis
                 do
                 {
                     // No more things to receive
-                    HandleReceiveCompletion(e);
+                    if (!HandleReceiveCompletion(e)) return;
                 } while (!connState.socket.ReceiveAsync(e));
             }
         }
@@ -289,14 +290,14 @@ namespace dpredis
             // Return whether we should reset the buffer or keep message buffered
             protected abstract bool HandleRespMessage(byte[] buf, int start, int end);
 
-            private static void HandleReceiveCompletion(SocketAsyncEventArgs e)
+            private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
             {
                 var connState = (AbstractRedisConnState) e.UserToken;
                 if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
                 {
                     connState.socket.Dispose();
                     e.Dispose();
-                    return;
+                    return false;
                 }
 
                 connState.bytesRead += e.BytesTransferred;
@@ -325,16 +326,24 @@ namespace dpredis
                     connState.readHead = 0;
                 }
                 e.SetBuffer(connState.readHead, e.Buffer.Length - connState.readHead);
+                return true;
             }
 
             public static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
             {
                 var connState = (AbstractRedisConnState) e.UserToken;
-                do
+                try
                 {
-                    // No more things to receive
-                    HandleReceiveCompletion(e);
-                } while (!connState.socket.ReceiveAsync(e));
+                    do
+                    {
+                        // No more things to receive
+                        if (!HandleReceiveCompletion(e)) return;
+                    } while (!connState.socket.ReceiveAsync(e));
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Probably caused by a normal cancellation from this side. Ok to ignore
+                }
             }
         }
 

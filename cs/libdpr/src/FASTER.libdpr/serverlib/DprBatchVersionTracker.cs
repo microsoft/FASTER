@@ -90,7 +90,7 @@ namespace FASTER.libdpr
             {
                 Unsafe.AsRef<long>(start) = versions.Count;
                 for (var i = 1; i <= versions.Count; i++)
-                    Unsafe.AsRef<long>(start + sizeof(long) * i) = versions[i];
+                    Unsafe.AsRef<long>(start + sizeof(long) * i) = versions[i - 1];
             }
         }
 

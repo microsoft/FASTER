@@ -11,8 +11,8 @@ namespace dpredis
  internal class DpredisBatchHandle
     {
         // TODO(Tianyu): Magic number
-        public byte[] requestHeader = new byte[4096];
-        public byte[] responseHeader = new byte[4096];
+        public byte[] requestHeader = new byte[16384];
+        public byte[] responseHeader = new byte[16384];
         public DprBatchVersionTracker tracker;
         public int batchSize, messagesLeft, batchStartOffset = -1;
     }
@@ -91,7 +91,11 @@ namespace dpredis
             if (currentBatch.batchStartOffset == -1) currentBatch.batchStartOffset = messageStart;
             
             // Still more responses left in the batch
-            if (currentBatch.messagesLeft != 0) return false;
+            if (currentBatch.messagesLeft != 0)
+            {
+                queueLatch.Release();
+                return false;
+            }
             // Otherwise, an entire batch has been acked. Signal batch finish to dpr and forward reply to client
             outstandingBatches.Dequeue();
 
@@ -102,6 +106,7 @@ namespace dpredis
             Debug.Assert(ret == 0);
             clientSocket.SendDpredisResponse(new Span<byte>(currentBatch.responseHeader),
                 new Span<byte>(buffer, currentBatch.batchStartOffset, messageEnd));
+            queueLatch.Release();
             return true;
         }
     }
