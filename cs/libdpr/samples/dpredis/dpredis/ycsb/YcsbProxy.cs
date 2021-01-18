@@ -74,6 +74,7 @@ namespace dpredis.ycsb
         private void Setup(RedisShard shard)
         {
             using var socket = new RedisDirectConnection(shard, 1024, 65536);
+            socket.SendFlushCommand();
             for (var chunkStart = Interlocked.Add(ref idx_, BenchmarkConsts.kChunkSize) -
                                   BenchmarkConsts.kChunkSize;
                 chunkStart < BenchmarkConsts.kInitCount;

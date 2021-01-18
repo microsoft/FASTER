@@ -47,5 +47,18 @@ namespace dpredis
             commandCount++;
             return true;
         }
+
+        public bool TryAddFlushCommand()
+        {
+            var newHead = head;
+            newHead += MessageUtil.WriteRedisArrayHeader(1, messageBuffer, newHead);
+            newHead += MessageUtil.WriteRedisBulkString("FLUSHALL", messageBuffer, newHead);
+            if (newHead == head)
+                return false;
+
+            head = newHead;
+            commandCount++;
+            return true;
+        }
     }
 }

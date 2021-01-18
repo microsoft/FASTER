@@ -84,6 +84,18 @@ namespace dpredis
             if (clientBuffer.CommandCount() == batchSize)
                 Flush();
         }
+        
+        public void SendFlushCommand()
+        {
+            while (outstandingCount == windowSize)
+                Thread.Yield();
+            
+            Interlocked.Increment(ref outstandingCount);
+            while (!clientBuffer.TryAddFlushCommand()) Flush();
+    
+            if (clientBuffer.CommandCount() == batchSize)
+                Flush();
+        }
 
         public void WaitAll()
         {
