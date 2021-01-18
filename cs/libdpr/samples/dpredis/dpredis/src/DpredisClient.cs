@@ -74,11 +74,11 @@ namespace dpredis
                 dprSession.ResolveBatch(ref header);
                 var completedBatch = redisSession.GetOutstandingBatch(header.batchId);
                 var batchOffset = 0;
-                for (var i = offset + header.Size(); i < size; i++)
+                for (var i = header.Size(); i < size; i++)
                 {
-                    if (parser.ProcessChar(i, buf))
+                    if (parser.ProcessChar(offset + i, buf))
                     {
-                        var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, i - parser.currentMessageStart);
+                        var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, offset + i - parser.currentMessageStart);
                         completedBatch.GetTcs()[batchOffset].SetResult(ValueTuple.Create(completedBatch.StartSeq + batchOffset, Encoding.ASCII.GetString(message)));
                         parser.currentMessageStart = -1;
                         batchOffset++;
@@ -99,6 +99,7 @@ namespace dpredis
 
         private SimpleObjectPool<DpredisBatch> batchPool;
         private Dictionary<Worker, DpredisBatch> batches;
+        private List<KeyValuePair<Worker, DpredisBatch>> toIssue = new List<KeyValuePair<Worker, DpredisBatch>>();
         private ConcurrentDictionary<int, DpredisBatch> outstandingBatches;
         private ConcurrentDictionary<Worker, (string, int)> routingTable;
         private Dictionary<Worker, Socket> conns;
@@ -196,8 +197,14 @@ namespace dpredis
             foreach (var batch in batches)
             {
                 if (batch.Value.CommandCount() != 0)
-                    IssueBatch(batch.Key, batch.Value);
+                    toIssue.Add(batch);
             }
+
+            foreach (var w in toIssue)
+                IssueBatch(w.Key, w.Value);
+
+            toIssue.Clear();
+
         }
 
         public int NumOutstanding() => numOutstanding;

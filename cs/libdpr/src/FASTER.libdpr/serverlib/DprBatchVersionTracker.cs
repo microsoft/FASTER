@@ -25,7 +25,7 @@ namespace FASTER.libdpr
 
             public bool MoveNext()
             {
-                if (index >= start[0]) return false;
+                if (index + 1 >= start[0]) return false;
                 index++;
                 return true;
             }

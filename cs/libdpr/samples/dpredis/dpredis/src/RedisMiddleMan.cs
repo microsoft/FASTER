@@ -98,15 +98,14 @@ namespace dpredis
             }
             // Otherwise, an entire batch has been acked. Signal batch finish to dpr and forward reply to client
             outstandingBatches.Dequeue();
-
+            queueLatch.Release();
             dprServer.StateObject().VersionScheme().Leave();
             var ret = dprServer.SignalBatchFinish(
                 new Span<byte>(currentBatch.requestHeader),
                 new Span<byte>(currentBatch.responseHeader), currentBatch.tracker);
             Debug.Assert(ret == 0);
             clientSocket.SendDpredisResponse(new Span<byte>(currentBatch.responseHeader),
-                new Span<byte>(buffer, currentBatch.batchStartOffset, messageEnd));
-            queueLatch.Release();
+                new Span<byte>(buffer, currentBatch.batchStartOffset, messageEnd - currentBatch.batchStartOffset));
             return true;
         }
     }
