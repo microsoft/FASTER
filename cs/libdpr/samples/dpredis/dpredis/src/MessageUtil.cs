@@ -211,77 +211,19 @@ namespace dpredis
                 } while (!connState.socket.ReceiveAsync(e));
             }
         }
-
-        internal enum RedisMessageType
-        {
-            // TODO(Tianyu): Add more
-            SIMPLE_STRING,
-            ERROR,
-            BULK_STRING
-        }
-
-        internal struct RedisParserState
-        {
-            internal RedisMessageType type;
-            internal int currentMessageStart;
-            internal int subMessageCount;
-
-            public bool ProcessChar(int readHead, byte[] buf)
-            {
-                switch ((char) buf[readHead])
-                {
-                    case '+':
-                        if (currentMessageStart != -1) return false;
-                        currentMessageStart = readHead;
-                        type = RedisMessageType.SIMPLE_STRING;
-                        subMessageCount = 1;
-                        return false;
-                    case '-':
-                        // Special case for null bulk string
-                        if (type == RedisMessageType.BULK_STRING && readHead == currentMessageStart + 1)
-                            subMessageCount = 1;
-                        if (currentMessageStart != -1) return false;
-                        currentMessageStart = readHead;
-                        type = RedisMessageType.ERROR;
-                        subMessageCount = 1;
-                        return false;
-                    case '$':
-                        if (currentMessageStart != -1) return false;
-                        Debug.Assert(currentMessageStart == -1);
-                        currentMessageStart = readHead;
-                        type = RedisMessageType.BULK_STRING;
-                        subMessageCount = 2;
-                        return false;
-                    case ':':
-                    case '*':
-                        if (currentMessageStart != -1) return false;
-                        throw new NotImplementedException();
-                    // TODO(Tianyu): Wouldn't technically work if \r\n in value, but I am not planning to put any so who cares
-                    case '\n':
-                        if (buf[readHead - 1] != '\r') return false;
-                        Debug.Assert(currentMessageStart != -1);
-                        // Special case for null string
-                        return --subMessageCount == 0;
-                    default:
-                        // Nothing to do
-                        return false;
-                }
-            }
-        }
-
+        
         public abstract class AbstractRedisConnState
         {
             private Socket socket;
             private int readHead, bytesRead, contentStart;
 
-            private RedisParserState parserState = new RedisParserState
+            private SimpleRedisParser parser = new SimpleRedisParser
             {
-                type = default,
+                currentMessageType = default,
                 currentMessageStart = -1,
                 subMessageCount = 0
             };
-
-
+            
             protected AbstractRedisConnState(Socket socket)
             {
                 this.socket = socket;
@@ -303,14 +245,14 @@ namespace dpredis
                 connState.bytesRead += e.BytesTransferred;
                 for (; connState.readHead < connState.bytesRead; connState.readHead++)
                 {
-                    if (connState.parserState.ProcessChar(connState.readHead, e.Buffer))
+                    if (connState.parser.ProcessChar(connState.readHead, e.Buffer))
                     {
                         var nextHead = connState.readHead + 1;
-                        if (connState.HandleRespMessage(e.Buffer, connState.parserState.currentMessageStart, nextHead))
+                        if (connState.HandleRespMessage(e.Buffer, connState.parser.currentMessageStart, nextHead))
                             connState.contentStart = nextHead;
                         
 
-                        connState.parserState.currentMessageStart = -1;
+                        connState.parser.currentMessageStart = -1;
                     }
                 }
 

@@ -52,12 +52,18 @@ namespace dpredis
     {
         private DprClientSession dprSession;
         private DpredisClientSession redisSession;
-        private static readonly char[] redisSeparators = {'+', '\r', '\n'};
+        private SimpleRedisParser parser;
 
         public DpredisClientDprConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession) : base(socket)
         {
             this.dprSession = dprSession;
             this.redisSession = redisSession;
+            parser = new SimpleRedisParser
+            {
+                currentMessageType = default,
+                currentMessageStart = -1,
+                subMessageCount = 0
+            };
         }
 
         protected override unsafe void HandleMessage(byte[] buf, int offset, int size)
@@ -66,15 +72,20 @@ namespace dpredis
             {
                 ref var header = ref Unsafe.AsRef<DprBatchResponseHeader>(b + offset);
                 dprSession.ResolveBatch(ref header);
-                // TODO(Tianyu): Eventually add more Redis types. Now we assume all responses are simple strings and therefore
-                // use very simplistic parsing
-                var redisResponse = Encoding.ASCII.GetString(buf, offset + header.Size(), size - header.Size());
-                var entries = redisResponse.Split(redisSeparators, StringSplitOptions.RemoveEmptyEntries);
                 var completedBatch = redisSession.GetOutstandingBatch(header.batchId);
+                var batchOffset = 0;
+                for (var i = offset + header.Size(); i < size; i++)
+                {
+                    if (parser.ProcessChar(i, buf))
+                    {
+                        var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, i - parser.currentMessageStart);
+                        completedBatch.GetTcs()[batchOffset].SetResult(ValueTuple.Create(completedBatch.StartSeq + batchOffset, Encoding.ASCII.GetString(message)));
+                        parser.currentMessageStart = -1;
+                        batchOffset++;
+                    }
+                }
                 // Should be a one-to-one mapping between requests and reply
-                Debug.Assert(entries.Length == completedBatch.GetTcs().Count);
-                for (var i = 0; i < entries.Length; i++)
-                    completedBatch.GetTcs()[i].SetResult(ValueTuple.Create(completedBatch.StartSeq + i, entries[i]));
+                Debug.Assert(batchOffset == completedBatch.GetTcs().Count);
                 redisSession.ReturnResolvedBatch(completedBatch);
             }
         }
@@ -82,7 +93,7 @@ namespace dpredis
 
     public class DpredisClientSession
     {
-        private long seqNum = 0;
+        private long seqNum;
         private int batchSize;
         private int numOutstanding;
 
