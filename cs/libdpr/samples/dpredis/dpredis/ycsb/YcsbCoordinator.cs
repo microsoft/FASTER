@@ -173,6 +173,7 @@ namespace dpredis.ycsb
             shutdown.Set();
             foreach (var thread in handlerThreads)
                 thread.Join();
+            Console.WriteLine((double) totalOps / stopwatch.ElapsedMilliseconds);
         }
     }
 }

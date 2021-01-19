@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.libdpr;
 
@@ -172,7 +173,7 @@ namespace dpredis
 
         public Task<(long, string)> IssueGetCommand(Worker worker, ulong key)
         {
-            numOutstanding++;
+            Interlocked.Increment(ref numOutstanding);
             var tcs = new TaskCompletionSource<(long, string)>();
             var batch = GetCurrentBatch(worker);
             batch.AddGetCommand(key, tcs);
@@ -183,7 +184,7 @@ namespace dpredis
         
         public Task<(long, string)> IssueSetCommand(Worker worker, ulong key, ulong value)
         {
-            numOutstanding++;
+            Interlocked.Increment(ref numOutstanding);
             var tcs = new TaskCompletionSource<(long, string)>();
             var batch = GetCurrentBatch(worker);
             batch.AddSetCommand(key, value, tcs);
@@ -219,6 +220,7 @@ namespace dpredis
 
         internal void ReturnResolvedBatch(DpredisBatch batch)
         {
+            Interlocked.Add(ref numOutstanding, -batch.CommandCount());
             numOutstanding -= batch.CommandCount();
             batchPool.Return(batch);
         } 

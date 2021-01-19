@@ -23,14 +23,14 @@ namespace FASTER.libdpr
             socket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             socket.Bind(endPoint);
             socket.Listen(512);
-            
+
             serverThread = new Thread(() =>
             {
                 var buf = new byte[4096];
 
-                while (true)
+                try
                 {
-                    try
+                    while (true)
                     {
                         var clientSocket = socket.Accept();
                         clientSocket.NoDelay = true;
@@ -61,10 +61,10 @@ namespace FASTER.libdpr
                         clientSocket.Send(new Span<byte>(buf, 0, 24));
                         clientSocket.Dispose();
                     }
-                    catch (ObjectDisposedException)
-                    {
-                        // Fine to exit normally
-                    }
+                }
+                catch (SocketException)
+                {
+                    // Fine to exit normally
                 }
             });
 
@@ -77,7 +77,7 @@ namespace FASTER.libdpr
             serverThread.Join();
         }
     }
-    
+
     public class TestDprFinder : IDprFinder
     {
         // cached local value
@@ -93,7 +93,7 @@ namespace FASTER.libdpr
             this.ip = ip;
             this.port = port;
         }
-        
+
         public void Clear()
         {
         }
@@ -129,8 +129,8 @@ namespace FASTER.libdpr
             workerVersion = latestRecoveredVersion.Version;
             Sync();
         }
-        
-        
+
+
         public long SafeVersion(Worker worker)
         {
             return globalSafeVersionNum;
