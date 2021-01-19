@@ -215,7 +215,7 @@ namespace dpredis
         public abstract class AbstractRedisConnState
         {
             private Socket socket;
-            private int readHead, bytesRead, contentStart;
+            private int readHead, bytesRead, batchStart;
 
             private SimpleRedisParser parser = new SimpleRedisParser
             {
@@ -230,7 +230,7 @@ namespace dpredis
             }
 
             // Return whether we should reset the buffer or keep message buffered
-            protected abstract bool HandleRespMessage(byte[] buf, int start, int end);
+            protected abstract bool HandleRespMessage(byte[] buf, int batchStart, int start, int end);
 
             private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
             {
@@ -248,9 +248,8 @@ namespace dpredis
                     if (connState.parser.ProcessChar(connState.readHead, e.Buffer))
                     {
                         var nextHead = connState.readHead + 1;
-                        if (connState.HandleRespMessage(e.Buffer, connState.parser.currentMessageStart, nextHead))
-                            connState.contentStart = nextHead;
-                        
+                        if (connState.HandleRespMessage(e.Buffer, connState.batchStart, connState.parser.currentMessageStart, nextHead))
+                            connState.batchStart = nextHead;
 
                         connState.parser.currentMessageStart = -1;
                     }
@@ -259,13 +258,14 @@ namespace dpredis
                 // TODO(Tianyu): Magic number
                 // If less than some certain number of bytes left in the buffer, shift buffer content to head to free
                 // up some space. Don't want to do this too often. Obviously ok to do if no bytes need to be copied.
-                if (e.Buffer.Length - connState.readHead < 4096 || connState.readHead == connState.contentStart)
+                if (e.Buffer.Length - connState.readHead < 4096 || connState.readHead == connState.batchStart)
                 {
-                    var bytesLeft = connState.bytesRead - connState.contentStart;
+                    var bytesLeft = connState.bytesRead - connState.batchStart;
                     // Shift buffer to front
-                    Array.Copy(e.Buffer, connState.contentStart, e.Buffer, 0, bytesLeft);
+                    Array.Copy(e.Buffer, connState.batchStart, e.Buffer, 0, bytesLeft);
                     connState.bytesRead = bytesLeft;
-                    connState.readHead = 0;
+                    connState.readHead -= connState.batchStart;
+                    connState.batchStart = 0;
                 }
                 e.SetBuffer(connState.readHead, e.Buffer.Length - connState.readHead);
                 return true;

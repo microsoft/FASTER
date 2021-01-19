@@ -32,9 +32,9 @@ namespace dpredis
             this.middleMan = middleMan;
         }
         
-        protected override bool HandleRespMessage(byte[] buf, int start, int end)
+        protected override bool HandleRespMessage(byte[] buf, int batchStart, int start, int end)
         {
-            return middleMan.HandleNewResponse(buf, start, end);
+            return middleMan.HandleNewResponse(buf, batchStart, start, end);
         }
     }
 

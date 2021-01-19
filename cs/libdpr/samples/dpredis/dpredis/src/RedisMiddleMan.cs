@@ -14,7 +14,7 @@ namespace dpredis
         public byte[] requestHeader = new byte[16384];
         public byte[] responseHeader = new byte[16384];
         public DprBatchVersionTracker tracker;
-        public int batchSize, messagesLeft, batchStartOffset = -1;
+        public int batchSize, messagesLeft;
     }
 
     internal class RedisMiddleMan : IDisposable
@@ -63,7 +63,6 @@ namespace dpredis
                 batchHandle.tracker = tracker;
                 batchHandle.batchSize = requestHeader.numMessages;
                 batchHandle.messagesLeft = requestHeader.numMessages;
-                batchHandle.batchStartOffset = -1;
 
                 if (!allowed)
                 {
@@ -83,12 +82,11 @@ namespace dpredis
             }
         }
 
-        internal bool HandleNewResponse(byte[] buffer, int messageStart, int messageEnd)
+        internal bool HandleNewResponse(byte[] buffer, int batchStart, int messageStart, int messageEnd)
         {
             queueLatch.Wait();
             var currentBatch = outstandingBatches.Peek();
             currentBatch.messagesLeft--;
-            if (currentBatch.batchStartOffset == -1) currentBatch.batchStartOffset = messageStart;
             
             // Still more responses left in the batch
             if (currentBatch.messagesLeft != 0)
@@ -105,7 +103,7 @@ namespace dpredis
                 new Span<byte>(currentBatch.responseHeader), currentBatch.tracker);
             Debug.Assert(ret == 0);
             clientSocket.SendDpredisResponse(new Span<byte>(currentBatch.responseHeader),
-                new Span<byte>(buffer, currentBatch.batchStartOffset, messageEnd - currentBatch.batchStartOffset));
+                new Span<byte>(buffer, batchStart, messageEnd - batchStart));
             return true;
         }
     }

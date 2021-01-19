@@ -17,7 +17,7 @@ namespace dpredis
                 this.conn = conn;
             }
             
-            protected override bool HandleRespMessage(byte[] buf, int start, int end)
+            protected override bool HandleRespMessage(byte[] buf, int batchStart, int start, int end)
             {
                 Interlocked.Decrement(ref conn.outstandingCount);
                 // Always ignore responses
