@@ -121,15 +121,19 @@ namespace dpredis
             var redisBackend = new IPEndPoint(addr, shard.port);
             var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             socket.Connect(redisBackend);
-            socket.Send(Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${shard.auth.Length}\r\n{shard.auth}\r\n"));
-
-            // TODO(Tianyu): Hacky
-            unsafe
+            if (shard.auth != null)
             {
-                long buf;
-                var span = new Span<byte>(&buf, sizeof(long));
-                var len = socket.Receive(span);
-                Debug.Assert(StringEqual(span, len, "+OK\r\n"));
+                // Authenticate if required
+                socket.Send(Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${shard.auth.Length}\r\n{shard.auth}\r\n"));
+
+                // TODO(Tianyu): Hacky
+                unsafe
+                {
+                    long buf;
+                    var span = new Span<byte>(&buf, sizeof(long));
+                    var len = socket.Receive(span);
+                    Debug.Assert(StringEqual(span, len, "+OK\r\n"));
+                }
             }
 
             return socket;
