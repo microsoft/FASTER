@@ -11,6 +11,7 @@ namespace dpredis
     public struct RedisShard
     {
         public string name;
+        public string ip;
         public int port;
         public string auth;
     }

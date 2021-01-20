@@ -117,7 +117,8 @@ namespace dpredis
 
         public static Socket GetNewRedisConnection(RedisShard shard)
         {
-            var redisBackend = new IPEndPoint(Dns.GetHostAddresses(shard.name)[0], shard.port);
+            var addr = shard.ip == null ? Dns.GetHostAddresses(shard.name)[0] : IPAddress.Parse(shard.ip);
+            var redisBackend = new IPEndPoint(addr, shard.port);
             var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             socket.Connect(redisBackend);
             socket.Send(Encoding.ASCII.GetBytes($"*2\r\n$4\r\nAUTH\r\n${shard.auth.Length}\r\n{shard.auth}\r\n"));
