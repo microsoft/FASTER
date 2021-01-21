@@ -1,5 +1,6 @@
 using System;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 
 namespace dpredis
@@ -11,16 +12,18 @@ namespace dpredis
         internal class ConnState : MessageUtil.AbstractRedisConnState
         {
             private RedisDirectConnection conn;
+            private Action<string> responseHandler;
 
-            internal ConnState(RedisDirectConnection conn) : base(conn.socket)
+            internal ConnState(RedisDirectConnection conn, Action<string> responseHandler = null) : base(conn.socket)
             {
                 this.conn = conn;
+                this.responseHandler = responseHandler;
             }
             
             protected override bool HandleRespMessage(byte[] buf, int batchStart, int start, int end)
             {
                 Interlocked.Decrement(ref conn.outstandingCount);
-                // Always ignore responses
+                responseHandler?.Invoke(Encoding.ASCII.GetString(buf, start, end - start));
                 return true;
             }
         }
@@ -30,6 +33,8 @@ namespace dpredis
         private int outstandingCount = 0;
 
         private int batchSize, windowSize;
+        private Action<string> responseHandler;
+
 
         public void Dispose()
         {
@@ -38,19 +43,20 @@ namespace dpredis
             socket.Dispose();
         }
         
-        public RedisDirectConnection(RedisShard shard, int batchSize = 1024, int windowSize = -1)
+        public RedisDirectConnection(RedisShard shard, int batchSize = 1024, int windowSize = -1, Action<string> responseHandler = null)
         {
             socket = MessageUtil.GetNewRedisConnection(shard);
             socket.NoDelay = true;
             var redisSaea = new SocketAsyncEventArgs();
             redisSaea.SetBuffer(new byte[RedisClientBuffer.MAX_BUFFER_SIZE], 0, RedisClientBuffer.MAX_BUFFER_SIZE);
-            redisSaea.UserToken = new ConnState(this);
+            redisSaea.UserToken = new ConnState(this, responseHandler);
             redisSaea.Completed += MessageUtil.AbstractRedisConnState.RecvEventArg_Completed;
             socket.ReceiveAsync(redisSaea);
 
             clientBuffer = new RedisClientBuffer();
             this.batchSize = batchSize;
             this.windowSize = windowSize;
+            this.responseHandler = responseHandler;
         }
 
         public void Flush()
@@ -102,5 +108,7 @@ namespace dpredis
             while (outstandingCount != 0)
                 Thread.Yield();
         }
+
+        public Socket GetSocket() => socket;
     }
 }

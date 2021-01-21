@@ -45,7 +45,11 @@ namespace dpredis.ycsb
             var message = clientSocket.ReceiveBenchmarkMessage();
             Debug.Assert(message.type == 1);
             var config = (BenchmarkConfiguration) message.content;
-            Execute(config, clientSocket);
+            if (config.useProxy)
+                ExecuteWithProxy(config, clientSocket);
+            else
+                ExecuteDirectly(config, clientSocket);
+            
             clientSocket.Close();
         }
 
@@ -54,7 +58,7 @@ namespace dpredis.ycsb
             return new Worker((long) key >> 61);
         }
 
-        private void Execute(BenchmarkConfiguration config, Socket coordinatorConn)
+        private void ExecuteDirectly(BenchmarkConfiguration config, Socket coordinatorConn)
         {
             var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
             var routingTable = new ConcurrentDictionary<Worker, (string, int)>();
@@ -67,7 +71,102 @@ namespace dpredis.ycsb
             LoadData(config, coordinatorConn);
             coordinatorConn.SendBenchmarkControlMessage("setup finished");
             coordinatorConn.ReceiveBenchmarkMessage();
-            // TODO(Tianyu): Replace with real workload
+            long idx_ = 0;
+            var execThreads = new Thread[config.clientThreadCount];
+            var localSessions = new RedisDirectConnectionSession[config.clientThreadCount];
+            var client = new DpredisClient(dprFinder, routingTable);
+            client.Start();
+            var sw = new Stopwatch();
+            long totalOps = 0;
+            sw.Start();
+            for (var idx = 0; idx < config.clientThreadCount; ++idx)
+            {
+                var x = idx;
+                execThreads[idx] = new Thread(() =>
+                {
+                    var s = client.NewDirectSession(config.batchSize);
+                    localSessions[x] = s;
+
+                    var rng = new RandomGenerator((uint) (workerId * YcsbCoordinator.clusterConfig.clients.Count + x));
+                    while (!done)
+                    {
+                        var chunk_idx = Interlocked.Add(ref idx_, BenchmarkConsts.kChunkSize) -
+                                        BenchmarkConsts.kChunkSize;
+                        while (chunk_idx >= BenchmarkConsts.kTxnCount)
+                        {
+                            if (chunk_idx == BenchmarkConsts.kTxnCount) idx_ = 0;
+                            chunk_idx = Interlocked.Add(ref idx_, BenchmarkConsts.kChunkSize) -
+                                        BenchmarkConsts.kChunkSize;
+                        }
+
+                        for (var idx = chunk_idx; idx < chunk_idx + BenchmarkConsts.kChunkSize && !done; ++idx)
+                        {
+                            Op op;
+                            int r = (int) rng.Generate(100);
+                            if (r < config.readPercent)
+                                op = Op.Read;
+                            else if (config.readPercent >= 0)
+                                op = Op.Upsert;
+                            else
+                                throw new NotImplementedException();
+                            var key = txn_keys_[idx];
+
+                            while (s.NumOutstanding() >= config.windowSize)
+                                Thread.Yield();
+                            
+                            switch (op)
+                            {
+                                case Op.Upsert:
+                                    s.IssueSetCommand(GetWorker(key), key, 0);
+                                    break;
+                                case Op.Read:
+                                    s.IssueGetCommand(GetWorker(key), key);
+                                    break;
+                                default:
+                                    throw new InvalidOperationException("Unexpected op: " + op);
+                            }
+                        }
+                    }
+
+                    s.FlushAll();
+                    while (s.NumOutstanding() != 0)
+                        Thread.Yield();
+                    Interlocked.Add(ref totalOps,  s.IssuedOps());
+                });
+                execThreads[idx].Start();
+            }
+
+            while (sw.ElapsedMilliseconds < BenchmarkConsts.kRunSeconds * 1000)
+                Thread.Sleep(1000);
+            done = true;
+            PrintToCoordinator($"Done issuing operations", coordinatorConn);
+            foreach (var session in execThreads)
+                session.Join();
+            sw.Stop();
+            var seconds = sw.ElapsedMilliseconds / 1000.0;
+
+            // Signal completion
+            PrintToCoordinator($"##, {totalOps / seconds}", coordinatorConn);
+            coordinatorConn.SendBenchmarkControlMessage(totalOps);
+            coordinatorConn.ReceiveBenchmarkMessage();
+            dprFinder.Clear();
+            client.End();
+        }
+        
+
+        private void ExecuteWithProxy(BenchmarkConfiguration config, Socket coordinatorConn)
+        {
+            var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
+            var routingTable = new ConcurrentDictionary<Worker, (string, int)>();
+            foreach (var worker in YcsbCoordinator.clusterConfig.workers)
+            {
+                if (worker.type == WorkerType.CLIENT) continue;
+                routingTable.TryAdd(new Worker(worker.id), ValueTuple.Create(worker.ip, worker.port));
+            }
+
+            LoadData(config, coordinatorConn);
+            coordinatorConn.SendBenchmarkControlMessage("setup finished");
+            coordinatorConn.ReceiveBenchmarkMessage();
             long idx_ = 0;
             var execThreads = new Thread[config.clientThreadCount];
             var localSessions = new DpredisClientSession[config.clientThreadCount];

@@ -58,8 +58,11 @@ namespace dpredis.ycsb
         [Option('w', "window_size", Required = false, Default = 4096)]
         public int WindowSize { get; set; }
         
-        [Option('l', "load_data", Required = false, Default = true)]
+        [Option('l', "load_data", Required = false, Default = false)]
         public bool LoadDatabase { get; set; }
+        
+        [Option('p', "proxy", Required = false, Default = true)]
+        public bool UseProxy { get; set; }
     }
 
     class Program
@@ -68,7 +71,7 @@ namespace dpredis.ycsb
         {
             YcsbCoordinator.clusterConfig = new ClusterConfiguration();
             // TODO(Tianyu): Example config
-            YcsbCoordinator.clusterConfig.AddProxy("10.0.1.8", 15721, new RedisShard {name = "", port = 6379, auth = ""})
+            YcsbCoordinator.clusterConfig.AddProxy("10.0.1.8", 15721, new RedisShard {ip="10.0.1.8", port = 6379})
                 .AddClient("10.0.1.9", 15721);
             
             var result = Parser.Default.ParseArguments<Options>(args);
@@ -90,7 +93,9 @@ namespace dpredis.ycsb
                     batchSize = options.BatchSize,
                     dprFinderIP = "10.0.1.7",
                     dprFinderPort = 15445,
-                    load = true
+                    load = options.LoadDatabase,
+                    useProxy = options.UseProxy
+                    
                 });
                 c.Run();
                 dprFinder.EndServer();

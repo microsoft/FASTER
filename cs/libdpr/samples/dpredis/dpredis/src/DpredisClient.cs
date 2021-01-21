@@ -49,51 +49,127 @@ namespace dpredis
         }
     }
 
-    internal class DpredisClientDprConnState : MessageUtil.AbstractDprConnState
+    public class RedisDirectConnectionSession
     {
-        private DprClientSession dprSession;
-        private DpredisClientSession redisSession;
-        private SimpleRedisParser parser;
-
-        public DpredisClientDprConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession) : base(socket)
+        private int batchSize;
+        private int numOutstanding;
+        private long numOps = 0;
+        private Dictionary<Worker, ConcurrentQueue<TaskCompletionSource<string>>> outstandingOps;
+        private ConcurrentDictionary<Worker, (string, int)> routingTable;
+        private Dictionary<Worker, RedisDirectConnection> conns;
+        
+        public RedisDirectConnectionSession(
+            ConcurrentDictionary<Worker, (string, int)> routingTable,
+            int batchSize)
         {
-            this.dprSession = dprSession;
-            this.redisSession = redisSession;
-            parser = new SimpleRedisParser
+            this.batchSize = batchSize;
+            outstandingOps = new Dictionary<Worker, ConcurrentQueue<TaskCompletionSource<string>>>();
+            this.routingTable = routingTable;
+            conns = new Dictionary<Worker, RedisDirectConnection>();
+        }
+        
+         private RedisDirectConnection GetDirectConnection(Worker worker)
+        {
+            if (conns.TryGetValue(worker, out var result)) return result;
+            outstandingOps.Add(worker, new ConcurrentQueue<TaskCompletionSource<string>>());
+            var (ip, port) = routingTable[worker];
+            result = new RedisDirectConnection(new RedisShard {ip = ip, port = port}, batchSize, -1, s =>
             {
-                currentMessageType = default,
-                currentMessageStart = -1,
-                subMessageCount = 0
-            };
+                if (outstandingOps[worker].TryDequeue(out var tcs))
+                {
+                    tcs.SetResult(s);
+                    Interlocked.Decrement(ref numOutstanding);
+                }
+            });
+            conns.Add(worker, result);
+            return result;
         }
 
-        protected override unsafe void HandleMessage(byte[] buf, int offset, int size)
+         public Task<string> IssueGetCommand(Worker worker, ulong key)
         {
-            fixed (byte* b = buf)
+            numOps++;
+
+            Interlocked.Increment(ref numOutstanding);
+
+            var tcs = new TaskCompletionSource<string>();
+            GetDirectConnection(worker).SendGetCommand(key);
+            outstandingOps[worker].Enqueue(tcs);
+            
+            return tcs.Task;
+        }
+        
+        public Task<string> IssueSetCommand(Worker worker, ulong key, ulong value)
+        {
+            numOps++;
+
+            Interlocked.Increment(ref numOutstanding);
+
+            var tcs = new TaskCompletionSource<string>();
+            GetDirectConnection(worker).SendSetCommand(key, value);
+            outstandingOps[worker].Enqueue(tcs);
+            
+            return tcs.Task;
+        }
+        
+        public void FlushAll()
+        {
+            foreach (var conn in conns.Values)
             {
-                ref var header = ref Unsafe.AsRef<DprBatchResponseHeader>(b + offset);
-                dprSession.ResolveBatch(ref header);
-                var completedBatch = redisSession.GetOutstandingBatch(header.batchId);
-                var batchOffset = 0;
-                for (var i = header.Size(); i < size; i++)
-                {
-                    if (parser.ProcessChar(offset + i, buf))
-                    {
-                        var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, offset + i - parser.currentMessageStart);
-                        completedBatch.GetTcs()[batchOffset].SetResult(ValueTuple.Create(completedBatch.StartSeq + batchOffset, Encoding.ASCII.GetString(message)));
-                        parser.currentMessageStart = -1;
-                        batchOffset++;
-                    }
-                }
-                // Should be a one-to-one mapping between requests and reply
-                Debug.Assert(batchOffset == completedBatch.GetTcs().Count);
-                redisSession.ReturnResolvedBatch(completedBatch);
+                conn.Flush();
             }
         }
+
+        public int NumOutstanding() => numOutstanding;
+
+        public long IssuedOps() => numOps;
     }
+    
 
     public class DpredisClientSession
     {
+        internal class ConnState : MessageUtil.AbstractDprConnState
+        {
+            private DprClientSession dprSession;
+            private DpredisClientSession redisSession;
+            private SimpleRedisParser parser;
+
+            public ConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession) : base(socket)
+            {
+                this.dprSession = dprSession;
+                this.redisSession = redisSession;
+                parser = new SimpleRedisParser
+                {
+                    currentMessageType = default,
+                    currentMessageStart = -1,
+                    subMessageCount = 0
+                };
+            }
+
+            protected override unsafe void HandleMessage(byte[] buf, int offset, int size)
+            {
+                fixed (byte* b = buf)
+                {
+                    ref var header = ref Unsafe.AsRef<DprBatchResponseHeader>(b + offset);
+                    dprSession.ResolveBatch(ref header);
+                    var completedBatch = redisSession.GetOutstandingBatch(header.batchId);
+                    var batchOffset = 0;
+                    for (var i = header.Size(); i < size; i++)
+                    {
+                        if (parser.ProcessChar(offset + i, buf))
+                        {
+                            var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, offset + i - parser.currentMessageStart);
+                            completedBatch.GetTcs()[batchOffset].SetResult(ValueTuple.Create(completedBatch.StartSeq + batchOffset, Encoding.ASCII.GetString(message)));
+                            parser.currentMessageStart = -1;
+                            batchOffset++;
+                        }
+                    }
+                    // Should be a one-to-one mapping between requests and reply
+                    Debug.Assert(batchOffset == completedBatch.GetTcs().Count);
+                    redisSession.ReturnResolvedBatch(completedBatch);
+                }
+            }
+        }
+        
         private long seqNum;
         private int batchSize;
         private int numOutstanding;
@@ -121,7 +197,7 @@ namespace dpredis
             conns = new Dictionary<Worker, Socket>();
             dprSession = client.GetSession(id);
         }
-
+        
         private Socket GetProxyConnection(Worker worker)
         {
             if (conns.TryGetValue(worker, out var result)) return result;
@@ -135,7 +211,7 @@ namespace dpredis
             // TODO(Tianyu): Magic number buffer size
             saea.SetBuffer(new byte[1 << 20], 0, 1 << 20);
             saea.Completed += MessageUtil.AbstractDprConnState.RecvEventArg_Completed;
-            saea.UserToken = new DpredisClientDprConnState(result, dprSession, this);
+            saea.UserToken = new ConnState(result, dprSession, this);
             while (!result.ReceiveAsync(saea))
                 MessageUtil.AbstractDprConnState.RecvEventArg_Completed(null, saea);
             return result;
@@ -212,13 +288,13 @@ namespace dpredis
 
         public long IssuedOps() => seqNum;
 
-        internal DpredisBatch GetOutstandingBatch(int batchId)
+        private DpredisBatch GetOutstandingBatch(int batchId)
         {
             outstandingBatches.Remove(batchId, out var result);
             return result;
         }
 
-        internal void ReturnResolvedBatch(DpredisBatch batch)
+        private void ReturnResolvedBatch(DpredisBatch batch)
         {
             Interlocked.Add(ref numOutstanding, -batch.CommandCount());
             numOutstanding -= batch.CommandCount();
@@ -245,6 +321,11 @@ namespace dpredis
         public void End()
         {
             dprClient.End();
+        }
+
+        public RedisDirectConnectionSession NewDirectSession(int batchSize)
+        {
+            return new RedisDirectConnectionSession(routingTable, batchSize);
         }
 
         public DpredisClientSession NewSession(int batchSize)
