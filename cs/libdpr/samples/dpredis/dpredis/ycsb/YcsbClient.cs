@@ -61,11 +61,11 @@ namespace dpredis.ycsb
         private void ExecuteDirectly(BenchmarkConfiguration config, Socket coordinatorConn)
         {
             var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
-            var routingTable = new ConcurrentDictionary<Worker, (string, int)>();
+            var routingTable = new ConcurrentDictionary<Worker, RedisShard>();
             foreach (var worker in YcsbCoordinator.clusterConfig.workers)
             {
                 if (worker.type == WorkerType.CLIENT) continue;
-                routingTable.TryAdd(new Worker(worker.id), ValueTuple.Create(worker.ip, worker.port));
+                routingTable.TryAdd(new Worker(worker.id), worker.redisBackend);
             }
 
             LoadData(config, coordinatorConn);
@@ -327,7 +327,7 @@ namespace dpredis.ycsb
                 return;
             }
 
-            var filePath = "Z:\\ycsb_files";
+            var filePath = "Z:";
             LoadDataFromFile(filePath, configuration, coordinatorConn);
         }
 

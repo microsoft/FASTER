@@ -151,7 +151,7 @@ namespace dpredis.ycsb
                 return;
             }
 
-            var filePath = "Z:\\ycsb_files";
+            var filePath = "Z:";
             LoadDataFromFile(filePath, configuration, coordinatorConn);
         }
 

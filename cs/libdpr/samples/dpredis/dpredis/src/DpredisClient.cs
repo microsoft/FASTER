@@ -55,11 +55,11 @@ namespace dpredis
         private int numOutstanding;
         private long numOps = 0;
         private Dictionary<Worker, ConcurrentQueue<TaskCompletionSource<string>>> outstandingOps;
-        private ConcurrentDictionary<Worker, (string, int)> routingTable;
+        private ConcurrentDictionary<Worker, RedisShard> routingTable;
         private Dictionary<Worker, RedisDirectConnection> conns;
         
         public RedisDirectConnectionSession(
-            ConcurrentDictionary<Worker, (string, int)> routingTable,
+            ConcurrentDictionary<Worker, RedisShard> routingTable,
             int batchSize)
         {
             this.batchSize = batchSize;
@@ -72,8 +72,7 @@ namespace dpredis
         {
             if (conns.TryGetValue(worker, out var result)) return result;
             outstandingOps.Add(worker, new ConcurrentQueue<TaskCompletionSource<string>>());
-            var (ip, port) = routingTable[worker];
-            result = new RedisDirectConnection(new RedisShard {ip = ip, port = port}, batchSize, -1, s =>
+            result = new RedisDirectConnection(routingTable[worker], batchSize, -1, s =>
             {
                 if (outstandingOps[worker].TryDequeue(out var tcs))
                 {
@@ -305,9 +304,9 @@ namespace dpredis
     public class DpredisClient
     {
         private DprClient dprClient;
-        private ConcurrentDictionary<Worker, (string, int)> routingTable;
+        private ConcurrentDictionary<Worker, RedisShard> routingTable;
 
-        public DpredisClient(IDprFinder dprFinder, ConcurrentDictionary<Worker, (string, int)> routingTable)
+        public DpredisClient(IDprFinder dprFinder, ConcurrentDictionary<Worker, RedisShard> routingTable)
         {
             dprClient = new DprClient(dprFinder);
             this.routingTable = routingTable;
