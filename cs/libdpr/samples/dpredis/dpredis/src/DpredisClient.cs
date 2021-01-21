@@ -55,11 +55,11 @@ namespace dpredis
         private int numOutstanding;
         private long numOps = 0;
         private Dictionary<Worker, ConcurrentQueue<TaskCompletionSource<string>>> outstandingOps;
-        private ConcurrentDictionary<Worker, RedisShard> routingTable;
+        private ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable;
         private Dictionary<Worker, RedisDirectConnection> conns;
         
         public RedisDirectConnectionSession(
-            ConcurrentDictionary<Worker, RedisShard> routingTable,
+            ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable,
             int batchSize)
         {
             this.batchSize = batchSize;
@@ -72,7 +72,7 @@ namespace dpredis
         {
             if (conns.TryGetValue(worker, out var result)) return result;
             outstandingOps.Add(worker, new ConcurrentQueue<TaskCompletionSource<string>>());
-            result = new RedisDirectConnection(routingTable[worker], batchSize, -1, s =>
+            result = new RedisDirectConnection(routingTable[worker].Item3, batchSize, -1, s =>
             {
                 if (outstandingOps[worker].TryDequeue(out var tcs))
                 {
@@ -177,14 +177,14 @@ namespace dpredis
         private Dictionary<Worker, DpredisBatch> batches;
         private List<KeyValuePair<Worker, DpredisBatch>> toIssue = new List<KeyValuePair<Worker, DpredisBatch>>();
         private ConcurrentDictionary<int, DpredisBatch> outstandingBatches;
-        private ConcurrentDictionary<Worker, (string, int)> routingTable;
+        private ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable;
         private Dictionary<Worker, Socket> conns;
 
         private DprClientSession dprSession;
 
         public DpredisClientSession(DprClient client,
             Guid id,
-            ConcurrentDictionary<Worker, (string, int)> routingTable,
+            ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable,
             int batchSize)
         {
             seqNum = 0;
@@ -200,7 +200,7 @@ namespace dpredis
         private Socket GetProxyConnection(Worker worker)
         {
             if (conns.TryGetValue(worker, out var result)) return result;
-            var (ip, port) = routingTable[worker];
+            var (ip, port, _) = routingTable[worker];
             var ipAddr = IPAddress.Parse(ip);
             result = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             result.Connect(new IPEndPoint(ipAddr, port));
@@ -304,9 +304,9 @@ namespace dpredis
     public class DpredisClient
     {
         private DprClient dprClient;
-        private ConcurrentDictionary<Worker, RedisShard> routingTable;
+        private ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable;
 
-        public DpredisClient(IDprFinder dprFinder, ConcurrentDictionary<Worker, RedisShard> routingTable)
+        public DpredisClient(IDprFinder dprFinder, ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable)
         {
             dprClient = new DprClient(dprFinder);
             this.routingTable = routingTable;

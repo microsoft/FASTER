@@ -61,11 +61,11 @@ namespace dpredis.ycsb
         private void ExecuteDirectly(BenchmarkConfiguration config, Socket coordinatorConn)
         {
             var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
-            var routingTable = new ConcurrentDictionary<Worker, RedisShard>();
+            var routingTable = new ConcurrentDictionary<Worker, (string, int, RedisShard)>();
             foreach (var worker in YcsbCoordinator.clusterConfig.workers)
             {
                 if (worker.type == WorkerType.CLIENT) continue;
-                routingTable.TryAdd(new Worker(worker.id), worker.redisBackend);
+                routingTable.TryAdd(new Worker(worker.id), ValueTuple.Create(worker.ip, worker.port, worker.redisBackend));
             }
 
             LoadData(config, coordinatorConn);
@@ -157,11 +157,11 @@ namespace dpredis.ycsb
         private void ExecuteWithProxy(BenchmarkConfiguration config, Socket coordinatorConn)
         {
             var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
-            var routingTable = new ConcurrentDictionary<Worker, (string, int)>();
+            var routingTable = new ConcurrentDictionary<Worker, (string, int, RedisShard)>();
             foreach (var worker in YcsbCoordinator.clusterConfig.workers)
             {
                 if (worker.type == WorkerType.CLIENT) continue;
-                routingTable.TryAdd(new Worker(worker.id), ValueTuple.Create(worker.ip, worker.port));
+                routingTable.TryAdd(new Worker(worker.id), ValueTuple.Create(worker.ip, worker.port, worker.redisBackend));
             }
 
             LoadData(config, coordinatorConn);
