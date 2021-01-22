@@ -61,7 +61,7 @@ namespace dpredis.ycsb
         [Option('l', "load_data", Required = false, Default = false)]
         public bool LoadDatabase { get; set; }
         
-        [Option('p', "proxy", Required = false, Default = true)]
+        [Option('p', "proxy", Required = false, Default = false)]
         public bool UseProxy { get; set; }
     }
 
