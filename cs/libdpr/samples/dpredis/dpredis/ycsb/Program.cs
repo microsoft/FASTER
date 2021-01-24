@@ -71,8 +71,23 @@ namespace dpredis.ycsb
         {
             YcsbCoordinator.clusterConfig = new ClusterConfiguration();
             // TODO(Tianyu): Example config
-            YcsbCoordinator.clusterConfig.AddProxy("10.0.1.8", 15721, new RedisShard {ip="10.0.1.8", port = 6379})
-                .AddClient("10.0.1.9", 15721);
+            YcsbCoordinator.clusterConfig               
+                .AddProxy("10.0.1.8", 15721, new RedisShard {ip = "10.0.1.8", port = 6379})
+                .AddProxy("10.0.1.9", 15721, new RedisShard {ip = "10.0.1.9", port = 6379})
+                .AddProxy("10.0.1.11", 15721, new RedisShard {ip = "10.0.1.11", port = 6379})
+                .AddProxy("10.0.1.10", 15721, new RedisShard {ip = "10.0.1.10", port = 6379})
+                .AddProxy("10.0.1.12", 15721, new RedisShard {ip = "10.0.1.12", port = 6379})
+                .AddProxy("10.0.1.13", 15721, new RedisShard {ip = "10.0.1.13", port = 6379})
+                .AddProxy("10.0.1.14", 15721, new RedisShard {ip = "10.0.1.14", port = 6379})
+                .AddProxy("10.0.1.15", 15721, new RedisShard {ip = "10.0.1.15", port = 6379})
+                .AddClient("10.0.1.16", 15721)
+                .AddClient("10.0.1.17", 15721)
+                .AddClient("10.0.1.18", 15721)
+                .AddClient("10.0.1.19", 15721)
+                .AddClient("10.0.1.20", 15721)
+                .AddClient("10.0.1.21", 15721)
+                .AddClient("10.0.1.22", 15721)
+                .AddClient("10.0.1.23", 15721);
             
             var result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed) throw new Exception();

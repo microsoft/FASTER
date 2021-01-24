@@ -55,7 +55,7 @@ namespace dpredis.ycsb
 
         private Worker GetWorker(ulong key)
         {
-            return new Worker((long) key >> 61);
+            return new Worker((long) (key >> 61));
         }
 
         private void ExecuteDirectly(BenchmarkConfiguration config, Socket coordinatorConn)

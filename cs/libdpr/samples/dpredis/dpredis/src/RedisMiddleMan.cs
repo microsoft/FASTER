@@ -104,6 +104,7 @@ namespace dpredis
             Debug.Assert(ret == 0);
             clientSocket.SendDpredisResponse(new Span<byte>(currentBatch.responseHeader),
                 new Span<byte>(buffer, batchStart, messageEnd - batchStart));
+            batchHandlePool.Return(currentBatch);
             return true;
         }
     }

@@ -35,7 +35,7 @@ namespace FASTER.libdpr
             var workerVersion = new WorkerVersion(state.me, version);
             // TODO(Tianyu): For performance, change IDprFinder code to only buffer this write and invoke expensive
             // writes on refreshes.
-            state.dprFinder.ReportNewPersistentVersion(workerVersion, versionObject.deps);
+            state.dprFinder.ReportNewPersistentVersion(workerVersion, versionObject.deps.UnsafeToList());
         }
 
         /// <summary>

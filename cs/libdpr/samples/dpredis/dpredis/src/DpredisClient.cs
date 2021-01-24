@@ -296,7 +296,6 @@ namespace dpredis
         private void ReturnResolvedBatch(DpredisBatch batch)
         {
             Interlocked.Add(ref numOutstanding, -batch.CommandCount());
-            numOutstanding -= batch.CommandCount();
             batchPool.Return(batch);
         } 
     }

@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using FASTER.core;
+using FASTER.iibdpr;
 
 namespace FASTER.libdpr
 {
@@ -23,7 +24,7 @@ namespace FASTER.libdpr
         /// The set of dependencies of a version
         /// </summary>
         // TODO(Tianyu): Change to another data structure for performance?
-        public HashSet<WorkerVersion> deps = new HashSet<WorkerVersion>();
+        public LightDependencySet deps = new LightDependencySet();
     }
 
     /// <summary>
@@ -187,7 +188,10 @@ namespace FASTER.libdpr
             fixed (byte* depValues = dprRequest.deps)
             {
                 for (var i = 0; i < dprRequest.numDeps; i++)
-                    versionHandle.deps.Add(Unsafe.AsRef<WorkerVersion>(depValues + sizeof(Guid) * i));
+                {
+                    ref var wv = ref Unsafe.AsRef<WorkerVersion>(depValues + sizeof(WorkerVersion) * i);
+                    versionHandle.deps.Update(wv.Worker, wv.Version);
+                }
             }
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
             return true;
