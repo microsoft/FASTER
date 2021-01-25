@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.Contracts;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -77,7 +75,7 @@ namespace dpredis.ycsb
             var client = new DpredisClient(dprFinder, routingTable);
             client.Start();
             var sw = new Stopwatch();
-            long totalOps = 0;
+            long totalOps = 0, totalLatency = 0;
             sw.Start();
             for (var idx = 0; idx < config.clientThreadCount; ++idx)
             {
@@ -132,6 +130,7 @@ namespace dpredis.ycsb
                     while (s.NumOutstanding() != 0)
                         Thread.Yield();
                     Interlocked.Add(ref totalOps,  s.IssuedOps());
+                    Interlocked.Add(ref totalLatency, s.totalLatency);
                 });
                 execThreads[idx].Start();
             }
@@ -147,7 +146,7 @@ namespace dpredis.ycsb
 
             // Signal completion
             PrintToCoordinator($"##, {totalOps / seconds}", coordinatorConn);
-            coordinatorConn.SendBenchmarkControlMessage(totalOps);
+            coordinatorConn.SendBenchmarkControlMessage(ValueTuple.Create(totalOps, totalLatency));
             coordinatorConn.ReceiveBenchmarkMessage();
             dprFinder.Clear();
             client.End();
@@ -173,7 +172,7 @@ namespace dpredis.ycsb
             var client = new DpredisClient(dprFinder, routingTable);
             client.Start();
             var sw = new Stopwatch();
-            long totalOps = 0;
+            long totalOps = 0, totalLatency = 0;
             sw.Start();
             for (var idx = 0; idx < config.clientThreadCount; ++idx)
             {
@@ -228,6 +227,7 @@ namespace dpredis.ycsb
                     while (s.NumOutstanding() != 0)
                         Thread.Yield();
                     Interlocked.Add(ref totalOps,  s.IssuedOps());
+                    Interlocked.Add(ref totalLatency, s.totalLatency);
                 });
                 execThreads[idx].Start();
             }
@@ -243,7 +243,7 @@ namespace dpredis.ycsb
 
             // Signal completion
             PrintToCoordinator($"##, {totalOps / seconds}", coordinatorConn);
-            coordinatorConn.SendBenchmarkControlMessage(totalOps);
+            coordinatorConn.SendBenchmarkControlMessage(ValueTuple.Create(totalOps, totalLatency));
             coordinatorConn.ReceiveBenchmarkMessage();
             dprFinder.Clear();
             client.End();

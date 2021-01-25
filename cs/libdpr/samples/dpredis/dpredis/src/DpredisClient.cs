@@ -16,21 +16,24 @@ namespace dpredis
     {
         private RedisClientBuffer clientBuffer = new RedisClientBuffer();
         private List<TaskCompletionSource<(long, string)>> tcs = new List<TaskCompletionSource<(long, string)>>();
+        public List<long> startTimes = new List<long>();
 
-        public void AddGetCommand(ulong key, TaskCompletionSource<(long, string)> tcs)
+        public void AddGetCommand(ulong key, TaskCompletionSource<(long, string)> tcs, long startTime)
         {
             
             var ret = clientBuffer.TryAddGetCommand(key);
             if (!ret) throw new NotImplementedException();
             this.tcs.Add(tcs);
+            startTimes.Add(startTime);
         }
         
-        public void AddSetCommand(ulong key, ulong value, TaskCompletionSource<(long, string)> tcs)
+        public void AddSetCommand(ulong key, ulong value, TaskCompletionSource<(long, string)> tcs, long startTime)
         {
             
             var ret = clientBuffer.TryAddSetCommand(key, value);
             if (!ret) throw new NotImplementedException();
             this.tcs.Add(tcs);
+            startTimes.Add(startTime);
         }
 
         public Span<byte> Body() => clientBuffer.GetCurrentBytes();
@@ -54,29 +57,34 @@ namespace dpredis
         private int batchSize;
         private int numOutstanding;
         private long numOps = 0;
-        private Dictionary<Worker, ConcurrentQueue<TaskCompletionSource<string>>> outstandingOps;
+        private Dictionary<Worker, ConcurrentQueue<(TaskCompletionSource<string>, long)>> outstandingOps;
         private ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable;
         private Dictionary<Worker, RedisDirectConnection> conns;
+        
+        public long totalLatency = 0;
+        private Stopwatch stopwatch;
         
         public RedisDirectConnectionSession(
             ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable,
             int batchSize)
         {
             this.batchSize = batchSize;
-            outstandingOps = new Dictionary<Worker, ConcurrentQueue<TaskCompletionSource<string>>>();
+            outstandingOps = new Dictionary<Worker, ConcurrentQueue<(TaskCompletionSource<string>, long)>>();
             this.routingTable = routingTable;
             conns = new Dictionary<Worker, RedisDirectConnection>();
+            stopwatch = Stopwatch.StartNew();
         }
         
          private RedisDirectConnection GetDirectConnection(Worker worker)
         {
             if (conns.TryGetValue(worker, out var result)) return result;
-            outstandingOps.Add(worker, new ConcurrentQueue<TaskCompletionSource<string>>());
+            outstandingOps.Add(worker, new ConcurrentQueue<(TaskCompletionSource<string>, long)>());
             result = new RedisDirectConnection(routingTable[worker].Item3, batchSize, -1, s =>
             {
-                if (outstandingOps[worker].TryDequeue(out var tcs))
+                if (outstandingOps[worker].TryDequeue(out var pair))
                 {
-                    tcs.SetResult(s);
+                    pair.Item1.SetResult(s);
+                    Interlocked.Add(ref totalLatency, stopwatch.ElapsedTicks - pair.Item2);
                     Interlocked.Decrement(ref numOutstanding);
                 }
             });
@@ -84,7 +92,7 @@ namespace dpredis
             return result;
         }
 
-         public Task<string> IssueGetCommand(Worker worker, ulong key)
+        public Task<string> IssueGetCommand(Worker worker, ulong key)
         {
             numOps++;
 
@@ -92,7 +100,7 @@ namespace dpredis
 
             var tcs = new TaskCompletionSource<string>();
             GetDirectConnection(worker).SendGetCommand(key);
-            outstandingOps[worker].Enqueue(tcs);
+            outstandingOps[worker].Enqueue(ValueTuple.Create(tcs, stopwatch.ElapsedTicks));
             
             return tcs.Task;
         }
@@ -105,7 +113,7 @@ namespace dpredis
 
             var tcs = new TaskCompletionSource<string>();
             GetDirectConnection(worker).SendSetCommand(key, value);
-            outstandingOps[worker].Enqueue(tcs);
+            outstandingOps[worker].Enqueue(ValueTuple.Create(tcs, stopwatch.ElapsedTicks));
             
             return tcs.Task;
         }
@@ -131,7 +139,6 @@ namespace dpredis
             private DprClientSession dprSession;
             private DpredisClientSession redisSession;
             private SimpleRedisParser parser;
-
             public ConnState(Socket socket, DprClientSession dprSession, DpredisClientSession redisSession) : base(socket)
             {
                 this.dprSession = dprSession;
@@ -159,6 +166,8 @@ namespace dpredis
                             var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, offset + i - parser.currentMessageStart);
                             completedBatch.GetTcs()[batchOffset].SetResult(ValueTuple.Create(completedBatch.StartSeq + batchOffset, Encoding.ASCII.GetString(message)));
                             parser.currentMessageStart = -1;
+                            Interlocked.Add(ref redisSession.totalLatency,
+                                redisSession.stopwatch.ElapsedTicks - completedBatch.startTimes[batchOffset]);
                             batchOffset++;
                         }
                     }
@@ -182,6 +191,9 @@ namespace dpredis
 
         private DprClientSession dprSession;
 
+        public long totalLatency;
+        private Stopwatch stopwatch;
+
         public DpredisClientSession(DprClient client,
             Guid id,
             ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable,
@@ -195,6 +207,7 @@ namespace dpredis
             this.routingTable = routingTable;
             conns = new Dictionary<Worker, Socket>();
             dprSession = client.GetSession(id);
+            stopwatch = Stopwatch.StartNew();
         }
         
         private Socket GetProxyConnection(Worker worker)
@@ -251,7 +264,7 @@ namespace dpredis
             Interlocked.Increment(ref numOutstanding);
             var tcs = new TaskCompletionSource<(long, string)>();
             var batch = GetCurrentBatch(worker);
-            batch.AddGetCommand(key, tcs);
+            batch.AddGetCommand(key, tcs, stopwatch.ElapsedTicks);
             if (batch.CommandCount() == batchSize)
                 IssueBatch(worker, batch);
             return tcs.Task;
@@ -262,7 +275,7 @@ namespace dpredis
             Interlocked.Increment(ref numOutstanding);
             var tcs = new TaskCompletionSource<(long, string)>();
             var batch = GetCurrentBatch(worker);
-            batch.AddSetCommand(key, value, tcs);
+            batch.AddSetCommand(key, value, tcs, stopwatch.ElapsedTicks);
             if (batch.CommandCount() == batchSize)
                 IssueBatch(worker, batch);
             return tcs.Task;

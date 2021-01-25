@@ -87,7 +87,7 @@ namespace dpredis.ycsb
             var setupFinished = new CountdownEvent(clusterConfig.workers.Count);
             var clientCountdown = new CountdownEvent(clusterConfig.clients.Count);
             var shutdown = new ManualResetEventSlim();
-            long totalOps = 0;
+            long totalOps = 0, totalLatencies=0;
             var stopwatch = new Stopwatch();
 
             foreach (var memberInfo in clusterConfig.clients)
@@ -120,10 +120,11 @@ namespace dpredis.ycsb
                         if (message == null) break;
                         if (message.type == 1)
                         {
-                            var ops = (long) message.content;
+                            var (ops, lat) = (ValueTuple<long, long>) message.content;
                             lock (this)
                             {
                                 totalOps += ops;
+                                totalLatencies += lat;
                             }
                             clientCountdown.Signal();
                             shutdown.Wait();
@@ -174,6 +175,7 @@ namespace dpredis.ycsb
             foreach (var thread in handlerThreads)
                 thread.Join();
             Console.WriteLine((double) totalOps / stopwatch.ElapsedMilliseconds);
+            Console.WriteLine((double) totalLatencies / Stopwatch.Frequency * 1000 / totalOps);
         }
     }
 }
