@@ -246,7 +246,6 @@ namespace dpredis
             seqNum += batch.CommandCount();
             dprSession.IssueBatch(batch.CommandCount(), worker, out var dprBytes);
             var sock = GetProxyConnection(worker);
-            sock.SendDpredisRequest(dprBytes, batch.Body());
             unsafe
             {
                 fixed (byte* header = dprBytes)
@@ -254,6 +253,7 @@ namespace dpredis
                     outstandingBatches.TryAdd(Unsafe.AsRef<DprBatchRequestHeader>(header).batchId, batch);
                 }
             }
+            sock.SendDpredisRequest(dprBytes, batch.Body());
             batch = batchPool.Checkout();
             batch.Reset();
             batches[worker] = batch;
