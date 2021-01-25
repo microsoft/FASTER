@@ -156,23 +156,27 @@ namespace dpredis
                 fixed (byte* b = buf)
                 {
                     ref var header = ref Unsafe.AsRef<DprBatchResponseHeader>(b + offset);
-                    dprSession.ResolveBatch(ref header);
+                    // Has to be before resolving the batch, as that operation releases the batch id for recycling
                     var completedBatch = redisSession.GetOutstandingBatch(header.batchId);
-                    var batchOffset = 0;
-                    for (var i = header.Size(); i < size; i++)
+                    // batch result should be ignored if DPR disallows inspection
+                    if (dprSession.ResolveBatch(ref header))
                     {
-                        if (parser.ProcessChar(offset + i, buf))
+                        // Parse the batch result
+                        var batchOffset = 0;
+                        for (var i = header.Size(); i < size; i++)
                         {
-                            var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, offset + i - parser.currentMessageStart);
-                            completedBatch.GetTcs()[batchOffset].SetResult(ValueTuple.Create(completedBatch.StartSeq + batchOffset, Encoding.ASCII.GetString(message)));
-                            parser.currentMessageStart = -1;
-                            Interlocked.Add(ref redisSession.totalLatency,
-                                redisSession.stopwatch.ElapsedTicks - completedBatch.startTimes[batchOffset]);
-                            batchOffset++;
+                            if (parser.ProcessChar(offset + i, buf))
+                            {
+                                var message = new ReadOnlySpan<byte>(buf, parser.currentMessageStart, 
+                                    offset + i - parser.currentMessageStart);
+                                completedBatch.GetTcs()[batchOffset].SetResult(ValueTuple.Create(completedBatch.StartSeq + batchOffset, Encoding.ASCII.GetString(message)));
+                                parser.currentMessageStart = -1;
+                                Interlocked.Add(ref redisSession.totalLatency,
+                                    redisSession.stopwatch.ElapsedTicks - completedBatch.startTimes[batchOffset]);
+                                batchOffset++;
+                            }
                         }
                     }
-                    // Should be a one-to-one mapping between requests and reply
-                    Debug.Assert(batchOffset == completedBatch.GetTcs().Count);
                     redisSession.ReturnResolvedBatch(completedBatch);
                 }
             }
