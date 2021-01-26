@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using FASTER.core;
+using FASTER.iibdpr;
 
 namespace FASTER.libdpr
 {
@@ -16,17 +17,20 @@ namespace FASTER.libdpr
         private ClientVersionTracker versionTracker;
         private CommitPoint currentCommitPoint;
         
-        private HashSet<WorkerVersion> deps;
+        private LightDependencySet deps;
         private long clientVersion = 1, clientWorldLine = 0;
         private ClientBatchTracker batchTracker;
-        public DprClientSession(Guid guid, DprClient dprClient)
+
+        private bool trackCommits;
+        public DprClientSession(Guid guid, DprClient dprClient, bool trackCommits)
         {
             this.guid = guid;
             this.dprClient = dprClient;
             versionTracker = new ClientVersionTracker();
             currentCommitPoint = new CommitPoint();
-            deps = new HashSet<WorkerVersion>();
+            deps = new LightDependencySet();
             batchTracker = new ClientBatchTracker();
+            this.trackCommits = trackCommits;
         }
 
         // Should only be called on client threads, as it conveys worldline changes through exceptions.
@@ -46,6 +50,7 @@ namespace FASTER.libdpr
 
         public CommitPoint GetCommitPoint()
         {
+            if (!trackCommits) throw new NotSupportedException();
             CheckWorldlineChange();
             if (Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _))
                 ComputeCurrentCommitPoint();
@@ -56,14 +61,14 @@ namespace FASTER.libdpr
         {
             lock (deps)
             {
-                header.numDeps = deps.Count;
                 fixed (byte* d = header.deps)
                 {
-                    var offset = 0;
-                    foreach (var dep in deps)
+                    header.numDeps = 0;
+                    for (var i = 0; i < deps.DependentVersions.Length; i++)
                     {
-                        Unsafe.AsRef<WorkerVersion>(d + offset) = dep;
-                        offset += sizeof(WorkerVersion);
+                        if (deps.DependentVersions[i] == LightDependencySet.NoDependency) continue;
+                        Unsafe.AsRef<WorkerVersion>(d + header.numDeps * sizeof(WorkerVersion)) = new WorkerVersion(new Worker(i), deps.DependentVersions[i]);
+                        header.numDeps++;
                     }
                 }
             }
@@ -153,8 +158,11 @@ namespace FASTER.libdpr
                             if (version == 0) continue;
                             // Otherwise, update client version and add to tracking
                             maxVersion = Math.Max(maxVersion, version);
-                            versionTracker.Add(batchInfo.startSeqNum + offset,
-                                new WorkerVersion(batchInfo.workerId, version));
+                            if (trackCommits)
+                            {
+                                versionTracker.Add(batchInfo.startSeqNum + offset,
+                                    new WorkerVersion(batchInfo.workerId, version));
+                            }
                             offset++;
                         }
 
@@ -170,11 +178,14 @@ namespace FASTER.libdpr
 
                         // Remove all deps to save space. Future ops will implicitly depend on these by transitivity
                         for (var i = 0; i < request.numDeps; i++)
-                            deps.Remove(Unsafe.AsRef<WorkerVersion>(d + sizeof(WorkerVersion) * i));
+                        {
+                            ref var wv = ref Unsafe.AsRef<WorkerVersion>(d + sizeof(WorkerVersion) * i);
+                            deps.UnsafeRemove(wv.Worker, wv.Version);
+                        }
 
                         // Add largest worker-version as dependency for future ops. Must add after removal in case this op has
                         // a version self-dependency (very likely) that would otherwise be erased
-                        deps.Add(new WorkerVersion(batchInfo.workerId, maxVersion));
+                        deps.Update(batchInfo.workerId, maxVersion);
                     }
                 }
                 // Free up this batch's tracking space

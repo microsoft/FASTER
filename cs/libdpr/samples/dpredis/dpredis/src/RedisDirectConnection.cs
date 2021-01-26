@@ -44,7 +44,6 @@ namespace dpredis
         public RedisDirectConnection(RedisShard shard, int batchSize = 1024, int windowSize = -1, Action<string> responseHandler = null)
         {
             socket = MessageUtil.GetNewRedisConnection(shard);
-            socket.NoDelay = true;
             var redisSaea = new SocketAsyncEventArgs();
             redisSaea.SetBuffer(new byte[RedisClientBuffer.MAX_BUFFER_SIZE], 0, RedisClientBuffer.MAX_BUFFER_SIZE);
             redisSaea.UserToken = new ConnState(this, responseHandler);

@@ -48,9 +48,9 @@ namespace FASTER.libdpr
 
         internal long GetDprViewNumber() => dprViewNumber;
 
-        public DprClientSession GetSession(Guid guid)
+        public DprClientSession GetSession(Guid guid, bool trackCommits)
         {
-            return sessions.GetOrAdd(guid, id => new DprClientSession(id, this));
+            return sessions.GetOrAdd(guid, id => new DprClientSession(id, this, trackCommits));
         }
     }
     

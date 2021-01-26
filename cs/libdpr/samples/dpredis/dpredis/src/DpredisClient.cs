@@ -213,7 +213,7 @@ namespace dpredis
             outstandingBatches = new ConcurrentDictionary<int, DpredisBatch>();
             this.routingTable = routingTable;
             conns = new Dictionary<Worker, Socket>();
-            dprSession = client.GetSession(id);
+            dprSession = client.GetSession(id, false);
             stopwatch = Stopwatch.StartNew();
         }
         

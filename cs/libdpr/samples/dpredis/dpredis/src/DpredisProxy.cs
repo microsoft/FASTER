@@ -105,7 +105,6 @@ namespace dpredis
             clientSaea.SetBuffer(new byte[batchMaxSize], 0, batchMaxSize);
             clientSaea.UserToken = new ProxyClientConnState(middleMan);
             clientSaea.Completed += MessageUtil.AbstractDprConnState.RecvEventArg_Completed;
-            e.AcceptSocket.NoDelay = true;
             // If the client already have packets, avoid handling it here on the handler thread so we don't block future accepts.
             if (!e.AcceptSocket.ReceiveAsync(clientSaea))
                 Task.Run(() =>  MessageUtil.AbstractDprConnState.RecvEventArg_Completed(null, clientSaea));
