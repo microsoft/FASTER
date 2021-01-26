@@ -43,10 +43,23 @@ namespace dpredis.ycsb
             var message = clientSocket.ReceiveBenchmarkMessage();
             Debug.Assert(message.type == 1);
             var config = (BenchmarkConfiguration) message.content;
-            if (config.useProxy)
-                ExecuteWithProxy(config, clientSocket);
+            if (config.proxyType.Equals("none"))
+            {
+                ExecuteDirectly(config, clientSocket, false);
+            }
+            else if (config.proxyType.Equals("dpr"))
+            {
+                ExecuteWithDprProxy(config, clientSocket);
+
+            }
+            else if (config.proxyType.Equals("simple"))
+            {
+                ExecuteDirectly(config, clientSocket, true);
+            }
             else
-                ExecuteDirectly(config, clientSocket);
+            {
+                throw new NotImplementedException();
+            }
             
             clientSocket.Close();
         }
@@ -56,7 +69,7 @@ namespace dpredis.ycsb
             return new Worker((long) (key >> 61));
         }
 
-        private void ExecuteDirectly(BenchmarkConfiguration config, Socket coordinatorConn)
+        private void ExecuteDirectly(BenchmarkConfiguration config, Socket coordinatorConn, bool useSimpleProxy)
         {
             var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
             var routingTable = new ConcurrentDictionary<Worker, (string, int, RedisShard)>();
@@ -82,7 +95,7 @@ namespace dpredis.ycsb
                 var x = idx;
                 execThreads[idx] = new Thread(() =>
                 {
-                    var s = client.NewDirectSession(config.batchSize);
+                    var s = useSimpleProxy ? client.NewSimpleProxySession(config.batchSize) : client.NewDirectSession(config.batchSize);
                     localSessions[x] = s;
 
                     var rng = new RandomGenerator((uint) (workerId * YcsbCoordinator.clusterConfig.clients.Count + x));
@@ -153,7 +166,7 @@ namespace dpredis.ycsb
         }
         
 
-        private void ExecuteWithProxy(BenchmarkConfiguration config, Socket coordinatorConn)
+        private void ExecuteWithDprProxy(BenchmarkConfiguration config, Socket coordinatorConn)
         {
             var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
             var routingTable = new ConcurrentDictionary<Worker, (string, int, RedisShard)>();
@@ -179,7 +192,7 @@ namespace dpredis.ycsb
                 var x = idx;
                 execThreads[idx] = new Thread(() =>
                 {
-                    var s = client.NewSession(config.batchSize);
+                    var s = client.NewDprSession(config.batchSize);
                     localSessions[x] = s;
 
                     var rng = new RandomGenerator((uint) (workerId * YcsbCoordinator.clusterConfig.clients.Count + x));

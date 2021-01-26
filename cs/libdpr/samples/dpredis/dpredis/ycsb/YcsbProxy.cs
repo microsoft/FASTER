@@ -52,20 +52,44 @@ namespace dpredis.ycsb
             var redisBackend = new RedisStateObject(info.redisBackend);
             var dprManager = new DprServer<RedisStateObject, long>(
                 new TestDprFinder(config.dprFinderIP, config.dprFinderPort), me, redisBackend, config.checkpointMilli);
-            var proxy = new DpredisProxy(info.ip, info.port, dprManager);
-            proxy.StartServer();
-            if (config.load)
+            if (config.proxyType.Equals("none"))
             {
-                LoadData(config, coordinatorConn);
-                Setup(info.redisBackend);
+                coordinatorConn.SendBenchmarkControlMessage("setup finished");
+                coordinatorConn.ReceiveBenchmarkMessage();
+                coordinatorConn.ReceiveBenchmarkMessage();
             }
+            else if (config.proxyType.Equals("dpr"))
+            {
+                var proxy = new DpredisProxy(info.ip, info.port, dprManager);
+                proxy.StartServer();
+                if (config.load)
+                {
+                    LoadData(config, coordinatorConn);
+                    Setup(info.redisBackend);
+                }
 
-            coordinatorConn.SendBenchmarkControlMessage("setup finished");
-            coordinatorConn.ReceiveBenchmarkMessage();
-            dprManager.Start();
-            coordinatorConn.ReceiveBenchmarkMessage();
-            dprManager.End();
-            proxy.StopServer();
+                coordinatorConn.SendBenchmarkControlMessage("setup finished");
+                coordinatorConn.ReceiveBenchmarkMessage();
+                dprManager.Start();
+                coordinatorConn.ReceiveBenchmarkMessage();
+                dprManager.End();
+                proxy.StopServer();
+            }
+            else if (config.proxyType.Equals("simple"))
+            {
+                var proxy = new SimpleRedisProxy(info.ip, info.port, info.redisBackend);
+                proxy.StartServer();
+                coordinatorConn.SendBenchmarkControlMessage("setup finished");
+                coordinatorConn.ReceiveBenchmarkMessage();
+                dprManager.Start();
+                coordinatorConn.ReceiveBenchmarkMessage();
+                dprManager.End();
+                proxy.StopServer();
+            }
+            else
+            {
+                throw new NotImplementedException();
+            }
         }
 
         #region Load Data

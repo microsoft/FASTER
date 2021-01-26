@@ -64,23 +64,30 @@ namespace dpredis
         
         public long totalLatency = 0;
         private Stopwatch stopwatch;
+        private bool useSimpleProxy;
         
         public RedisDirectConnectionSession(
             ConcurrentDictionary<Worker, (string, int, RedisShard)> routingTable,
-            int batchSize)
+            int batchSize,
+            bool useSimpleProxy)
         {
             this.batchSize = batchSize;
             outstandingOps = new Dictionary<Worker, ConcurrentQueue<(TaskCompletionSource<string>, long)>>();
             this.routingTable = routingTable;
             conns = new Dictionary<Worker, RedisDirectConnection>();
             stopwatch = Stopwatch.StartNew();
+            this.useSimpleProxy = useSimpleProxy;
         }
         
          private RedisDirectConnection GetDirectConnection(Worker worker)
         {
             if (conns.TryGetValue(worker, out var result)) return result;
             outstandingOps.Add(worker, new ConcurrentQueue<(TaskCompletionSource<string>, long)>());
-            result = new RedisDirectConnection(routingTable[worker].Item3, batchSize, -1, s =>
+            var redisBackend = useSimpleProxy
+                ? new RedisShard {ip = routingTable[worker].Item1, port = routingTable[worker].Item2}
+                : routingTable[worker].Item3;
+            if (useSimpleProxy) 
+            result = new RedisDirectConnection(redisBackend, batchSize, -1, s =>
             {
                 if (outstandingOps[worker].TryDequeue(out var pair))
                 {
@@ -343,10 +350,15 @@ namespace dpredis
 
         public RedisDirectConnectionSession NewDirectSession(int batchSize)
         {
-            return new RedisDirectConnectionSession(routingTable, batchSize);
+            return new RedisDirectConnectionSession(routingTable, batchSize, false);
+        }
+        
+        public RedisDirectConnectionSession NewSimpleProxySession(int batchSize)
+        {
+            return new RedisDirectConnectionSession(routingTable, batchSize, true);
         }
 
-        public DpredisClientSession NewSession(int batchSize)
+        public DpredisClientSession NewDprSession(int batchSize)
         {
             return new DpredisClientSession(dprClient, Guid.NewGuid(), routingTable, batchSize);
         }

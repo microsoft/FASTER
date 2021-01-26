@@ -18,7 +18,8 @@ namespace dpredis.ycsb
         public int batchSize;
         public string dprFinderIP;
         public int dprFinderPort;
-        public bool load, useProxy;
+        public bool load;
+        public string proxyType;
 
         public override string ToString()
         {

@@ -102,7 +102,7 @@ namespace dpredis
 
             // Set up listening events on client socket
             var clientSaea = new SocketAsyncEventArgs();
-            redisSaea.SetBuffer(new byte[1 << 20], 0, 1 << 20);
+            clientSaea.SetBuffer(new byte[1 << 20], 0, 1 << 20);
             clientSaea.UserToken = new ForwardSocketConn(e.AcceptSocket, redisConn);
             clientSaea.Completed += ForwardSocketConn.RecvEventArg_Completed;
             // If the client already have packets, avoid handling it here on the handler thread so we don't block future accepts.

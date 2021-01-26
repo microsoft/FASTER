@@ -61,8 +61,8 @@ namespace dpredis.ycsb
         [Option('l', "load_data", Required = false, Default = false)]
         public bool LoadDatabase { get; set; }
         
-        [Option('p', "proxy", Required = false, Default = false)]
-        public bool UseProxy { get; set; }
+        [Option('p', "proxy", Required = false, Default = "none")]
+        public string ProxyType { get; set; }
     }
 
     class Program
@@ -109,7 +109,7 @@ namespace dpredis.ycsb
                     dprFinderIP = "10.0.1.7",
                     dprFinderPort = 15445,
                     load = options.LoadDatabase,
-                    useProxy = options.UseProxy
+                    proxyType = options.ProxyType
                     
                 });
                 c.Run();
