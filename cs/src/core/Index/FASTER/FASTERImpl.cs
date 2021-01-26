@@ -433,7 +433,7 @@ namespace FASTER.core
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version,
-                               true, false, false,
+                               tombstone:false, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key, ref value,
@@ -759,7 +759,7 @@ namespace FASTER.core
                 BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
-                                true, false, false,
+                                tombstone:false, invalidBit:false,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
 
@@ -1057,8 +1057,7 @@ namespace FASTER.core
                 BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                               sessionCtx.version,
-                               true, true, false,
+                               sessionCtx.version, tombstone:true, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
 
@@ -1313,7 +1312,7 @@ namespace FASTER.core
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
-                                    true, false, false,
+                                    tombstone:false, invalidBit:false,
                                     entry.Address);
                 readcache.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key,
@@ -1326,7 +1325,7 @@ namespace FASTER.core
                 BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
-                               true, false, false,
+                               tombstone:false, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key,
@@ -1458,7 +1457,7 @@ namespace FASTER.core
                 BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
-                               true, false, false,
+                               tombstone:false, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))

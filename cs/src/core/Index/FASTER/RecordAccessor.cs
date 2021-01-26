@@ -83,6 +83,20 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Version(long logicalAddress) => GetRecordInfo(logicalAddress).Version;
 
+        /// <summary>
+        /// Locks the RecordInfo at address
+        /// </summary>
+        /// <param name="logicalAddress">The address to examine</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SpinLock(long logicalAddress) => GetRecordInfo(logicalAddress).SpinLock();
+
+        /// <summary>
+        /// Unlocks the RecordInfo at address
+        /// </summary>
+        /// <param name="logicalAddress">The address to examine</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Unlock(long logicalAddress) => GetRecordInfo(logicalAddress).Unlock();
+
         #endregion public interface
     }
 }

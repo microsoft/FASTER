@@ -6,8 +6,10 @@
 //#define RECORD_INFO_WITH_PIN_COUNT
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -18,7 +20,7 @@ namespace FASTER.core
 #endif
     public unsafe struct RecordInfo
     {
-        public const int kFinalBitOffset = 48;
+        public const int kLatchBitOffset = 48;
 
         public const int kTombstoneBitOffset = 49;
 
@@ -34,7 +36,7 @@ namespace FASTER.core
 
         public const long kPreviousAddressMask = (1L << 48) - 1;
 
-        public const long kFinalBitMask = (1L << kFinalBitOffset);
+        public const long kLatchBitMask = (1L << kLatchBitOffset);
 
         public const long kTombstoneMask = (1L << kTombstoneBitOffset);
 
@@ -51,10 +53,9 @@ namespace FASTER.core
         [FieldOffset(sizeof(long))]
         private int access_data;
 
-        public static void WriteInfo(RecordInfo* info, int checkpointVersion, bool final, bool tombstone, bool invalidBit, long previousAddress)
+        public static void WriteInfo(RecordInfo* info, int checkpointVersion, bool tombstone, bool invalidBit, long previousAddress)
         {
             info->word = default(long);
-            info->Final = final;
             info->Tombstone = tombstone;
             info->Invalid = invalidBit;
             info->PreviousAddress = previousAddress;
@@ -104,10 +105,9 @@ namespace FASTER.core
         [FieldOffset(0)]
         private long word;
 
-        public static void WriteInfo(ref RecordInfo info, int checkpointVersion, bool final, bool tombstone, bool invalidBit, long previousAddress)
+        public static void WriteInfo(ref RecordInfo info, int checkpointVersion, bool tombstone, bool invalidBit, long previousAddress)
         {
             info.word = default;
-            info.Final = final;
             info.Tombstone = tombstone;
             info.Invalid = invalidBit;
             info.PreviousAddress = previousAddress;
@@ -144,6 +144,65 @@ namespace FASTER.core
             throw new InvalidOperationException();
         }
 #endif
+        /// <summary>
+        /// The RecordInfo locked by this thread, if any.
+        /// </summary>
+        [ThreadStatic]
+        internal static RecordInfo* threadLockedRecord;
+
+        /// <summary>
+        /// The number of times the current thread has (re-)entered the lock.
+        /// </summary>
+        [ThreadStatic]
+        internal static int threadLockedRecordEntryCount;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SpinLock()
+        {
+            // Check for a re-entrant lock.
+            if (threadLockedRecord == (RecordInfo*)Unsafe.AsPointer(ref this))
+            {
+                Debug.Assert(threadLockedRecordEntryCount > 0);
+                ++threadLockedRecordEntryCount;
+                return;
+            }
+
+            // RecordInfo locking is intended for use in concurrent callbacks only (ConcurrentReader, ConcurrentWriter, InPlaceUpdater),
+            // so only the RecordInfo for that callback should be locked. A different RecordInfo being locked implies a missing Unlock.
+            Debug.Assert(threadLockedRecord == null);
+            Debug.Assert(threadLockedRecordEntryCount == 0);
+            while (true)
+            {
+                long expected_word = word;
+                if ((expected_word & kLatchBitMask) == 0)
+                {
+                    var found_word = Interlocked.CompareExchange(ref word, expected_word | kLatchBitMask, expected_word);
+                    if (found_word == expected_word)
+                    {
+                        threadLockedRecord = (RecordInfo*)Unsafe.AsPointer(ref this);
+                        threadLockedRecordEntryCount = 1;
+                        return;
+                    }
+                }
+                Thread.Yield();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Unlock()
+        {
+            Debug.Assert(threadLockedRecord == (RecordInfo*)Unsafe.AsPointer(ref this));
+            if (threadLockedRecord == (RecordInfo*)Unsafe.AsPointer(ref this))
+            {
+                Debug.Assert(threadLockedRecordEntryCount > 0);
+                if (--threadLockedRecordEntryCount == 0)
+                {
+                    word &= ~kLatchBitMask;
+                    threadLockedRecord = null;
+                }
+            }
+        }
+
         public bool IsNull()
         {
             return word == 0;
@@ -165,25 +224,6 @@ namespace FASTER.core
                 else
                 {
                     word &= ~kTombstoneMask;
-                }
-            }
-        }
-
-        public bool Final
-        {
-            get
-            {
-                return (word & kFinalBitMask) > 0;
-            }
-            set
-            {
-                if (value)
-                {
-                    word |= kFinalBitMask;
-                }
-                else
-                {
-                    word &= ~kFinalBitMask;
                 }
             }
         }
