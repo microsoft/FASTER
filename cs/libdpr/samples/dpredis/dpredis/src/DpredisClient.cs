@@ -49,6 +49,7 @@ namespace dpredis
             clientBuffer.Reset();
             // Have to create new one. Old one is referred to by responses.
             tcs.Clear();
+            startTimes.Clear();
         }
     }
 

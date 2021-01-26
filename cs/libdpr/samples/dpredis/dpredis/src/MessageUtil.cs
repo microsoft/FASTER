@@ -120,6 +120,7 @@ namespace dpredis
             var addr = shard.ip == null ? Dns.GetHostAddresses(shard.name)[0] : IPAddress.Parse(shard.ip);
             var redisBackend = new IPEndPoint(addr, shard.port);
             var socket = new Socket(redisBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            socket.NoDelay = true;
             socket.Connect(redisBackend);
             if (shard.auth != null)
             {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Sockets;
@@ -20,8 +21,7 @@ namespace dpredis
     internal class RedisMiddleMan : IDisposable
     {
         internal Socket clientSocket, redisSocket;
-        private SemaphoreSlim queueLatch;
-        private Queue<DpredisBatchHandle> outstandingBatches;
+        private ConcurrentQueue<DpredisBatchHandle> outstandingBatches;
         private SimpleObjectPool<DpredisBatchHandle> batchHandlePool;
         private DprServer<RedisStateObject, long> dprServer;
 
@@ -30,17 +30,14 @@ namespace dpredis
         {
             this.clientSocket = clientSocket;
             this.redisSocket = redisSocket;
-            queueLatch = new SemaphoreSlim(1, 1);
-            outstandingBatches = new Queue<DpredisBatchHandle>();
+            outstandingBatches = new ConcurrentQueue<DpredisBatchHandle>();
             this.batchHandlePool = batchHandlePool;
             this.dprServer = dprServer;
         }
 
         public void Dispose()
         {
-            queueLatch.Wait();
-            if (outstandingBatches.Count != 0) throw new Exception();
-            queueLatch.Release();
+            if (!outstandingBatches.IsEmpty) throw new Exception();
             redisSocket.Dispose();
             clientSocket.Dispose();
         }
@@ -73,9 +70,7 @@ namespace dpredis
                 }
 
                 // Otherwise, add to tracking and send to redis
-                queueLatch.Wait();
                 outstandingBatches.Enqueue(batchHandle);
-                queueLatch.Release();
                 var version = dprServer.StateObject().VersionScheme().Enter();
                 batchHandle.tracker.MarkOperationRangesVersion(0, batchHandle.batchSize, version);
                 redisSocket.Send(new Span<byte>(buf, offset + requestHeader.Size(), size - requestHeader.Size()));
@@ -84,24 +79,19 @@ namespace dpredis
 
         internal bool HandleNewResponse(byte[] buffer, int batchStart, int messageStart, int messageEnd)
         {
-            queueLatch.Wait();
-            var currentBatch = outstandingBatches.Peek();
+            var ret = outstandingBatches.TryPeek(out var currentBatch);
+            Debug.Assert(ret);
             currentBatch.messagesLeft--;
             
             // Still more responses left in the batch
-            if (currentBatch.messagesLeft != 0)
-            {
-                queueLatch.Release();
-                return false;
-            }
+            if (currentBatch.messagesLeft != 0) return false;
             // Otherwise, an entire batch has been acked. Signal batch finish to dpr and forward reply to client
-            outstandingBatches.Dequeue();
-            queueLatch.Release();
+            outstandingBatches.TryDequeue(out _);
             dprServer.StateObject().VersionScheme().Leave();
-            var ret = dprServer.SignalBatchFinish(
+            var s = dprServer.SignalBatchFinish(
                 new Span<byte>(currentBatch.requestHeader),
                 new Span<byte>(currentBatch.responseHeader), currentBatch.tracker);
-            Debug.Assert(ret == 0);
+            Debug.Assert(s == 0);
             clientSocket.SendDpredisResponse(new Span<byte>(currentBatch.responseHeader),
                 new Span<byte>(buffer, batchStart, messageEnd - batchStart));
             batchHandlePool.Return(currentBatch);
