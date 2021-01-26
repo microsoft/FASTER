@@ -99,8 +99,9 @@ namespace dpredis
             Interlocked.Increment(ref numOutstanding);
 
             var tcs = new TaskCompletionSource<string>();
-            GetDirectConnection(worker).SendGetCommand(key);
+            var conn = GetDirectConnection(worker);
             outstandingOps[worker].Enqueue(ValueTuple.Create(tcs, stopwatch.ElapsedTicks));
+            conn.SendGetCommand(key);
             
             return tcs.Task;
         }
@@ -112,8 +113,9 @@ namespace dpredis
             Interlocked.Increment(ref numOutstanding);
 
             var tcs = new TaskCompletionSource<string>();
-            GetDirectConnection(worker).SendSetCommand(key, value);
+            var conn = GetDirectConnection(worker);
             outstandingOps[worker].Enqueue(ValueTuple.Create(tcs, stopwatch.ElapsedTicks));
+            conn.SendSetCommand(key, value);
             
             return tcs.Task;
         }

@@ -33,9 +33,7 @@ namespace dpredis
         private int outstandingCount = 0;
 
         private int batchSize, windowSize;
-        private Action<string> responseHandler;
-
-
+        
         public void Dispose()
         {
             Flush();
@@ -56,7 +54,6 @@ namespace dpredis
             clientBuffer = new RedisClientBuffer();
             this.batchSize = batchSize;
             this.windowSize = windowSize;
-            this.responseHandler = responseHandler;
         }
 
         public void Flush()
