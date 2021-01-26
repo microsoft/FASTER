@@ -116,7 +116,8 @@ namespace FASTER.core
                         }
 
                         // This is not called when looking up by address, so we do not set pendingContext.recordInfo.
-                        fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output, logicalAddress);
+                        // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
+                        fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output, Constants.kInvalidAddress);
                         return OperationStatus.SUCCESS;
                     }
                 }
