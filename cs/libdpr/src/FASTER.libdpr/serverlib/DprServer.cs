@@ -228,5 +228,10 @@ namespace FASTER.libdpr
             trackers.Return(tracker);
             return 0;
         }
+
+        public void ForceCheckpoint(long targetVersion = -1)
+        {
+            stateObject.BeginCheckpoint(targetVersion);
+        }
     }
 }

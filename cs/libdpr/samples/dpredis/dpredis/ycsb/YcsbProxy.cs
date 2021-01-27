@@ -50,17 +50,21 @@ namespace dpredis.ycsb
         {
             var me = new Worker(workerId);
             var redisBackend = new RedisStateObject(info.redisBackend);
-            var dprManager = new DprServer<RedisStateObject, long>(
-                new TestDprFinder(config.dprFinderIP, config.dprFinderPort), me, redisBackend, config.checkpointMilli);
+            var dprServer = new DprServer<RedisStateObject, long>(
+                new TestDprFinder(config.dprFinderIP, config.dprFinderPort), me, redisBackend, -1);
             if (config.proxyType.Equals("none"))
             {
                 coordinatorConn.SendBenchmarkControlMessage("setup finished");
                 coordinatorConn.ReceiveBenchmarkMessage();
+                var stopwatch = Stopwatch.StartNew();
+                while (stopwatch.ElapsedMilliseconds < 1000)
+                    Thread.Sleep(10);
+                dprServer.ForceCheckpoint();
                 coordinatorConn.ReceiveBenchmarkMessage();
             }
             else if (config.proxyType.Equals("dpr"))
             {
-                var proxy = new DpredisProxy(info.ip, info.port, dprManager);
+                var proxy = new DpredisProxy(info.ip, info.port, dprServer);
                 proxy.StartServer();
                 if (config.load)
                 {
@@ -70,9 +74,13 @@ namespace dpredis.ycsb
 
                 coordinatorConn.SendBenchmarkControlMessage("setup finished");
                 coordinatorConn.ReceiveBenchmarkMessage();
-                dprManager.Start();
+                dprServer.Start();
+                var stopwatch = Stopwatch.StartNew();
+                while (stopwatch.ElapsedMilliseconds < 1000)
+                    Thread.Sleep(10);
+                dprServer.ForceCheckpoint();
                 coordinatorConn.ReceiveBenchmarkMessage();
-                dprManager.End();
+                dprServer.End();
                 proxy.StopServer();
             }
             else if (config.proxyType.Equals("simple"))
@@ -81,9 +89,13 @@ namespace dpredis.ycsb
                 proxy.StartServer();
                 coordinatorConn.SendBenchmarkControlMessage("setup finished");
                 coordinatorConn.ReceiveBenchmarkMessage();
-                dprManager.Start();
+                dprServer.Start();
+                var stopwatch = Stopwatch.StartNew();
+                while (stopwatch.ElapsedMilliseconds < 1000)
+                    Thread.Sleep(10);
+                dprServer.ForceCheckpoint();
                 coordinatorConn.ReceiveBenchmarkMessage();
-                dprManager.End();
+                dprServer.End();
                 proxy.StopServer();
             }
             else

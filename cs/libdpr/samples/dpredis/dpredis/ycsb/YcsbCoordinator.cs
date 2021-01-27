@@ -13,7 +13,6 @@ namespace dpredis.ycsb
         public int clientThreadCount;
         public string distribution;
         public int readPercent;
-        public int checkpointMilli;
         public int windowSize;
         public int batchSize;
         public string dprFinderIP;
@@ -26,7 +25,6 @@ namespace dpredis.ycsb
             return $"{nameof(clientThreadCount)}: {clientThreadCount}," +
                    $"{nameof(distribution)}: {distribution}," +
                    $"{nameof(readPercent)}: {readPercent}," +
-                   $"{nameof(checkpointMilli)}: {checkpointMilli}," +
                    $"{nameof(windowSize)}: {windowSize}," +
                    $"{nameof(batchSize)}: {batchSize}";
         }

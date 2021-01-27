@@ -20,12 +20,9 @@ namespace dpredis.ycsb
 
         public const int kFileChunkSize = 4096;
         public const long kChunkSize = 640;
-        public const int kRunSeconds = 30;
+        public const int kRunSeconds = 300;
 
         public const int kWorkerIdBits = 3;
-
-        public const bool kCollectLatency = true;
-        public const bool kTriggerRecovery = false;
     }
     
     class Options
@@ -51,9 +48,6 @@ namespace dpredis.ycsb
 
         [Option('n', "worker_id", Required = false, Default = 0)]
         public int WorkerId { get; set; }
-
-        [Option('i', "checkpoint_interval", Required = false, Default = -1)]
-        public int CheckpointInterval { get; set; }
 
         [Option('w', "window_size", Required = false, Default = 4096)]
         public int WindowSize { get; set; }
@@ -103,7 +97,6 @@ namespace dpredis.ycsb
                     clientThreadCount = options.ClientThreadCount,
                     distribution = options.Distribution,
                     readPercent = options.ReadPercent,
-                    checkpointMilli = options.CheckpointInterval, // no checkpoints
                     windowSize = options.WindowSize,
                     batchSize = options.BatchSize,
                     dprFinderIP = "10.0.1.7",

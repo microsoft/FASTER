@@ -86,7 +86,6 @@ namespace dpredis
             var redisBackend = useSimpleProxy
                 ? new RedisShard {ip = routingTable[worker].Item1, port = routingTable[worker].Item2}
                 : routingTable[worker].Item3;
-            if (useSimpleProxy) 
             result = new RedisDirectConnection(redisBackend, batchSize, -1, s =>
             {
                 if (outstandingOps[worker].TryDequeue(out var pair))

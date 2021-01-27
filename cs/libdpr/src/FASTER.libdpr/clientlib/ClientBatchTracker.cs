@@ -66,7 +66,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public ClientBatchTracker(int preallocateNumber = 1024)
+        public ClientBatchTracker(int preallocateNumber = 8192)
         {
             buffers = new BatchInfo[preallocateNumber];
             freeBuffers = new ConcurrentQueue<int>();
