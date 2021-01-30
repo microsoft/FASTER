@@ -346,10 +346,6 @@ namespace FASTER.test.recovery
                 var status = s1.Read(ref key, ref output);
                 if (status != Status.PENDING)
                     Assert.IsTrue(status == Status.OK && output == key);
-                else
-                {
-
-                }
             }
             s1.CompletePending(true);
 
