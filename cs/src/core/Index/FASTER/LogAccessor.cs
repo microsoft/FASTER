@@ -3,6 +3,7 @@
 
 using System;
 using System.Reflection;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -82,7 +83,7 @@ namespace FASTER.core
                 fht.epoch.Resume();
                 allocator.ShiftHeadAddress(newHeadAddress);
                 fht.epoch.Suspend();
-                while (wait && allocator.SafeHeadAddress < newHeadAddress) ;
+                while (wait && allocator.SafeHeadAddress < newHeadAddress) Thread.Yield();
             }
             else
             {
@@ -137,7 +138,7 @@ namespace FASTER.core
                 fht.epoch.Suspend();
 
                 // Wait for flush to complete
-                while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) ;
+                while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) Thread.Yield();
             }
             else
             {

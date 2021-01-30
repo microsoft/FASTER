@@ -118,7 +118,7 @@ var session = store.For(new Functions()).NewSession<Functions>();
 
 As with the `IFunctions` and `IAdvancedFunctions` interfaces, there are separate, non-inheriting session classes that provide identical methods: `ClientSession` is returned by `NewSession` for a `Functions` class that implements `IFunctions`, and `AdvancedClientSession` is returned by `NewSession` for a `Functions` class that implements `IAdvancedFunctions`.
 
-You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports sync and async versions of operations. The basic forms of these operations are described below; additional overloads are available.
+You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions of read and RMW (upserts do not go async by default). The basic forms of these operations are described below; additional overloads are available.
 
 #### Read
 
@@ -133,7 +133,6 @@ await session.ReadAsync(key, input);
 ```cs
 var status = session.Upsert(ref key, ref value);
 var status = session.Upsert(ref key, ref value, ref context, ref serialNo);
-await session.UpsertAsync(key, value);
 ```
 
 #### RMW
