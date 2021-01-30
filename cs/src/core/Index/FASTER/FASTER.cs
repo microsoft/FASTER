@@ -59,6 +59,11 @@ namespace FASTER.core
         public long IndexSize => state[resizeInfo.version].size;
 
         /// <summary>
+        /// Number of overflow buckets in use (64 bytes each)
+        /// </summary>
+        public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
+
+        /// <summary>
         /// Comparer used by FASTER
         /// </summary>
         public IFasterEqualityComparer<Key> Comparer => comparer;
