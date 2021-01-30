@@ -1783,6 +1783,8 @@ namespace FASTER.core
                     {
                         // GC old version of hash table
                         state[1 - resizeInfo.version] = default;
+                        overflowBucketsAllocatorResize.Dispose();
+                        overflowBucketsAllocatorResize = null;
                         GlobalStateMachineStep(systemState);
                         return;
                     }
@@ -1831,9 +1833,10 @@ namespace FASTER.core
                         else if (logicalAddress >= hlog.HeadAddress)
                                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
+                        // It is safe to always use hlog instead of readcache for some calls such
+                        // as GetKey and GetInfo
                         if (physicalAddress != 0)
                         {
-                            
                             var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
@@ -1852,7 +1855,7 @@ namespace FASTER.core
 
                                 // Insert previous address in right
                                 entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 1);
-                                if (entry.Address != Constants.kInvalidAddress)
+                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (right == right_end)
                                     {
@@ -1884,7 +1887,7 @@ namespace FASTER.core
 
                                 // Insert previous address in left
                                 entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 0);
-                                if (entry.Address != Constants.kInvalidAddress)
+                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (left == left_end)
                                     {
@@ -1933,22 +1936,41 @@ namespace FASTER.core
                     }
 
                     if (*(((long*)src_start) + Constants.kOverflowBucketIndex) == 0) break;
-                    src_start = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
+                    src_start = (HashBucket*)overflowBucketsAllocatorResize.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
                 } while (true);
             }
         }
 
         private long TraceBackForOtherChainStart(long logicalAddress, int bit)
         {
-            while (logicalAddress >= hlog.HeadAddress)
+            while (true)
             {
-                var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
-                if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                HashBucketEntry entry = default;
+                entry.Address = logicalAddress;
+                if (entry.ReadCache)
                 {
-                    return logicalAddress;
+                    if (logicalAddress < readcache.HeadAddress)
+                        break;
+                    var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                    var hash = comparer.GetHashCode64(ref readcache.GetKey(physicalAddress));
+                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    {
+                        return logicalAddress;
+                    }
+                    logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
                 }
-                logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                else
+                {
+                    if (logicalAddress < hlog.HeadAddress)
+                        break;
+                    var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                    var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
+                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    {
+                        return logicalAddress;
+                    }
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                }
             }
             return logicalAddress;
         }
