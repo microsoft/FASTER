@@ -39,15 +39,20 @@ namespace FASTER.core
             var token = info.info.token;
             var ht_version = resizeInfo.version;
 
-            if (state[ht_version].size != info.info.table_size)
-                throw new FasterException($"Incompatible hash table size during recovery; allocated {state[ht_version].size} buckets, recovering {info.info.table_size} buckets");
-
             // Create devices to read from using Async API
             info.main_ht_device = checkpointManager.GetIndexDevice(token);
+            var sectorSize = info.main_ht_device.SectorSize;
+
+            if (state[ht_version].size != info.info.table_size)
+            {
+                Free(ht_version);
+                Initialize(info.info.table_size, (int)sectorSize);
+            }
+
 
             BeginMainIndexRecovery(ht_version, info.main_ht_device, info.info.num_ht_bytes, isAsync);
 
-            var sectorSize = info.main_ht_device.SectorSize;
+            
             var alignedIndexSize = (uint)((info.info.num_ht_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
             return alignedIndexSize;
         }
