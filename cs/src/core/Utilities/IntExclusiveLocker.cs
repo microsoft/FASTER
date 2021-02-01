@@ -6,7 +6,7 @@ namespace FASTER.core
     /// <summary>
     /// Exclusive lock + marking using 2 MSB bits of int
     /// </summary>
-    internal unsafe struct IntExclusiveLocker
+    internal struct IntExclusiveLocker
     {
         const int kLatchBitMask = 1 << 31;
         const int kMarkBitMask = 1 << 30;
@@ -30,7 +30,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Unlock(ref int value)
         {
-            value = value & ~kLatchBitMask;
+            value &= ~kLatchBitMask;
         }
 
         public static void Mark(ref int value)

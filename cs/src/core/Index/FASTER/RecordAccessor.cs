@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -82,6 +83,24 @@ namespace FASTER.core
         /// <param name="logicalAddress">The address to examine</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Version(long logicalAddress) => GetRecordInfo(logicalAddress).Version;
+
+        /// <summary>
+        /// Locks the RecordInfo at address
+        /// </summary>
+        /// <param name="logicalAddress">The address to examine</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SpinLock(long logicalAddress)
+        {
+            Debug.Assert(logicalAddress >= this.fkv.Log.ReadOnlyAddress);
+            GetRecordInfo(logicalAddress).SpinLock();
+        }
+
+        /// <summary>
+        /// Unlocks the RecordInfo at address
+        /// </summary>
+        /// <param name="logicalAddress">The address to examine</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Unlock(long logicalAddress) => GetRecordInfo(logicalAddress).Unlock();
 
         #endregion public interface
     }
