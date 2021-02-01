@@ -1744,17 +1744,20 @@ namespace FASTER.core
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
         }
-#endregion
+        #endregion
 
-#region Split Index
+        #region Split Index
         private void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
             int offset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);
+            SplitBuckets(offset);
+        }
 
+        private void SplitBuckets(int offset)
+        {
             int numChunks = (int)(state[1 - resizeInfo.version].size / Constants.kSizeofChunk);
             if (numChunks == 0) numChunks = 1; // at least one chunk
-
 
             if (!Utility.IsPowerOfTwo(numChunks))
             {
@@ -1780,6 +1783,8 @@ namespace FASTER.core
                     {
                         // GC old version of hash table
                         state[1 - resizeInfo.version] = default;
+                        overflowBucketsAllocatorResize.Dispose();
+                        overflowBucketsAllocatorResize = null;
                         GlobalStateMachineStep(systemState);
                         return;
                     }
@@ -1789,7 +1794,7 @@ namespace FASTER.core
 
             while (Interlocked.Read(ref splitStatus[offset & (numChunks - 1)]) == 1)
             {
-
+                Thread.Yield();
             }
 
         }
@@ -1821,17 +1826,26 @@ namespace FASTER.core
                         }
 
                         var logicalAddress = entry.Address;
-                        if (logicalAddress >= hlog.HeadAddress)
+                        long physicalAddress = 0;
+
+                        if (entry.ReadCache && (entry.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)
+                            physicalAddress = readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
+                        else if (logicalAddress >= hlog.HeadAddress)
+                                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+
+                        // It is safe to always use hlog instead of readcache for some calls such
+                        // as GetKey and GetInfo
+                        if (physicalAddress != 0)
                         {
-                            var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                             var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
                                 if (left == left_end)
                                 {
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                    *left = (long)new_bucket;
+                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                    *left = new_bucket_logical;
                                     left = (long*)new_bucket;
                                     left_end = left + Constants.kOverflowBucketIndex;
                                 }
@@ -1841,12 +1855,13 @@ namespace FASTER.core
 
                                 // Insert previous address in right
                                 entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 1);
-                                if (entry.Address != Constants.kInvalidAddress)
+                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (right == right_end)
                                     {
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                        *right = (long)new_bucket;
+                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                        *right = new_bucket_logical;
                                         right = (long*)new_bucket;
                                         right_end = right + Constants.kOverflowBucketIndex;
                                     }
@@ -1860,8 +1875,9 @@ namespace FASTER.core
                                 // Insert in right
                                 if (right == right_end)
                                 {
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                    *right = (long)new_bucket;
+                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                    *right = new_bucket_logical;
                                     right = (long*)new_bucket;
                                     right_end = right + Constants.kOverflowBucketIndex;
                                 }
@@ -1871,12 +1887,13 @@ namespace FASTER.core
 
                                 // Insert previous address in left
                                 entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 0);
-                                if (entry.Address != Constants.kInvalidAddress)
+                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (left == left_end)
                                     {
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                        *left = (long)new_bucket;
+                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                        *left = new_bucket_logical;
                                         left = (long*)new_bucket;
                                         left_end = left + Constants.kOverflowBucketIndex;
                                     }
@@ -1893,8 +1910,9 @@ namespace FASTER.core
                             // Insert in left
                             if (left == left_end)
                             {
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                *left = (long)new_bucket;
+                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                *left = new_bucket_logical;
                                 left = (long*)new_bucket;
                                 left_end = left + Constants.kOverflowBucketIndex;
                             }
@@ -1905,8 +1923,9 @@ namespace FASTER.core
                             // Insert in right
                             if (right == right_end)
                             {
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                *right = (long)new_bucket;
+                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                *right = new_bucket_logical;
                                 right = (long*)new_bucket;
                                 right_end = right + Constants.kOverflowBucketIndex;
                             }
@@ -1917,22 +1936,41 @@ namespace FASTER.core
                     }
 
                     if (*(((long*)src_start) + Constants.kOverflowBucketIndex) == 0) break;
-                    src_start = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
+                    src_start = (HashBucket*)overflowBucketsAllocatorResize.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
                 } while (true);
             }
         }
 
         private long TraceBackForOtherChainStart(long logicalAddress, int bit)
         {
-            while (logicalAddress >= hlog.HeadAddress)
+            while (true)
             {
-                var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
-                if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                HashBucketEntry entry = default;
+                entry.Address = logicalAddress;
+                if (entry.ReadCache)
                 {
-                    return logicalAddress;
+                    if (logicalAddress < readcache.HeadAddress)
+                        break;
+                    var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                    var hash = comparer.GetHashCode64(ref readcache.GetKey(physicalAddress));
+                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    {
+                        return logicalAddress;
+                    }
+                    logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
                 }
-                logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                else
+                {
+                    if (logicalAddress < hlog.HeadAddress)
+                        break;
+                    var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                    var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
+                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    {
+                        return logicalAddress;
+                    }
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                }
             }
             return logicalAddress;
         }
@@ -2087,7 +2125,7 @@ namespace FASTER.core
             if (UseReadCache && entry.ReadCache)
             {
                 var _addr = readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
-                if (entry.Address >= readcache.HeadAddress)
+                if ((entry.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)
                     return readcache.GetInfo(_addr).Version;
                 else
                     return defaultVersion;

@@ -244,7 +244,8 @@ namespace FASTER.core
         internal long minTableSize = 16;
 
         // Allocator for the hash buckets
-        internal readonly MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
+        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
+        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocatorResize;
 
         // An array of size two, that contains the old and new versions of the hash-table
         internal InternalHashTable[] state = new InternalHashTable[2];
