@@ -59,6 +59,11 @@ namespace FASTER.core
         public long IndexSize => state[resizeInfo.version].size;
 
         /// <summary>
+        /// Number of overflow buckets in use (64 bytes each)
+        /// </summary>
+        public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
+
+        /// <summary>
         /// Comparer used by FASTER
         /// </summary>
         public IFasterEqualityComparer<Key> Comparer => comparer;
@@ -656,12 +661,43 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Grow the hash index
+        /// Grow the hash index by a factor of two. Make sure to take a full checkpoint
+        /// after growth, for persistence.
         /// </summary>
-        /// <returns>Whether the request succeeded</returns>
+        /// <returns>Whether the grow completed</returns>
         public bool GrowIndex()
         {
-            return StartStateMachine(new IndexResizeStateMachine());
+            if (LightEpoch.AnyInstanceProtected())
+                throw new FasterException("Cannot use GrowIndex when using legacy or non-async sessions");
+
+            if (!StartStateMachine(new IndexResizeStateMachine())) return false;
+
+            epoch.Resume();
+
+            try
+            {
+                while (true)
+                {
+                    SystemState _systemState = SystemState.Copy(ref systemState);
+                    if (_systemState.phase == Phase.IN_PROGRESS_GROW)
+                    {
+                        SplitBuckets(0);
+                        epoch.ProtectAndDrain();
+                    }
+                    else
+                    {
+                        SystemState.RemoveIntermediate(ref _systemState);
+                        if (_systemState.phase != Phase.PREPARE_GROW && _systemState.phase != Phase.IN_PROGRESS_GROW)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
         }
 
         /// <summary>
