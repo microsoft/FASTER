@@ -184,6 +184,9 @@ namespace FASTER.core
             // On-Disk Region
             else if (logicalAddress >= hlog.BeginAddress)
             {
+                if (hlog.IsNullDevice)
+                    return OperationStatus.NOTFOUND;
+
                 status = OperationStatus.RECORD_ON_DISK;
                 if (sessionCtx.phase == Phase.PREPARE)
                 {

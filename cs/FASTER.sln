@@ -57,6 +57,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SecondaryReaderStore", "sam
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VersionedRead", "samples\ReadAddress\VersionedRead.csproj", "{33ED9E1B-1EF0-4984-A07A-7A26C205A446}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MemOnlyCache", "playground\MemOnlyCache\MemOnlyCache.csproj", "{05CEDD61-5052-44CA-80FD-81C6D5BD504D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -225,6 +227,14 @@ Global
 		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Release|Any CPU.Build.0 = Release|Any CPU
 		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Release|x64.ActiveCfg = Release|Any CPU
 		{33ED9E1B-1EF0-4984-A07A-7A26C205A446}.Release|x64.Build.0 = Release|Any CPU
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Debug|Any CPU.Build.0 = Debug|x64
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Debug|x64.ActiveCfg = Debug|x64
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Debug|x64.Build.0 = Debug|x64
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Release|Any CPU.ActiveCfg = Release|x64
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Release|Any CPU.Build.0 = Release|x64
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Release|x64.ActiveCfg = Release|x64
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -252,6 +262,7 @@ Global
 		{E2A1C205-4D35-448C-A72F-B9A4AE28EB4E} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{EBE313E5-22D2-4C74-BA1F-16B60404B335} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{33ED9E1B-1EF0-4984-A07A-7A26C205A446} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
+		{05CEDD61-5052-44CA-80FD-81C6D5BD504D} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}

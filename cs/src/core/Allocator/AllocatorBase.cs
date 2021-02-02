@@ -186,6 +186,11 @@ namespace FASTER.core
         /// </summary>
         private bool disposed = false;
 
+        /// <summary>
+        /// Whether device is a null device
+        /// </summary>
+        internal readonly bool IsNullDevice;
+
         #endregion
 
         /// <summary>
@@ -504,6 +509,9 @@ namespace FASTER.core
             FlushCallback = flushCallback;
             PreallocateLog = settings.PreallocateLog;
 
+            if (settings.LogDevice is NullDevice)
+                IsNullDevice = true;
+
             this.comparer = comparer;
             if (epoch == null)
             {
@@ -546,10 +554,13 @@ namespace FASTER.core
                 throw new FasterException("Segment must be at least of page size");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
-            PendingFlush = new PendingFlushList[BufferSize];
-            for (int i = 0; i < BufferSize; i++)
-                PendingFlush[i] = new PendingFlushList();
 
+            if (!IsNullDevice)
+            {
+                PendingFlush = new PendingFlushList[BufferSize];
+                for (int i = 0; i < BufferSize; i++)
+                    PendingFlush[i] = new PendingFlushList();
+            }
             device = settings.LogDevice;
             sectorSize = (int)device.SectorSize;
 
@@ -624,6 +635,7 @@ namespace FASTER.core
         /// Delete in-memory portion of the log
         /// </summary>
         internal abstract void DeleteFromMemory();
+
 
         /// <summary>
         /// Segment size
@@ -898,6 +910,10 @@ namespace FASTER.core
             if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
             {
                 Debug.WriteLine("SafeHeadOffset shifted from {0:X} to {1:X}", oldSafeHeadAddress, newSafeHeadAddress);
+
+                // Also shift begin address if we are using a null storage device
+                if (IsNullDevice)
+                    Utility.MonotonicUpdate(ref BeginAddress, newSafeHeadAddress, out _);
 
                 for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
                 {
@@ -1353,6 +1369,14 @@ namespace FASTER.core
                 {
                     // Short circuit as no flush needed
                     Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, BeginAddress, out _);
+                    ShiftFlushedUntilAddress();
+                    continue;
+                }
+
+                if (IsNullDevice)
+                {
+                    // Short circuit as no flush needed
+                    Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, asyncResult.untilAddress, out _);
                     ShiftFlushedUntilAddress();
                     continue;
                 }

@@ -825,10 +825,10 @@ namespace FASTER.core
                 {
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                     {
-                        if (b.bucket_entries[bucket_entry] >= beginAddress)
+                        var x = default(HashBucketEntry);
+                        x.word = b.bucket_entries[bucket_entry];
+                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && ((x.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)))
                         {
-                            var x = default(HashBucketEntry);
-                            x.word = b.bucket_entries[bucket_entry];
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new FasterException("Duplicate tag found in index");
                             tags.Add(x.Tag);
@@ -845,7 +845,9 @@ namespace FASTER.core
             }
 
             var distribution =
-                $"Number of hash buckets: {{{table_size_}}}\n" +
+                $"Number of hash buckets: {table_size_}\n" +
+                $"Number of overflow buckets: {OverflowBucketCount}\n" +
+                $"Size of each bucket: {Constants.kEntriesPerBucket * sizeof(HashBucketEntry)} bytes\n" +
                 $"Total distinct hash-table entry count: {{{total_record_count}}}\n" +
                 $"Average #entries per hash bucket: {{{total_record_count / (double)table_size_:0.00}}}\n" +
                 $"Histogram of #entries per bucket:\n";
