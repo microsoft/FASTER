@@ -6,6 +6,8 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 
+#pragma warning disable CS0162 // Unreachable code detected
+
 namespace MemOnlyCache
 {
     class Program
@@ -18,12 +20,22 @@ namespace MemOnlyCache
         /// <summary>
         /// Number of threads accessing FASTER instances
         /// </summary>
-        const int kNumThreads = 8;
+        const int kNumThreads = 1;
 
         /// <summary>
         /// Percentage of writes
         /// </summary>
         const int WritePercent = 5;
+
+        /// <summary>
+        /// Uniform distribution (true) or zipf (false)
+        /// </summary>
+        const bool UseUniform = true;
+
+        /// <summary>
+        /// Whether to upsert the data automatically on a cache miss
+        /// </summary>
+        const bool UpsertOnCacheMiss = false;
 
         static FasterKV<CacheKey, CacheValue> h;
         static long totalReads = 0;
@@ -32,27 +44,24 @@ namespace MemOnlyCache
         {
             // This sample shows the use of FASTER as a concurrent pure in-memory cache
 
-            var log = new NullDevice();
+            var log = new NullDevice(); // no storage involved
 
             // Define settings for log
             var logSettings = new LogSettings
             {
-                LogDevice = log,
-                ObjectLogDevice = log,
-                PageSizeBits = 14,
+                LogDevice = log, ObjectLogDevice = log,
+                PageSizeBits = 14, // Each page is sized at 2^14 bytes
                 MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs
             };
 
-            // Number of records in memory, assuming class keys and values (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
+            // Number of records in memory, assuming class keys and values
+            // (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
             int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / 24);
 
             // Targeting 1 record per bucket
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
-            h = new FasterKV<CacheKey, CacheValue>(
-                1L << numBucketBits, logSettings,
-                comparer: new CacheKey(0)
-                );
+            h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
 
             PopulateStore(numRecords);
             ContinuousRandomWorkload();
@@ -108,11 +117,12 @@ namespace MemOnlyCache
 
         private static void RandomWorkload(int threadid)
         {
-            Console.WriteLine("Issuing uniform random read workload of {0} reads from thread {1}", DbSize, threadid);
+            Console.WriteLine("Issuing {0} random read workload of {1} reads from thread {2}", UseUniform ? "uniform" : "zipf", DbSize, threadid);
 
             using var session = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
 
             var rnd = new Random(threadid);
+            var zipf = new ZipfGenerator(rnd, DbSize);
 
             int statusNotFound = 0;
             int statusFound = 0;
@@ -128,7 +138,7 @@ namespace MemOnlyCache
                         Console.WriteLine("Hit rate: {0}", statusFound / (double)(statusFound + statusNotFound));
                 }
                 int op = rnd.Next(100);
-                long k = rnd.Next(DbSize);
+                long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
 
                 var key = new CacheKey(k);
 
@@ -145,6 +155,11 @@ namespace MemOnlyCache
                     {
                         case Status.NOTFOUND:
                             statusNotFound++;
+                            if (UpsertOnCacheMiss)
+                            {
+                                var value = new CacheValue(k);
+                                session.Upsert(ref key, ref value);
+                            }
                             break;
                         case Status.OK:
                             statusFound++;

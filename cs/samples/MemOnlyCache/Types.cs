@@ -9,20 +9,16 @@ namespace MemOnlyCache
     {
         public long key;
 
+        public CacheKey() { }
+
         public CacheKey(long first)
         {
             key = first;
         }
 
-        public long GetHashCode64(ref CacheKey key)
-        {
-            return Utility.GetHashCode(key.key);
-        }
+        public long GetHashCode64(ref CacheKey key) => Utility.GetHashCode(key.key);
 
-        public bool Equals(ref CacheKey k1, ref CacheKey k2)
-        {
-            return k1.key == k2.key;
-        }
+        public bool Equals(ref CacheKey k1, ref CacheKey k2) => k1.key == k2.key;
     }
 
     public sealed class CacheValue
