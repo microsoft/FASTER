@@ -57,7 +57,7 @@ namespace FASTER.test.recovery.objectstore
             fht = null;
             log.Dispose();
             objlog.Dispose();
-            Directory.Delete(test_path, true);
+            TestUtils.DeleteDirectory(test_path);
         }
 
         [Test]

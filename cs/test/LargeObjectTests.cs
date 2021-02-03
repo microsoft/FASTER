@@ -36,7 +36,7 @@ namespace FASTER.test.largeobjects
         [TearDown]
         public void TearDown()
         {
-            Directory.Delete(test_path, true);
+            TestUtils.DeleteDirectory(test_path);
         }
 
         [TestCase(CheckpointType.FoldOver)]
