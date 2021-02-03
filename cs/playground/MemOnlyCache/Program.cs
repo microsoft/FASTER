@@ -4,7 +4,6 @@
 using FASTER.core;
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Threading;
 
 namespace MemOnlyCache
@@ -19,7 +18,12 @@ namespace MemOnlyCache
         /// <summary>
         /// Number of threads accessing FASTER instances
         /// </summary>
-        const int kNumThreads = 2;
+        const int kNumThreads = 8;
+
+        /// <summary>
+        /// Percentage of writes
+        /// </summary>
+        const int WritePercent = 5;
 
         static FasterKV<CacheKey, CacheValue> h;
         static long totalReads = 0;
@@ -39,6 +43,7 @@ namespace MemOnlyCache
                 MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs
             };
 
+            // Number of records in memory, assuming class keys and values (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
             int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / 24);
 
             // Targeting 1 record per bucket
@@ -122,12 +127,12 @@ namespace MemOnlyCache
                     if (i % (1024 * 1024 * 20) == 0)
                         Console.WriteLine("Hit rate: {0}", statusFound / (double)(statusFound + statusNotFound));
                 }
-                int op = rnd.Next(10);
+                int op = rnd.Next(100);
                 long k = rnd.Next(DbSize);
 
                 var key = new CacheKey(k);
 
-                if (op < 1)
+                if (op < WritePercent)
                 {
                     var value = new CacheValue(k);
                     session.Upsert(ref key, ref value);
