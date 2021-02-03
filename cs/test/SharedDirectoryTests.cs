@@ -45,7 +45,7 @@ namespace FASTER.test.recovery.sumstore
             this.clone.TearDown();
             try
             {
-                Directory.Delete(this.rootPath, recursive: true);
+                TestUtils.DeleteDirectory(this.rootPath);
             }
             catch
             {

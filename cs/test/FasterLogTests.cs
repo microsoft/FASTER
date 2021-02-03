@@ -29,7 +29,7 @@ namespace FASTER.test
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name +  "/";
 
             if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+                TestUtils.DeleteDirectory(commitPath);
 
             device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
             manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(commitPath));
@@ -38,11 +38,13 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
+            if (log is { })
+                log.Dispose();
             manager.Dispose();
             device.Dispose();
 
             if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+                TestUtils.DeleteDirectory(commitPath);
         }
 
         internal class Counter
@@ -162,8 +164,6 @@ namespace FASTER.test
                 }
                 Assert.IsTrue(counter.count == numEntries);
             }
-
-            log.Dispose();
         }
 
         [Test]
@@ -205,7 +205,6 @@ namespace FASTER.test
                     await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd :true);
                 }
             }
-            log.Dispose();
         }
 
         [Test]
@@ -281,7 +280,6 @@ namespace FASTER.test
                         break;
                 }
             }
-            log.Dispose();
         }
 
         [Test]
@@ -322,7 +320,6 @@ namespace FASTER.test
                 Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
                 Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
             }
-            log.Dispose();
         }
 
         [Test]
@@ -354,7 +351,6 @@ namespace FASTER.test
             _disposed = true;
 
             commit.Join();
-            log.Dispose();
         }
 
         [Test]
@@ -420,7 +416,6 @@ namespace FASTER.test
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
-            log.Dispose();
         }
     }
 }

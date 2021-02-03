@@ -49,7 +49,7 @@ namespace FASTER.test.recovery.sumstore
             fht.Dispose();
             fht = null;
             log.Dispose();
-            Directory.Delete(test_path, true);
+            TestUtils.DeleteDirectory(test_path);
         }
 
         [Test]
