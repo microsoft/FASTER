@@ -6,9 +6,11 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 
+#pragma warning disable IDE0079 // Remove unnecessary suppression
 #pragma warning disable CS0162 // Unreachable code detected
 
 namespace MemOnlyCache
+#pragma warning restore IDE0079 // Remove unnecessary suppression
 {
     class Program
     {
@@ -25,17 +27,17 @@ namespace MemOnlyCache
         /// <summary>
         /// Percentage of writes
         /// </summary>
-        const int WritePercent = 5;
+        const int WritePercent = 0;
 
         /// <summary>
         /// Uniform distribution (true) or zipf (false)
         /// </summary>
-        const bool UseUniform = true;
+        const bool UseUniform = false;
 
         /// <summary>
         /// Whether to upsert the data automatically on a cache miss
         /// </summary>
-        const bool UpsertOnCacheMiss = false;
+        const bool UpsertOnCacheMiss = true;
 
         static FasterKV<CacheKey, CacheValue> h;
         static long totalReads = 0;
@@ -51,7 +53,7 @@ namespace MemOnlyCache
             {
                 LogDevice = log, ObjectLogDevice = log,
                 PageSizeBits = 14, // Each page is sized at 2^14 bytes
-                MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs
+                MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
             };
 
             // Number of records in memory, assuming class keys and values
@@ -62,7 +64,7 @@ namespace MemOnlyCache
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
-
+            
             PopulateStore(numRecords);
             ContinuousRandomWorkload();
             
