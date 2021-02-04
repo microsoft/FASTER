@@ -52,6 +52,8 @@ namespace MemOnlyCache
             var logSettings = new LogSettings
             {
                 LogDevice = log, ObjectLogDevice = log,
+                MutableFraction = 0.9, // 10% of memory log is "read-only region"
+                CopyReadsToTail = CopyReadsToTail.FromReadOnly, // reads in read-only region are copied to tail
                 PageSizeBits = 14, // Each page is sized at 2^14 bytes
                 MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
             };
