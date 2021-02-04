@@ -34,7 +34,7 @@ namespace FASTER.core
         private readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
-        private readonly bool CopyReadsToTail;
+        private readonly CopyReadsToTail CopyReadsToTail;
         private readonly bool FoldOverSnapshot;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
@@ -153,7 +153,7 @@ namespace FASTER.core
 
             if (logSettings.ReadCacheSettings != null)
             {
-                CopyReadsToTail = false;
+                CopyReadsToTail = CopyReadsToTail.None;
                 UseReadCache = true;
             }
 

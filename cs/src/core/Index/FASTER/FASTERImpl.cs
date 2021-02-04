@@ -178,6 +178,10 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
 
                 fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, logicalAddress);
+
+                if (CopyReadsToTail == CopyReadsToTail.FromReadOnly)
+                    InternalUpsert(ref key, ref hlog.GetValue(physicalAddress), ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
+
                 return OperationStatus.SUCCESS;
             }
 
@@ -1235,7 +1239,7 @@ namespace FASTER.core
                 fasterSession.SingleReader(ref key, ref pendingContext.input.Get(),
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, request.logicalAddress);
 
-                if ((CopyReadsToTail && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
+                if ((CopyReadsToTail != CopyReadsToTail.None && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx);
                 }
