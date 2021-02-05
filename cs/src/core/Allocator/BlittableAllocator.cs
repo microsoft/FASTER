@@ -75,6 +75,8 @@ namespace FASTER.core
             return recordSize;
         }
 
+        public override int GetFixedRecordSize() => recordSize;
+
         public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
             return (recordSize, recordSize);

@@ -158,6 +158,13 @@ namespace FASTER.core
                 ((ValueLength.GetInitialLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
+        public override int GetFixedRecordSize()
+        {
+            return RecordInfo.GetLength()
+                + (fixedSizeKey ? KeyLength.GetInitialLength() : 0)
+                + (fixedSizeValue ? ValueLength.GetInitialLength() : 0);
+        }
+
         public override (int, int) GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
         {
             var actualSize = RecordInfo.GetLength() +
