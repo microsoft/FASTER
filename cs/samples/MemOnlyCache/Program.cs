@@ -67,6 +67,9 @@ namespace MemOnlyCache
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
             
+            // Register subscriber to receive log evictions from memory
+            h.Log.SubscribeEvictions(new LogObserver());
+            
             PopulateStore(numRecords);
             ContinuousRandomWorkload();
             
@@ -80,7 +83,7 @@ namespace MemOnlyCache
         {
             using var s = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
 
-            Random r = new Random();
+            Random r = new Random(0);
             Console.WriteLine("Writing random keys to fill cache");
 
             for (int i = 0; i < count; i++)
@@ -139,7 +142,7 @@ namespace MemOnlyCache
                 {
                     Interlocked.Add(ref totalReads, 256);
                     if (i % (1024 * 1024 * 20) == 0)
-                        Console.WriteLine("Hit rate: {0}", statusFound / (double)(statusFound + statusNotFound));
+                        Console.WriteLine("Hit rate: {0:N2}; Evict count: {1}", statusFound / (double)(statusFound + statusNotFound), LogObserver.EvictCount);
                 }
                 int op = rnd.Next(100);
                 long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
@@ -176,6 +179,29 @@ namespace MemOnlyCache
                 }
                 i++;
             }
+        }
+    }
+
+    class LogObserver : IObserver<IFasterScanIterator<CacheKey, CacheValue>>
+    {
+        public static int EvictCount = 0;
+
+        public void OnCompleted()
+        {
+        }
+
+        public void OnError(Exception error)
+        {
+        }
+
+        public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
+        {
+            int cnt = 0;
+            while (iter.GetNext(out _, out CacheKey _, out CacheValue _))
+            {
+                cnt++;
+            }
+            Interlocked.Add(ref EvictCount, cnt);
         }
     }
 }

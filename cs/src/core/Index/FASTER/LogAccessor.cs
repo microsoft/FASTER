@@ -103,7 +103,20 @@ namespace FASTER.core
         public IDisposable Subscribe(IObserver<IFasterScanIterator<Key, Value>> readOnlyObserver)
         {
             allocator.OnReadOnlyObserver = readOnlyObserver;
-            return new LogSubscribeDisposable(allocator);
+            return new LogSubscribeDisposable(allocator, true);
+        }
+
+        /// <summary>
+        /// Subscribe to records (in batches) as they get evicted from main memory.
+        /// Currently, we support only one subscriber to the log (easy to extend)
+        /// Subscriber only receives eviction updates from the time of subscription onwards
+        /// To scan the historical part of the log, use the Scan(...) method
+        /// </summary>
+        /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
+        public IDisposable SubscribeEvictions(IObserver<IFasterScanIterator<Key, Value>> evictionObserver)
+        {
+            allocator.OnEvictionObserver = evictionObserver;
+            return new LogSubscribeDisposable(allocator, false);
         }
 
         /// <summary>
@@ -112,15 +125,20 @@ namespace FASTER.core
         class LogSubscribeDisposable : IDisposable
         {
             private readonly AllocatorBase<Key, Value> allocator;
+            private readonly bool readOnly;
 
-            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator)
+            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator, bool readOnly)
             {
                 this.allocator = allocator;
+                this.readOnly = readOnly;
             }
 
             public void Dispose()
             {
-                allocator.OnReadOnlyObserver = null;
+                if (readOnly)
+                    allocator.OnReadOnlyObserver = null;
+                else
+                    allocator.OnEvictionObserver = null;
             }
         }
 

@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using System.Diagnostics;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -19,6 +19,7 @@ namespace FASTER.core
         private readonly CountdownEvent[] loaded;
         private readonly LightEpoch epoch;
         private SectorAlignedMemory memory;
+        private readonly bool forceInMemory;
 
         private bool first = true;
         private long currentAddress, nextAddress;
@@ -42,9 +43,11 @@ namespace FASTER.core
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
-        public unsafe VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
+        /// <param name="forceInMemory"></param>
+        public unsafe VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false)
         {
             this.hlog = hlog;
+            this.forceInMemory = forceInMemory;
 
             // If we are protected when creating the iterator, we do not need per-GetNext protection
             if (!epoch.ThisInstanceProtected())
@@ -71,7 +74,7 @@ namespace FASTER.core
             loaded = new CountdownEvent[frameSize];
 
             // Only load addresses flushed to disk
-            if (nextAddress < hlog.HeadAddress)
+            if (nextAddress < hlog.HeadAddress && !forceInMemory)
             {
                 var frameNumber = (nextAddress >> hlog.LogPageSizeBits) % frameSize;
                 hlog.AsyncReadPagesFromDeviceToFrame
@@ -121,13 +124,13 @@ namespace FASTER.core
                 epoch?.Resume();
                 var headAddress = hlog.HeadAddress;
 
-                if (currentAddress < hlog.BeginAddress)
+                if (currentAddress < hlog.BeginAddress && !forceInMemory)
                 {
                     epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
-                if (frameSize == 0 && currentAddress < headAddress)
+                if (frameSize == 0 && currentAddress < headAddress && !forceInMemory)
                 {
                     epoch?.Suspend();
                     throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
@@ -136,11 +139,11 @@ namespace FASTER.core
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
                 var offset = currentAddress & hlog.PageSizeMask;
 
-                if (currentAddress < headAddress)
+                if (currentAddress < headAddress && !forceInMemory)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
 
                 long physicalAddress;
-                if (currentAddress >= headAddress)
+                if (currentAddress >= headAddress || forceInMemory)
                     physicalAddress = hlog.GetPhysicalAddress(currentAddress);
                 else
                     physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
@@ -165,7 +168,7 @@ namespace FASTER.core
                 
                 currentPhysicalAddress = physicalAddress;
                 recordInfo = info;
-                if (currentAddress >= headAddress)
+                if (currentAddress >= headAddress || forceInMemory)
                 {
                     memory?.Return();
                     memory = hlog.bufferPool.Get(recordSize);

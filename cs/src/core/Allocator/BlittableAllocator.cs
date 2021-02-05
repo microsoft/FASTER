@@ -324,6 +324,13 @@ namespace FASTER.core
             return new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
         }
 
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        {
+            var iter = new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
+            OnEvictionObserver?.OnNext(iter);
+            iter.Dispose();
+        }
 
         /// <summary>
         /// Read pages from specified device

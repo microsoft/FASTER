@@ -228,6 +228,11 @@ namespace FASTER.core
         /// </summary>
         internal IObserver<IFasterScanIterator<Key, Value>> OnReadOnlyObserver;
 
+        /// <summary>
+        /// Observer for records getting evicted from memory (page closed)
+        /// </summary>
+        internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
+
         #region Abstract methods
         /// <summary>
         /// Initialize
@@ -484,6 +489,12 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
 
+        /// <summary>
+        /// Scan page guaranteed to be in memory
+        /// </summary>
+        /// <param name="beginAddress">Begin address</param>
+        /// <param name="endAddress">End address</param>
+        internal abstract void MemoryPageScan(long beginAddress, long endAddress);
         #endregion
 
 
@@ -629,6 +640,7 @@ namespace FASTER.core
             bufferPool.Free();
 
             OnReadOnlyObserver?.OnCompleted();
+            OnEvictionObserver?.OnCompleted();
         }
 
         /// <summary>
@@ -895,7 +907,12 @@ namespace FASTER.core
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
                 Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
-                OnReadOnlyObserver?.OnNext(Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering));
+                if (OnReadOnlyObserver != null)
+                {
+                    var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
+                    OnReadOnlyObserver?.OnNext(iter);
+                    iter.Dispose();
+                }
                 AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
             }
         }
@@ -917,6 +934,10 @@ namespace FASTER.core
 
                 for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
                 {
+                    long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
+                    long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
+                    MemoryPageScan(start, end);
+
                     if (newSafeHeadAddress < closePageAddress + PageSize)
                     {
                         // Partial page - do not close
@@ -929,7 +950,9 @@ namespace FASTER.core
                     if (!IsAllocated(closePageIndex))
                         AllocatePage(closePageIndex);
                     else
+                    {
                         ClearPage(closePage);
+                    }
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)
