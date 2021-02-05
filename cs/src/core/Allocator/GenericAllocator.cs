@@ -972,5 +972,25 @@ namespace FASTER.core
         {
             return new GenericScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
         }
+
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        {
+            var page = (beginAddress >> LogPageSizeBits) % BufferSize;
+            int start = (int)(beginAddress & PageSizeMask) / recordSize;
+            int count = (int)(endAddress - beginAddress) / recordSize;
+            int end = start + count;
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
+            Debug.Assert(epoch.ThisInstanceProtected());
+            try
+            {
+                epoch.Suspend();
+                OnEvictionObserver?.OnNext(iter);
+            }
+            finally
+            {
+                epoch.Resume();
+            }
+        }
     }
 }
