@@ -54,6 +54,14 @@ namespace FASTER.core
         public long BeginAddress => allocator.BeginAddress;
 
         /// <summary>
+        /// Get the bytes used on the primary log by every record. Does not include
+        /// the size of variable-length inline data. Note that class objects occupy
+        /// 8 bytes (reference) on the main log (i.e., the heap space occupied by
+        /// class objects is not included in the result of this call).
+        /// </summary>
+        public int FixedRecordSize => allocator.GetFixedRecordSize();
+
+        /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
         /// </summary>
         /// <param name="untilAddress">Address to shift begin address until</param>

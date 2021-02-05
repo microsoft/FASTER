@@ -335,6 +335,12 @@ namespace FASTER.core
         public abstract int GetAverageRecordSize();
 
         /// <summary>
+        /// Get size of fixed (known) part of record on the main log
+        /// </summary>
+        /// <returns></returns>
+        public abstract int GetFixedRecordSize();
+
+        /// <summary>
         /// Get initial record size
         /// </summary>
         /// <param name="key"></param>
