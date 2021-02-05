@@ -197,9 +197,10 @@ namespace MemOnlyCache
         public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
         {
             int cnt = 0;
-            while (iter.GetNext(out _, out CacheKey _, out CacheValue _))
+            while (iter.GetNext(out RecordInfo info, out CacheKey _, out CacheValue _))
             {
-                cnt++;
+                if (!info.Tombstone) // ignore deleted records being evicted
+                    cnt++;
             }
             Interlocked.Add(ref EvictCount, cnt);
         }
