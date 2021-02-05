@@ -130,7 +130,7 @@ namespace FASTER.test.readaddress
 
             internal long[] InsertAddresses = new long[numKeys];
 
-            internal TestStore(bool useReadCache, bool copyReadsToTail, bool flush)
+            internal TestStore(bool useReadCache, CopyReadsToTail copyReadsToTail, bool flush)
             {
                 this.testDir = $"{TestContext.CurrentContext.TestDirectory}/{TestContext.CurrentContext.Test.Name}";
                 this.logDevice = Devices.CreateLogDevice($"{testDir}/hlog.log");
@@ -246,11 +246,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public void VersionedReadSyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public void VersionedReadSyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             testStore.Populate(useRMW, useAsync:false).GetAwaiter().GetResult();
@@ -285,11 +285,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public async Task VersionedReadAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public async Task VersionedReadAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);
@@ -314,11 +314,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public void ReadAtAddressSyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public void ReadAtAddressSyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
@@ -375,11 +375,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public async Task ReadAtAddressAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public async Task ReadAtAddressAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);
@@ -419,11 +419,11 @@ namespace FASTER.test.readaddress
 
 
         // Test is similar to others but tests the Overload where RadFlag.none is set -- probably don't need all combinations of test but doesn't hurt 
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public async Task ReadAtAddressAsyncReadFlagsNoneTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public async Task ReadAtAddressAsyncReadFlagsNoneTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             CancellationToken cancellationToken;
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
@@ -463,11 +463,11 @@ namespace FASTER.test.readaddress
         }
 
         // Test is similar to others but tests the Overload where RadFlag.SkipReadCache is set
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             CancellationToken cancellationToken;
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
@@ -506,14 +506,12 @@ namespace FASTER.test.readaddress
             }
         }
 
-
-
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public void ReadNoKeySyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public void ReadNoKeySyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
@@ -548,11 +546,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
         [Category("FasterKV")]
-        public async Task ReadNoKeyAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        public async Task ReadNoKeyAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);

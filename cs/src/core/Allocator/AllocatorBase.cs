@@ -186,6 +186,11 @@ namespace FASTER.core
         /// </summary>
         private bool disposed = false;
 
+        /// <summary>
+        /// Whether device is a null device
+        /// </summary>
+        internal readonly bool IsNullDevice;
+
         #endregion
 
         /// <summary>
@@ -222,6 +227,11 @@ namespace FASTER.core
         /// Observer for records entering read-only region
         /// </summary>
         internal IObserver<IFasterScanIterator<Key, Value>> OnReadOnlyObserver;
+
+        /// <summary>
+        /// Observer for records getting evicted from memory (page closed)
+        /// </summary>
+        internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         #region Abstract methods
         /// <summary>
@@ -479,6 +489,12 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
 
+        /// <summary>
+        /// Scan page guaranteed to be in memory
+        /// </summary>
+        /// <param name="beginAddress">Begin address</param>
+        /// <param name="endAddress">End address</param>
+        internal abstract void MemoryPageScan(long beginAddress, long endAddress);
         #endregion
 
 
@@ -503,6 +519,9 @@ namespace FASTER.core
             }
             FlushCallback = flushCallback;
             PreallocateLog = settings.PreallocateLog;
+
+            if (settings.LogDevice is NullDevice)
+                IsNullDevice = true;
 
             this.comparer = comparer;
             if (epoch == null)
@@ -546,10 +565,13 @@ namespace FASTER.core
                 throw new FasterException("Segment must be at least of page size");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
-            PendingFlush = new PendingFlushList[BufferSize];
-            for (int i = 0; i < BufferSize; i++)
-                PendingFlush[i] = new PendingFlushList();
 
+            if (!IsNullDevice)
+            {
+                PendingFlush = new PendingFlushList[BufferSize];
+                for (int i = 0; i < BufferSize; i++)
+                    PendingFlush[i] = new PendingFlushList();
+            }
             device = settings.LogDevice;
             sectorSize = (int)device.SectorSize;
 
@@ -618,12 +640,14 @@ namespace FASTER.core
             bufferPool.Free();
 
             OnReadOnlyObserver?.OnCompleted();
+            OnEvictionObserver?.OnCompleted();
         }
 
         /// <summary>
         /// Delete in-memory portion of the log
         /// </summary>
         internal abstract void DeleteFromMemory();
+
 
         /// <summary>
         /// Segment size
@@ -840,9 +864,15 @@ namespace FASTER.core
             var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
 
             // Shift read-only address
-            epoch.Resume();
-            ShiftReadOnlyAddress(newBeginAddress);
-            epoch.Suspend();
+            try
+            {
+                epoch.Resume();
+                ShiftReadOnlyAddress(newBeginAddress);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
 
             // Wait for flush to complete
             while (FlushedUntilAddress < newBeginAddress) Thread.Yield();
@@ -852,15 +882,21 @@ namespace FASTER.core
 
             if (h || b)
             {
-                epoch.Resume();
-                epoch.BumpCurrentEpoch(() =>
+                try
                 {
-                    if (h)
-                        OnPagesClosed(newBeginAddress);
-                    if (b)
-                        TruncateUntilAddress(newBeginAddress);
-                });
-                epoch.Suspend();
+                    epoch.Resume();
+                    epoch.BumpCurrentEpoch(() =>
+                    {
+                        if (h)
+                            OnPagesClosed(newBeginAddress);
+                        if (b)
+                            TruncateUntilAddress(newBeginAddress);
+                    });
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
             }
         }
 
@@ -883,7 +919,11 @@ namespace FASTER.core
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
                 Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
-                OnReadOnlyObserver?.OnNext(Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering));
+                if (OnReadOnlyObserver != null)
+                {
+                    using var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
+                    OnReadOnlyObserver?.OnNext(iter);
+                }
                 AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
             }
         }
@@ -899,11 +939,20 @@ namespace FASTER.core
             {
                 Debug.WriteLine("SafeHeadOffset shifted from {0:X} to {1:X}", oldSafeHeadAddress, newSafeHeadAddress);
 
+                // Also shift begin address if we are using a null storage device
+                if (IsNullDevice)
+                    Utility.MonotonicUpdate(ref BeginAddress, newSafeHeadAddress, out _);
+
                 for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
                 {
+                    long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
+                    long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
+                    MemoryPageScan(start, end);
+
                     if (newSafeHeadAddress < closePageAddress + PageSize)
                     {
                         // Partial page - do not close
+                        // Future work: clear partial page here
                         return;
                     }
 
@@ -914,6 +963,7 @@ namespace FASTER.core
                         AllocatePage(closePageIndex);
                     else
                         ClearPage(closePage);
+
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)
@@ -1353,6 +1403,14 @@ namespace FASTER.core
                 {
                     // Short circuit as no flush needed
                     Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, BeginAddress, out _);
+                    ShiftFlushedUntilAddress();
+                    continue;
+                }
+
+                if (IsNullDevice)
+                {
+                    // Short circuit as no flush needed
+                    Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, asyncResult.untilAddress, out _);
                     ShiftFlushedUntilAddress();
                     continue;
                 }
