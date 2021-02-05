@@ -178,12 +178,22 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
 
                 fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, logicalAddress);
+
+                if (CopyReadsToTail == CopyReadsToTail.FromReadOnly)
+                {
+                    var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
+                    InternalUpsert(ref key, ref container.Get(), ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
+                    container.Dispose();
+                }
                 return OperationStatus.SUCCESS;
             }
 
             // On-Disk Region
             else if (logicalAddress >= hlog.BeginAddress)
             {
+                if (hlog.IsNullDevice)
+                    return OperationStatus.NOTFOUND;
+
                 status = OperationStatus.RECORD_ON_DISK;
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
@@ -1232,7 +1242,7 @@ namespace FASTER.core
                 fasterSession.SingleReader(ref key, ref pendingContext.input.Get(),
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, request.logicalAddress);
 
-                if ((CopyReadsToTail && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
+                if ((CopyReadsToTail != CopyReadsToTail.None && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx);
                 }
