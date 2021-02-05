@@ -80,9 +80,16 @@ namespace FASTER.core
             // Then shift head address
             if (!fht.epoch.ThisInstanceProtected())
             {
-                fht.epoch.Resume();
-                allocator.ShiftHeadAddress(newHeadAddress);
-                fht.epoch.Suspend();
+                try
+                {
+                    fht.epoch.Resume();
+                    allocator.ShiftHeadAddress(newHeadAddress);
+                }
+                finally
+                {
+                    fht.epoch.Suspend();
+                }
+
                 while (wait && allocator.SafeHeadAddress < newHeadAddress) Thread.Yield();
             }
             else
@@ -151,9 +158,15 @@ namespace FASTER.core
         {
             if (!fht.epoch.ThisInstanceProtected())
             {
-                fht.epoch.Resume();
-                allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
-                fht.epoch.Suspend();
+                try
+                {
+                    fht.epoch.Resume();
+                    allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
+                }
+                finally
+                {
+                    fht.epoch.Suspend();
+                }
 
                 // Wait for flush to complete
                 while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) Thread.Yield();

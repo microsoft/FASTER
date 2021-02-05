@@ -864,9 +864,15 @@ namespace FASTER.core
             var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
 
             // Shift read-only address
-            epoch.Resume();
-            ShiftReadOnlyAddress(newBeginAddress);
-            epoch.Suspend();
+            try
+            {
+                epoch.Resume();
+                ShiftReadOnlyAddress(newBeginAddress);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
 
             // Wait for flush to complete
             while (FlushedUntilAddress < newBeginAddress) Thread.Yield();
@@ -876,15 +882,21 @@ namespace FASTER.core
 
             if (h || b)
             {
-                epoch.Resume();
-                epoch.BumpCurrentEpoch(() =>
+                try
                 {
-                    if (h)
-                        OnPagesClosed(newBeginAddress);
-                    if (b)
-                        TruncateUntilAddress(newBeginAddress);
-                });
-                epoch.Suspend();
+                    epoch.Resume();
+                    epoch.BumpCurrentEpoch(() =>
+                    {
+                        if (h)
+                            OnPagesClosed(newBeginAddress);
+                        if (b)
+                            TruncateUntilAddress(newBeginAddress);
+                    });
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
             }
         }
 
@@ -909,9 +921,8 @@ namespace FASTER.core
                 Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (OnReadOnlyObserver != null)
                 {
-                    var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
+                    using var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
                     OnReadOnlyObserver?.OnNext(iter);
-                    iter.Dispose();
                 }
                 AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
             }
@@ -941,6 +952,7 @@ namespace FASTER.core
                     if (newSafeHeadAddress < closePageAddress + PageSize)
                     {
                         // Partial page - do not close
+                        // Future work: clear partial page here
                         return;
                     }
 
@@ -950,9 +962,8 @@ namespace FASTER.core
                     if (!IsAllocated(closePageIndex))
                         AllocatePage(closePageIndex);
                     else
-                    {
                         ClearPage(closePage);
-                    }
+
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)

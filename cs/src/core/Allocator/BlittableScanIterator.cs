@@ -44,6 +44,7 @@ namespace FASTER.core
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
+        /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         public unsafe BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false)
         {
             this.hlog = hlog;

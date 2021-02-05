@@ -10,7 +10,6 @@ using System.Threading;
 #pragma warning disable CS0162 // Unreachable code detected
 
 namespace MemOnlyCache
-#pragma warning restore IDE0079 // Remove unnecessary suppression
 {
     class Program
     {
@@ -25,14 +24,19 @@ namespace MemOnlyCache
         const int kNumThreads = 1;
 
         /// <summary>
-        /// Percentage of writes
+        /// Percentage of writes in incoming workload requests (remaining are reads)
         /// </summary>
         const int WritePercent = 0;
 
         /// <summary>
-        /// Uniform distribution (true) or zipf (false)
+        /// Uniform random distribution (true) or Zipf distribution (false) of requests
         /// </summary>
         const bool UseUniform = false;
+
+        /// <summary>
+        /// Skew factor (theta) of Zipf distribution
+        /// </summary>
+        const double Theta = 0.99;
 
         /// <summary>
         /// Whether to upsert the data automatically on a cache miss
@@ -58,7 +62,7 @@ namespace MemOnlyCache
                 MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
             };
 
-            // Number of records in memory, assuming class keys and values
+            // Number of records in memory, assuming class keys and values and x64 platform
             // (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
             int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / 24);
 
@@ -67,7 +71,7 @@ namespace MemOnlyCache
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
             
-            // Register subscriber to receive log evictions from memory
+            // Register subscriber to receive notifications of log evictions from memory
             h.Log.SubscribeEvictions(new LogObserver());
             
             PopulateStore(numRecords);
@@ -129,7 +133,7 @@ namespace MemOnlyCache
             using var session = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
 
             var rnd = new Random(threadid);
-            var zipf = new ZipfGenerator(rnd, DbSize);
+            var zipf = new ZipfGenerator(rnd, DbSize, Theta);
 
             int statusNotFound = 0;
             int statusFound = 0;
@@ -138,13 +142,13 @@ namespace MemOnlyCache
             int i = 0;
             while (true)
             {
-                if (i > 0 && (i % 256 == 0))
+                if ((i % 256 == 0) && (i > 0))
                 {
                     Interlocked.Add(ref totalReads, 256);
-                    if (i % (1024 * 1024 * 20) == 0)
+                    if (i % (1024 * 1024 * 16) == 0) // report after every 16M ops
                         Console.WriteLine("Hit rate: {0:N2}; Evict count: {1}", statusFound / (double)(statusFound + statusNotFound), LogObserver.EvictCount);
                 }
-                int op = rnd.Next(100);
+                int op = WritePercent == 0 ? 0 : rnd.Next(100);
                 long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
 
                 var key = new CacheKey(k);
@@ -186,13 +190,9 @@ namespace MemOnlyCache
     {
         public static int EvictCount = 0;
 
-        public void OnCompleted()
-        {
-        }
+        public void OnCompleted() { }
 
-        public void OnError(Exception error)
-        {
-        }
+        public void OnError(Exception error) { }
 
         public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
         {

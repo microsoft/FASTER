@@ -980,11 +980,17 @@ namespace FASTER.core
             int start = (int)(beginAddress & PageSizeMask) / recordSize;
             int count = (int)(endAddress - beginAddress) / recordSize;
             int end = start + count;
-            var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
-            epoch.Suspend();
-            OnEvictionObserver?.OnNext(iter);
-            iter.Dispose();
-            epoch.Resume();
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
+            Debug.Assert(epoch.ThisInstanceProtected());
+            try
+            {
+                epoch.Suspend();
+                OnEvictionObserver?.OnNext(iter);
+            }
+            finally
+            {
+                epoch.Resume();
+            }
         }
     }
 }
