@@ -100,11 +100,11 @@ namespace FASTER.core
 
         public void Dispose()
         {
-            iter1.Dispose();
-            iter2.Dispose();
-            fhtSession.Dispose();
-            tempKvSession.Dispose();
-            tempKv.Dispose();
+            iter1?.Dispose();
+            iter2?.Dispose();
+            fhtSession?.Dispose();
+            tempKvSession?.Dispose();
+            tempKv?.Dispose();
         }
 
         public ref Key GetKey()
