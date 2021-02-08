@@ -40,6 +40,7 @@ namespace FASTER.core
         internal Guid _indexCheckpointToken;
         internal Guid _hybridLogCheckpointToken;
         internal HybridLogCheckpointInfo _hybridLogCheckpoint;
+        internal HybridLogRecoveryInfo _lastSnapshotCheckpoint;
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 

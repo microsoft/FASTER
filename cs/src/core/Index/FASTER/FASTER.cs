@@ -379,6 +379,33 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Initiate log-only checkpoint
+        /// </summary>
+        /// <param name="token">Checkpoint token</param>
+        /// <param name="checkpointType">Checkpoint type</param>
+        /// <param name="tryIncremental">Try to store as delta over last snapshot</param>
+        /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental)
+        {
+            ISynchronizationTask backend;
+            if (checkpointType == CheckpointType.FoldOver)
+                backend = new FoldOverCheckpointTask();
+            else if (checkpointType == CheckpointType.Snapshot)
+            {
+                if (tryIncremental && _lastSnapshotCheckpoint.guid != default && _lastSnapshotCheckpoint.finalLogicalAddress > hlog.FlushedUntilAddress)
+                    backend = new IncrementalSnapshotCheckpointTask();
+                else
+                    backend = new SnapshotCheckpointTask();
+            }
+            else
+                throw new FasterException("Unsupported checkpoint type");
+
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, -1));
+            token = _hybridLogCheckpointToken;
+            return result;
+        }
+
+        /// <summary>
         /// Take log-only checkpoint
         /// </summary>
         /// <param name="checkpointType">Checkpoint type</param>
