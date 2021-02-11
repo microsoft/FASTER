@@ -267,7 +267,7 @@ class PersistentMemoryMalloc {
     if(log_size % kPageSize != 0) {
       throw std::invalid_argument{ "Log size must be a multiple of 32 MB" };
     }
-    if(log_size % kPageSize > UINT32_MAX) {
+    if(log_size / kPageSize > UINT32_MAX) {
       throw std::invalid_argument{ "Log size must be <= 128 PB" };
     }
     buffer_size_ = static_cast<uint32_t>(log_size / kPageSize);
