@@ -66,6 +66,12 @@ namespace FASTER.core
         void Initialize(long segmentSize, LightEpoch epoch = null);
 
         /// <summary>
+        /// Try complete async IO completions
+        /// </summary>
+        /// <returns></returns>
+        bool TryComplete();
+
+        /// <summary>
         /// Whether device should be throttled
         /// </summary>
         /// <returns></returns>

@@ -283,5 +283,11 @@ namespace FASTER.core
                 TruncateUntilSegmentAsync(newStartSegment, r => { }, null);
             }
         }
+
+        /// <inheritdoc/>
+        public virtual bool TryComplete()
+        {
+            return true;
+        }
     }
 }
