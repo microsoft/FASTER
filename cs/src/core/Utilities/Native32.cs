@@ -132,13 +132,12 @@ namespace FASTER.core
             uint NumberOfConcurrentThreads);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern unsafe bool GetQueuedCompletionStatus(
+        internal static extern bool GetQueuedCompletionStatus(
             [In] IntPtr hCompletionPort,
             [Out] out UInt32 lpNumberOfBytesWritten,
             [Out] out IntPtr lpCompletionKey,
             [Out] out NativeOverlapped* lpOverlapped,
-            [In] int dwMilliseconds);
+            [In] UInt32 dwMilliseconds);
 
         internal enum EMoveMethod : uint
         {

@@ -23,6 +23,17 @@ namespace FASTER.core
         /// are concurrently created.
         /// </summary>
         public static bool UsePrivileges = true;
+        
+        /// <summary>
+        /// Number of IO completion threads dedicated to this instance. Used only
+        /// if useIoCompletionPort is set to true.
+        /// </summary>
+        public static int NumCompletionThreads = 1;
+
+        /// <summary>
+        /// Throttle I/O when this limit is reached
+        /// </summary>
+        public static int ThrottleLimit = 120;
 
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
@@ -68,7 +79,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override bool Throttle() => numPending > 120;
+        public override bool Throttle() => numPending > ThrottleLimit;
 
         /// <summary>
         /// Constructor with more options for derived classes
@@ -100,7 +111,18 @@ namespace FASTER.core
 
             this.useIoCompletionPort = useIoCompletionPort;
             if (useIoCompletionPort)
-                ioCompletionPort = Native32.CreateIoCompletionPort(new SafeFileHandle(new IntPtr(-1), false), IntPtr.Zero, UIntPtr.Zero, 96);
+            {
+                ThreadPool.GetMaxThreads(out int workerThreads, out _);
+                ioCompletionPort = Native32.CreateIoCompletionPort(new SafeFileHandle(new IntPtr(-1), false), IntPtr.Zero, UIntPtr.Zero, (uint)(workerThreads + NumCompletionThreads));
+                for (int i = 0; i < NumCompletionThreads; i++)
+                {
+                    var thread = new Thread(() => new LocalStorageDeviceCompletionWorker().Start(ioCompletionPort, _callback))
+                    {
+                        IsBackground = true
+                    };
+                    thread.Start();
+                }
+            }
 
             if (UsePrivileges && preallocateFile)
                 Native32.EnableProcessPrivileges();
@@ -333,7 +355,7 @@ namespace FASTER.core
 
             if (nativeOverlapped != null)
             {
-                int errorCode = succeeded ? 0 : 4;
+                int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
                 _callback((uint)errorCode, num_bytes, nativeOverlapped);
                 return true;
             }
@@ -383,7 +405,10 @@ namespace FASTER.core
                 SetFileSize(fileName, logHandle, segmentSize);
 
             if (ioCompletionPort != IntPtr.Zero)
-                Native32.CreateIoCompletionPort(logHandle, ioCompletionPort, (UIntPtr)(long)logHandle.DangerousGetHandle(), 96);
+            {
+                ThreadPool.GetMaxThreads(out int workerThreads, out _);
+                Native32.CreateIoCompletionPort(logHandle, ioCompletionPort, (UIntPtr)(long)logHandle.DangerousGetHandle(), (uint)(workerThreads + NumCompletionThreads));
+            }
             else
             {
                 try
@@ -493,5 +518,25 @@ namespace FASTER.core
         public bool CompletedSynchronously => throw new NotImplementedException();
 
         public bool IsCompleted => throw new NotImplementedException();
+    }
+
+    unsafe sealed class LocalStorageDeviceCompletionWorker
+    {
+        public void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
+        {
+            while (true)
+            {
+                Thread.Yield();
+                bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out IntPtr completionKey, out NativeOverlapped* nativeOverlapped, uint.MaxValue);
+
+                if (nativeOverlapped != null)
+                {
+                    int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
+                    _callback((uint)errorCode, num_bytes, nativeOverlapped);
+                }
+                else
+                    break;
+            }
+        }
     }
 }

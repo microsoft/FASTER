@@ -108,6 +108,9 @@ namespace FASTER.benchmark
             freq = Stopwatch.Frequency;
 #endif
 
+            // Increase throttle limit for higher concurrency runs
+            if (threadCount > 8) LocalStorageDevice.ThrottleLimit *= 2;
+
             var path = "D:\\data\\FasterYcsbBenchmark\\";
             device = Devices.CreateLogDevice(path + "hlog", preallocateFile: true, useIoCompletionPort: false);
 
@@ -302,6 +305,10 @@ namespace FASTER.benchmark
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 Console.WriteLine("Completed checkpoint");
             }
+
+            // Flush and evict log from main memory
+            if (kSmallMemoryLog)
+                store.Log.FlushAndEvict(true);
 
             // Uncomment below to dispose log from memory, use for 100% read workloads only
             // store.Log.DisposeFromMemory();
