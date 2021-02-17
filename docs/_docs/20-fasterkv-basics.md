@@ -205,6 +205,33 @@ Unit tests are a useful resource to see how FASTER is used as well. They are in
 All these call be accessed through Visual Studio via the main FASTER.sln solution file at
 [/cs](https://github.com/Microsoft/FASTER/tree/master/cs).
 
+## Key Iteration
+
+FasterKV supports key iteration in order to get the set of distinct keys that are active (not deleted or expired) and indexed by the store. Related pull request is [here](https://github.com/microsoft/FASTER/pull/287). Usage is shown below:
+
+```cs
+using var iter = store.Iterate();
+while (iter.GetNext(out var recordInfo))
+{
+   ref Key key = ref iter.GetKey();
+   ref Value value = ref iter.GetValue();
+}
+```
+
+## Log Scan
+
+Recall that FasterKV is backed by a log of records that spans disk and main memory. We support a scan operation of the records between any two log addresses. Note that unlike key iteration, scan does not check for records with duplicate keys or eliminate deleted records. Instead, it reports all records on the log in sequential fashion. `RecordInfo` can be used to check each record's header whether it is a deleted record (`recordInfo.Tombstone` is true for a deleted record). A start address of `0` is used to denote the beginning of the log. In order to scan all read-only records (not in the mutable region), you can end iteration at `store.Log.ReadOnlyAddress`. To include mutable records in memory, you can end iteration at `store.Log.TailAddress`. Related pull request is [here](https://github.com/microsoft/FASTER/pull/90). Usage is shown below:
+
+```cs
+using var iter = store.Log.Scan(0, fht.Log.ReadOnlyAddress);
+while (iter.GetNext(out var recordInfo))
+{
+   ref Key key = ref iter.GetKey();
+   ref Value value = ref iter.GetValue();
+}
+```
+
+
 ## Handling Variable Length Keys and Values
 
 There are several ways to handle variable length keys and values in FasterKV:
