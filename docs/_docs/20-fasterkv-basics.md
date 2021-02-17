@@ -124,7 +124,7 @@ You can then perform a sequence of read, upsert, and RMW operations on the sessi
 
 ```cs
 var status = session.Read(ref key, ref output);
-var status = session.Read(ref key, ref input, ref output, ref context, ref serialNo);
+var status = session.Read(ref key, ref input, ref output, context, serialNo);
 await session.ReadAsync(key, input);
 ```
 
@@ -132,15 +132,22 @@ await session.ReadAsync(key, input);
 
 ```cs
 var status = session.Upsert(ref key, ref value);
-var status = session.Upsert(ref key, ref value, ref context, ref serialNo);
+var status = session.Upsert(ref key, ref value, context, serialNo);
 ```
 
 #### RMW
 
 ```cs
 var status = session.RMW(ref key, ref input);
-var status = session.RMW(ref key, ref input, ref context, ref serialNo);
+var status = session.RMW(ref key, ref input, context, serialNo);
 await session.RMWAsync(key, input);
+```
+
+#### Delete
+
+```cs
+var status = session.Delete(ref key);
+var status = session.Delete(ref key, context, serialNo);
 ```
 
 ### Disposing
