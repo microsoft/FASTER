@@ -220,10 +220,10 @@ while (iter.GetNext(out var recordInfo))
 
 ## Log Scan
 
-Recall that FasterKV is backed by a log of records that spans disk and main memory. We support a scan operation of the records between any two log addresses. Note that unlike key iteration, scan does not check for records with duplicate keys or eliminate deleted records. Instead, it reports all records on the log in sequential fashion. `RecordInfo` can be used to check each record's header whether it is a deleted record (`recordInfo.Tombstone` is true for a deleted record). A start address of `0` is used to denote the beginning of the log. In order to scan all read-only records (not in the mutable region), you can end iteration at `store.Log.ReadOnlyAddress`. To include mutable records in memory, you can end iteration at `store.Log.TailAddress`. Related pull request is [here](https://github.com/microsoft/FASTER/pull/90). Usage is shown below:
+Recall that FasterKV is backed by a log of records that spans disk and main memory. We support a scan operation of the records between any two log addresses. Note that unlike key iteration, scan does not check for records with duplicate keys or eliminate deleted records. Instead, it reports all records on the log in sequential fashion. `RecordInfo` can be used to check each record's header whether it is a deleted record (`recordInfo.Tombstone` is true for a deleted record). A start address of `0` is used to denote the beginning of the log. In order to scan all read-only records (not in the mutable region), you can end iteration at `store.Log.SafeReadOnlyAddress`. To include mutable records in memory, you can end iteration at `store.Log.TailAddress`. Related pull request is [here](https://github.com/microsoft/FASTER/pull/90). Usage is shown below:
 
 ```cs
-using var iter = store.Log.Scan(0, fht.Log.ReadOnlyAddress);
+using var iter = store.Log.Scan(0, fht.Log.SafeReadOnlyAddress);
 while (iter.GetNext(out var recordInfo))
 {
    ref Key key = ref iter.GetKey();
@@ -231,6 +231,22 @@ while (iter.GetNext(out var recordInfo))
 }
 ```
 
+## Log Operations
+
+FasterKV exposes a Log interface (`store.Log`) to perform different kinds of operations on the log underlying the store. A similar endpoint is exposed for the read cache as well (`store.ReadCache`). The interface supports a rich suite of operations:
+
+* Access various pre-defined address points: `store.Log.BeginAddress`, `store.Log.HeadAddress`, `store.Log.SafeReadOnlyAddress`, `store.Log.TailAddress`
+* Truncate the log until, but not including, untilAddress: `store.Log.ShiftBeginAddress(untilAddress)`
+  * You can use this to delete the database contents in bulk: `store.Log.ShiftBeginAddress(store.Log.TailAddress)`
+* Shift log head address to prune memory foorprint of hybrid log: `store.Log.ShiftHeadAddress(untilAddress, wait: true)`
+* Shift log read-only address to make records immutable and flush them to disk: `store.Log.ShiftReadOnlyAddress(untilAddress, wait: true)`
+* Flush log until current tail (records are still retained in memory): `store.Log.Flush(wait: true)`
+* Flush log and evict all records from memory: `store.Log.FlushAndEvict(wait: true)`
+* Delete log entirely from memory as a synchronous operation (cannot allocate on the log after this point): `store.Log.DisposeFromMemory()`
+* Subscribe to log records as they become read-only: `store.Log.Subscribe(observer)`
+* Subscribe to log records as they are evicted from memory (at HeadAddress): `store.Log.SubscribeEvictions(observer)`
+* Scan the log: see [here](#log-scan) for details
+* Compact the log: see [here](#log-compaction) for details
 
 ## Handling Variable Length Keys and Values
 
