@@ -23,17 +23,12 @@ namespace FASTER.core
         /// are concurrently created.
         /// </summary>
         public static bool UsePrivileges = true;
-        
+
         /// <summary>
         /// Number of IO completion threads dedicated to this instance. Used only
         /// if useIoCompletionPort is set to true.
         /// </summary>
         public static int NumCompletionThreads = 1;
-
-        /// <summary>
-        /// Throttle I/O when this limit is reached
-        /// </summary>
-        public static int ThrottleLimit = 120;
 
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
@@ -108,7 +103,7 @@ namespace FASTER.core
                 throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
             }
 #endif
-
+            ThrottleLimit = 120;
             this.useIoCompletionPort = useIoCompletionPort;
             if (useIoCompletionPort)
             {

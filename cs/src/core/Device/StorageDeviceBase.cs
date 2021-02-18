@@ -52,6 +52,11 @@ namespace FASTER.core
         private ulong segmentSizeMask;
 
         /// <summary>
+        /// Throttle limit (max number of pending I/Os) for this device instance
+        /// </summary>
+        public int ThrottleLimit { get; set; } = int.MaxValue;
+
+        /// <summary>
         /// Instance of the epoch protection framework in the current system.
         /// A device may have internal in-memory data structure that requires epoch protection under concurrent access.
         /// </summary>

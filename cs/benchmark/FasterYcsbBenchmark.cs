@@ -108,11 +108,11 @@ namespace FASTER.benchmark
             freq = Stopwatch.Frequency;
 #endif
 
-            // Increase throttle limit for higher concurrency runs
-            if (threadCount > 8) LocalStorageDevice.ThrottleLimit *= 2;
-
             var path = "D:\\data\\FasterYcsbBenchmark\\";
             device = Devices.CreateLogDevice(path + "hlog", preallocateFile: true, useIoCompletionPort: false);
+
+            // Increase throttle limit for higher concurrency runs
+            if (threadCount > 8) device.ThrottleLimit *= 2;
 
             if (kSmallMemoryLog)
                 store = new FasterKV<Key, Value>
