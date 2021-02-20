@@ -23,8 +23,9 @@ namespace FASTER.core
         /// <param name="deleteOnClose">Delete files on close</param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
+        /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false)
+        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false)
         {
             IDevice logDevice;
 
@@ -36,7 +37,7 @@ namespace FASTER.core
             else
 #endif
             {
-                logDevice = new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, true, capacity, recoverDevice);
+                logDevice = new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, true, capacity, recoverDevice, useIoCompletionPort);
             }
             return logDevice;
         }
