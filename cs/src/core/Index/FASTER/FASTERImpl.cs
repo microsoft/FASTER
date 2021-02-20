@@ -1142,10 +1142,8 @@ namespace FASTER.core
             long fromAddress = -1)
             where FasterSession : IFasterSession
         {
-            if (fromAddress == -1)
+            if (fromAddress < hlog.HeadAddress)
                 fromAddress = hlog.HeadAddress;
-            else
-                Debug.Assert(fromAddress >= hlog.HeadAddress);
 
             var bucket = default(HashBucket*);
             var slot = default(int);

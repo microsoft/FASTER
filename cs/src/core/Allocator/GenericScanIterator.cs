@@ -225,6 +225,11 @@ namespace FASTER.core
                 }
                 else
                 {
+                    if (loaded[currentFrame] == null)
+                    {
+                        hlog.AsyncReadPagesFromDeviceToFrame(currentAddress >> hlog.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
+                    }
+
                     var endPage = endAddress >> hlog.LogPageSizeBits;
                     if ((endPage > currentPage) &&
                         ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))

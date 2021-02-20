@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Reflection;
 using System.Threading;
 
@@ -323,6 +324,9 @@ namespace FASTER.core
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
+            if (untilAddress > fht.Log.SafeReadOnlyAddress)
+                throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
+
             var originalUntilAddress = untilAddress;
 
             using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
@@ -344,42 +348,46 @@ namespace FASTER.core
                     untilAddress = originalUntilAddress = iter1.NextAddress;
                 }
 
-                // TODO: Scan until SafeReadOnlyAddress
-                var scanUntil = untilAddress;
-                LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
-
-                // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
+                // Scan until SafeReadOnlyAddress
+                var scanUntil = fht.Log.SafeReadOnlyAddress;
+                if (untilAddress < scanUntil)
+                    LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
+                
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 while (iter3.GetNext(out var recordInfo))
                 {
-                    ref var key = ref iter3.GetKey();
-                    ref var value = ref iter3.GetValue();
-
                     if (!recordInfo.Tombstone)
                     {
-                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
-                        {
-                            // Check if recordInfo point to the newest record.
-                            // With #164 it is possible that tempKv might have multiple records with the same
-                            // key (ConcurrentWriter returns false). For this reason check the index
-                            // whether the actual record has the same address (or maybe even deleted).
-                            // If this is too much of a performance hit - we could try and add additional info
-                            // to the recordInfo to indicate that it was replaced (but it would only for tempKv 
-                            // not general case).
-                            var bucket = default(HashBucket*);
-                            var slot = default(int);
+                        // Ensure that the key wasn't inserted in memory
+                        if (fhtSession.ContainsKeyInMemory(ref iter3.GetKey(), scanUntil) != Status.NOTFOUND)
+                            continue;
 
-                            var hash = tempKv.Comparer.GetHashCode64(ref key);
-                            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+                        // Ensure we have checked at least all records not in memory
+                        scanUntil = fht.Log.SafeReadOnlyAddress;
+                        if (untilAddress < scanUntil)
+                            LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
 
-                            var entry = default(HashBucketEntry);
-                            if (tempKv.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter3.CurrentAddress)
-                                fhtSession.Upsert(ref key, ref value, default, 0);
-                        }
-                    }
-                    if (scanUntil < fht.Log.SafeReadOnlyAddress)
-                    {
-                        LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
+                        // Safe to check tombstone bit directly, as tempKv is pure in-memory
+                        Debug.Assert(iter3.CurrentAddress >= tempKv.Log.HeadAddress);
+                        if (tempKv.hlog.GetInfo(tempKv.hlog.GetPhysicalAddress(iter3.CurrentAddress)).Tombstone)
+                            continue;
+
+                        // Check if recordInfo point to the newest record.
+                        // With #164 it is possible that tempKv might have multiple records with the same
+                        // key (ConcurrentWriter returns false). For this reason check the index
+                        // whether the actual record has the same address (or maybe even deleted).
+                        // If this is too much of a performance hit - we could try and add additional info
+                        // to the recordInfo to indicate that it was replaced (but it would only for tempKv 
+                        // not general case).
+                        var bucket = default(HashBucket*);
+                        var slot = default(int);
+
+                        var hash = tempKv.Comparer.GetHashCode64(ref iter3.GetKey());
+                        var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+                        var entry = default(HashBucketEntry);
+                        if (tempKv.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter3.CurrentAddress)
+                            fhtSession.Upsert(ref iter3.GetKey(), ref iter3.GetValue(), default, 0);
                     }
                 }
             }
@@ -390,22 +398,18 @@ namespace FASTER.core
             return originalUntilAddress;
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, ref long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            while (scanUntil < fht.Log.SafeReadOnlyAddress)
+            using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
+            while (iter2.GetNext(out var _))
             {
-                untilAddress = scanUntil;
-                scanUntil = fht.Log.SafeReadOnlyAddress;
-                using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
-                while (iter2.GetNext(out var _))
-                {
-                    ref var key = ref iter2.GetKey();
-                    ref var value = ref iter2.GetValue();
+                ref var k = ref iter2.GetKey();
+                ref var v = ref iter2.GetValue();
 
-                    tempKvSession.Delete(ref key, default, 0);
-                }
+                tempKvSession.Delete(ref k, default, 0);
             }
+            untilAddress = scanUntil;
         }
 
 #pragma warning disable IDE0051 // Remove unused private members
