@@ -134,7 +134,7 @@ namespace FASTER.core
                         {
                             if (recordInfo.PreviousAddress >= fht.Log.BeginAddress)
                             {
-                                if (tempKvSession.ContainsKeyInMemory(ref key) == Status.OK)
+                                if (tempKvSession.ContainsKeyInMemory(ref key, out _) == Status.OK)
                                 {
                                     tempKvSession.Delete(ref key, Empty.Default, 0);
                                 }

@@ -1138,8 +1138,7 @@ namespace FASTER.core
         internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
             ref Key key, 
             FasterExecutionContext<Input, Output, Context> sessionCtx, 
-            FasterSession fasterSession, 
-            long fromAddress = -1)
+            FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
             where FasterSession : IFasterSession
         {
             if (fromAddress < hlog.HeadAddress)
@@ -1160,7 +1159,7 @@ namespace FASTER.core
 
             if (tagExists)
             {
-                long logicalAddress = entry.Address;
+                logicalAddress = entry.Address;
 
                 if (UseReadCache)
                     SkipReadCache(ref logicalAddress);
@@ -1180,16 +1179,23 @@ namespace FASTER.core
                     }
 
                     if (logicalAddress < fromAddress)
+                    {
+                        logicalAddress = 0;
                         return Status.NOTFOUND;
+                    }
                     else
                         return Status.OK;
                 }
                 else
+                {
+                    logicalAddress = 0;
                     return Status.NOTFOUND;
+                }
             }
             else
             {
                 // no tag found
+                logicalAddress = 0;
                 return Status.NOTFOUND;
             }
         }
@@ -1744,8 +1750,6 @@ namespace FASTER.core
                 else
                 {
                     foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
-                    //This makes testing REALLY slow
-                    //Debug.WriteLine("Tracing back");
                     continue;
                 }
             }

@@ -510,14 +510,15 @@ namespace FASTER.core
         /// and tail)
         /// </summary>
         /// <param name="key">Key of the record.</param>
+        /// <param name="logicalAddress">Logical address of record, if found</param>
         /// <param name="fromAddress">Look until this address</param>
         /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
+        internal Status ContainsKeyInMemory(ref Key key, out long logicalAddress, long fromAddress = -1)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
+                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, out logicalAddress, fromAddress);
             }
             finally
             {

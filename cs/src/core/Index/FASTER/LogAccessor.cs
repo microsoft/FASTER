@@ -359,8 +359,12 @@ namespace FASTER.core
                     if (!recordInfo.Tombstone)
                     {
                         // Ensure that the key wasn't inserted in memory
-                        if (fhtSession.ContainsKeyInMemory(ref iter3.GetKey(), scanUntil) != Status.NOTFOUND)
+                        if (fhtSession.ContainsKeyInMemory(ref iter3.GetKey(), out _, scanUntil) != Status.NOTFOUND)
                             continue;
+
+                        // There is a infinitesimally small possibility that a record enters tail at this
+                        // point, escapes the scan below, and then escapes to disk before the final upsert
+                        // can catch it. This case is not handled by log compaction.
 
                         // Ensure we have checked at least all records not in memory
                         scanUntil = fht.Log.SafeReadOnlyAddress;
@@ -372,22 +376,22 @@ namespace FASTER.core
                         if (tempKv.hlog.GetInfo(tempKv.hlog.GetPhysicalAddress(iter3.CurrentAddress)).Tombstone)
                             continue;
 
-                        // Check if recordInfo point to the newest record.
-                        // With #164 it is possible that tempKv might have multiple records with the same
-                        // key (ConcurrentWriter returns false). For this reason check the index
-                        // whether the actual record has the same address (or maybe even deleted).
-                        // If this is too much of a performance hit - we could try and add additional info
-                        // to the recordInfo to indicate that it was replaced (but it would only for tempKv 
-                        // not general case).
-                        var bucket = default(HashBucket*);
-                        var slot = default(int);
-
-                        var hash = tempKv.Comparer.GetHashCode64(ref iter3.GetKey());
-                        var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-                        var entry = default(HashBucketEntry);
-                        if (tempKv.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter3.CurrentAddress)
-                            fhtSession.Upsert(ref iter3.GetKey(), ref iter3.GetValue(), default, 0);
+                        // If record is not the latest in memory
+                        if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress) == Status.OK)
+                        {
+                            if (iter3.CurrentAddress != tempKeyAddress)
+                                continue;
+                        }
+                        else
+                        {
+                            // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
+                            continue;
+                        }
+                        
+                        // If same key was inserted by another session just now, ConcurrentUpdater will decide whether
+                        // to update the record or not. If you do not want to overwrite the inserted record, make sure
+                        // ConcurrentUpdater for this compaction session does not update the record.
+                        fhtSession.Upsert(ref iter3.GetKey(), ref iter3.GetValue(), default, 0);
                     }
                 }
             }
