@@ -132,7 +132,7 @@ namespace FASTER.test.recovery.sumstore
                     for (int i = 0; i < segmentIds.Count; i++)
                     {
                         var segmentId = segmentIds[i];
-                        var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName);
+                        var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName, IntPtr.Zero);
                         initialHandles[i] = new KeyValuePair<int, SafeFileHandle>(segmentId, handle);
                     }
                 }
