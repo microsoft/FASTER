@@ -283,6 +283,8 @@ namespace FASTER.core
             FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            hlog.TryComplete();
+
             if (opCtx.readyResponses.Count == 0) return;
 
             while (opCtx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))

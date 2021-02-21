@@ -238,6 +238,7 @@ FasterKV exposes a Log interface (`store.Log`) to perform different kinds of ope
 * Access various pre-defined address points: `store.Log.BeginAddress`, `store.Log.HeadAddress`, `store.Log.SafeReadOnlyAddress`, `store.Log.TailAddress`
 * Truncate the log until, but not including, untilAddress: `store.Log.ShiftBeginAddress(untilAddress)`
   * You can use this to delete the database contents in bulk: `store.Log.ShiftBeginAddress(store.Log.TailAddress)`
+  * Deletion of the log on disk only occurs at segment boundary (file) granularity, as per `SegmentSizeBits` defined in log settings.
 * Shift log head address to prune memory foorprint of hybrid log: `store.Log.ShiftHeadAddress(untilAddress, wait: true)`
 * Shift log read-only address to make records immutable and flush them to disk: `store.Log.ShiftReadOnlyAddress(untilAddress, wait: true)`
 * Flush log until current tail (records are still retained in memory): `store.Log.Flush(wait: true)`

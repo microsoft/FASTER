@@ -1705,6 +1705,7 @@ namespace FASTER.core
         {
             while ((logicalAddress = hlog.TryAllocate(recordSize)) == 0)
             {
+                hlog.TryComplete();
                 InternalRefresh(ctx, fasterSession);
                 Thread.Yield();
             }
