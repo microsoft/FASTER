@@ -11,17 +11,35 @@ namespace FASTER.core
     /// </summary>
     public abstract class ScanIteratorBase
     {
+        /// <summary>
+        /// Frame size
+        /// </summary>
         protected readonly int frameSize;
+
+        /// <summary>
+        /// Begin address
+        /// </summary>
         protected readonly long beginAddress;
+
+        /// <summary>
+        /// End address
+        /// </summary>
         protected readonly long endAddress;
+
+        /// <summary>
+        /// Epoch
+        /// </summary>
         protected readonly LightEpoch epoch;
+
+        /// <summary>
+        /// Current and next address for iteration
+        /// </summary>
         protected long currentAddress, nextAddress;
         
         private readonly CountdownEvent[] loaded;
         private readonly CancellationTokenSource[] loadedCancel;
         private readonly long[] loadedPage;
         private readonly long[] nextLoadedPage;
-
         private readonly int logPageSizeBits;
 
         /// <summary>
