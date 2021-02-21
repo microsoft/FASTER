@@ -3,37 +3,20 @@
 
 using System.Threading;
 using System.Diagnostics;
-using System;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class GenericScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
+    public sealed class GenericScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>
     {
-        private readonly int frameSize;
         private readonly GenericAllocator<Key, Value> hlog;
-        private readonly long endAddress;
         private readonly GenericFrame<Key, Value> frame;
-        private readonly CountdownEvent[] loaded;
         private readonly int recordSize;
-        private readonly LightEpoch epoch;
 
-        private bool first = true;
-        private long currentAddress, nextAddress;
         private Key currentKey;
         private Value currentValue;
-
-        /// <summary>
-        /// Current address
-        /// </summary>
-        public long CurrentAddress => currentAddress;
-
-        /// <summary>
-        /// Next address
-        /// </summary>
-        public long NextAddress => nextAddress;
 
         /// <summary>
         /// Constructor
@@ -43,45 +26,13 @@ namespace FASTER.core
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
-        public unsafe GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
+        public GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
         {
             this.hlog = hlog;
-
-            // If we are protected when creating the iterator, we do not need per-GetNext protection
-            if (!epoch.ThisInstanceProtected())
-                this.epoch = epoch;
-
-            if (beginAddress == 0)
-                beginAddress = hlog.GetFirstValidLogicalAddress(0);
-
-            this.endAddress = endAddress;
-
             recordSize = hlog.GetRecordSize(0).Item2;
-            currentAddress = -1;
-            nextAddress = beginAddress;
-
-            if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
-                frameSize = 1;
-            else if (scanBufferingMode == ScanBufferingMode.DoublePageBuffering)
-                frameSize = 2;
-            else if (scanBufferingMode == ScanBufferingMode.NoBuffering)
-            {
-                frameSize = 0;
-                return;
-            }
-
-            frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
-            loaded = new CountdownEvent[frameSize];
-
-            // Only load addresses flushed to disk
-            if (nextAddress < hlog.HeadAddress)
-            {
-                var frameNumber = (nextAddress >> hlog.LogPageSizeBits) % frameSize;
-                hlog.AsyncReadPagesFromDeviceToFrame
-                    (nextAddress >> hlog.LogPageSizeBits,
-                    1, endAddress, AsyncReadPagesCallback, Empty.Default,
-                    frame, out loaded[frameNumber]);
-            }
+            if (frameSize > 0)
+                frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
         }
 
         /// <summary>
@@ -143,7 +94,7 @@ namespace FASTER.core
                 var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
                 if (currentAddress < headAddress)
-                    BufferAndLoad(currentAddress, currentPage, currentPage % frameSize);
+                    BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, endAddress);
 
                 // Check if record fits on page, if not skip to next page
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
@@ -211,59 +162,27 @@ namespace FASTER.core
             return false;
         }
 
-        private unsafe void BufferAndLoad(long currentAddress, long currentPage, long currentFrame)
-        {
-            if (first || (currentAddress & hlog.PageSizeMask) == 0)
-            {
-                // Prefetch pages based on buffering mode
-                if (frameSize == 1)
-                {
-                    if (!first)
-                    {
-                        hlog.AsyncReadPagesFromDeviceToFrame(currentAddress >> hlog.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
-                    }
-                }
-                else
-                {
-                    if (loaded[currentFrame] == null)
-                    {
-                        hlog.AsyncReadPagesFromDeviceToFrame(currentAddress >> hlog.LogPageSizeBits, 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[currentFrame]);
-                    }
-
-                    var endPage = endAddress >> hlog.LogPageSizeBits;
-                    if ((endPage > currentPage) &&
-                        ((endPage > currentPage + 1) || ((endAddress & hlog.PageSizeMask) != 0)))
-                    {
-                        hlog.AsyncReadPagesFromDeviceToFrame(1 + (currentAddress >> hlog.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[(currentPage + 1) % frameSize]);
-                    }
-                }
-                first = false;
-            }
-            epoch?.Suspend();
-            loaded[currentFrame].Wait();
-            epoch?.Resume();
-        }
-
         /// <summary>
         /// Dispose iterator
         /// </summary>
-        public void Dispose()
+        public override void Dispose()
         {
-            if (loaded != null)
-                for (int i = 0; i < frameSize; i++)
-                    loaded[i]?.Wait();
-
+            base.Dispose();
             frame?.Dispose();
         }
 
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null) 
+            => hlog.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice);
+
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
+            var result = (PageAsyncReadResult<Empty>)context;
+
             if (errorCode != 0)
             {
                 Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
+                result.cts?.Cancel();
             }
-
-            var result = (PageAsyncReadResult<Empty>)context;
 
             if (result.freeBuffer1 != null)
             {
@@ -271,10 +190,8 @@ namespace FASTER.core
                 result.freeBuffer1.Return();
             }
 
-            if (result.handle != null)
-            {
-                result.handle.Signal();
-            }
+            if (errorCode == 0)
+                result.handle?.Signal();
 
             Interlocked.MemoryBarrier();
         }
