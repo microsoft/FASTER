@@ -234,71 +234,29 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. 
-        /// Uses default compaction functions that only deletes explicitly deleted records, 
-        /// copying is implemeted by shallow copying values from source to destination.
+        /// Compact the log until specified address, moving active records to the tail of the log.
         /// </summary>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
         /// <returns>Address until which compaction was done</returns>
-        [Obsolete("Invoke Compact() on a client session (ClientSession) instead")]
-        public long Compact(long untilAddress, bool shiftBeginAddress)
-        {
-            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
-                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
-                {
-                    MethodInfo method = GetType().GetMethod("CompactReadOnly", BindingFlags.NonPublic | BindingFlags.Instance);
-                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
-                    return (long)generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
-                }
-                else if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
-                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
-                {
-                    MethodInfo method = GetType().GetMethod("CompactMemory", BindingFlags.NonPublic | BindingFlags.Instance);
-                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
-                    return (long)generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
-                }
-                else
-                {
-                    var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
-                    return Compact<Empty, Empty, Empty, LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>, DefaultVariableCompactionFunctions<Key, Value>>(functions, default, untilAddress, shiftBeginAddress);
-                }
-            }
-            else
-            {
-                return Compact<Empty, Empty, Empty, LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>, DefaultCompactionFunctions<Key, Value>>(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default, untilAddress, shiftBeginAddress);
-            }
-        }
+        public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, bool shiftBeginAddress)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, shiftBeginAddress);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log.
         /// </summary>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
         /// <returns>Address until which compaction was done</returns>
-        [Obsolete("Invoke Compact() on a client session (ClientSession) instead")]
-        public long Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress, bool shiftBeginAddress)
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                var functions = new LogVariableCompactFunctions<Key, Value, CompactionFunctions>(varLen, compactionFunctions);
-                return Compact<Empty, Empty, Empty, LogVariableCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>(functions, compactionFunctions, untilAddress, shiftBeginAddress);
-            }
-            else
-            {
-                return Compact<Empty, Empty, Empty, LogCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, shiftBeginAddress);
-            }
-        }
-
-        internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, bool shiftBeginAddress)
+        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, bool shiftBeginAddress)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
@@ -402,28 +360,5 @@ namespace FASTER.core
             }
             untilAddress = scanUntil;
         }
-
-#pragma warning disable IDE0051 // Remove unused private members
-        private long CompactReadOnly<T>(long untilAddress, bool shiftBeginAddress) where T : unmanaged
-        {
-            if (allocator is VariableLengthBlittableAllocator<ReadOnlyMemory<T>, Memory<T>> varLen)
-            {
-                var functions = new LogVariableCompactFunctions<ReadOnlyMemory<T>, Memory<T>, DefaultReadOnlyMemoryCompactionFunctions<T>>(varLen, default);
-                return (this as LogAccessor<ReadOnlyMemory<T>, Memory<T>>).Compact<Empty, Empty, Empty, LogVariableCompactFunctions<ReadOnlyMemory<T>, Memory<T>, DefaultReadOnlyMemoryCompactionFunctions<T>>, DefaultReadOnlyMemoryCompactionFunctions<T>>(functions, default, untilAddress, shiftBeginAddress);
-            }
-            throw new FasterException("Unexpected condition during log compaction");
-        }
-
-        private long CompactMemory<T>(long untilAddress, bool shiftBeginAddress)
-            where T : unmanaged
-        {
-            if (allocator is VariableLengthBlittableAllocator<Memory<T>, Memory<T>> varLen)
-            {
-                var functions = new LogVariableCompactFunctions<Memory<T>, Memory<T>, DefaultMemoryCompactionFunctions<T>>(varLen, default);
-                return (this as LogAccessor<Memory<T>, Memory<T>>).Compact<Empty, Empty, Empty, LogVariableCompactFunctions<Memory<T>, Memory<T>, DefaultMemoryCompactionFunctions<T>>, DefaultMemoryCompactionFunctions<T>>(functions, default, untilAddress, shiftBeginAddress);
-            }
-            throw new FasterException("Unexpected condition during log compaction");
-        }
-#pragma warning restore IDE0051 // Remove unused private members
     }
 }

@@ -689,6 +689,22 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Iterator for all (distinct) live key-values stored in FASTER
+        /// </summary>
+        /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <returns>FASTER iterator</returns>
+        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1)
+        {
+            if (!SupportAsync)
+                throw new FasterException("Do not perform iteration using a threadAffinitized session");
+
+            if (untilAddress == -1)
+                untilAddress = fht.Log.TailAddress;
+
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress);
+        }
+
+        /// <summary>
         /// Resume session on current thread
         /// Call SuspendThread before any async op
         /// </summary>

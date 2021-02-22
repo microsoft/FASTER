@@ -87,7 +87,7 @@ namespace FASTER.test
             }
 
             // Test iteration of distinct live keys
-            using (var iter = fht.Iterate())
+            using (var iter = session.Iterate())
             {
                 int count = 0;
                 while (iter.GetNext(out RecordInfo recordInfo))
