@@ -265,18 +265,12 @@ namespace FASTER.core
                 else
                 {
                     var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
-                    var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                    {
-                        keyLength = varLen.KeyLength,
-                        valueLength = varLen.ValueLength,
-                    };
-
-                    return Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                    return Compact<Empty, Empty, Empty, LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>, DefaultVariableCompactionFunctions<Key, Value>>(functions, default, untilAddress, shiftBeginAddress);
                 }
             }
             else
             {
-                return Compact(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default(DefaultCompactionFunctions<Key, Value>), untilAddress, null, shiftBeginAddress);
+                return Compact<Empty, Empty, Empty, LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>, DefaultCompactionFunctions<Key, Value>>(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default, untilAddress, shiftBeginAddress);
             }
         }
 
@@ -296,38 +290,34 @@ namespace FASTER.core
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
                 var functions = new LogVariableCompactFunctions<Key, Value, CompactionFunctions>(varLen, compactionFunctions);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-
-                return Compact(functions, compactionFunctions, untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                return Compact<Empty, Empty, Empty, LogVariableCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>(functions, compactionFunctions, untilAddress, shiftBeginAddress);
             }
             else
             {
-                return Compact(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null, shiftBeginAddress);
+                return Compact<Empty, Empty, Empty, LogCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, shiftBeginAddress);
             }
         }
 
-        private unsafe long Compact<Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
-            where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            using var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
-            return Compact(fhtSession, functions, cf, untilAddress, variableLengthStructSettings, shiftBeginAddress);
-        }
-
-        internal unsafe long Compact<Input, Output, Context, Functions, CompactionFunctions>(
-            ClientSession<Key, Value, Input, Output, Context, Functions> fhtSession,
-            Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
+        internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, bool shiftBeginAddress)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             if (untilAddress > fht.Log.SafeReadOnlyAddress)
                 throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
-
             var originalUntilAddress = untilAddress;
+
+            var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
+            using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
+
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
+            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
+            {
+                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
+            }
 
             using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
@@ -388,9 +378,6 @@ namespace FASTER.core
                             continue;
                         }
                         
-                        // If same key was inserted by another session just now, ConcurrentUpdater will decide whether
-                        // to update the record or not. If you do not want to overwrite the inserted record, make sure
-                        // ConcurrentUpdater for this compaction session does not update the record.
                         fhtSession.Upsert(ref iter3.GetKey(), ref iter3.GetValue(), default, 0);
                     }
                 }
@@ -422,13 +409,7 @@ namespace FASTER.core
             if (allocator is VariableLengthBlittableAllocator<ReadOnlyMemory<T>, Memory<T>> varLen)
             {
                 var functions = new LogVariableCompactFunctions<ReadOnlyMemory<T>, Memory<T>, DefaultReadOnlyMemoryCompactionFunctions<T>>(varLen, default);
-                var variableLengthStructSettings = new VariableLengthStructSettings<ReadOnlyMemory<T>, Memory<T>>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-
-                return (this as LogAccessor<ReadOnlyMemory<T>, Memory<T>>).Compact(functions, default(DefaultReadOnlyMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                return (this as LogAccessor<ReadOnlyMemory<T>, Memory<T>>).Compact<Empty, Empty, Empty, LogVariableCompactFunctions<ReadOnlyMemory<T>, Memory<T>, DefaultReadOnlyMemoryCompactionFunctions<T>>, DefaultReadOnlyMemoryCompactionFunctions<T>>(functions, default, untilAddress, shiftBeginAddress);
             }
             throw new FasterException("Unexpected condition during log compaction");
         }
@@ -439,13 +420,7 @@ namespace FASTER.core
             if (allocator is VariableLengthBlittableAllocator<Memory<T>, Memory<T>> varLen)
             {
                 var functions = new LogVariableCompactFunctions<Memory<T>, Memory<T>, DefaultMemoryCompactionFunctions<T>>(varLen, default);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Memory<T>, Memory<T>>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-
-                return (this as LogAccessor<Memory<T>, Memory<T>>).Compact(functions, default(DefaultMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
+                return (this as LogAccessor<Memory<T>, Memory<T>>).Compact<Empty, Empty, Empty, LogVariableCompactFunctions<Memory<T>, Memory<T>, DefaultMemoryCompactionFunctions<T>>, DefaultMemoryCompactionFunctions<T>>(functions, default, untilAddress, shiftBeginAddress);
             }
             throw new FasterException("Unexpected condition during log compaction");
         }

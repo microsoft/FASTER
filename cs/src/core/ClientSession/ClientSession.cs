@@ -685,19 +685,7 @@ namespace FASTER.core
         {
             if (!SupportAsync)
                 throw new FasterException("Do not perform compaction using a threadAffinitized session");
-
-            VariableLengthStructSettings<Key, Value> vl = null;
-
-            if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                vl = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-            }
-
-            return fht.Log.Compact(this, functions, compactionFunctions, untilAddress, vl, shiftBeginAddress);
+            return fht.Log.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, shiftBeginAddress);
         }
 
         /// <summary>
