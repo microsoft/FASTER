@@ -210,7 +210,7 @@ All these call be accessed through Visual Studio via the main FASTER.sln solutio
 FasterKV supports key iteration in order to get the set of distinct keys that are active (not deleted or expired) and indexed by the store. Related pull request is [here](https://github.com/microsoft/FASTER/pull/287). Usage is shown below:
 
 ```cs
-using var iter = store.Iterate();
+using var iter = session.Iterate();
 while (iter.GetNext(out var recordInfo))
 {
    ref Key key = ref iter.GetKey();
