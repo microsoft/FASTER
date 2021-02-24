@@ -14,29 +14,17 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class FasterLogScanIterator : IDisposable
+    public sealed class FasterLogScanIterator : ScanIteratorBase, IDisposable
     {
-        private readonly int frameSize;
         private readonly string name;
         private readonly FasterLog fasterLog;
         private readonly BlittableAllocator<Empty, byte> allocator;
-        private readonly long endAddress;
         private readonly BlittableFrame frame;
-        private readonly CountdownEvent[] loaded;
-        private readonly CancellationTokenSource[] loadedCancel;
-        private readonly long[] loadedPage;
-        private readonly long[] nextLoadedPage;
-        private readonly LightEpoch epoch;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly bool scanUncommitted;
         private bool disposed = false;
         internal long requestedCompletedUntilAddress;
-
-        /// <summary>
-        /// Next address
-        /// </summary>
-        public long NextAddress;
 
         /// <summary>
         /// Iteration completed until (as part of commit)
@@ -57,42 +45,19 @@ namespace FASTER.core
         /// <param name="getMemory"></param>
         /// <param name="scanUncommitted"></param>
         internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
         {
             this.fasterLog = fasterLog;
             this.allocator = hlog;
             this.getMemory = getMemory;
-            this.epoch = epoch;
             this.headerSize = headerSize;
             this.scanUncommitted = scanUncommitted;
 
-            if (beginAddress == 0)
-                beginAddress = hlog.GetFirstValidLogicalAddress(0);
-
             this.name = name;
-            this.endAddress = endAddress;
-            NextAddress = CompletedUntilAddress = beginAddress;
+            CompletedUntilAddress = beginAddress;
 
-            if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
-                frameSize = 1;
-            else if (scanBufferingMode == ScanBufferingMode.DoublePageBuffering)
-                frameSize = 2;
-            else if (scanBufferingMode == ScanBufferingMode.NoBuffering)
-            {
-                frameSize = 0;
-                return;
-            }
-
-            frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
-            loaded = new CountdownEvent[frameSize];
-            loadedCancel = new CancellationTokenSource[frameSize];
-            loadedPage = new long[frameSize];
-            nextLoadedPage = new long[frameSize];
-            for (int i = 0; i < frameSize; i++)
-            {
-                loadedPage[i] = -1;
-                nextLoadedPage[i] = -1;
-                loadedCancel[i] = new CancellationTokenSource();
-            }
+            if (frameSize > 0)
+                frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
         }
 
         /// <summary>
@@ -314,25 +279,11 @@ namespace FASTER.core
         /// <summary>
         /// Dispose the iterator
         /// </summary>
-        public void Dispose()
+        public override void Dispose()
         {
             if (!disposed)
             {
-                if (frame != null)
-                {
-                    // Wait for ongoing reads to complete/fail
-                    for (int i = 0; i < loaded.Length; i++)
-                    {
-                        if (loadedPage[i] != -1)
-                        {
-                            try
-                            {
-                                loaded[i].Wait(loadedCancel[i].Token);
-                            }
-                            catch { }
-                        }
-                    }
-                }
+                base.Dispose();
 
                 // Dispose/unpin the frame from memory
                 frame?.Dispose();
@@ -346,68 +297,8 @@ namespace FASTER.core
                 fasterLog.TrueDispose();
         }
 
-        private unsafe bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress)
-        {
-            for (int i=0; i<frameSize; i++)
-            {
-                var nextPage = currentPage + i;
-
-                var pageEndAddress = (nextPage + 1 ) << allocator.LogPageSizeBits;
-
-                if (fasterLog.readOnlyMode)
-                {
-                    // Support partial page reads of committed data
-                    var _flush = fasterLog.CommittedUntilAddress;
-                    if (_flush < pageEndAddress)
-                    {
-                        pageEndAddress = _flush;
-                    }
-                }
-
-                // Cannot load page if its not fully written to storage
-                if (headAddress < pageEndAddress)
-                    continue;
-
-                var nextFrame = (currentFrame + i) % frameSize;
-
-                long val;
-                while ((val = nextLoadedPage[nextFrame]) < pageEndAddress || loadedPage[nextFrame] < pageEndAddress)
-                {
-                    if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], pageEndAddress, val) == val)
-                    {
-                        var tmp_i = i;
-                        epoch.BumpCurrentEpoch(() =>
-                        {
-                            allocator.AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> allocator.LogPageSizeBits), 1, endAddress, AsyncReadPagesCallback, Empty.Default, frame, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
-                            loadedPage[nextFrame] = pageEndAddress;
-                        });
-                    }
-                    else
-                        epoch.ProtectAndDrain();
-                }
-            }
-            return WaitForFrameLoad(currentAddress, currentFrame);
-        }
-
-        private bool WaitForFrameLoad(long currentAddress, long currentFrame)
-        {
-            if (loaded[currentFrame].IsSet) return false;
-
-            epoch.Suspend();
-            try
-            {
-                loaded[currentFrame].Wait(loadedCancel[currentFrame].Token); // Ensure we have completed ongoing load
-            }
-            catch (Exception e)
-            {
-                loadedPage[currentFrame] = -1;
-                loadedCancel[currentFrame] = new CancellationTokenSource();
-                Utility.MonotonicUpdate(ref NextAddress, (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits, out _);
-                throw new FasterException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
-            }
-            epoch.Resume();
-            return true;
-        }
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+            => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
@@ -450,16 +341,16 @@ namespace FASTER.core
         /// <param name="physicalAddress"></param>
         /// <param name="entryLength"></param>
         /// <param name="currentAddress"></param>
-        /// <param name="nextAddress"></param>
+        /// <param name="outNextAddress"></param>
         /// <returns></returns>
-        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long nextAddress)
+        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress)
         {
             while (true)
             {
                 physicalAddress = 0;
                 entryLength = 0;
-                currentAddress = NextAddress;
-                nextAddress = NextAddress;
+                currentAddress = nextAddress;
+                outNextAddress = nextAddress;
 
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
@@ -483,7 +374,16 @@ namespace FASTER.core
 
                 if (currentAddress < _headAddress)
                 {
-                     if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress))
+                    var _endAddress = endAddress;
+                    if (fasterLog.readOnlyMode)
+                    {
+                        // Support partial page reads of committed data
+                        var _flush = fasterLog.CommittedUntilAddress;
+                        if (_flush < endAddress)
+                            _endAddress = _flush;
+                    }
+
+                    if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress, _endAddress))
                         continue;
                     physicalAddress = frame.GetPhysicalAddress(_currentFrame, _currentOffset);
                 }
@@ -499,7 +399,7 @@ namespace FASTER.core
                     // We are likely at end of page, skip to next
                     currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
 
-                    Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _);
+                    Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _);
 
                     if (0 != fasterLog.GetChecksum((byte*)physicalAddress))
                     {
@@ -515,7 +415,7 @@ namespace FASTER.core
                 if (entryLength < 0 || (_currentOffset + recordSize > allocator.PageSize))
                 {
                     currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-                    if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _))
+                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                     {
                         epoch.Suspend();
                         throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
@@ -531,7 +431,7 @@ namespace FASTER.core
                     {
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
                         currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-                        if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out _))
+                        if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         {
                             epoch.Suspend();
                             throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
@@ -546,9 +446,9 @@ namespace FASTER.core
                 else
                     currentAddress += recordSize;
 
-                if (Utility.MonotonicUpdate(ref NextAddress, currentAddress, out long oldCurrentAddress))
+                if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out long oldCurrentAddress))
                 {
-                    nextAddress = currentAddress;
+                    outNextAddress = currentAddress;
                     currentAddress = oldCurrentAddress;
                     return true;
                 }

@@ -510,14 +510,15 @@ namespace FASTER.core
         /// and tail)
         /// </summary>
         /// <param name="key">Key of the record.</param>
+        /// <param name="logicalAddress">Logical address of record, if found</param>
         /// <param name="fromAddress">Look until this address</param>
         /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
+        internal Status ContainsKeyInMemory(ref Key key, out long logicalAddress, long fromAddress = -1)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
+                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, out logicalAddress, fromAddress);
             }
             finally
             {
@@ -684,19 +685,23 @@ namespace FASTER.core
         {
             if (!SupportAsync)
                 throw new FasterException("Do not perform compaction using a threadAffinitized session");
+            return fht.Log.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, shiftBeginAddress);
+        }
 
-            VariableLengthStructSettings<Key, Value> vl = null;
+        /// <summary>
+        /// Iterator for all (distinct) live key-values stored in FASTER
+        /// </summary>
+        /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <returns>FASTER iterator</returns>
+        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1)
+        {
+            if (!SupportAsync)
+                throw new FasterException("Do not perform iteration using a threadAffinitized session");
 
-            if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                vl = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-            }
+            if (untilAddress == -1)
+                untilAddress = fht.Log.TailAddress;
 
-            return fht.Log.Compact(this, functions, compactionFunctions, untilAddress, vl, shiftBeginAddress);
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress);
         }
 
         /// <summary>
