@@ -124,6 +124,20 @@ namespace FASTER.core
             [Out] out UInt32 lpNumberOfBytesWritten,
             [In] NativeOverlapped* lpOverlapped);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern IntPtr CreateIoCompletionPort(
+            [In] SafeFileHandle hFile,
+            IntPtr ExistingCompletionPort,
+            UIntPtr CompletionKey,
+            uint NumberOfConcurrentThreads);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool GetQueuedCompletionStatus(
+            [In] IntPtr hCompletionPort,
+            [Out] out UInt32 lpNumberOfBytesWritten,
+            [Out] out IntPtr lpCompletionKey,
+            [Out] out NativeOverlapped* lpOverlapped,
+            [In] UInt32 dwMilliseconds);
 
         internal enum EMoveMethod : uint
         {

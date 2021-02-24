@@ -109,7 +109,10 @@ namespace FASTER.benchmark
 #endif
 
             var path = "D:\\data\\FasterYcsbBenchmark\\";
-            device = Devices.CreateLogDevice(path + "hlog", preallocateFile: true);
+            device = Devices.CreateLogDevice(path + "hlog", preallocateFile: true, useIoCompletionPort: false);
+
+            // Increase throttle limit for higher concurrency runs
+            if (threadCount > 8) device.ThrottleLimit *= 2;
 
             if (kSmallMemoryLog)
                 store = new FasterKV<Key, Value>
@@ -302,6 +305,10 @@ namespace FASTER.benchmark
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 Console.WriteLine("Completed checkpoint");
             }
+
+            // Flush and evict log from main memory
+            if (kSmallMemoryLog)
+                store.Log.FlushAndEvict(true);
 
             // Uncomment below to dispose log from memory, use for 100% read workloads only
             // store.Log.DisposeFromMemory();

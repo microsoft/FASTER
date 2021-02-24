@@ -311,7 +311,6 @@ namespace FASTER.core
         internal override void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
             throw new FasterException("BlittableAllocator memory pages are sector aligned - use direct copy");
-            // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);
         }
 
         /// <summary>
