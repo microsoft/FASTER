@@ -63,7 +63,6 @@ namespace FASTER.test
             log = null;
         }
 
-        [Test]
         public unsafe void RecordInfoLockTest()
         {
             // Re-entrancy check
