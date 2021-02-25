@@ -144,33 +144,10 @@ namespace FASTER.core
             throw new InvalidOperationException();
         }
 #endif
-        /// <summary>
-        /// The RecordInfo locked by this thread, if any.
-        /// </summary>
-        [ThreadStatic]
-        internal static RecordInfo* threadLockedRecord;
-
-        /// <summary>
-        /// The number of times the current thread has (re-)entered the lock.
-        /// </summary>
-        [ThreadStatic]
-        internal static int threadLockedRecordEntryCount;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SpinLock()
         {
-            // Check for a re-entrant lock.
-            if (threadLockedRecord == (RecordInfo*)Unsafe.AsPointer(ref this))
-            {
-                Debug.Assert(threadLockedRecordEntryCount > 0);
-                ++threadLockedRecordEntryCount;
-                return;
-            }
-
-            // RecordInfo locking is intended for use in concurrent callbacks only (ConcurrentReader, ConcurrentWriter, InPlaceUpdater),
-            // so only the RecordInfo for that callback should be locked. A different RecordInfo being locked implies a missing Unlock.
-            Debug.Assert(threadLockedRecord == null);
-            Debug.Assert(threadLockedRecordEntryCount == 0);
             while (true)
             {
                 long expected_word = word;
@@ -178,11 +155,7 @@ namespace FASTER.core
                 {
                     var found_word = Interlocked.CompareExchange(ref word, expected_word | kLatchBitMask, expected_word);
                     if (found_word == expected_word)
-                    {
-                        threadLockedRecord = (RecordInfo*)Unsafe.AsPointer(ref this);
-                        threadLockedRecordEntryCount = 1;
                         return;
-                    }
                 }
                 Thread.Yield();
             }
@@ -191,16 +164,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Unlock()
         {
-            Debug.Assert(threadLockedRecord == (RecordInfo*)Unsafe.AsPointer(ref this));
-            if (threadLockedRecord == (RecordInfo*)Unsafe.AsPointer(ref this))
-            {
-                Debug.Assert(threadLockedRecordEntryCount > 0);
-                if (--threadLockedRecordEntryCount == 0)
-                {
-                    word &= ~kLatchBitMask;
-                    threadLockedRecord = null;
-                }
-            }
+            word &= ~kLatchBitMask;
         }
 
         public bool IsNull()
