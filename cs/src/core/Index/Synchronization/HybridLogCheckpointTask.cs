@@ -198,7 +198,7 @@ namespace FASTER.core
                         out faster._hybridLogCheckpoint.flushedSemaphore);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.info;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
                     break;
             }
         }
@@ -253,40 +253,34 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
+            faster._hybridLogCheckpoint = faster._lastSnapshotCheckpoint;
+
             base.GlobalBeforeEnteringState(next, faster);
             switch (next.phase)
             {
                 case Phase.PREPARE:
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
-                    faster._hybridLogCheckpoint.info.useSnapshotFile = 1;
                     break;
                 case Phase.WAIT_FLUSH:
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
 
-                    faster._hybridLogCheckpoint.snapshotFileDevice =
-                        faster.checkpointManager.GetSnapshotLogDevice(faster._hybridLogCheckpointToken);
-                    faster._hybridLogCheckpoint.snapshotFileObjectLogDevice =
-                        faster.checkpointManager.GetSnapshotObjectLogDevice(faster._hybridLogCheckpointToken);
-                    faster._hybridLogCheckpoint.snapshotFileDevice.Initialize(faster.hlog.GetSegmentSize());
-                    faster._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
-
-                    long startPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.flushedLogicalAddress);
-                    long endPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.finalLogicalAddress);
-                    if (faster._hybridLogCheckpoint.info.finalLogicalAddress >
-                        faster.hlog.GetStartLogicalAddress(endPage))
+                    if (faster._hybridLogCheckpoint.deltaFileDevice == null)
                     {
-                        endPage++;
+                        faster._hybridLogCheckpoint.deltaFileDevice =
+                            faster.checkpointManager.GetDeltaLogDevice(faster._hybridLogCheckpointToken);
+                        faster._lastSnapshotCheckpoint.deltaFileDevice.Initialize(faster.hlog.GetSegmentSize());
                     }
 
-                    // This can be run on a new thread if we want to immediately parallelize 
-                    // the rest of the log flush
-                    faster.hlog.AsyncFlushPagesToDevice(
-                        startPage,
-                        endPage,
+                    faster.hlog.AsyncFlushDeltaToDevice(
+                        faster._hybridLogCheckpoint.info.flushedLogicalAddress,
                         faster._hybridLogCheckpoint.info.finalLogicalAddress,
-                        faster._hybridLogCheckpoint.snapshotFileDevice,
-                        faster._hybridLogCheckpoint.snapshotFileObjectLogDevice,
+                        next.version,
+                        faster._hybridLogCheckpoint.deltaFileDevice,
+                        ref faster._hybridLogCheckpoint.info.deltaTailAddress,
                         out faster._hybridLogCheckpoint.flushedSemaphore);
+                    break;
+                case Phase.PERSISTENCE_CALLBACK:
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
                     break;
             }
         }

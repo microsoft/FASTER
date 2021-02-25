@@ -1001,5 +1001,10 @@ namespace FASTER.core
                 epoch.Resume();
             }
         }
+
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

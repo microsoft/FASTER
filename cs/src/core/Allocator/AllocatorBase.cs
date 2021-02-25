@@ -20,6 +20,8 @@ namespace FASTER.core
         public long LastFlushedUntilAddress;
         [FieldOffset(8)]
         public long LastClosedUntilAddress;
+        [FieldOffset(16)]
+        public int Dirty;
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -389,6 +391,17 @@ namespace FASTER.core
         /// <param name="objectLogDevice"></param>
         /// <param name="localSegmentOffsets"></param>
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+
+        /// <summary>
+        /// Delta flush
+        /// </summary>
+        /// <param name="startAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <param name="version"></param>
+        /// <param name="device"></param>
+        /// <param name="tailAddress"></param>
+        /// <param name="completedSemaphore"></param>
+        internal abstract void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore);
 
         /// <summary>
         /// Read objects to memory (async)
@@ -1639,7 +1652,7 @@ namespace FASTER.core
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
-        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, object context)
+        protected void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {

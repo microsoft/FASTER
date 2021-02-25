@@ -525,6 +525,11 @@ namespace FASTER.core
                 usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
             }
         }
+
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
 

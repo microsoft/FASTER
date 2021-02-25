@@ -58,6 +58,13 @@ namespace FASTER.core
         FileDescriptor ObjectLogSnapshot(Guid token);
 
         /// <summary>
+        /// Delta log
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        FileDescriptor DeltaLog(Guid token);
+
+        /// <summary>
         /// FasterLog commit metadata
         /// </summary>
         /// <returns></returns>

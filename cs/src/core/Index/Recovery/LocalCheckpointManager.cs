@@ -164,6 +164,16 @@ namespace FASTER.core
             return Devices.CreateLogDevice(directoryConfiguration.GetObjectLogSnapshotFileName(token), false);
         }
 
+        /// <summary>
+        /// Provide device to store delta log for incremental snapshot checkpoints
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public IDevice GetDeltaLogDevice(Guid token)
+        {
+            return Devices.CreateLogDevice(directoryConfiguration.GetDeltaLogFileName(token), false);
+        }
+
         /// <inheritdoc />
         public IEnumerable<Guid> GetIndexCheckpointTokens()
         {

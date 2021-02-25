@@ -225,6 +225,12 @@ namespace FASTER.core
         /// </summary>
         public long[] objectLogSegmentOffsets;
 
+
+        /// <summary>
+        /// Tail address of delta file
+        /// </summary>
+        public long deltaTailAddress;
+
         /// <summary>
         /// Initialize
         /// </summary>
@@ -424,6 +430,7 @@ namespace FASTER.core
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
+        public IDevice deltaFileDevice;
         public SemaphoreSlim flushedSemaphore;
 
         public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)

@@ -251,6 +251,12 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        public IDevice GetDeltaLogDevice(Guid token)
+        {
+            return deviceFactory.Get(checkpointNamingScheme.DeltaLog(token));
+        }
+
+        /// <inheritdoc />
         public void InitializeIndexCheckpoint(Guid indexToken)
         {
         }

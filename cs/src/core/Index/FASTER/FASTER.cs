@@ -392,7 +392,7 @@ namespace FASTER.core
                 backend = new FoldOverCheckpointTask();
             else if (checkpointType == CheckpointType.Snapshot)
             {
-                if (tryIncremental && _lastSnapshotCheckpoint.guid != default && _lastSnapshotCheckpoint.finalLogicalAddress > hlog.FlushedUntilAddress)
+                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlog.FlushedUntilAddress)
                     backend = new IncrementalSnapshotCheckpointTask();
                 else
                     backend = new SnapshotCheckpointTask();

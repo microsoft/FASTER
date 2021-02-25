@@ -107,6 +107,13 @@ namespace FASTER.core
         IDevice GetSnapshotObjectLogDevice(Guid token);
 
         /// <summary>
+        /// Provide device to store incremental (delta) snapshot of log (required only for incremental snapshot checkpoints)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        IDevice GetDeltaLogDevice(Guid token);
+
+        /// <summary>
         /// Cleanup all data (subfolder) related to checkpoints by this manager
         /// </summary>
         public void PurgeAll();

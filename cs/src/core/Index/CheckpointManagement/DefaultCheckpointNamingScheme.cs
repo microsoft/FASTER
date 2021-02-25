@@ -33,6 +33,8 @@ namespace FASTER.core
         public FileDescriptor LogSnapshot(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "snapshot.dat");
         /// <inheritdoc />
         public FileDescriptor ObjectLogSnapshot(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "snapshot.obj.dat");
+        /// <inheritdoc />
+        public FileDescriptor DeltaLog(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "delta.dat");
 
 
         /// <inheritdoc />

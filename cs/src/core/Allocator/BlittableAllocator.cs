@@ -21,6 +21,7 @@ namespace FASTER.core
 
         // Record sizes
         private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
+        private static readonly int recordInfoSize = Utility.GetSize(default(RecordInfo));
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
@@ -405,6 +406,84 @@ namespace FASTER.core
 
                 usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
             }
+        }
+
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
+        {
+            long startPage = GetPage(startAddress);
+            long endPage = GetPage(endAddress);
+            if (endAddress > GetStartLogicalAddress(endPage))
+                endPage++;
+
+            int maxPages = 2*(int)(endPage - startPage);
+            completedSemaphore = new SemaphoreSlim(maxPages);
+            var buffer = bufferPool.Get(PageSize);
+            int destOffset = 0;
+
+            var asyncResult = new PageAsyncFlushResult<Empty>
+            {
+                completedSemaphore = completedSemaphore,
+                count = 1
+            };
+
+            int issuedPages = 0;
+            for (long p = startPage; p < endPage; p++)
+            {
+                if (PageStatusIndicator[p % BufferSize].Dirty < version)
+                    continue;
+
+                var logicalAddress = p << LogPageSizeBits;
+                var physicalAddress = GetPhysicalAddress(logicalAddress);
+                var endPhysicalAddress = physicalAddress + PageSize;
+
+                if (p == startPage)
+                {
+                    physicalAddress += (int)(startAddress & PageSizeMask);
+                    logicalAddress += (int)(startAddress & PageSizeMask);
+                }
+                
+                while (physicalAddress < endPhysicalAddress)
+                {
+                    ref var info = ref GetInfo(physicalAddress);
+                    if (info.Version == version)
+                    {
+                        int size = sizeof(long) + recordSize;
+                        if (destOffset + size >= PageSize)
+                        {
+                            // Intended destination is flushPage
+                            var alignedPageSize = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                            WriteAsync((IntPtr)buffer.aligned_pointer,
+                                        (ulong)(AlignedPageSizeBytes * tailAddress),
+                                        (uint)alignedPageSize, AsyncFlushPageToDeviceCallback, asyncResult,
+                                        device);
+                            issuedPages++;
+                            tailAddress++;
+                            buffer = bufferPool.Get(PageSize);
+                            destOffset = 0;
+                        }
+                        *((long*)(buffer.aligned_pointer + destOffset)) = logicalAddress;
+                        Buffer.MemoryCopy((void*)physicalAddress, buffer.aligned_pointer + destOffset + sizeof(long), recordSize, recordSize);
+                        destOffset += size;
+                    }
+                    physicalAddress += recordSize;
+                    logicalAddress += recordSize;
+                }
+            }
+
+            if (destOffset > 0)
+            {
+                // Intended destination is flushPage
+                var alignedPageSize = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                WriteAsync((IntPtr)buffer.aligned_pointer,
+                            (ulong)(AlignedPageSizeBytes * tailAddress),
+                            (uint)alignedPageSize, AsyncFlushPageToDeviceCallback, asyncResult,
+                            device);
+                issuedPages++;
+                tailAddress++;
+            }
+            completedSemaphore.Release(maxPages - issuedPages);
         }
     }
 }
