@@ -63,27 +63,16 @@ namespace FASTER.test
             log = null;
         }
 
+        [Test]
         public unsafe void RecordInfoLockTest()
         {
-            // Re-entrancy check
-            static void checkLatch(RecordInfo* ptr, long count)
+            for (var ii = 0; ii < 5; ++ii)
             {
-                Assert.IsTrue(RecordInfo.threadLockedRecord == ptr);
-                Assert.IsTrue(RecordInfo.threadLockedRecordEntryCount == count);
-            }
-            RecordInfo recordInfo = new RecordInfo();
-            RecordInfo* ri = (RecordInfo*)Unsafe.AsPointer(ref recordInfo);
-            checkLatch(null, 0);
-            recordInfo.SpinLock();
-            checkLatch(ri, 1);
-            recordInfo.SpinLock();
-            checkLatch(ri, 2);
-            recordInfo.Unlock();
-            checkLatch(ri, 1);
-            recordInfo.Unlock();
-            checkLatch(null, 0);
+                RecordInfo recordInfo = new RecordInfo();
+                RecordInfo* ri = &recordInfo;
 
-            XLockTest(() => recordInfo.SpinLock(), () => recordInfo.Unlock());
+                XLockTest(() => ri->SpinLock(), () => ri->Unlock());
+            }
         }
 
         private void XLockTest(Action locker, Action unlocker)
