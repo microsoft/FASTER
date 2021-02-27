@@ -7,8 +7,20 @@ using System.Threading;
 
 namespace FASTER.libdpr
 {
+    public class GlobalMinDprTableSnapshot: IDprTableSnapshot
+    {
+        private readonly long globalSafeVersion;
+
+        public GlobalMinDprTableSnapshot(long globalSafeVersion)
+        {
+            this.globalSafeVersion = globalSafeVersion;
+        }
+        
+        public long SafeVersion(Worker worker) => globalSafeVersion;
+    }
+    
     // Simple single-threaded server
-    public class TestDprFinderServer
+    public class SimpleTestDprFinderServer
     {
         private Dictionary<long, (long, long)> entries = new Dictionary<long, (long, long)>();
         private Socket socket;
@@ -78,7 +90,7 @@ namespace FASTER.libdpr
         }
     }
 
-    public class TestDprFinder : IDprFinder
+    public class SimpleTestDprFinder : IDprFinder
     {
         // cached local value
         private readonly Worker me;
@@ -88,7 +100,7 @@ namespace FASTER.libdpr
         private byte[] buf = new byte[4096];
         private long workerWorldLine = 0, workerVersion = 0;
 
-        public TestDprFinder(string ip, int port)
+        public SimpleTestDprFinder(string ip, int port)
         {
             this.ip = ip;
             this.port = port;
@@ -148,7 +160,7 @@ namespace FASTER.libdpr
 
         public IDprTableSnapshot ReadSnapshot()
         {
-            return new V1DprTableSnapshot(globalSafeVersionNum);
+            return new GlobalMinDprTableSnapshot(globalSafeVersionNum);
         }
 
         public void ReportNewPersistentVersion(WorkerVersion persisted, IEnumerable<WorkerVersion> deps)

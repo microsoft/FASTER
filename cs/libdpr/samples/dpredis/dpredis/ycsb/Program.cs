@@ -89,7 +89,7 @@ namespace dpredis.ycsb
             var options = result.MapResult(o => o, xs => new Options());
             if (options.Type.Equals("coordinator"))
             {
-                var dprFinder = new TestDprFinderServer();
+                var dprFinder = new SimpleTestDprFinderServer();
 
                 dprFinder.StartServer("10.0.1.7", 15445);
                 var c = new YcsbCoordinator(new BenchmarkConfiguration

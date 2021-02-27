@@ -51,7 +51,7 @@ namespace dpredis.ycsb
             var me = new Worker(workerId);
             var redisBackend = new RedisStateObject(info.redisBackend);
             var dprServer = new DprServer<RedisStateObject, long>(
-                new TestDprFinder(config.dprFinderIP, config.dprFinderPort), me, redisBackend, -1);
+                new SimpleTestDprFinder(config.dprFinderIP, config.dprFinderPort), me, redisBackend, -1);
             if (config.proxyType.Equals("none"))
             {
                 coordinatorConn.SendBenchmarkControlMessage("setup finished");

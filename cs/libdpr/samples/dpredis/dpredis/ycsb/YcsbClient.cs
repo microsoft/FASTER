@@ -71,7 +71,7 @@ namespace dpredis.ycsb
 
         private void ExecuteDirectly(BenchmarkConfiguration config, Socket coordinatorConn, bool useSimpleProxy)
         {
-            var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
+            var dprFinder = new SimpleTestDprFinder(config.dprFinderIP, config.dprFinderPort);
             var routingTable = new ConcurrentDictionary<Worker, (string, int, RedisShard)>();
             foreach (var worker in YcsbCoordinator.clusterConfig.workers)
             {
@@ -168,7 +168,7 @@ namespace dpredis.ycsb
 
         private void ExecuteWithDprProxy(BenchmarkConfiguration config, Socket coordinatorConn)
         {
-            var dprFinder = new TestDprFinder(config.dprFinderIP, config.dprFinderPort);
+            var dprFinder = new SimpleTestDprFinder(config.dprFinderIP, config.dprFinderPort);
             var routingTable = new ConcurrentDictionary<Worker, (string, int, RedisShard)>();
             foreach (var worker in YcsbCoordinator.clusterConfig.workers)
             {
