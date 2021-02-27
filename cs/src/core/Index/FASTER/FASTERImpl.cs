@@ -339,6 +339,7 @@ namespace FASTER.core
             // Optimization for most common case
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
+                hlog.Mark(logicalAddress, physicalAddress, sessionCtx.version);
                 if (fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), logicalAddress))
                 {
                     return OperationStatus.SUCCESS;

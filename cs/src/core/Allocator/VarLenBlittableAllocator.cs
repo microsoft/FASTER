@@ -328,29 +328,6 @@ namespace FASTER.core
             values = null;
         }
 
-
-        private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
-                        DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device)
-        {
-            if (asyncResult.partial)
-            {
-                // Write only required bytes within the page
-                int aligned_start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
-                aligned_start = (aligned_start / sectorSize) * sectorSize;
-
-                int aligned_end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
-                aligned_end = ((aligned_end + (sectorSize - 1)) & ~(sectorSize - 1));
-
-                numBytesToWrite = (uint)(aligned_end - aligned_start);
-                device.WriteAsync(alignedSourceAddress + aligned_start, alignedDestinationAddress + (ulong)aligned_start, numBytesToWrite, callback, asyncResult);
-            }
-            else
-            {
-                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress, numBytesToWrite, callback, asyncResult);
-            }
-        }
-
         protected override void ReadAsync<TContext>(
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
@@ -524,11 +501,6 @@ namespace FASTER.core
 
                 usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
             }
-        }
-
-        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
-        {
-            throw new NotImplementedException();
         }
     }
 }

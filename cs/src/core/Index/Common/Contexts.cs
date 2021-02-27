@@ -175,7 +175,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 1;
+        const int CheckpointVersion = 2;
 
         /// <summary>
         /// Guid
@@ -244,6 +244,7 @@ namespace FASTER.core
             flushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
+            deltaTailAddress = 0;
             headAddress = 0;
 
             checkpointTokens = new ConcurrentDictionary<string, CommitPoint>();
@@ -288,6 +289,9 @@ namespace FASTER.core
 
             value = reader.ReadLine();
             beginAddress = long.Parse(value);
+
+            value = reader.ReadLine();
+            deltaTailAddress = long.Parse(value);
 
             value = reader.ReadLine();
             var numSessions = int.Parse(value);
@@ -366,6 +370,7 @@ namespace FASTER.core
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
+                    writer.WriteLine(deltaTailAddress);
 
                     writer.WriteLine(checkpointTokens.Count);
                     foreach (var kvp in checkpointTokens)
@@ -413,6 +418,7 @@ namespace FASTER.core
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
             Debug.WriteLine("Head Address: {0}", headAddress);
             Debug.WriteLine("Begin Address: {0}", beginAddress);
+            Debug.WriteLine("Delta Tail Address: {0}", deltaTailAddress);
             Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
             Debug.WriteLine("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens.Take(10))
@@ -432,6 +438,7 @@ namespace FASTER.core
         public IDevice snapshotFileObjectLogDevice;
         public IDevice deltaFileDevice;
         public SemaphoreSlim flushedSemaphore;
+        public int prevVersion;
 
         public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
         {

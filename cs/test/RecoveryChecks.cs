@@ -382,5 +382,70 @@ namespace FASTER.test.recovery
             }
             s2.CompletePending(true);
         }
+
+
+        [Test]
+        public async ValueTask IncrSnapshotRecoveryCheck()
+        {
+            using var fht1 = new FasterKV<long, long>
+                (1 << 10,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = null },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                );
+
+            using var s1 = fht1.NewSession(new MyFunctions());
+            for (long key = 0; key < 1000; key++)
+            {
+                s1.Upsert(ref key, ref key);
+            }
+
+            var task = fht1.TakeFullCheckpointAsync(CheckpointType.Snapshot);
+            var result = await task;
+
+            for (long key = 950; key < 1000; key++)
+            {
+                s1.Upsert(key, key+1);
+            }
+
+            var _result1 = fht1.TakeHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
+            await fht1.CompleteCheckpointAsync();
+
+            Assert.IsTrue(_result1);
+            Assert.IsTrue(_token1 == result.token);
+
+            var _result2 = fht1.TakeHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
+            await fht1.CompleteCheckpointAsync();
+
+            Assert.IsTrue(_result2);
+            Assert.IsTrue(_token2 == result.token);
+
+
+            using var fht2 = new FasterKV<long, long>
+                (1 << 10,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = null },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                );
+
+            await fht2.RecoverAsync();
+
+            Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
+            Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
+            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
+
+            using var s2 = fht2.NewSession(new MyFunctions());
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s2.Read(ref key, ref output);
+                if (status != Status.PENDING)
+                {
+                    if (key < 950)
+                        Assert.IsTrue(status == Status.OK && output == key);
+                    else
+                        Assert.IsTrue(status == Status.OK && output == key + 1);
+                }
+            }
+            s2.CompletePending(true);
+        }
     }
 }

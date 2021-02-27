@@ -401,7 +401,114 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="tailAddress"></param>
         /// <param name="completedSemaphore"></param>
-        internal abstract void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore);
+        internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
+        {
+            long startPage = GetPage(startAddress);
+            long endPage = GetPage(endAddress);
+            if (endAddress > GetStartLogicalAddress(endPage))
+                endPage++;
+
+            int maxPages = 2 * (int)(endPage - startPage);
+            completedSemaphore = new SemaphoreSlim(maxPages);
+            var buffer = bufferPool.Get(PageSize);
+            int destOffset = 0;
+
+            var asyncResult = new PageAsyncFlushResult<Empty>
+            {
+                completedSemaphore = completedSemaphore,
+                count = 1
+            };
+
+            int issuedPages = 0;
+            for (long p = startPage; p < endPage; p++)
+            {
+                if (PageStatusIndicator[p % BufferSize].Dirty < version)
+                    continue;
+
+                var logicalAddress = p << LogPageSizeBits;
+                var physicalAddress = GetPhysicalAddress(logicalAddress);
+                var endPhysicalAddress = physicalAddress + PageSize;
+
+                if (p == startPage)
+                {
+                    physicalAddress += (int)(startAddress & PageSizeMask);
+                    logicalAddress += (int)(startAddress & PageSizeMask);
+                }
+
+                while (physicalAddress < endPhysicalAddress)
+                {
+                    ref var info = ref GetInfo(physicalAddress);
+                    var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                    if (info.Version == version)
+                    {
+                        int size = sizeof(long) + alignedRecordSize;
+                        if (destOffset + size >= PageSize)
+                        {
+                            // Intended destination is flushPage
+                            var alignedPageSize = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                            WriteAsync((IntPtr)buffer.aligned_pointer,
+                                        (ulong)(AlignedPageSizeBytes * tailAddress),
+                                        (uint)alignedPageSize, AsyncFlushPageToDeviceCallback, asyncResult,
+                                        device);
+                            issuedPages++;
+                            tailAddress++;
+                            buffer = bufferPool.Get(PageSize);
+                            destOffset = 0;
+                        }
+                        *((long*)(buffer.aligned_pointer + destOffset)) = logicalAddress;
+                        Buffer.MemoryCopy((void*)physicalAddress, buffer.aligned_pointer + destOffset + sizeof(long), recordSize, recordSize);
+                        destOffset += size;
+                    }
+                    physicalAddress += alignedRecordSize;
+                    logicalAddress += alignedRecordSize;
+                }
+            }
+
+            if (destOffset > 0)
+            {
+                // Intended destination is flushPage
+                var alignedPageSize = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
+
+                WriteAsync((IntPtr)buffer.aligned_pointer,
+                            (ulong)(AlignedPageSizeBytes * tailAddress),
+                            (uint)alignedPageSize, AsyncFlushPageToDeviceCallback, asyncResult,
+                            device);
+                issuedPages++;
+                tailAddress++;
+            }
+            completedSemaphore.Release(maxPages - issuedPages);
+        }
+
+        internal void Mark(long logicalAddress, long physicalAddress, int version)
+        {
+            PageStatusIndicator[(logicalAddress >> LogPageSizeBits) % BufferSize].Dirty = version;
+            GetInfo(physicalAddress).Version = version;
+        }
+
+        internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
+                DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
+                IDevice device)
+        {
+            if (asyncResult.partial)
+            {
+                // Write only required bytes within the page
+                int aligned_start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_start = (aligned_start / sectorSize) * sectorSize;
+
+                int aligned_end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_end = ((aligned_end + (sectorSize - 1)) & ~(sectorSize - 1));
+
+                numBytesToWrite = (uint)(aligned_end - aligned_start);
+                device.WriteAsync(alignedSourceAddress + aligned_start, alignedDestinationAddress + (ulong)aligned_start, numBytesToWrite, callback, asyncResult);
+            }
+            else
+            {
+                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
+                    numBytesToWrite, callback, asyncResult);
+            }
+        }
+
 
         /// <summary>
         /// Read objects to memory (async)

@@ -263,14 +263,31 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, 
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
-            // We are writing to separate device, so use fresh segment offsets
-            WriteAsync(flushPage,
-                        (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)pageSize, callback, asyncResult, 
-                        device, objectLogDevice, flushPage, localSegmentOffsets);
+            bool epochTaken = false;
+            if (!epoch.ThisInstanceProtected())
+            {
+                epochTaken = true;
+                epoch.Resume();
+            }
+            try
+            {
+                if (FlushedUntilAddress < (flushPage << LogPageSizeBits) + pageSize)
+                {
+                    // We are writing to separate device, so use fresh segment offsets
+                    WriteAsync(flushPage,
+                            (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                            (uint)pageSize, callback, asyncResult,
+                            device, objectLogDevice, flushPage, localSegmentOffsets);
+                }
+            }
+            finally
+            {
+                if (epochTaken)
+                    epoch.Suspend();
+            }
         }
 
 
