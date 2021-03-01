@@ -315,6 +315,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>

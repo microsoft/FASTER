@@ -455,8 +455,8 @@ namespace FASTER.test
             // Make the data visible
             log.RefreshUncommitted();
 
-                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
-            }
+            await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+
             log.Dispose();
         }
 
