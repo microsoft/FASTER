@@ -172,6 +172,13 @@ namespace FASTER.core
             return (recordSize, recordSize);
         }
 
+        internal override bool TryComplete()
+        {
+            var b1 = objectLogDevice.TryComplete();
+            var b2 = base.TryComplete();
+            return b1 || b2;
+        }
+
         /// <summary>
         /// Dispose memory allocator
         /// </summary>

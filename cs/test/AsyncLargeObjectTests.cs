@@ -2,11 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
@@ -37,7 +33,7 @@ namespace FASTER.test.async
         [TearDown]
         public void TearDown()
         {
-            Directory.Delete(test_path, true);
+            TestUtils.DeleteDirectory(test_path);
         }
 
         [TestCase(CheckpointType.FoldOver)]

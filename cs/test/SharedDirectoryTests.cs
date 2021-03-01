@@ -45,7 +45,7 @@ namespace FASTER.test.recovery.sumstore
             this.clone.TearDown();
             try
             {
-                Directory.Delete(this.rootPath, recursive: true);
+                TestUtils.DeleteDirectory(this.rootPath);
             }
             catch
             {
@@ -133,7 +133,7 @@ namespace FASTER.test.recovery.sumstore
                     for (int i = 0; i < segmentIds.Count; i++)
                     {
                         var segmentId = segmentIds[i];
-                        var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName);
+                        var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName, IntPtr.Zero);
                         initialHandles[i] = new KeyValuePair<int, SafeFileHandle>(segmentId, handle);
                     }
                 }

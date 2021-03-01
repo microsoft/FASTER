@@ -24,7 +24,7 @@ namespace FASTER.test
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
             if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+                TestUtils.DeleteDirectory(commitPath);
 
             device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
         }
@@ -35,7 +35,7 @@ namespace FASTER.test
             device.Dispose();
 
             if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+                TestUtils.DeleteDirectory(commitPath);
         }
 
         [Test]

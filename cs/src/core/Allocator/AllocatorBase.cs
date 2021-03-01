@@ -915,6 +915,11 @@ namespace FASTER.core
             device.TruncateUntilAddress(toAddress);
         }
 
+        internal virtual bool TryComplete()
+        {
+            return device.TryComplete();
+        }
+
         /// <summary>
         /// Seal: make sure there are no longer any threads writing to the page
         /// Flush: send page to secondary store
@@ -1514,6 +1519,7 @@ namespace FASTER.core
             {
                 while (device.Throttle())
                 {
+                    device.TryComplete();
                     Thread.Yield();
                     epoch.ProtectAndDrain();
                 }

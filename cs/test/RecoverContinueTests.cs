@@ -22,32 +22,33 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         private FasterKV<AdId, NumClicks> fht3;
         private IDevice log;
         private int numOps;
+        private string checkpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints3";
 
         [SetUp]
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/RecoverContinueTests.log", deleteOnClose: true);
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/checkpoints3");
+            Directory.CreateDirectory(checkpointDir);
 
             fht1 = new FasterKV
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints3", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints3", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht3 = new FasterKV
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints3", CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
             numOps = 5000;
@@ -63,7 +64,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             fht2 = null;
             fht3 = null;
             log.Dispose();
-            Directory.Delete(TestContext.CurrentContext.TestDirectory + "/checkpoints3", true);
+            TestUtils.DeleteDirectory(checkpointDir);
         }
 
         [Test]

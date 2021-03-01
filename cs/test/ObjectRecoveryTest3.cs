@@ -29,7 +29,7 @@ namespace FASTER.test.recovery.objects
         [TearDown]
         public void TearDown()
         {
-            Directory.Delete(FasterFolderPath, true);
+            TestUtils.DeleteDirectory(FasterFolderPath);
         }
 
         [Test]

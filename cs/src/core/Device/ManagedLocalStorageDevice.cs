@@ -38,6 +38,7 @@ namespace FASTER.core
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new SectorAlignedBufferPool(1, 1);
+            ThrottleLimit = 120;
 
             string path = new FileInfo(filename).Directory.FullName;
             if (!Directory.Exists(path))
@@ -51,7 +52,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override bool Throttle() => numPending > 120;
+        public override bool Throttle() => numPending > ThrottleLimit;
 
         private void RecoverFiles()
         {
