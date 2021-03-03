@@ -19,7 +19,7 @@ namespace FASTER.test.recovery.sumstore.simple
         private FasterKV<AdId, NumClicks> fht2;
         private IDevice log;
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        public const string TEST_CONTAINER = "checkpoints4";
+        public const string TEST_CONTAINER = "checkpoints4444";
 
         [Test]
         [Category("FasterKV")]
