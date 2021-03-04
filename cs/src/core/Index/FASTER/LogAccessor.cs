@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Reflection;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -53,6 +55,14 @@ namespace FASTER.core
         public long BeginAddress => allocator.BeginAddress;
 
         /// <summary>
+        /// Get the bytes used on the primary log by every record. Does not include
+        /// the size of variable-length inline data. Note that class objects occupy
+        /// 8 bytes (reference) on the main log (i.e., the heap space occupied by
+        /// class objects is not included in the result of this call).
+        /// </summary>
+        public int FixedRecordSize => allocator.GetFixedRecordSize();
+
+        /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
         /// </summary>
         /// <param name="untilAddress">Address to shift begin address until</param>
@@ -79,10 +89,17 @@ namespace FASTER.core
             // Then shift head address
             if (!fht.epoch.ThisInstanceProtected())
             {
-                fht.epoch.Resume();
-                allocator.ShiftHeadAddress(newHeadAddress);
-                fht.epoch.Suspend();
-                while (wait && allocator.SafeHeadAddress < newHeadAddress) ;
+                try
+                {
+                    fht.epoch.Resume();
+                    allocator.ShiftHeadAddress(newHeadAddress);
+                }
+                finally
+                {
+                    fht.epoch.Suspend();
+                }
+
+                while (wait && allocator.SafeHeadAddress < newHeadAddress) Thread.Yield();
             }
             else
             {
@@ -102,7 +119,20 @@ namespace FASTER.core
         public IDisposable Subscribe(IObserver<IFasterScanIterator<Key, Value>> readOnlyObserver)
         {
             allocator.OnReadOnlyObserver = readOnlyObserver;
-            return new LogSubscribeDisposable(allocator);
+            return new LogSubscribeDisposable(allocator, true);
+        }
+
+        /// <summary>
+        /// Subscribe to records (in batches) as they get evicted from main memory.
+        /// Currently, we support only one subscriber to the log (easy to extend)
+        /// Subscriber only receives eviction updates from the time of subscription onwards
+        /// To scan the historical part of the log, use the Scan(...) method
+        /// </summary>
+        /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
+        public IDisposable SubscribeEvictions(IObserver<IFasterScanIterator<Key, Value>> evictionObserver)
+        {
+            allocator.OnEvictionObserver = evictionObserver;
+            return new LogSubscribeDisposable(allocator, false);
         }
 
         /// <summary>
@@ -111,15 +141,20 @@ namespace FASTER.core
         class LogSubscribeDisposable : IDisposable
         {
             private readonly AllocatorBase<Key, Value> allocator;
+            private readonly bool readOnly;
 
-            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator)
+            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator, bool readOnly)
             {
                 this.allocator = allocator;
+                this.readOnly = readOnly;
             }
 
             public void Dispose()
             {
-                allocator.OnReadOnlyObserver = null;
+                if (readOnly)
+                    allocator.OnReadOnlyObserver = null;
+                else
+                    allocator.OnEvictionObserver = null;
             }
         }
 
@@ -132,12 +167,18 @@ namespace FASTER.core
         {
             if (!fht.epoch.ThisInstanceProtected())
             {
-                fht.epoch.Resume();
-                allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
-                fht.epoch.Suspend();
+                try
+                {
+                    fht.epoch.Resume();
+                    allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
+                }
+                finally
+                {
+                    fht.epoch.Suspend();
+                }
 
                 // Wait for flush to complete
-                while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) ;
+                while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) Thread.Yield();
             }
             else
             {
@@ -193,97 +234,48 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. 
-        /// Uses default compaction functions that only deletes explicitly deleted records, 
-        /// copying is implemeted by shallow copying values from source to destination.
+        /// Compact the log until specified address, moving active records to the tail of the log.
         /// </summary>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
         /// <returns>Address until which compaction was done</returns>
-        [Obsolete("Invoke Compact() on a client session (ClientSession) instead")]
-        public long Compact(long untilAddress, bool shiftBeginAddress)
-        {
-            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
-                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
-                {
-                    MethodInfo method = GetType().GetMethod("CompactReadOnly", BindingFlags.NonPublic | BindingFlags.Instance);
-                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
-                    return (long)generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
-                }
-                else if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0])
-                    && typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
-                {
-                    MethodInfo method = GetType().GetMethod("CompactMemory", BindingFlags.NonPublic | BindingFlags.Instance);
-                    MethodInfo generic = method.MakeGenericMethod(typeof(Key).GetGenericArguments()[0]);
-                    return (long)generic.Invoke(this, new object[] { untilAddress, shiftBeginAddress });
-                }
-                else
-                {
-                    var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
-                    var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                    {
-                        keyLength = varLen.KeyLength,
-                        valueLength = varLen.ValueLength,
-                    };
-
-                    return Compact(functions, default(DefaultVariableCompactionFunctions<Key, Value>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
-                }
-            }
-            else
-            {
-                return Compact(new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default(DefaultCompactionFunctions<Key, Value>), untilAddress, null, shiftBeginAddress);
-            }
-        }
+        public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, bool shiftBeginAddress)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, shiftBeginAddress);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log.
         /// </summary>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
         /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
         /// ensures that records written to the tail during compaction are first made stable.</param>
         /// <returns>Address until which compaction was done</returns>
-        [Obsolete("Invoke Compact() on a client session (ClientSession) instead")]
-        public long Compact<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress, bool shiftBeginAddress)
+        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, bool shiftBeginAddress)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
+            if (untilAddress > fht.Log.SafeReadOnlyAddress)
+                throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
+            var originalUntilAddress = untilAddress;
+
+            var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
+            using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
+
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
-                var functions = new LogVariableCompactFunctions<Key, Value, CompactionFunctions>(varLen, compactionFunctions);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
                     keyLength = varLen.KeyLength,
                     valueLength = varLen.ValueLength,
                 };
-
-                return Compact(functions, compactionFunctions, untilAddress, variableLengthStructSettings, shiftBeginAddress);
             }
-            else
-            {
-                return Compact(new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null, shiftBeginAddress);
-            }
-        }
-
-        private unsafe long Compact<Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
-            where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            using var fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
-            return Compact(fhtSession, functions, cf, untilAddress, variableLengthStructSettings, shiftBeginAddress);
-        }
-
-        internal unsafe long Compact<Input, Output, Context, Functions, CompactionFunctions>(
-            ClientSession<Key, Value, Input, Output, Context, Functions> fhtSession,
-            Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings, bool shiftBeginAddress)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            var originalUntilAddress = untilAddress;
 
             using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
@@ -304,42 +296,47 @@ namespace FASTER.core
                     untilAddress = originalUntilAddress = iter1.NextAddress;
                 }
 
-                // TODO: Scan until SafeReadOnlyAddress
-                var scanUntil = untilAddress;
-                LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
-
-                // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
+                // Scan until SafeReadOnlyAddress
+                var scanUntil = fht.Log.SafeReadOnlyAddress;
+                if (untilAddress < scanUntil)
+                    LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
+                
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 while (iter3.GetNext(out var recordInfo))
                 {
-                    ref var key = ref iter3.GetKey();
-                    ref var value = ref iter3.GetValue();
-
                     if (!recordInfo.Tombstone)
                     {
-                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
+                        // Ensure that the key wasn't inserted in memory
+                        if (fhtSession.ContainsKeyInMemory(ref iter3.GetKey(), out _, scanUntil) != Status.NOTFOUND)
+                            continue;
+
+                        // There is a infinitesimally small possibility that a record enters tail at this
+                        // point, escapes the scan below, and then escapes to disk before the final upsert
+                        // can catch it. This case is not handled by log compaction.
+
+                        // Ensure we have checked at least all records not in memory
+                        scanUntil = fht.Log.SafeReadOnlyAddress;
+                        if (untilAddress < scanUntil)
+                            LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
+
+                        // Safe to check tombstone bit directly, as tempKv is pure in-memory
+                        Debug.Assert(iter3.CurrentAddress >= tempKv.Log.HeadAddress);
+                        if (tempKv.hlog.GetInfo(tempKv.hlog.GetPhysicalAddress(iter3.CurrentAddress)).Tombstone)
+                            continue;
+
+                        // If record is not the latest in memory
+                        if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress) == Status.OK)
                         {
-                            // Check if recordInfo point to the newest record.
-                            // With #164 it is possible that tempKv might have multiple records with the same
-                            // key (ConcurrentWriter returns false). For this reason check the index
-                            // whether the actual record has the same address (or maybe even deleted).
-                            // If this is too much of a performance hit - we could try and add additional info
-                            // to the recordInfo to indicate that it was replaced (but it would only for tempKv 
-                            // not general case).
-                            var bucket = default(HashBucket*);
-                            var slot = default(int);
-
-                            var hash = tempKv.Comparer.GetHashCode64(ref key);
-                            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-                            var entry = default(HashBucketEntry);
-                            if (tempKv.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter3.CurrentAddress)
-                                fhtSession.Upsert(ref key, ref value, default, 0);
+                            if (iter3.CurrentAddress != tempKeyAddress)
+                                continue;
                         }
-                    }
-                    if (scanUntil < fht.Log.SafeReadOnlyAddress)
-                    {
-                        LogScanForValidity(ref untilAddress, ref scanUntil, tempKvSession);
+                        else
+                        {
+                            // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
+                            continue;
+                        }
+                        
+                        fhtSession.Upsert(ref iter3.GetKey(), ref iter3.GetValue(), default, 0);
                     }
                 }
             }
@@ -350,57 +347,18 @@ namespace FASTER.core
             return originalUntilAddress;
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, ref long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            while (scanUntil < fht.Log.SafeReadOnlyAddress)
+            using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
+            while (iter2.GetNext(out var _))
             {
-                untilAddress = scanUntil;
-                scanUntil = fht.Log.SafeReadOnlyAddress;
-                using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
-                while (iter2.GetNext(out var _))
-                {
-                    ref var key = ref iter2.GetKey();
-                    ref var value = ref iter2.GetValue();
+                ref var k = ref iter2.GetKey();
+                ref var v = ref iter2.GetValue();
 
-                    tempKvSession.Delete(ref key, default, 0);
-                }
+                tempKvSession.Delete(ref k, default, 0);
             }
+            untilAddress = scanUntil;
         }
-
-#pragma warning disable IDE0051 // Remove unused private members
-        private long CompactReadOnly<T>(long untilAddress, bool shiftBeginAddress) where T : unmanaged
-        {
-            if (allocator is VariableLengthBlittableAllocator<ReadOnlyMemory<T>, Memory<T>> varLen)
-            {
-                var functions = new LogVariableCompactFunctions<ReadOnlyMemory<T>, Memory<T>, DefaultReadOnlyMemoryCompactionFunctions<T>>(varLen, default);
-                var variableLengthStructSettings = new VariableLengthStructSettings<ReadOnlyMemory<T>, Memory<T>>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-
-                return (this as LogAccessor<ReadOnlyMemory<T>, Memory<T>>).Compact(functions, default(DefaultReadOnlyMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
-            }
-            throw new FasterException("Unexpected condition during log compaction");
-        }
-
-        private long CompactMemory<T>(long untilAddress, bool shiftBeginAddress)
-            where T : unmanaged
-        {
-            if (allocator is VariableLengthBlittableAllocator<Memory<T>, Memory<T>> varLen)
-            {
-                var functions = new LogVariableCompactFunctions<Memory<T>, Memory<T>, DefaultMemoryCompactionFunctions<T>>(varLen, default);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Memory<T>, Memory<T>>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-
-                return (this as LogAccessor<Memory<T>, Memory<T>>).Compact(functions, default(DefaultMemoryCompactionFunctions<T>), untilAddress, variableLengthStructSettings, shiftBeginAddress);
-            }
-            throw new FasterException("Unexpected condition during log compaction");
-        }
-#pragma warning restore IDE0051 // Remove unused private members
     }
 }

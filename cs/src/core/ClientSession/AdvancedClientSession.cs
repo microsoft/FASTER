@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -550,11 +548,12 @@ namespace FASTER.core
         /// and tail)
         /// </summary>
         /// <param name="key">Key of the record.</param>
+        /// <param name="logicalAddress">Logical address of record in memory, if found</param>
         /// <param name="fromAddress">Look until this address</param>
         /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(ref Key key, long fromAddress = -1)
+        internal Status ContainsKeyInMemory(ref Key key, out long logicalAddress, long fromAddress = -1)
         {
-            return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, fromAddress);
+            return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, out logicalAddress, fromAddress);
         }
 
         /// <summary>

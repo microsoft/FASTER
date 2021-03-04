@@ -116,7 +116,8 @@ namespace FASTER.core
                         }
 
                         // This is not called when looking up by address, so we do not set pendingContext.recordInfo.
-                        fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output, logicalAddress);
+                        // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
+                        fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output, Constants.kInvalidAddress);
                         return OperationStatus.SUCCESS;
                     }
                 }
@@ -177,12 +178,22 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
 
                 fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, logicalAddress);
+
+                if (CopyReadsToTail == CopyReadsToTail.FromReadOnly)
+                {
+                    var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
+                    InternalUpsert(ref key, ref container.Get(), ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
+                    container.Dispose();
+                }
                 return OperationStatus.SUCCESS;
             }
 
             // On-Disk Region
             else if (logicalAddress >= hlog.BeginAddress)
             {
+                if (hlog.IsNullDevice)
+                    return OperationStatus.NOTFOUND;
+
                 status = OperationStatus.RECORD_ON_DISK;
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
@@ -433,7 +444,7 @@ namespace FASTER.core
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version,
-                               true, false, false,
+                               tombstone:false, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key, ref value,
@@ -759,7 +770,7 @@ namespace FASTER.core
                 BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
-                                true, false, false,
+                                tombstone:false, invalidBit:false,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
 
@@ -1057,8 +1068,7 @@ namespace FASTER.core
                 BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                               sessionCtx.version,
-                               true, true, false,
+                               sessionCtx.version, tombstone:true, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
 
@@ -1128,14 +1138,11 @@ namespace FASTER.core
         internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
             ref Key key, 
             FasterExecutionContext<Input, Output, Context> sessionCtx, 
-            FasterSession fasterSession, 
-            long fromAddress = -1)
+            FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
             where FasterSession : IFasterSession
         {
-            if (fromAddress == -1)
+            if (fromAddress < hlog.HeadAddress)
                 fromAddress = hlog.HeadAddress;
-            else
-                Debug.Assert(fromAddress >= hlog.HeadAddress);
 
             var bucket = default(HashBucket*);
             var slot = default(int);
@@ -1152,7 +1159,7 @@ namespace FASTER.core
 
             if (tagExists)
             {
-                long logicalAddress = entry.Address;
+                logicalAddress = entry.Address;
 
                 if (UseReadCache)
                     SkipReadCache(ref logicalAddress);
@@ -1172,16 +1179,23 @@ namespace FASTER.core
                     }
 
                     if (logicalAddress < fromAddress)
+                    {
+                        logicalAddress = 0;
                         return Status.NOTFOUND;
+                    }
                     else
                         return Status.OK;
                 }
                 else
+                {
+                    logicalAddress = 0;
                     return Status.NOTFOUND;
+                }
             }
             else
             {
                 // no tag found
+                logicalAddress = 0;
                 return Status.NOTFOUND;
             }
         }
@@ -1232,7 +1246,7 @@ namespace FASTER.core
                 fasterSession.SingleReader(ref key, ref pendingContext.input.Get(),
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, request.logicalAddress);
 
-                if ((CopyReadsToTail && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
+                if ((CopyReadsToTail != CopyReadsToTail.None && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
                 {
                     InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx);
                 }
@@ -1313,7 +1327,7 @@ namespace FASTER.core
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
-                                    true, false, false,
+                                    tombstone:false, invalidBit:false,
                                     entry.Address);
                 readcache.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key,
@@ -1326,7 +1340,7 @@ namespace FASTER.core
                 BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
-                               true, false, false,
+                               tombstone:false, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key,
@@ -1458,7 +1472,7 @@ namespace FASTER.core
                 BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
-                               true, false, false,
+                               tombstone:false, invalidBit:false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
@@ -1697,6 +1711,7 @@ namespace FASTER.core
         {
             while ((logicalAddress = hlog.TryAllocate(recordSize)) == 0)
             {
+                hlog.TryComplete();
                 InternalRefresh(ctx, fasterSession);
                 Thread.Yield();
             }
@@ -1736,25 +1751,26 @@ namespace FASTER.core
                 else
                 {
                     foundLogicalAddress = hlog.GetInfo(foundPhysicalAddress).PreviousAddress;
-                    //This makes testing REALLY slow
-                    //Debug.WriteLine("Tracing back");
                     continue;
                 }
             }
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
         }
-#endregion
+        #endregion
 
-#region Split Index
+        #region Split Index
         private void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
             int offset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);
+            SplitBuckets(offset);
+        }
 
+        private void SplitBuckets(int offset)
+        {
             int numChunks = (int)(state[1 - resizeInfo.version].size / Constants.kSizeofChunk);
             if (numChunks == 0) numChunks = 1; // at least one chunk
-
 
             if (!Utility.IsPowerOfTwo(numChunks))
             {
@@ -1780,6 +1796,8 @@ namespace FASTER.core
                     {
                         // GC old version of hash table
                         state[1 - resizeInfo.version] = default;
+                        overflowBucketsAllocatorResize.Dispose();
+                        overflowBucketsAllocatorResize = null;
                         GlobalStateMachineStep(systemState);
                         return;
                     }
@@ -1789,7 +1807,7 @@ namespace FASTER.core
 
             while (Interlocked.Read(ref splitStatus[offset & (numChunks - 1)]) == 1)
             {
-
+                Thread.Yield();
             }
 
         }
@@ -1821,17 +1839,26 @@ namespace FASTER.core
                         }
 
                         var logicalAddress = entry.Address;
-                        if (logicalAddress >= hlog.HeadAddress)
+                        long physicalAddress = 0;
+
+                        if (entry.ReadCache && (entry.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)
+                            physicalAddress = readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
+                        else if (logicalAddress >= hlog.HeadAddress)
+                                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+
+                        // It is safe to always use hlog instead of readcache for some calls such
+                        // as GetKey and GetInfo
+                        if (physicalAddress != 0)
                         {
-                            var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                             var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
                                 if (left == left_end)
                                 {
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                    *left = (long)new_bucket;
+                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                    *left = new_bucket_logical;
                                     left = (long*)new_bucket;
                                     left_end = left + Constants.kOverflowBucketIndex;
                                 }
@@ -1841,12 +1868,13 @@ namespace FASTER.core
 
                                 // Insert previous address in right
                                 entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 1);
-                                if (entry.Address != Constants.kInvalidAddress)
+                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (right == right_end)
                                     {
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                        *right = (long)new_bucket;
+                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                        *right = new_bucket_logical;
                                         right = (long*)new_bucket;
                                         right_end = right + Constants.kOverflowBucketIndex;
                                     }
@@ -1860,8 +1888,9 @@ namespace FASTER.core
                                 // Insert in right
                                 if (right == right_end)
                                 {
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                    *right = (long)new_bucket;
+                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                    *right = new_bucket_logical;
                                     right = (long*)new_bucket;
                                     right_end = right + Constants.kOverflowBucketIndex;
                                 }
@@ -1871,12 +1900,13 @@ namespace FASTER.core
 
                                 // Insert previous address in left
                                 entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 0);
-                                if (entry.Address != Constants.kInvalidAddress)
+                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (left == left_end)
                                     {
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                        *left = (long)new_bucket;
+                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                        *left = new_bucket_logical;
                                         left = (long*)new_bucket;
                                         left_end = left + Constants.kOverflowBucketIndex;
                                     }
@@ -1893,8 +1923,9 @@ namespace FASTER.core
                             // Insert in left
                             if (left == left_end)
                             {
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                *left = (long)new_bucket;
+                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                *left = new_bucket_logical;
                                 left = (long*)new_bucket;
                                 left_end = left + Constants.kOverflowBucketIndex;
                             }
@@ -1905,8 +1936,9 @@ namespace FASTER.core
                             // Insert in right
                             if (right == right_end)
                             {
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.Allocate();
-                                *right = (long)new_bucket;
+                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                *right = new_bucket_logical;
                                 right = (long*)new_bucket;
                                 right_end = right + Constants.kOverflowBucketIndex;
                             }
@@ -1917,22 +1949,41 @@ namespace FASTER.core
                     }
 
                     if (*(((long*)src_start) + Constants.kOverflowBucketIndex) == 0) break;
-                    src_start = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
+                    src_start = (HashBucket*)overflowBucketsAllocatorResize.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
                 } while (true);
             }
         }
 
         private long TraceBackForOtherChainStart(long logicalAddress, int bit)
         {
-            while (logicalAddress >= hlog.HeadAddress)
+            while (true)
             {
-                var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
-                if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                HashBucketEntry entry = default;
+                entry.Address = logicalAddress;
+                if (entry.ReadCache)
                 {
-                    return logicalAddress;
+                    if (logicalAddress < readcache.HeadAddress)
+                        break;
+                    var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                    var hash = comparer.GetHashCode64(ref readcache.GetKey(physicalAddress));
+                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    {
+                        return logicalAddress;
+                    }
+                    logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
                 }
-                logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                else
+                {
+                    if (logicalAddress < hlog.HeadAddress)
+                        break;
+                    var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                    var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
+                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    {
+                        return logicalAddress;
+                    }
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                }
             }
             return logicalAddress;
         }
@@ -2087,7 +2138,7 @@ namespace FASTER.core
             if (UseReadCache && entry.ReadCache)
             {
                 var _addr = readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
-                if (entry.Address >= readcache.HeadAddress)
+                if ((entry.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)
                     return readcache.GetInfo(_addr).Version;
                 else
                     return defaultVersion;

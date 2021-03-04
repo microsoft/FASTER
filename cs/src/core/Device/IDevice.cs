@@ -53,6 +53,12 @@ namespace FASTER.core
         int EndSegment { get; }
 
         /// <summary>
+        /// Throttle limit (max number of pending I/Os) for this device instance. Device needs
+        /// to implement Throttle() in order to use this limit.
+        /// </summary>
+        int ThrottleLimit { get; set; }
+
+        /// <summary>
         /// Initialize device. This function is used to pass optional information that may only be known after
         /// FASTER initialization (whose constructor takes in IDevice upfront). Implementation are free to ignore
         /// information if it does not need the supplied information. Segment size of -1 is used for object log.
@@ -66,7 +72,13 @@ namespace FASTER.core
         void Initialize(long segmentSize, LightEpoch epoch = null);
 
         /// <summary>
-        /// Whether device should be throttled
+        /// Try complete async IO completions
+        /// </summary>
+        /// <returns></returns>
+        bool TryComplete();
+
+        /// <summary>
+        /// Whether device should be throttled at this instant (i.e., caller should stop issuing new I/Os)
         /// </summary>
         /// <returns></returns>
         bool Throttle();

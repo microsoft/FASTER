@@ -158,6 +158,13 @@ namespace FASTER.core
                 ((ValueLength.GetInitialLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
+        public override int GetFixedRecordSize()
+        {
+            return RecordInfo.GetLength()
+                + (fixedSizeKey ? KeyLength.GetInitialLength() : 0)
+                + (fixedSizeValue ? ValueLength.GetInitialLength() : 0);
+        }
+
         public override (int, int) GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
         {
             var actualSize = RecordInfo.GetLength() +
@@ -438,6 +445,13 @@ namespace FASTER.core
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+        }
+
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        {
+            using var iter = new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
+            OnEvictionObserver?.OnNext(iter);
         }
 
 

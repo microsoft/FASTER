@@ -52,7 +52,7 @@ namespace FASTER.test
             }
 
             int count = 0;
-            var iter = fht.Iterate();
+            var iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -71,7 +71,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -89,7 +89,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -106,7 +106,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -123,7 +123,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -140,7 +140,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;

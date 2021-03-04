@@ -29,14 +29,14 @@ namespace FASTER.test.recovery
             path = Path.GetTempPath() + "RecoverReadOnlyTest/";
             deviceName = path + "testlog";
             if (Directory.Exists(path))
-                Directory.Delete(path, true);
+                TestUtils.DeleteDirectory(path);
             cts = new CancellationTokenSource();
         }
 
         [TearDown]
         public void TearDown()
         {
-            Directory.Delete(path, true);
+            TestUtils.DeleteDirectory(path);
             cts.Dispose();
         }
 

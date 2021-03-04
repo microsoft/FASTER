@@ -160,6 +160,8 @@ namespace FASTER.core
             return recordSize;
         }
 
+        public override int GetFixedRecordSize() => recordSize;
+
         public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
             return (recordSize, recordSize);
@@ -168,6 +170,13 @@ namespace FASTER.core
         public override (int, int) GetRecordSize(ref Key key, ref Value value)
         {
             return (recordSize, recordSize);
+        }
+
+        internal override bool TryComplete()
+        {
+            var b1 = objectLogDevice.TryComplete();
+            var b2 = base.TryComplete();
+            return b1 || b2;
         }
 
         /// <summary>
@@ -971,6 +980,26 @@ namespace FASTER.core
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             return new GenericScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+        }
+
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        {
+            var page = (beginAddress >> LogPageSizeBits) % BufferSize;
+            int start = (int)(beginAddress & PageSizeMask) / recordSize;
+            int count = (int)(endAddress - beginAddress) / recordSize;
+            int end = start + count;
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
+            Debug.Assert(epoch.ThisInstanceProtected());
+            try
+            {
+                epoch.Suspend();
+                OnEvictionObserver?.OnNext(iter);
+            }
+            finally
+            {
+                epoch.Resume();
+            }
         }
     }
 }

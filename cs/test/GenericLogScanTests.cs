@@ -110,7 +110,6 @@ namespace FASTER.test
                     Assert.IsTrue(value.value == val);
                     val++;
                 }
-                iter.Dispose();
             }
         }
     }

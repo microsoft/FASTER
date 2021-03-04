@@ -414,7 +414,7 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            while (CommittedUntilAddress < tailAddress) ;
+            while (CommittedUntilAddress < tailAddress) Thread.Yield();
         }
 
         /// <summary>
@@ -546,7 +546,7 @@ namespace FASTER.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress)) ;
-            while (CommittedUntilAddress < logicalAddress + 1) ;
+            while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
             return logicalAddress;
         }
 
@@ -560,7 +560,7 @@ namespace FASTER.core
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress)) ;
-            while (CommittedUntilAddress < logicalAddress + 1) ;
+            while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
             return logicalAddress;
         }
 
@@ -574,7 +574,7 @@ namespace FASTER.core
         {
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress)) ;
-            while (CommittedUntilAddress < logicalAddress + 1) ;
+            while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
             return logicalAddress;
         }
 

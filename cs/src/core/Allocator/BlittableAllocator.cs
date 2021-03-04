@@ -75,6 +75,8 @@ namespace FASTER.core
             return recordSize;
         }
 
+        public override int GetFixedRecordSize() => recordSize;
+
         public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
             return (recordSize, recordSize);
@@ -309,7 +311,6 @@ namespace FASTER.core
         internal override void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
             throw new FasterException("BlittableAllocator memory pages are sector aligned - use direct copy");
-            // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);
         }
 
         /// <summary>
@@ -324,6 +325,12 @@ namespace FASTER.core
             return new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
         }
 
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        {
+            using var iter = new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
+            OnEvictionObserver?.OnNext(iter);
+        }
 
         /// <summary>
         /// Read pages from specified device

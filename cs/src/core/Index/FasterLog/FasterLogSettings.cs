@@ -95,7 +95,7 @@ namespace FASTER.core
                 PageSizeBits = PageSizeBits,
                 SegmentSizeBits = SegmentSizeBits,
                 MemorySizeBits = ReadOnlyMode ? 0 : MemorySizeBits,
-                CopyReadsToTail = false,
+                CopyReadsToTail = CopyReadsToTail.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,
                 ReadCacheSettings = null
