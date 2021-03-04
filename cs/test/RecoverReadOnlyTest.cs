@@ -9,7 +9,7 @@ using NUnit.Framework;
 using System.Text;
 
 
-//** Note - this test is based on FasterLogPubSub sample found in the 
+//** Note - this test is based on FasterLogPubSub sample found in the samples directory.
 
 namespace FASTER.test
 {
@@ -22,7 +22,7 @@ namespace FASTER.test
         private FasterLog logReadOnly;
         private IDevice deviceReadOnly;
 
-        private static string path = Path.GetTempPath() + "BasicRecoverReadOnly/";
+        private static string path = Path.GetTempPath() + "BasicRecoverAsyncReadOnly/";
         const int commitPeriodMs = 2000;
         const int restorePeriodMs = 1000;
 
@@ -36,10 +36,9 @@ namespace FASTER.test
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "Recover", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
             deviceReadOnly = Devices.CreateLogDevice(path + "RecoverReadOnly");
             logReadOnly = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
-
         }
 
         [TearDown]
@@ -55,48 +54,27 @@ namespace FASTER.test
             catch { }
         }
 
-        [Test]
-        [Category("FasterLog")]
-        public void RecoverReadOnlyBasicTest()
-    {
-            //***************************************
-            //*   *** TODO - Need to Fix this one - NOT WORKING PROPERLY - affecting other tests  even though runs ok by itself ***
-            //***************************************
-            /*
-            using var cts = new CancellationTokenSource();
-
-            var producer = ProducerAsync(log, cts.Token);
-            var commiter = CommitterAsync(log, cts.Token);
-
-            // Run consumer on SEPARATE read-only FasterLog instance
-            var consumer = SeparateConsumerAsync(cts.Token, false);
-
-            // Give it some time to run a bit - similar to waiting for things to run before hitting cancel
-            Thread.Sleep(5000);
-            cts.Cancel();
-            */
-        }
 
         [Test]
         [Category("FasterLog")]
         public void RecoverReadOnlyAsyncBasicTest()
         {
-            //***************************************
-            //*   *** TODO - Need to Fix this one - NOT WORKING PROPERLY - affecting other tests even though runs ok by itself ***
-            //***********
-            /*
             using var cts = new CancellationTokenSource();
 
             var producer = ProducerAsync(log, cts.Token);
             var commiter = CommitterAsync(log, cts.Token);
 
             // Run consumer on SEPARATE read-only FasterLog instance
-            var consumer = SeparateConsumerAsync(cts.Token,true);
+            var consumer = SeparateConsumerAsync(cts.Token);
 
             // Give it some time to run a bit - similar to waiting for things to run before hitting cancel
-            Thread.Sleep(5000);
+            Thread.Sleep(3000);
             cts.Cancel();
-            */
+
+            producer.Wait();
+            // commiter.Wait();  // cancel token took care of this one
+            // consumer.Wait();  // cancel token took care of this one
+
         }
 
 
@@ -127,10 +105,10 @@ namespace FASTER.test
 
         // This creates a separate FasterLog over the same log file, using RecoverReadOnly to continuously update
         // to the primary FasterLog's commits.
-        public async Task SeparateConsumerAsync(CancellationToken cancellationToken, bool AsyncRecover)
+        public async Task SeparateConsumerAsync(CancellationToken cancellationToken)
         {
 
-            var _ = BeginRecoverReadOnlyLoop(logReadOnly, cancellationToken, AsyncRecover);
+            var _ = BeginRecoverReadOnlyLoop(logReadOnly, cancellationToken);
 
             // This enumerator waits asynchronously when we have reached the committed tail of the duplicate FasterLog. When RecoverReadOnly
             // reads new data committed by the primary FasterLog, it signals commit completion to let iter continue to the new tail.
@@ -141,21 +119,14 @@ namespace FASTER.test
             }
         }
 
-        static async Task BeginRecoverReadOnlyLoop(FasterLog log, CancellationToken cancellationToken,bool AsyncRecover)
+
+        static async Task BeginRecoverReadOnlyLoop(FasterLog log, CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {
                 // Delay for a while before checking again.
                 await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
-
-                // Which test you running?
-                if (AsyncRecover)
-                {
-                    await log.RecoverReadOnlyAsync(cancellationToken);
-                }
-                else
-                    // Recover to the last commit by the primary FasterLog instance.
-                    log.RecoverReadOnly();
+                await log.RecoverReadOnlyAsync(cancellationToken);
             }
         }
 
