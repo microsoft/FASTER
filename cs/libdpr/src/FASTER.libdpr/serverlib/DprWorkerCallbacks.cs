@@ -1,6 +1,11 @@
 
 namespace FASTER.libdpr
 {
+    /// <summary>
+    /// A set of callback functions that libdpr expects the underlying implementation to invoke at certain points of
+    /// the checkpoint/recovery process. 
+    /// </summary>
+    /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
     public class DprWorkerCallbacks<TToken>
     {
         private readonly DprWorkerState<TToken> state;
@@ -19,7 +24,7 @@ namespace FASTER.libdpr
         {
             // Get or Add as some operations may have executed early in the next version, which would lead to a created
             // entry for the version without a token.
-            var versionHandle = state.versions.GetOrAdd(version, version => new VersionHandle<TToken>());
+            var versionHandle = state.versions.GetOrAdd(version, v => new VersionHandle<TToken>());
             versionHandle.token = token;
         }
 
