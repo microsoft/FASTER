@@ -58,14 +58,14 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
   }
 
   inline const ExecutionContext& prev() const {
-    return contexts_[(cur_ + 1) % 2];
+    return contexts_[(cur_ + 1) & 1];
   }
   inline ExecutionContext& prev() {
-    return contexts_[(cur_ + 1) % 2];
+    return contexts_[(cur_ + 1) & 1];
   }
 
   inline void swap() {
-    cur_ = (cur_ + 1) % 2;
+    cur_ = (cur_ + 1) & 1;
   }
 
  private:
@@ -396,7 +396,7 @@ inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash,
   // Truncate the hash to get a bucket page_index < state[version].size.
   uint32_t version = resize_info_.version;
   const HashBucket* bucket = &state_[version].bucket(hash);
-  assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+  assert(reinterpret_cast<size_t>(bucket) & (Constants::kCacheLineBytes-1) == 0);
 
   while(true) {
     // Search through the bucket looking for our key. Last entry is reserved
@@ -424,7 +424,7 @@ inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash,
       return nullptr;
     }
     bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+    assert(reinterpret_cast<size_t>(bucket) & (Constants::kCacheLineBytes-1) == 0);
   }
   assert(false);
   return nullptr; // NOT REACHED
@@ -485,7 +485,7 @@ inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindTentativeEntry(KeyHash hash
     }
     // Go to the next bucket.
     bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+    assert(reinterpret_cast<size_t>(bucket) & (Constants::kCacheLineBytes-1) == 0);
   }
   assert(false);
   return nullptr; // NOT REACHED
@@ -513,7 +513,7 @@ bool FasterKv<K, V, D>::HasConflictingEntry(KeyHash hash, const HashBucket* buck
     }
     // Go to the next bucket.
     bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+    assert(reinterpret_cast<size_t>(bucket) & (Constants::kCacheLineBytes-1) == 0);
   }
 }
 
@@ -526,7 +526,7 @@ inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindOrCreateEntry(KeyHash hash,
 
   while(true) {
     HashBucket* bucket = &state_[version].bucket(hash);
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+    assert(reinterpret_cast<size_t>(bucket) & (Constants::kCacheLineBytes-1) == 0);
 
     AtomicHashBucketEntry* atomic_entry = FindTentativeEntry(hash, bucket, version,
                                           expected_entry);
@@ -1881,7 +1881,7 @@ Status FasterKv<K, V, D>::RecoverFuzzyIndexComplete(bool wait) {
         break;
       }
       bucket = &overflow_buckets_allocator_[hash_table_version].Get(entry.address());
-      assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+      assert(reinterpret_cast<size_t>(bucket) & (Constants::kCacheLineBytes-1) == 0);
     }
   }
   return Status::Ok;
@@ -2932,7 +2932,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
   auto pSize = PersistentMemoryMalloc<D>::kPageSize;
   size = std::max(8 * pSize, size);
 
-  if (size % pSize != 0) size += pSize - (size % pSize);
+  if (size & (pSize-1) != 0) size += pSize - (size & (pSize-1));
 
   faster_t tempKv(min_table_size_, size, "");
   tempKv.StartSession();
@@ -2964,7 +2964,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
       tempKv.Delete(ctxt, cb, 0);
     }
 
-    if (++numOps % 1000 == 0) {
+    if (++numOps & 1023 == 0) {
       tempKv.Refresh();
       Refresh();
     }
@@ -2994,7 +2994,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
       Upsert(ctxt, cb, 0);
     }
 
-    if (++numOps % 1000 == 0) {
+    if (++numOps & 1023 == 0) {
       tempKv.Refresh();
       Refresh();
     }
@@ -3043,7 +3043,7 @@ Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
       };
       temp->Delete(ctxt, cb, 0);
 
-      if (++numOps % 1000 == 0) {
+      if (++numOps & 1023 == 0) {
         temp->Refresh();
         Refresh();
       }
