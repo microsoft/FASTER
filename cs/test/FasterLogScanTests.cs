@@ -22,8 +22,6 @@ namespace FASTER.test
         private IDevice device;
         private FasterLog logUncommitted;
         private IDevice deviceUnCommitted;
-        private FasterLog logNoBuffer;
-        private IDevice deviceNoBuffer;
 
         private string path = Path.GetTempPath() + "ScanTests/";
         static readonly byte[] entry = new byte[100];
@@ -72,20 +70,6 @@ namespace FASTER.test
             //****** Uncommitted log / device for ScanUncommittedTest
             deviceUnCommitted = Devices.CreateLogDevice(path + "LogScanUncommitted", deleteOnClose: true);
             logUncommitted = new FasterLog(new FasterLogSettings { LogDevice = deviceUnCommitted, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
-            for (int i = 0; i < 10; i++)
-            {
-                logUncommitted.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-                logUncommitted.RefreshUncommitted(true);
-            }
-
-            //****** For the NoBuffer test
-            deviceNoBuffer = Devices.CreateLogDevice(path + "LogScanNoBuffer", deleteOnClose: true);
-            logNoBuffer = new FasterLog(new FasterLogSettings { LogDevice = deviceNoBuffer, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, GetMemory = getMemoryData });
-            for (int i = 0; i < 10; i++)
-            {
-                logNoBuffer.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-            }
-            logNoBuffer.Commit(true);
 
         }
 
@@ -96,9 +80,6 @@ namespace FASTER.test
             device.Dispose();
             deviceUnCommitted.Dispose();
             logUncommitted.Dispose();
-            deviceNoBuffer.Dispose();
-            logNoBuffer.Dispose();
-
 
             // Clean up log files
             try { new DirectoryInfo(path).Delete(true); }
@@ -310,76 +291,93 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanBufferingModeNoBufferingTest()
+        //public async Task ScanUncommittedTest()  // maybe need to do this instead
+        public void ScanUncommittedTest()  
         {
+            // Main point of this test is to have setting scanUncommitted: true. The actual test is found in "ConsumerAsync"
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
-            //***************************************
-            //*   *** TODO - Need to Fix this one - NOT WORKING PROPERLY ***
-            //***************************************
-            /*
-            // Read the log
-            int currentEntry = 0;
-            using (var iter = logNoBuffer.Scan(log.BeginAddress, log.TailAddress, scanBufferingMode: ScanBufferingMode.NoBuffering))
-            {
-                while (iter.GetNext(out byte[] result, out _, out _))
-                {
-                    if (currentEntry < entryLength)
-                    {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
-                        // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
-                        currentEntry++;
-                    }
-                }
-            }
-
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
-
-            */
-        }
-
-
-        [Test]
-        [Category("FasterLog")]
-        public void ScanUncommittedTest()
-        {
             //***************************************
             //*   *** TODO - Need to Fix this one
-            //*   Affecting other tests even though runs ok by itself
+            //*   ConsumerAsync is "faulting" on the         await foreach (var (result, length, currentAddress ....
+            //*
+            //*  TODO: add some verification code to make sure it is all working too
             //***************************************
-
-//            Task consumer;
-  //          consumer = ConsumerAsync();
-
-
-        }
-
-        public async Task ConsumerAsync()
-        {
-            int currentEntry = 0;
+            Task consumer;
             using var cts = new CancellationTokenSource();
 
-            // Main part of this test is the scanuncommitted = true
-            using var iter = logUncommitted.Scan(logUncommitted.BeginAddress, long.MaxValue, "foo", true, ScanBufferingMode.DoublePageBuffering, scanUncommitted: true);
-            await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cts.Token))
-            {
-                iter.CompleteUntil(nextAddress);
-                logUncommitted.TruncateUntil(nextAddress);
+            var producer = ProducerAsync(logUncommitted, cts.Token);
+            var committer = CommitterAsync(logUncommitted, cts.Token);
+            consumer = ConsumerAsync(logUncommitted, cts.Token);
 
-                Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[currentEntry].ToString() + "  Current:" + currentEntry.ToString());
-                currentEntry++;
-            }
+            // Give it a few seconds to run before hitting cancel
+            Thread.Sleep(3000);
+            cts.Cancel();
+
+            // For non async test
+            producer.Wait();
+            consumer.Wait();
+            committer.Wait();
+
+    //        await producer;
+      //      await consumer;
+        //    await committer;
+
         }
 
+        //**** Helper Functions for ScanUncommittedTest based off of FasterLogPubSub sample *****
+        static async Task ConsumerAsync(FasterLog log, CancellationToken cancellationToken)
+        {
 
+            //** Actual test is here where setting scanUncommitted: true
+            using var iter = log.Scan(log.BeginAddress, long.MaxValue, "unscan", true, ScanBufferingMode.DoublePageBuffering, scanUncommitted: true);
+
+            try
+            {
+                int count = 0;
+                await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+                {
+                    iter.CompleteUntil(nextAddress);
+                    log.TruncateUntil(nextAddress);
+
+                    // Simulate temporary slow down of data consumption
+                    // This will cause transient log spill to disk (observe folder on storage)
+                    if (count++ > 1000 && count < 1200)
+                        Thread.Sleep(100);
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+
+        static async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
+        {
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(2000), cancellationToken);
+                    await log.CommitAsync(cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+
+        static async Task ProducerAsync(FasterLog log, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var i = 0L;
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
+                    log.RefreshUncommitted();
+
+                    i++;
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(10));
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
 
     }
 }
