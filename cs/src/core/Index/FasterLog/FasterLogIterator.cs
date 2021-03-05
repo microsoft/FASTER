@@ -191,6 +191,15 @@ namespace FASTER.core
         /// <returns></returns>
         public unsafe bool GetNext(out byte[] entry, out int entryLength, out long currentAddress, out long nextAddress)
         {
+            if (disposed)
+            {
+                entry = default;
+                entryLength = default;
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+
             epoch.Resume();
             if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
             {
@@ -243,6 +252,15 @@ namespace FASTER.core
         /// <returns></returns>
         public unsafe bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress, out long nextAddress)
         {
+            if (disposed)
+            {
+                entry = default;
+                entryLength = default;
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+
             epoch.Resume();
             if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
             {
