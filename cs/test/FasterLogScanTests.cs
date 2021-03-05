@@ -38,39 +38,13 @@ namespace FASTER.test
             try {  new DirectoryInfo(path).Delete(true);  }
             catch {}
 
-
-            //****** Uncommitted log / device for ScanUncommittedTest
+            // Set up the Devices \ logs
+            device = Devices.CreateLogDevice(path + "LogScan", deleteOnClose: true);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
             deviceUnCommitted = Devices.CreateLogDevice(path + "LogScanUncommitted", deleteOnClose: true);
             logUncommitted = new FasterLog(new FasterLogSettings { LogDevice = deviceUnCommitted });
-            // Set Default entry data
-            for (int j = 0; j < entryLength; j++)
-            {
-                entry[j] = (byte)j;
-            }
 
-            // Enqueue but set each Entry in a way that can differentiate between entries
-            for (int j = 0; j < numEntries; j++)
-            {
-                // Flag one part of entry data that corresponds to index
-                if (j < entryLength)
-                    entry[j] = (byte)entryFlag;
-
-                // puts back the previous entry value
-                if ((j > 0) && (j < entryLength))
-                    entry[j - 1] = (byte)(j - 1);
-
-                // Add to FasterLog
-                logUncommitted.Enqueue(entry);
-            }
-
-            // refresh uncommitted so can see it when scan
-            logUncommitted.RefreshUncommitted(true);
-
-
-            //****** Basic data for tests 
-            device = Devices.CreateLogDevice(path + "LogScan", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device});
-
+            //****** Populate log for Basic data for tests 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
             {
@@ -95,6 +69,31 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(true);
 
+
+            //****** Populate uncommitted log / device for ScanUncommittedTest
+            // Set Default entry data
+            for (int j = 0; j < entryLength; j++)
+            {
+                entry[j] = (byte)j;
+            }
+
+            // Enqueue but set each Entry in a way that can differentiate between entries
+            for (int j = 0; j < numEntries; j++)
+            {
+                // Flag one part of entry data that corresponds to index
+                if (j < entryLength)
+                    entry[j] = (byte)entryFlag;
+
+                // puts back the previous entry value
+                if ((j > 0) && (j < entryLength))
+                    entry[j - 1] = (byte)(j - 1);
+
+                // Add to FasterLog
+                logUncommitted.Enqueue(entry);
+            }
+
+            // refresh uncommitted so can see it when scan - do NOT commit though 
+            logUncommitted.RefreshUncommitted(true);
 
         }
 
