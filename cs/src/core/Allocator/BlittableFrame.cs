@@ -35,7 +35,7 @@ namespace FASTER.core
 
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
             long p = (long)handles[index].AddrOfPinnedObject();
-            pointers[index] = (p + (sectorSize - 1)) & ~(sectorSize - 1);
+            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             frame[index] = tmp;
         }
 
