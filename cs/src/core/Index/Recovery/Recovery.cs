@@ -385,7 +385,7 @@ namespace FASTER.core
 
         private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, CheckpointType checkpointType, bool undoFutureVersions)
         {
-            if (untilAddress < scanFromAddress)
+            if (untilAddress <= scanFromAddress)
                 return;
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst);
 
