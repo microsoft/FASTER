@@ -24,6 +24,7 @@ namespace FASTER.core
         private SectorAlignedBufferPool bufferPool;
 
         private IDevice singleLogCommitDevice;
+        private int _refCount;
 
         /// <summary>
         /// Next commit number
@@ -48,6 +49,7 @@ namespace FASTER.core
 
             this.overwriteLogCommits = overwriteLogCommits;
             this.removeOutdated = removeOutdated;
+            this._refCount = 1;
 
             deviceFactory.Initialize(checkpointNamingScheme.BaseName());
         }
@@ -76,6 +78,8 @@ namespace FASTER.core
         {
             var device = NextCommitDevice();
 
+            if (device == null) return;
+
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
@@ -93,8 +97,20 @@ namespace FASTER.core
         /// <inheritdoc />
         public void Dispose()
         {
-            singleLogCommitDevice?.Dispose();
-            singleLogCommitDevice = null;
+            while (true)
+            {
+                int current = _refCount;
+                if (Interlocked.CompareExchange(ref _refCount, 0, current) == current)
+                {
+                    if (current == 2)
+                    {
+                        while (singleLogCommitDevice == null) Thread.Yield();
+                        singleLogCommitDevice.Dispose();
+                        // singleLogCommitDevice = null;
+                    }
+                    break;
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -109,8 +125,12 @@ namespace FASTER.core
             IDevice device;
             if (overwriteLogCommits)
             {
+                if (_refCount == 0) return null;
                 if (singleLogCommitDevice == null)
-                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                {
+                    if (Interlocked.CompareExchange(ref _refCount, 2, 1) == 1)
+                        singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                }
                 device = singleLogCommitDevice;
             }
             else
@@ -118,6 +138,7 @@ namespace FASTER.core
                 device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
                 this.commitNum = commitNum + 1;
             }
+            if (device == null) return null;
             
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
@@ -139,8 +160,12 @@ namespace FASTER.core
         {
             if (overwriteLogCommits)
             {
+                if (_refCount == 0) return null;
                 if (singleLogCommitDevice == null)
-                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                {
+                    if (Interlocked.CompareExchange(ref _refCount, 2, 1) == 1)
+                        singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                }
                 return singleLogCommitDevice;
             }
 

@@ -14,6 +14,47 @@ using NUnit.Framework;
 namespace FASTER.test
 {
     [TestFixture]
+    internal class FasterLogStandAloneTests
+    {
+
+        [Test]
+        public async Task TestDisposeReleasesFileLocksWithInprogressCommit()
+        {
+            string commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            DirectoryInfo di = Directory.CreateDirectory(commitPath);
+            IDevice device = Devices.CreateLogDevice(commitPath + "testDisposeReleasesFileLocksWithInprogressCommit.log", preallocateFile: true, deleteOnClose: false);
+            FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry });
+            Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out long beginAddress));
+            fasterLog.Commit(spinWait: false);
+            ValueTask waitingWriter = fasterLog.WaitForCommitAsync(beginAddress + 1);
+            fasterLog.Dispose();
+            device.Dispose();
+            if (!waitingWriter.IsCompleted)
+            {
+                Console.WriteLine("entered");
+                while (!waitingWriter.IsCompleted)
+                {
+                    await Task.Yield();
+                }
+                Assert.IsTrue(waitingWriter.IsFaulted);
+            }
+
+            while (true)
+            {
+                try
+                {
+                    di.Delete(recursive: true);
+                    break;
+                }
+                catch
+                {
+                    await Task.Delay(1_000);
+                }
+            }
+        }
+    }
+
+    [TestFixture]
     internal class FasterLogTests
     {
         const int entryLength = 100;
