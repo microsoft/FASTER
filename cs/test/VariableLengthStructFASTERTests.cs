@@ -18,6 +18,7 @@ namespace FASTER.test
     internal class VariableLengthStructFASTERTests
     {
         [Test]
+        [Category("FasterKV")]
         public unsafe void VariableLengthTest1()
         {
             FasterKV<Key, VLValue> fht;
@@ -77,6 +78,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public unsafe void VariableLengthTest2()
         {
             FasterKV<VLValue, VLValue> fht;

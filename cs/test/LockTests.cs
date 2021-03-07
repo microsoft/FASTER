@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using FASTER.core;
@@ -48,7 +48,7 @@ namespace FASTER.test
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.log", deleteOnClose: true);
-            fkv = new FasterKV<int, int>( 1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null } );
+            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null });
             session = fkv.For(new Functions(fkv.RecordAccessor)).NewSession<Functions>();
         }
 
@@ -64,6 +64,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public unsafe void RecordInfoLockTest()
         {
             for (var ii = 0; ii < 5; ++ii)
@@ -100,6 +101,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void IntExclusiveLockerTest()
         {
             int lockTestValue = 0;
@@ -107,6 +109,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void AdvancedFunctionsLockTest()
         {
             // Populate

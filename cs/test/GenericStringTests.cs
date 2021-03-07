@@ -42,7 +42,8 @@ namespace FASTER.test
 
 
         [Test]
-        public void GenericStringTest1()
+        [Category("FasterKV")]
+        public void StringBasicTest()
         {
             const int totalRecords = 2000;
             for (int i = 0; i < totalRecords; i++)
@@ -52,6 +53,7 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, Empty.Default, 0);
             }
             session.CompletePending(true);
+            Assert.IsTrue(fht.EntryCount == totalRecords);
 
             for (int i = 0; i < totalRecords; i++)
             {
