@@ -61,6 +61,7 @@ namespace FASTER.test.recovery.objectstore
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask ObjectRecoveryTest1([Values]bool isAsync)
         {
             Populate();
@@ -114,7 +115,7 @@ namespace FASTER.test.recovery.objectstore
 
                 if (i % completePendingInterval == 0)
                 {
-                    session.CompletePending(false);
+                    session.CompletePending(false,false);
                 }
             }
 

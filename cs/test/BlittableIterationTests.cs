@@ -37,6 +37,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void BlittableIterationTest1()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();

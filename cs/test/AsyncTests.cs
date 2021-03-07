@@ -26,6 +26,7 @@ namespace FASTER.test.async
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
+        [Category("FasterKV")]
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/SimpleRecoveryTest2.log", deleteOnClose: true);
@@ -75,7 +76,7 @@ namespace FASTER.test.async
             fht1.TakeFullCheckpoint(out _);
             await fht1.CompleteCheckpointAsync();
 
-            s2.CompletePending(true);
+            s2.CompletePending(true,false);
 
             fht1.TakeFullCheckpoint(out Guid token);
             await fht1.CompleteCheckpointAsync();
@@ -97,7 +98,7 @@ namespace FASTER.test.async
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
 
                     if (status == Status.PENDING)
-                        s3.CompletePending(true);
+                        s3.CompletePending(true,true);
                     else
                     {
                         Assert.IsTrue(output.value.numClicks == key);
@@ -111,7 +112,10 @@ namespace FASTER.test.async
         }
     }
 
-    public class SimpleFunctions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
+
+
+
+public class SimpleFunctions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
     {
         public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
         {

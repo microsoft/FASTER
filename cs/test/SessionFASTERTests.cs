@@ -39,6 +39,7 @@ namespace FASTER.test.async
 
 
         [Test]
+        [Category("FasterKV")]
         public void SessionTest1()
         {
             using var session = fht.NewSession(new Functions());
@@ -66,6 +67,7 @@ namespace FASTER.test.async
 
 
         [Test]
+        [Category("FasterKV")]
         public void SessionTest2()
         {
             using var session1 = fht.NewSession(new Functions());
@@ -111,6 +113,7 @@ namespace FASTER.test.async
         }
 
         [Test]
+        [Category("FasterKV")]
         public void SessionTest3()
         {
             using var session = fht.NewSession(new Functions());
@@ -140,6 +143,7 @@ namespace FASTER.test.async
         }
 
         [Test]
+        [Category("FasterKV")]
         public void SessionTest4()
         {
             using var session1 = fht.NewSession(new Functions());
@@ -198,6 +202,7 @@ namespace FASTER.test.async
         }
 
         [Test]
+        [Category("FasterKV")]
         public void SessionTest5()
         {
             var session = fht.NewSession(new Functions());
