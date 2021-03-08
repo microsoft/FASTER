@@ -37,6 +37,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
         public void BlittableLogCompactionTest1()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -81,6 +83,8 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
         public void BlittableLogCompactionTest2()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -137,6 +141,8 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
         public void BlittableLogCompactionTest3()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -197,6 +203,9 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void BlittableLogCompactionCustomFunctionsTest1()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -254,6 +263,9 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void BlittableLogCompactionCustomFunctionsTest2()
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace

@@ -48,6 +48,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1<<10)]int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -110,6 +111,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -176,6 +178,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -242,6 +245,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -311,6 +315,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>

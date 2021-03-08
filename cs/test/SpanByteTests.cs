@@ -19,6 +19,7 @@ namespace FASTER.test
     internal class SpanByteTests
     {
         [Test]
+        [Category("FasterKV")]
         public unsafe void SpanByteTest1()
         {
             Span<byte> output = stackalloc byte[20];

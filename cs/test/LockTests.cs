@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using FASTER.core;
@@ -48,7 +48,7 @@ namespace FASTER.test
         public void Setup()
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.log", deleteOnClose: true);
-            fkv = new FasterKV<int, int>( 1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null } );
+            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null });
             session = fkv.For(new Functions(fkv.RecordAccessor)).NewSession<Functions>();
         }
 
@@ -63,27 +63,17 @@ namespace FASTER.test
             log = null;
         }
 
+        [Test]
+        [Category("FasterKV")]
         public unsafe void RecordInfoLockTest()
         {
-            // Re-entrancy check
-            static void checkLatch(RecordInfo* ptr, long count)
+            for (var ii = 0; ii < 5; ++ii)
             {
-                Assert.IsTrue(RecordInfo.threadLockedRecord == ptr);
-                Assert.IsTrue(RecordInfo.threadLockedRecordEntryCount == count);
-            }
-            RecordInfo recordInfo = new RecordInfo();
-            RecordInfo* ri = (RecordInfo*)Unsafe.AsPointer(ref recordInfo);
-            checkLatch(null, 0);
-            recordInfo.SpinLock();
-            checkLatch(ri, 1);
-            recordInfo.SpinLock();
-            checkLatch(ri, 2);
-            recordInfo.Unlock();
-            checkLatch(ri, 1);
-            recordInfo.Unlock();
-            checkLatch(null, 0);
+                RecordInfo recordInfo = new RecordInfo();
+                RecordInfo* ri = &recordInfo;
 
-            XLockTest(() => recordInfo.SpinLock(), () => recordInfo.Unlock());
+                XLockTest(() => ri->SpinLock(), () => ri->Unlock());
+            }
         }
 
         private void XLockTest(Action locker, Action unlocker)
@@ -111,6 +101,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void IntExclusiveLockerTest()
         {
             int lockTestValue = 0;
@@ -118,6 +109,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void AdvancedFunctionsLockTest()
         {
             // Populate
