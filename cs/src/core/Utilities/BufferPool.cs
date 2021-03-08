@@ -70,7 +70,7 @@ namespace FASTER.core
 
             buffer = new byte[requiredSize];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-            aligned_pointer = (byte*)(((long)handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~(sectorSize - 1));
+            aligned_pointer = (byte*)(((long)handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
             offset = (int)((long)aligned_pointer - (long)handle.AddrOfPinnedObject());
         }
 
@@ -206,7 +206,7 @@ namespace FASTER.core
                 buffer = new byte[sectorSize * (1 << index)]
             };
             page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-            page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~(sectorSize - 1));
+            page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
             page.offset = (int) ((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
             page.pool = this;
             return page;

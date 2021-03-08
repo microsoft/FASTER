@@ -116,10 +116,10 @@ namespace FASTER.benchmark
 
             if (kSmallMemoryLog)
                 store = new FasterKV<Key, Value>
-                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
+                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 }, new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = path });
             else
                 store = new FasterKV<Key, Value>
-                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = path });
+                    (kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true }, new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = path });
         }
 
         private void RunYcsb(int thread_idx)
