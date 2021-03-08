@@ -49,6 +49,8 @@ namespace FASTER.core
                             kvp.Value.AtomicSwitch(next.version - 1);
 
                     faster.WriteHybridLogMetaInfo();
+                    faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+                    faster._lastSnapshotCheckpoint = default;
                     break;
                 case Phase.REST:
                     faster._hybridLogCheckpoint.Reset();
