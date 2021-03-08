@@ -45,6 +45,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void TryAddTest()
         {
             using var session = fht.For(new TryAddTestFunctions()).NewSession<TryAddTestFunctions>();
