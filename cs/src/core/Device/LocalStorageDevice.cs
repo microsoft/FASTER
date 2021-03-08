@@ -37,6 +37,7 @@ namespace FASTER.core
         private readonly bool useIoCompletionPort;
         private readonly ConcurrentQueue<SimpleAsyncResult> results;
         private static uint sectorSize = 0;
+        private bool _disposed;
 
         /// <summary>
         /// Number of pending reads on device
@@ -105,6 +106,8 @@ namespace FASTER.core
 #endif
             ThrottleLimit = 120;
             this.useIoCompletionPort = useIoCompletionPort;
+            this._disposed = false;
+
             if (useIoCompletionPort)
             {
                 ThreadPool.GetMaxThreads(out int workerThreads, out _);
@@ -329,6 +332,7 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
+            _disposed = true;
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();
 
@@ -445,7 +449,15 @@ namespace FASTER.core
             {
                 return h;
             }
-            return logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
+            if (_disposed) return null;
+            var result = logHandles.GetOrAdd(_segmentId, segmentId => CreateHandle(segmentId));
+            if (_disposed)
+            {
+                foreach (var logHandle in logHandles.Values)
+                    logHandle.Dispose();
+                return null;
+            }
+            return result;
         }
 
         private SafeFileHandle CreateHandle(int segmentId)

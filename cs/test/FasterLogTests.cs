@@ -18,7 +18,7 @@ namespace FASTER.test
     {
 
         [Test]
-        public async Task TestDisposeReleasesFileLocksWithInprogressCommit()
+        public void TestDisposeReleasesFileLocksWithInprogressCommit()
         {
             string commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
             DirectoryInfo di = Directory.CreateDirectory(commitPath);
@@ -26,19 +26,8 @@ namespace FASTER.test
             FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry });
             Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out long beginAddress));
             fasterLog.Commit(spinWait: false);
-            ValueTask waitingWriter = fasterLog.WaitForCommitAsync(beginAddress + 1);
             fasterLog.Dispose();
             device.Dispose();
-            if (!waitingWriter.IsCompleted)
-            {
-                Console.WriteLine("entered");
-                while (!waitingWriter.IsCompleted)
-                {
-                    await Task.Yield();
-                }
-                Assert.IsTrue(waitingWriter.IsFaulted);
-            }
-
             while (true)
             {
                 try
@@ -46,10 +35,7 @@ namespace FASTER.test
                     di.Delete(recursive: true);
                     break;
                 }
-                catch
-                {
-                    await Task.Delay(1_000);
-                }
+                catch { }
             }
         }
     }
