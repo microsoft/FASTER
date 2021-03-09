@@ -229,12 +229,12 @@ namespace FASTER.benchmark
 
             if (YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
             {
-                Thread.Sleep(TimeSpan.FromSeconds(YcsbConstants.kRunSeconds));
+                Thread.Sleep(TimeSpan.FromSeconds(testLoader.Options.RunSeconds));
             }
             else
             {
                 double runSeconds = 0;
-                while (runSeconds < YcsbConstants.kRunSeconds)
+                while (runSeconds < testLoader.Options.RunSeconds)
                 {
                     Thread.Sleep(TimeSpan.FromMilliseconds(YcsbConstants.kPeriodicCheckpointMilliseconds));
                     runSeconds += YcsbConstants.kPeriodicCheckpointMilliseconds / 1000;

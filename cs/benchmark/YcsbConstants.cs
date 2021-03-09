@@ -12,15 +12,6 @@ namespace FASTER.benchmark
         ConcurrentDictionaryYcsb
     };
 
-    [Flags]
-    enum BackupMode : int
-    {
-        None = 0,
-        Restore = 1,
-        Backup = 2,
-        Both = 3
-    };
-
     enum AddressLineNum : int
     {
         Before = 1,

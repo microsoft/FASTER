@@ -24,12 +24,11 @@ namespace FASTER.benchmark
                         "\n    1 = Sharding across NUMA sockets")]
         public int NumaStyle { get; set; }
 
-        [Option('k', "backup", Required = false, Default = false,
+        [Option('k', "recover", Required = false, Default = false,
              HelpText = "Enable Backup and Restore of FasterKV for fast test startup." +
                         "\n    True = Recover FasterKV if a Checkpoint is available, else populate FasterKV from data and Checkpoint it so it can be Restored in a subsequent run" +
-                        "\n    False = Populate FasterKV from data" +
-                        "\n    Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts;" +
-                        "\n    to force a new checkpoint, delete the existing folder")]
+                        "\n    False = Populate FasterKV from data and do not Checkpoint a backup" +
+                        "\n    (Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
         public bool BackupAndRestore { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
@@ -51,6 +50,10 @@ namespace FASTER.benchmark
         [Option((char)0, "sy", Required = false, Default = false,
             HelpText = "Use synthetic data")]
         public bool UseSyntheticData { get; set; }
+
+        [Option((char)0, "runsec", Required = false, Default = YcsbConstants.kRunSeconds,
+            HelpText = "Number of seconds to execute experiment")]
+        public int RunSeconds { get; set; }
 
         public string GetOptionsString()
         {
