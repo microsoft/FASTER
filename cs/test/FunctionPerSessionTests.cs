@@ -128,6 +128,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public async Task Should_create_multiple_sessions_with_different_callbacks()
         {
             using (var adderSession = _faster.NewSession(_adder))

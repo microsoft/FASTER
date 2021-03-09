@@ -1176,12 +1176,15 @@ namespace FASTER.core
             TailPageOffset.Page = (int)tailPage;
             TailPageOffset.Offset = (int)offsetInPage;
 
-            // allocate next page as well - this is an invariant in the allocator!
+            // Allocate current page if necessary
             var pageIndex = (TailPageOffset.Page % BufferSize);
+            if (!IsAllocated(pageIndex))
+                AllocatePage(pageIndex);
+
+            // Allocate next page as well - this is an invariant in the allocator!
             var nextPageIndex = (pageIndex + 1) % BufferSize;
-            if (tailAddress > 0)
-                if (!IsAllocated(nextPageIndex))
-                    AllocatePage(nextPageIndex);
+            if (!IsAllocated(nextPageIndex))
+                AllocatePage(nextPageIndex);
 
             BeginAddress = beginAddress;
             HeadAddress = headAddress;

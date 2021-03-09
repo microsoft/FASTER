@@ -22,6 +22,7 @@ namespace FASTER.test
         public const string TEST_CONTAINER = "test";
 
         [Test]
+        [Category("FasterLog")]
         public async ValueTask PageBlobFasterLogTest1([Values] LogChecksumType logChecksum, [Values]FasterLogTests.IteratorType iteratorType)
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))

@@ -43,6 +43,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void ObjectInMemWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -59,6 +60,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void ObjectInMemWriteRead2()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -84,6 +86,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void ObjectDiskWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -162,7 +165,8 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task AsyncObjectDiskWriteRead()
+        [Category("FasterKV")]
+        public async Task ReadAsyncObjectDiskWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
 

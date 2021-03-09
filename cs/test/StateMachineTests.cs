@@ -34,11 +34,11 @@ namespace FASTER.test.statemachine
             }
 
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/StateMachineTest1.log", deleteOnClose: true);
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/checkpoints4");
+            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/statemachinetest");
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
                 );
         }
 
@@ -47,11 +47,12 @@ namespace FASTER.test.statemachine
         {
             fht1.Dispose();
             log.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/checkpoints4").Delete(true);
+            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/statemachinetest").Delete(true);
         }
 
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest1()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -107,6 +108,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest2()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -151,6 +153,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest3()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -189,6 +192,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest4()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -236,6 +240,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest5()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -300,6 +305,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
+        [Category("FasterKV")]
         public void StateMachineTest6()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -391,7 +397,7 @@ namespace FASTER.test.statemachine
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2.Recover(); // sync, does not require session
