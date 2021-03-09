@@ -11,6 +11,7 @@ namespace FASTER.test
     internal class SimpleTests
     {
         [Test]
+        [Category("FasterKV")]
         public unsafe void AddressInfoTest()
         {
             AddressInfo info;

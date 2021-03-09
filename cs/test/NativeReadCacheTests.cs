@@ -38,6 +38,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void NativeDiskWriteReadCache()
         {
             using var session = fht.NewSession(new Functions());
@@ -143,6 +144,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void NativeDiskWriteReadCache2()
         {
             using var session = fht.NewSession(new Functions());

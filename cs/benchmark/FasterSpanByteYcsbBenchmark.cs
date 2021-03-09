@@ -73,11 +73,11 @@ namespace FASTER.benchmark
             if (YcsbConstants.kSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
                     (YcsbConstants.kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
             else
                 store = new FasterKV<SpanByte, SpanByte>
                     (YcsbConstants.kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckPointType = CheckpointType.FoldOver, CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
         }
 
         internal void Dispose()

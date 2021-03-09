@@ -53,6 +53,7 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask SharedLogDirectory([Values]bool isAsync)
         {
             this.original.Initialize($"{this.rootPath}/OriginalCheckpoint", this.sharedLogDirectory);

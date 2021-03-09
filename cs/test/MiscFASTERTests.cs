@@ -45,6 +45,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void MixedTest1()
         {
             using var session = fht.For(new MixedFunctions()).NewSession<MixedFunctions>();
@@ -67,6 +68,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void MixedTest2()
         {
             using var session = fht.For(new MixedFunctions()).NewSession<MixedFunctions>();
@@ -107,6 +109,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void ShouldCreateNewRecordIfConcurrentWriterReturnsFalse()
         {
             var copyOnWrite = new FunctionsCopyOnWrite();

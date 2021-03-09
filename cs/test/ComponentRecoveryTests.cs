@@ -60,6 +60,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("CheckpointRestore")]
         public void MallocFixedPageSizeRecoveryTest()
         {
             Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
@@ -74,6 +75,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("CheckpointRestore")]
         public async Task MallocFixedPageSizeRecoveryAsyncTest()
         {
             Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
@@ -153,6 +155,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("CheckpointRestore")]
         public unsafe void FuzzyIndexRecoveryTest()
         {
             Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out FasterBase hash_table1,
@@ -170,6 +173,7 @@ namespace FASTER.test.recovery
         }
 
         [Test]
+        [Category("CheckpointRestore")]
         public async Task FuzzyIndexRecoveryAsyncTest()
         {
             Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out FasterBase hash_table1,
