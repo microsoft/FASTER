@@ -145,8 +145,8 @@ namespace FASTER.core
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address);
 
         /// <summary>
-        /// Whether this Functions implementation actually locks in <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/> 
-        /// and <see cref="Unlock(ref RecordInfo, ref Key, ref Value, LockType, long)"/>
+        /// Whether this Functions instance supports locking. Iff so, FASTER will call <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/> 
+        /// and <see cref="Unlock(ref RecordInfo, ref Key, ref Value, LockType, long)"/>.
         /// </summary>
         bool SupportsLocking { get; }
 

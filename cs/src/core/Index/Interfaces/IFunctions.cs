@@ -127,8 +127,8 @@ namespace FASTER.core
         bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
 
         /// <summary>
-        /// Whether this Functions implementation actually locks in <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/> 
-        /// and <see cref="Unlock(ref RecordInfo, ref Key, ref Value, LockType, long)"/>
+        /// Whether this Functions instance supports locking. Iff so, FASTER will call <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/> 
+        /// and <see cref="Unlock(ref RecordInfo, ref Key, ref Value, LockType, long)"/>.
         /// </summary>
         bool SupportsLocking { get; }
 
