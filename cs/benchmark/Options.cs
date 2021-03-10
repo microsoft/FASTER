@@ -47,11 +47,11 @@ namespace FASTER.benchmark
             HelpText = "Seed for synthetic data distribution")]
         public int RandomSeed { get; set; }
 
-        [Option((char)0, "sy", Required = false, Default = false,
+        [Option("synth", Required = false, Default = false,
             HelpText = "Use synthetic data")]
         public bool UseSyntheticData { get; set; }
 
-        [Option((char)0, "runsec", Required = false, Default = YcsbConstants.kRunSeconds,
+        [Option("runsec", Required = false, Default = YcsbConstants.kRunSeconds,
             HelpText = "Number of seconds to execute experiment")]
         public int RunSeconds { get; set; }
 
