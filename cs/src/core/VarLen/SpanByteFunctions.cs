@@ -14,9 +14,7 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="locking"></param>
-        public SpanByteFunctions(bool locking = false) : base(locking)
-        {
-        }
+        public SpanByteFunctions(bool locking = false) : base(locking) { }
 
         /// <inheritdoc />
         public override void SingleWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
@@ -96,9 +94,23 @@ namespace FASTER.core
         /// <inheritdoc />
         public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
-            if (locking) value.SpinLock();
             value.CopyTo(ref dst, memoryPool);
+        }
+
+        /// <inheritdoc />
+        public override bool SupportsLocking => locking;
+
+        /// <inheritdoc />
+        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        {
+            if (locking) value.SpinLock();
+        }
+
+        /// <inheritdoc />
+        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
+        {
             if (locking) value.Unlock();
+            return true;
         }
     }
 
@@ -122,9 +134,23 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
         {
-            value.SpinLock();
             dst = value.ToByteArray();
-            value.Unlock();
+        }
+
+        /// <inheritdoc />
+        public override bool SupportsLocking => locking;
+
+        /// <inheritdoc />
+        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        {
+            if (locking) value.SpinLock();
+        }
+
+        /// <inheritdoc />
+        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
+        {
+            if (locking) value.Unlock();
+            return true;
         }
     }
 }

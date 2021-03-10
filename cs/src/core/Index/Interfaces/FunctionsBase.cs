@@ -40,13 +40,13 @@ namespace FASTER.core
 
         public virtual bool SupportsLocking => locking;
 
-        public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context)
+        public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
         {
             if (locking)
                 recordInfo.SpinLock();
         }
 
-        public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context)
+        public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
         {
             if (locking)
                 recordInfo.Unlock();
@@ -126,13 +126,13 @@ namespace FASTER.core
 
         public virtual bool SupportsLocking => locking;
 
-        public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context)
+        public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
         {
             if (locking)
                 recordInfo.SpinLock();
         }
 
-        public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context)
+        public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
         {
             if (locking)
                 recordInfo.Unlock();

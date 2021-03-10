@@ -85,12 +85,12 @@ namespace FASTER.benchmark
 
         public bool SupportsLocking => locking;
 
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context)
+        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
         {
             if (locking) recordInfo.SpinLock();
         }
 
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context)
+        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
         {
             if (locking) recordInfo.Unlock();
             return true;

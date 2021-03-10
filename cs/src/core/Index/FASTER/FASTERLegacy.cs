@@ -404,9 +404,9 @@ namespace FASTER.core
 
             public bool SupportsLocking => false;
 
-            public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context) { }
+            public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
 
-            public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context) => true;
+            public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
 
             public IHeapContainer<Input> GetHeapContainer(ref Input input)
             {

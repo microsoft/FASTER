@@ -148,6 +148,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SpinLock()
         {
+            // Note: Any improvements here should be done in IntExclusiveLocker.SpinLock() as well.
             while (true)
             {
                 long expected_word = word;

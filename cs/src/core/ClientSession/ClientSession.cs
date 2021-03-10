@@ -913,9 +913,9 @@ namespace FASTER.core
 
             public bool SupportsLocking => _clientSession.functions.SupportsLocking;
 
-            public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context) => _clientSession.functions.Lock(ref recordInfo, ref key, ref value, lockType, ref context);
+            public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) => _clientSession.functions.Lock(ref recordInfo, ref key, ref value, lockType, ref lockContext);
 
-            public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context) => _clientSession.functions.Unlock(ref recordInfo, ref key, ref value, lockType, context);
+            public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => _clientSession.functions.Unlock(ref recordInfo, ref key, ref value, lockType, lockContext);
 
             public IHeapContainer<Input> GetHeapContainer(ref Input input)
             {

@@ -55,7 +55,7 @@ namespace FASTER.core
         public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
 
         public bool SupportsLocking => false;
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context) { }
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context) => true;
+        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
+        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
     }
 }
