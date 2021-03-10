@@ -31,6 +31,12 @@ namespace FASTER.benchmark
                         "\n    (Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
         public bool BackupAndRestore { get; set; }
 
+        [Option('z', "locking", Required = false, Default = 0,
+             HelpText = "Locking Implementation:" +
+                        "\n    0 = None (default)" +
+                        "\n    1 = RecordInfo.SpinLock()")]
+        public int LockImpl { get; set; }
+
         [Option('i', "iterations", Required = false, Default = 1,
          HelpText = "Number of iterations of the test to run")]
         public int IterationCount { get; set; }
@@ -58,7 +64,7 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount};"
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
                         + $" sd: {boolStr(YcsbConstants.kUseSmallData)}; sm: {boolStr(YcsbConstants.kSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}";
         }
     }

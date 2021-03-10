@@ -37,7 +37,6 @@ namespace FASTER.core
         private readonly CopyReadsToTail CopyReadsToTail;
         private readonly bool FoldOverSnapshot;
         internal readonly int sectorSize;
-        private readonly bool WriteDefaultOnDelete;
         internal bool RelaxedCPR;
 
         /// <summary>
@@ -78,11 +77,6 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value> ReadCache { get; }
 
-        /// <summary>
-        /// An accessor to the record at a given logical address, for use in IFunctions callbacks.
-        /// </summary>
-        public RecordAccessor<Key, Value> RecordAccessor { get; }
-
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>
@@ -119,8 +113,6 @@ namespace FASTER.core
                     this.comparer = FasterEqualityComparer.Get<Key>();
                 }
             }
-
-            this.RecordAccessor = new RecordAccessor<Key, Value>(this);
 
             if (checkpointSettings == null)
                 checkpointSettings = new CheckpointSettings();
@@ -162,8 +154,6 @@ namespace FASTER.core
             if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength == null) ||
                 (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength == null))
             {
-                WriteDefaultOnDelete = true;
-
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)

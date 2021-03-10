@@ -125,6 +125,44 @@ namespace FASTER.core
         /// <param name="src">The value to be copied to <paramref name="dst"/></param>
         /// <param name="dst">The location where <paramref name="src"/> is to be copied; because this method is called only for in-place updates, there is a previous value there.</param>
         bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst);
+
+        /// <summary>
+        /// Whether this Functions implementation actually locks in <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/> 
+        /// and <see cref="Unlock(ref RecordInfo, ref Key, ref Value, LockType, long)"/>
+        /// </summary>
+        bool SupportsLocking { get; }
+
+        /// <summary>
+        /// User-provided lock call, defaulting to no-op. A default exclusive implementation is available via <see cref="RecordInfo.SpinLock()"/>.
+        /// See also <see cref="IntExclusiveLocker"/> to use two bits of an existing int value.
+        /// </summary>
+        /// <param name="recordInfo">The header for the current record</param>
+        /// <param name="key">The key for the current record</param>
+        /// <param name="value">The value for the current record</param>
+        /// <param name="lockType">The type of lock being taken</param>
+        /// <param name="context">Context-specific information; will be passed to <see cref="Unlock(ref RecordInfo, ref Key, ref Value, LockType, long)"/></param>
+        /// <remarks>
+        /// This is called only for records guaranteed to be in the mutable range.
+        /// </remarks>
+        void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context);
+
+        /// <summary>
+        /// User-provided unlock call, defaulting to no-op. A default exclusive implementation is available via <see cref="RecordInfo.Unlock()"/>.
+        /// See also <see cref="IntExclusiveLocker"/> to use two bits of an existing int value.
+        /// </summary>
+        /// <param name="recordInfo">The header for the current record</param>
+        /// <param name="key">The key for the current record</param>
+        /// <param name="value">The value for the current record</param>
+        /// <param name="lockType">The type of lock being released, as passed to <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
+        /// <param name="context">The context returned from <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
+        /// <remarks>
+        /// This is called only for records guaranteed to be in the mutable range.
+        /// </remarks>
+        /// <returns>
+        /// True if no inconsistencies detected. Otherwise, the lock and user's callback are reissued.
+        /// Currently this is handled only for <see cref="ConcurrentReader(ref Key, ref Input, ref Value, ref Output)"/>.
+        /// </returns>
+        bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context);
     }
 
     /// <summary>

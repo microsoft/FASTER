@@ -53,5 +53,9 @@ namespace FASTER.core
         public void SingleWriter(ref Key key, ref Value src, ref Value dst) => _functions.SingleWriter(ref key, ref src, ref dst);
 
         public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+
+        public bool SupportsLocking => false;
+        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long context) { }
+        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context) => true;
     }
 }

@@ -11,17 +11,15 @@ namespace FASTER.core
         where T : unmanaged
     {
         readonly MemoryPool<T> memoryPool;
-        readonly bool locking;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
         /// <param name="locking">Whether we lock values before concurrent operations (implemented using a spin lock on length header bit)</param>
-        public MemoryFunctions(MemoryPool<T> memoryPool = default, bool locking = false)
+        public MemoryFunctions(MemoryPool<T> memoryPool = default, bool locking = false) : base(locking)
         {
             this.memoryPool = memoryPool ?? MemoryPool<T>.Shared;
-            this.locking = locking;
         }
 
         /// <inheritdoc/>
