@@ -109,7 +109,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
         {
-            if (locking) value.Unlock();
+            value.Unlock();
             return true;
         }
     }
