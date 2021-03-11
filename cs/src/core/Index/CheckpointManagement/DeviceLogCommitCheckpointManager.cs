@@ -24,6 +24,7 @@ namespace FASTER.core
         private SectorAlignedBufferPool bufferPool;
 
         private IDevice singleLogCommitDevice;
+        private bool _disposed;
 
         /// <summary>
         /// Next commit number
@@ -48,6 +49,7 @@ namespace FASTER.core
 
             this.overwriteLogCommits = overwriteLogCommits;
             this.removeOutdated = removeOutdated;
+            this._disposed = false;
 
             deviceFactory.Initialize(checkpointNamingScheme.BaseName());
         }
@@ -76,6 +78,8 @@ namespace FASTER.core
         {
             var device = NextCommitDevice();
 
+            if (device == null) return;
+
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
@@ -93,6 +97,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public void Dispose()
         {
+            _disposed = true;
             singleLogCommitDevice?.Dispose();
             singleLogCommitDevice = null;
         }
@@ -109,8 +114,16 @@ namespace FASTER.core
             IDevice device;
             if (overwriteLogCommits)
             {
+                if (_disposed) return null;
                 if (singleLogCommitDevice == null)
+                {
                     singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                    if (_disposed)
+                    {
+                        singleLogCommitDevice?.Dispose();
+                        singleLogCommitDevice = null;
+                    }
+                }
                 device = singleLogCommitDevice;
             }
             else
@@ -118,6 +131,7 @@ namespace FASTER.core
                 device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
                 this.commitNum = commitNum + 1;
             }
+            if (device == null) return null;
             
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
@@ -139,8 +153,17 @@ namespace FASTER.core
         {
             if (overwriteLogCommits)
             {
+                if (_disposed) return null;
                 if (singleLogCommitDevice == null)
+                {
                     singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                    if (_disposed)
+                    {
+                        singleLogCommitDevice?.Dispose();
+                        singleLogCommitDevice = null;
+                        return null;
+                    }
+                }
                 return singleLogCommitDevice;
             }
 
