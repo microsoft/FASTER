@@ -172,7 +172,7 @@ namespace FASTER.core
         /// <param name="key">The key for the current record</param>
         /// <param name="value">The value for the current record</param>
         /// <param name="lockType">The type of lock being released, as passed to <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
-        /// <param name="context">The context returned from <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
+        /// <param name="lockContext">The context returned from <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <remarks>
         /// This is called only for records guaranteed to be in the mutable range.
         /// </remarks>
@@ -180,7 +180,7 @@ namespace FASTER.core
         /// True if no inconsistencies detected. Otherwise, the lock and user's callback are reissued.
         /// Currently this is handled only for <see cref="ConcurrentReader(ref Key, ref Input, ref Value, ref Output, ref RecordInfo, long)"/>.
         /// </returns>
-        bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long context);
+        bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext);
     }
 
     /// <summary>
