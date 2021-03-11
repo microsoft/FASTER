@@ -18,7 +18,7 @@ namespace FASTER.core
         // Derived class exposed API
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
-            uint alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: false);
+            ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: false);
             overflowBucketsAllocator.Recover(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes);
 
             // Wait until reading is complete
@@ -28,13 +28,13 @@ namespace FASTER.core
 
         internal async ValueTask RecoverFuzzyIndexAsync(IndexCheckpointInfo info, CancellationToken cancellationToken)
         {
-            uint alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: true);
+            ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: true);
             await this.recoveryCountdown.WaitAsync(cancellationToken);
             await overflowBucketsAllocator.RecoverAsync(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes, cancellationToken);
             FinalizeMainIndexRecovery(info);
         }
 
-        private uint InitializeMainIndexRecovery(ref IndexCheckpointInfo info, bool isAsync)
+        private ulong InitializeMainIndexRecovery(ref IndexCheckpointInfo info, bool isAsync)
         {
             var token = info.info.token;
             var ht_version = resizeInfo.version;
@@ -53,7 +53,7 @@ namespace FASTER.core
             BeginMainIndexRecovery(ht_version, info.main_ht_device, info.info.num_ht_bytes, isAsync);
 
             
-            var alignedIndexSize = (uint)((info.info.num_ht_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
+            var alignedIndexSize = (info.info.num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
             return alignedIndexSize;
         }
 
@@ -71,7 +71,7 @@ namespace FASTER.core
         {
             BeginMainIndexRecovery(ht_version, device, num_ht_bytes);
             var sectorSize = device.SectorSize;
-            var alignedIndexSize = (uint)((num_ht_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
+            var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
             overflowBucketsAllocator.Recover(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes);
         }
 
@@ -81,7 +81,7 @@ namespace FASTER.core
             BeginMainIndexRecovery(ht_version, device, num_ht_bytes, isAsync: true);
             await this.recoveryCountdown.WaitAsync(cancellationToken);
             var sectorSize = device.SectorSize;
-            var alignedIndexSize = (uint)((num_ht_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
+            var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
             await overflowBucketsAllocator.RecoverAsync(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes, cancellationToken);
         }
 

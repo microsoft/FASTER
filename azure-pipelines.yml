@@ -7,6 +7,7 @@ jobs:
   pool:
     vmImage: windows-latest
   displayName: 'C# (Windows)'
+  timeoutInMinutes: 75 
 
   strategy:
     maxParallel: 2

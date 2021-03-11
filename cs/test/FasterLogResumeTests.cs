@@ -7,6 +7,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
+using System.Threading;
+
 
 namespace FASTER.test
 {
@@ -37,8 +39,11 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
         public async Task FasterLogResumePersistedReaderSpec([Values] LogChecksumType logChecksum)
         {
+            CancellationToken cancellationToken;
+
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
@@ -46,7 +51,7 @@ namespace FASTER.test
 
             using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitPath }))
             {
-                await l.EnqueueAsync(input1);
+                await l.EnqueueAsync(input1, cancellationToken);
                 await l.EnqueueAsync(input2);
                 await l.EnqueueAsync(input3);
                 await l.CommitAsync();
@@ -67,6 +72,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterLog")]
         public async Task FasterLogResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool overwriteLogCommits, [Values] bool removeOutdated)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };

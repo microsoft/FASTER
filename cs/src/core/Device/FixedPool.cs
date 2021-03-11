@@ -29,7 +29,7 @@ namespace FASTER.core
                 for (int i = 0; i < size; i++)
                 {
                     if (disposed)
-                        throw new FasterException("Disposed");
+                        throw new FasterException("Accessing a disposed handle in device");
 
                     var val = owners[i];
                     if (val == 0)
