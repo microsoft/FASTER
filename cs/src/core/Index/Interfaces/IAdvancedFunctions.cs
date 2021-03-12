@@ -141,8 +141,8 @@ namespace FASTER.core
         /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
-        /// <returns>True if handled by the Functions implementation, else false</returns>
-        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address);
+        /// <remarks>For Object Value types, Dispose() can be called here.</remarks>
+        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Whether this Functions instance supports locking. Iff so, FASTER will call <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/> 

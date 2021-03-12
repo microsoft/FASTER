@@ -428,7 +428,8 @@ namespace FASTER.core
             return status;
         }
 
-        private LatchDestination AcquireLatchUpsert<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, ref OperationStatus status, ref LatchOperation latchOperation, ref HashBucketEntry entry)
+        private LatchDestination AcquireLatchUpsert<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, ref OperationStatus status, 
+                                                                            ref LatchOperation latchOperation, ref HashBucketEntry entry)
         {
             switch (sessionCtx.phase)
             {
@@ -499,7 +500,10 @@ namespace FASTER.core
             return LatchDestination.NormalProcessing;
         }
 
-        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, ushort tag, HashBucketEntry entry, long latestLogicalAddress) where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+                                                                                             FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, ushort tag, HashBucketEntry entry,
+                                                                                             long latestLogicalAddress) 
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
             BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
@@ -834,7 +838,10 @@ namespace FASTER.core
             return LatchDestination.NormalProcessing;
         }
 
-        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress) where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+                                                                                          FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
+                                                                                          long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress) 
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
@@ -1066,9 +1073,11 @@ namespace FASTER.core
             if (logicalAddress >= hlog.ReadOnlyAddress)
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-
-                // Ignore return value of ConcurrentDeleter; the InternalFasterSession wrappers handle the false return.
-                fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress);
+                ref Value value = ref hlog.GetValue(physicalAddress);
+                recordInfo.Tombstone = true;
+                fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref value, ref recordInfo, logicalAddress);
+                if (WriteDefaultOnDelete)
+                    value = default;
 
                 // Try to update hash chain and completely elide record only if previous address points to invalid address
                 if (entry.Address == logicalAddress && recordInfo.PreviousAddress < hlog.BeginAddress)
@@ -1165,14 +1174,6 @@ namespace FASTER.core
 #endregion
 
             return status;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetRecordDeleted(ref Value value, ref RecordInfo recordInfo)
-        {
-            recordInfo.Tombstone = true;
-            if (hlog.ValueHasObjects())
-                value = default;
         }
 
 #endregion
