@@ -16,7 +16,7 @@ namespace FASTER.core
             list = new PageAsyncFlushResult<Empty>[maxSize];
         }
 
-        public void Add(PageAsyncFlushResult<Empty> t)
+        public bool Add(PageAsyncFlushResult<Empty> t)
         {
             int retries = 0;
             do
@@ -27,12 +27,12 @@ namespace FASTER.core
                     {
                         if (Interlocked.CompareExchange(ref list[i], t, default) == default)
                         {
-                            return;
+                            return true;
                         }
                     }
                 }
             } while (retries++ < maxRetries);
-            throw new FasterException("Unable to add item to list");
+            return false;
         }
 
         public bool RemoveAdjacent(long address, out PageAsyncFlushResult<Empty> request)

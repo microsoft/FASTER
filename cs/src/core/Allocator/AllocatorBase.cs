@@ -1435,10 +1435,17 @@ namespace FASTER.core
                 {
                     // Enqueue work in shared queue
                     var index = GetPageIndexForAddress(asyncResult.fromAddress);
-                    PendingFlush[index].Add(asyncResult);
-                    if (PendingFlush[index].RemoveAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
+                    if (PendingFlush[index].Add(asyncResult))
                     {
-                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                        if (PendingFlush[index].RemoveAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
+                        {
+                            WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                        }
+                    }
+                    else
+                    {
+                        // Could not add to pending flush list, treat as a failed write
+                        AsyncFlushPageCallback(1, 0, asyncResult);
                     }
                 }
                 else
