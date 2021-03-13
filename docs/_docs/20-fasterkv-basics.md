@@ -101,7 +101,7 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 - ReadCompletionCallback receives the `RecordInfo` of the record that was read.
 - Other callbacks receive the logical address of the record, which can be useful for applications such as indexing.
 
-`IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may return false for default deletion handling (setting recordInfo.Tombstone true, and setting object types to null), or may implement its own delete handling (which must set recordInfo.Tombstone true) and return true.
+`IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may be used to implement user-defined post-deletion logic, such as calling object Dispose.
 
 `IAdvancedFunctions` is a separate interface; it does not inherit from `IFunctions`.
 
