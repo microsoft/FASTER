@@ -44,66 +44,34 @@ namespace FASTER.test.recovery.sumstore
         public NumClicks value;
     }
 
-    public class Functions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
+    public class Functions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
-        {
-        }
-
-        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
         // Read functions
-        public void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
-        }
-
-        // Upsert functions
-        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-        }
-
-        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-            return true;
         }
 
         // RMW functions
-        public void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             value = input.numClicks;
         }
 
-        public bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
 
-        public void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }
