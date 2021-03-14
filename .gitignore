@@ -193,3 +193,6 @@ packages/
 *.lib
 nativebin/
 /cs/benchmark/Properties/launchSettings.json
+
+# JetBrains IDE
+.idea/
