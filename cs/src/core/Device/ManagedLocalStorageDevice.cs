@@ -215,9 +215,12 @@ namespace FASTER.core
                     await logWriteHandle.WriteAsync(umm.Memory);
 #else
                     SectorAlignedMemory memory = pool.Get((int)numBytesToWrite);
-                    fixed (void* destination = memory.buffer)
+                    unsafe
                     {
-                        Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                        fixed (void* destination = memory.buffer)
+                        {
+                            Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                        }
                     }
 
                     await logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
