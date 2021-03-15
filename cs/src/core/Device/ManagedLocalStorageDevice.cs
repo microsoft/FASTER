@@ -2,12 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -97,7 +97,7 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
+        public override void ReadAsync(int segmentId, ulong sourceAddress,
                                      IntPtr destinationAddress,
                                      uint readLength,
                                      DeviceIOCompletionCallback callback,
@@ -111,50 +111,63 @@ namespace FASTER.core
             (logReadHandle, offset) = streampool.Get();
 
             logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+
             Interlocked.Increment(ref numPending);
 
-#if NETSTANDARD2_1
-            var umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
-            logReadHandle.ReadAsync(umm.Memory).AsTask()
-#else
-            SectorAlignedMemory memory = pool.Get((int)readLength);
-            logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength)
-#endif
-                .ContinueWith(t =>
+            _ = Task.Run(async () =>
+            {
+                uint errorCode;
+                int numBytes;
+                try
                 {
-                    Interlocked.Decrement(ref numPending);
-
-                    uint errorCode = 0;
-                    if (t.IsFaulted)
+#if NETSTANDARD2_1
+                    UnmanagedMemoryManager<byte> umm;
+                    unsafe
                     {
-                        if (t.Exception.InnerException is IOException)
-                        {
-                            var e = t.Exception.InnerException as IOException;
-                            errorCode = (uint)(e.HResult & 0x0000FFFF);
-                        }
-                        else
-                        {
-                            errorCode = uint.MaxValue;
-                        }
+                        umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
                     }
 
-                    // Sequentialize all reads from same handle on non-windows
+                    numBytes = await logReadHandle.ReadAsync(umm.Memory);
+#else
+                    SectorAlignedMemory memory = pool.Get((int)readLength);
+                    numBytes = await logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
+#endif
+                    errorCode = uint.MaxValue;
+                }
+                catch (Exception ex)
+                {
+                    if (ex.InnerException != null &&
+                        ex.InnerException is IOException ioex)
+                    {
+                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
+                    }
+                    else
+                    {
+                        errorCode = uint.MaxValue;
+                    }
+
+                    numBytes = 0;
+                }
+
+                Interlocked.Decrement(ref numPending);
+
+                // Sequentialize all reads from same handle on non-windows
 #if NETSTANDARD
-                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    {
-                        if (offset >= 0) streampool?.Return(offset);
-                    }
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    // TODO: Handle exceptions in the return which can also result in a filestream dispose.
+                    if (offset >= 0) streampool?.Return(offset);
+                }
 #endif
 
-                    callback(errorCode, (uint)t.Result, context);
-                }
-                );
+                callback(errorCode, (uint)numBytes, context);
+            });
 
 #if NETSTANDARD
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 if (offset >= 0) streampool?.Return(offset);
 #else
-            if (offset >= 0) streampool?.Return(offset);
+                if (offset >= 0) streampool?.Return(offset);
 #endif
         }
 
@@ -167,7 +180,7 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public override unsafe void WriteAsync(IntPtr sourceAddress,
+        public override void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
                                       ulong destinationAddress,
                                       uint numBytesToWrite,
@@ -186,47 +199,59 @@ namespace FASTER.core
             logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
             Interlocked.Increment(ref numPending);
 
-#if NETSTANDARD2_1
-            var umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
-            logWriteHandle.WriteAsync(umm.Memory).AsTask()
-#else
-            SectorAlignedMemory memory = pool.Get((int)numBytesToWrite);
-            fixed (void* destination = memory.buffer)
+            _ = Task.Run(async () =>
             {
-                Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
-            }
-            logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite)
-#endif
-                .ContinueWith(t =>
+                uint errorCode;
+
+                try
                 {
-                    Interlocked.Decrement(ref numPending);
-
-                    uint errorCode = 0;
-                    if (t.IsFaulted)
+#if NETSTANDARD2_1
+                    UnmanagedMemoryManager<byte> umm;
+                    unsafe
                     {
-                        if (t.Exception.InnerException is IOException)
-                        {
-                            var e = t.Exception.InnerException as IOException;
-                            errorCode = (uint)(e.HResult & 0x0000FFFF);
-                        }
-                        else
-                        {
-                            errorCode = uint.MaxValue;
-                        }
+                        umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
                     }
 
-                    // Sequentialize all writes to same handle on non-windows
+                    await logWriteHandle.WriteAsync(umm.Memory);
+#else
+                    SectorAlignedMemory memory = pool.Get((int)numBytesToWrite);
+                    fixed (void* destination = memory.buffer)
+                    {
+                        Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                    }
+
+                    await logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
+#endif
+                    errorCode = uint.MaxValue;
+                }
+                catch (Exception ex)
+                {
+
+                    if (ex.InnerException != null &&
+                        ex.InnerException is IOException ioex)
+                    {
+                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
+                    }
+                    else
+                    {
+                        errorCode = uint.MaxValue;
+                    }
+                }
+
+                Interlocked.Decrement(ref numPending);
+                // Sequentialize all writes to same handle on non-windows
 #if NETSTANDARD
-                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    {
-                        ((FileStream)logWriteHandle).Flush(true);
-                        if (offset >= 0) streampool?.Return(offset);
-                    }
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    // TODO: Handle exceptions in Flush and in return. Return can result in a filestream dispose.
+                    // TODO: Use async flush?
+                    ((FileStream)logWriteHandle).Flush(true);
+                    if (offset >= 0) streampool?.Return(offset);
+                }
 #endif
 
-                    callback(errorCode, numBytesToWrite, context);
-                }
-                );
+                callback(errorCode, numBytesToWrite, context);
+            });
 
 #if NETSTANDARD
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -310,7 +335,7 @@ namespace FASTER.core
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
                 (FileOptions)FILE_FLAG_NO_BUFFERING |
-                FileOptions.WriteThrough | 
+                FileOptions.WriteThrough |
                 FileOptions.Asynchronous |
                 FileOptions.None;
 
@@ -326,7 +351,7 @@ namespace FASTER.core
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
                 (FileOptions)FILE_FLAG_NO_BUFFERING |
-                FileOptions.WriteThrough | 
+                FileOptions.WriteThrough |
                 FileOptions.Asynchronous |
                 FileOptions.None;
 
