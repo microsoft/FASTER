@@ -16,6 +16,13 @@ namespace FASTER.core
     /// </summary>
     public sealed class ManagedLocalStorageDevice : StorageDeviceBase
     {
+#if NETSTANDARD
+        // IsOSPlatform leads to a string comparison, cache the result once and reuse.
+        private static bool IsWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+#else
+        private static bool IsWindows = true;
+#endif
+
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
         private readonly SafeConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)> logHandles;
@@ -117,6 +124,8 @@ namespace FASTER.core
                 logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
                 uint errorCode;
                 int numBytes;
+                Task<int> readTask;
+
                 try
                 {
 #if NETSTANDARD2_1
@@ -126,11 +135,20 @@ namespace FASTER.core
                         umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
                     }
 
-                    numBytes = await logReadHandle.ReadAsync(umm.Memory);
+                    readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
 #else
                     SectorAlignedMemory memory = pool.Get((int)readLength);
-                    numBytes = await logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
+                    readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
 #endif
+
+                    if (IsWindows)
+                    {
+                        // if non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
+                        // for netstandard+linux we will return after the operation completes.
+                        if (offset >= 0) streampool?.Return(offset);
+                    }
+
+                    numBytes = await readTask;
                     errorCode = uint.MaxValue;
                 }
                 catch (Exception ex)
@@ -148,28 +166,16 @@ namespace FASTER.core
                     numBytes = 0;
                 }
 
-                Interlocked.Decrement(ref numPending);
-
-#if NETSTANDARD
                 // Sequentialize all reads from same handle on non-windows
-                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (!IsWindows)
                 {
                     // TODO: Handle exceptions in the return which can also result in a filestream dispose.
                     if (offset >= 0) streampool?.Return(offset);
                     callback(errorCode, (uint)numBytes, context);
                 }
-                else
-                {
-                    callback(errorCode, (uint)numBytes, context);
-                    // TODO: Handle exceptions in the return which can also result in a filestream dispose.
-                    if (offset >= 0) streampool?.Return(offset);
 
-                }
-#else
+                Interlocked.Decrement(ref numPending);
                 callback(errorCode, (uint)numBytes, context);
-                    // TODO: Handle exceptions in the return which can also result in a filestream dispose.
-                if (offset >= 0) streampool?.Return(offset);
-#endif
             });
         }
 
@@ -205,7 +211,7 @@ namespace FASTER.core
                 logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
 
                 uint errorCode;
-
+                Task writeTask;
                 try
                 {
 #if NETSTANDARD2_1
@@ -215,7 +221,7 @@ namespace FASTER.core
                         umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
                     }
 
-                    await logWriteHandle.WriteAsync(umm.Memory);
+                    writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
 #else
                     SectorAlignedMemory memory = pool.Get((int)numBytesToWrite);
                     unsafe
@@ -226,8 +232,18 @@ namespace FASTER.core
                         }
                     }
 
-                    await logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
+                    writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
 #endif
+
+                    if (IsWindows)
+                    {
+                        // if non-netstandard, or netstandard+windows, we can return to the pool immediately.
+                        // for netstandard+linux we will return after the operation completes.
+                        if (offset >= 0) streampool?.Return(offset);
+                    }
+
+
+                    await writeTask;
                     errorCode = uint.MaxValue;
                 }
                 catch (Exception ex)
@@ -244,27 +260,18 @@ namespace FASTER.core
                     }
                 }
 
-#if NETSTANDARD
                 // Sequentialize all writes to same handle on non-windows
-                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (!IsWindows)
                 {
                     // TODO: Handle exceptions in Flush and in return. Return can result in a filestream dispose.
                     // TODO: Use async flush?
                     ((FileStream)logWriteHandle).Flush(true);
                     if (offset >= 0) streampool?.Return(offset);
-                    callback(errorCode, numBytesToWrite, context);
                 }
-                else
-                {
-                    callback(errorCode, numBytesToWrite, context);
-                    if (offset >= 0) streampool?.Return(offset);
-                }
-#else
-                callback(errorCode, numBytesToWrite, context);
-                if (offset >= 0) streampool?.Return(offset);
-#endif
 
+                // do this after the flush has finished.
                 Interlocked.Decrement(ref numPending);
+                callback(errorCode, numBytesToWrite, context);
             });
         }
 
