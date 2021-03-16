@@ -103,19 +103,18 @@ namespace FASTER.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            Stream logReadHandle = null;
-            int offset = -1;
-            FixedPool<Stream> streampool = null;
-
-            streampool = GetOrAddHandle(segmentId).Item1;
-            (logReadHandle, offset) = streampool.Get();
-
-            logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-
-            Interlocked.Increment(ref numPending);
-
             _ = Task.Run(async () =>
             {
+                Interlocked.Increment(ref numPending);
+
+                Stream logReadHandle = null;
+                int offset = -1;
+                FixedPool<Stream> streampool = null;
+
+                streampool = GetOrAddHandle(segmentId).Item1;
+                (logReadHandle, offset) = streampool.Get();
+
+                logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
                 uint errorCode;
                 int numBytes;
                 try
@@ -151,24 +150,27 @@ namespace FASTER.core
 
                 Interlocked.Decrement(ref numPending);
 
-                // Sequentialize all reads from same handle on non-windows
 #if NETSTANDARD
+                // Sequentialize all reads from same handle on non-windows
                 if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
                     // TODO: Handle exceptions in the return which can also result in a filestream dispose.
                     if (offset >= 0) streampool?.Return(offset);
+                    callback(errorCode, (uint)numBytes, context);
                 }
-#endif
+                else
+                {
+                    callback(errorCode, (uint)numBytes, context);
+                    // TODO: Handle exceptions in the return which can also result in a filestream dispose.
+                    if (offset >= 0) streampool?.Return(offset);
 
-                callback(errorCode, (uint)numBytes, context);
-            });
-
-#if NETSTANDARD
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                if (offset >= 0) streampool?.Return(offset);
+                }
 #else
+                callback(errorCode, (uint)numBytes, context);
+                    // TODO: Handle exceptions in the return which can also result in a filestream dispose.
                 if (offset >= 0) streampool?.Return(offset);
 #endif
+            });
         }
 
         /// <summary>
@@ -187,20 +189,21 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            HandleCapacity(segmentId);
-
-            Stream logWriteHandle = null;
-            int offset = -1;
-            FixedPool<Stream> streampool = null;
-
-            streampool = GetOrAddHandle(segmentId).Item2;
-            (logWriteHandle, offset) = streampool.Get();
-
-            logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-            Interlocked.Increment(ref numPending);
-
             _ = Task.Run(async () =>
             {
+                Interlocked.Increment(ref numPending);
+
+                HandleCapacity(segmentId);
+
+                Stream logWriteHandle = null;
+                int offset = -1;
+                FixedPool<Stream> streampool = null;
+
+                streampool = GetOrAddHandle(segmentId).Item2;
+                (logWriteHandle, offset) = streampool.Get();
+
+                logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+
                 uint errorCode;
 
                 try
@@ -241,27 +244,28 @@ namespace FASTER.core
                     }
                 }
 
-                Interlocked.Decrement(ref numPending);
-                // Sequentialize all writes to same handle on non-windows
 #if NETSTANDARD
+                // Sequentialize all writes to same handle on non-windows
                 if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
                     // TODO: Handle exceptions in Flush and in return. Return can result in a filestream dispose.
                     // TODO: Use async flush?
                     ((FileStream)logWriteHandle).Flush(true);
                     if (offset >= 0) streampool?.Return(offset);
+                    callback(errorCode, numBytesToWrite, context);
                 }
-#endif
-
-                callback(errorCode, numBytesToWrite, context);
-            });
-
-#if NETSTANDARD
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                if (offset >= 0) streampool?.Return(offset);
+                else
+                {
+                    callback(errorCode, numBytesToWrite, context);
+                    if (offset >= 0) streampool?.Return(offset);
+                }
 #else
-            if (offset >= 0) streampool?.Return(offset);
+                callback(errorCode, numBytesToWrite, context);
+                if (offset >= 0) streampool?.Return(offset);
 #endif
+
+                Interlocked.Decrement(ref numPending);
+            });
         }
 
         /// <summary>
