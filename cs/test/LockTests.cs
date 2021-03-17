@@ -5,7 +5,6 @@ using FASTER.core;
 using NUnit.Framework;
 using System;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,28 +15,28 @@ namespace FASTER.test
     {
         internal class Functions : AdvancedSimpleFunctions<int, int>
         {
-            private readonly RecordAccessor<int, int> recordAccessor;
-
-            internal Functions(RecordAccessor<int, int> accessor) => this.recordAccessor = accessor;
-
-            public override void ConcurrentReader(ref int key, ref int input, ref int value, ref int dst, long address)
+            public override void ConcurrentReader(ref int key, ref int input, ref int value, ref int dst, ref RecordInfo recordInfo, long address)
             {
-                this.recordAccessor.SpinLock(address);
                 dst = value;
-                this.recordAccessor.Unlock(address);
             }
 
-            bool LockAndIncrement(ref int dst, long address)
+            bool Increment(ref int dst)
             {
-                this.recordAccessor.SpinLock(address);
                 ++dst;
-                this.recordAccessor.Unlock(address);
                 return true;
             }
 
-            public override bool ConcurrentWriter(ref int key, ref int src, ref int dst, long address) => LockAndIncrement(ref dst, address);
+            public override bool ConcurrentWriter(ref int key, ref int src, ref int dst, ref RecordInfo recordInfo, long address) => Increment(ref dst);
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, long address) => LockAndIncrement(ref value, address);
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref RecordInfo recordInfo, long address) => Increment(ref value);
+
+            public override bool SupportsLocking => true;
+            public override void Lock(ref RecordInfo recordInfo, ref int key, ref int value, LockType lockType, ref long lockContext) => recordInfo.SpinLock();
+            public override bool Unlock(ref RecordInfo recordInfo, ref int key, ref int value, LockType lockType, long lockContext)
+            {
+                recordInfo.Unlock();
+                return true;
+            }
         }
 
         private FasterKV<int, int> fkv;
@@ -49,7 +48,7 @@ namespace FASTER.test
         {
             log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.log", deleteOnClose: true);
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null });
-            session = fkv.For(new Functions(fkv.RecordAccessor)).NewSession<Functions>();
+            session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
         [TearDown]

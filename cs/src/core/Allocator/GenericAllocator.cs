@@ -47,21 +47,17 @@ namespace FASTER.core
                 throw new FasterException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
             }
 
-            SerializerSettings = serializerSettings;
+            SerializerSettings = serializerSettings ?? new SerializerSettings<Key, Value>();
 
             if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
                 Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
-                if (SerializerSettings == null)
-                    SerializerSettings = new SerializerSettings<Key, Value>();
                 SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
                 Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
-                if (SerializerSettings == null)
-                    SerializerSettings = new SerializerSettings<Key, Value>();
                 SerializerSettings.valueSerializer = ObjectSerializer.Get<Value>();
             }
 
