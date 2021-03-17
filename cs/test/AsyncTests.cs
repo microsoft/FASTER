@@ -2,11 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
@@ -20,7 +17,7 @@ namespace FASTER.test.async
     {
         private FasterKV<AdId, NumClicks> fht1;
         private FasterKV<AdId, NumClicks> fht2;
-        private readonly SimpleFunctions functions = new SimpleFunctions();
+        private readonly AdSimpleFunctions functions = new AdSimpleFunctions();
         private IDevice log;
 
 
@@ -56,9 +53,9 @@ namespace FASTER.test.async
             AdInput inputArg = default;
             Output output = default;
 
-            var s0 = fht1.For(functions).NewSession<SimpleFunctions>();
-            var s1 = fht1.For(functions).NewSession<SimpleFunctions>();
-            var s2 = fht1.For(functions).NewSession<SimpleFunctions>();
+            var s0 = fht1.For(functions).NewSession<AdSimpleFunctions>();
+            var s1 = fht1.For(functions).NewSession<AdSimpleFunctions>();
+            var s2 = fht1.For(functions).NewSession<AdSimpleFunctions>();
 
             for (int key = 0; key < numOps; key++)
             {
@@ -89,7 +86,7 @@ namespace FASTER.test.async
             fht2.Recover(token); // sync, does not require session
 
             var guid = s1.ID;
-            using (var s3 = fht2.For(functions).ResumeSession<SimpleFunctions>(guid, out CommitPoint lsn))
+            using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(guid, out CommitPoint lsn))
             {
                 Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
 
@@ -112,71 +109,31 @@ namespace FASTER.test.async
         }
     }
 
-
-
-
-public class SimpleFunctions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
+    public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.numClicks == key.adId);
         }
 
-        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
         // Read functions
-        public void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
-        {
-            dst.value = value;
-        }
+        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
-        public void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
-        {
-            dst.value = value;
-        }
-
-        // Upsert functions
-        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-        }
-
-        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-            return true;
-        }
+        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
         // RMW functions
-        public void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
-        {
-            value = input.numClicks;
-        }
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value) => value = input.numClicks;
 
-        public bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
 
-        public void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

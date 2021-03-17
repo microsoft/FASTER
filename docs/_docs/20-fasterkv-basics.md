@@ -93,12 +93,15 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Concurrent writer can assume that there are no concurrent operations on the record.
 3. Completion callbacks: Called by FASTER when various operations complete after they have gone "pending" due to requiring IO.
 4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
+5. Locking: There is one property and two methods; if the SupportsLocking property returns true, then FASTER will call Lock and Unlock within a try/finally in the four concurrent callback methods: ConcurrentReader, ConcurrentWriter, ConcurrentDeleter (new in IAdvancedFunctions), and InPlaceUpdater. FunctionsBase illustrates the default implementation of Lock and Unlock as an exclusive lock using a bit in RecordInfo.
 
 #### IAdvancedFunctions
 
 `IAdvancedFunctions` is a superset of `IFunctions` and provides the same methods with some additional parameters:
 - ReadCompletionCallback receives the `RecordInfo` of the record that was read.
 - Other callbacks receive the logical address of the record, which can be useful for applications such as indexing.
+
+`IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may be used to implement user-defined post-deletion logic, such as calling object Dispose.
 
 `IAdvancedFunctions` is a separate interface; it does not inherit from `IFunctions`.
 
