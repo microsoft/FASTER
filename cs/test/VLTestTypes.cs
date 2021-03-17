@@ -2,15 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
 using System.Runtime.CompilerServices;
-using System.IO;
-using System.Diagnostics;
 using NUnit.Framework;
 using System.Runtime.InteropServices;
 
@@ -112,14 +105,14 @@ namespace FASTER.test
         public long input;
     }
 
-    public class VLFunctions : IFunctions<Key, VLValue, Input, int[], Empty>
+    public class VLFunctions : FunctionsBase<Key, VLValue, Input, int[], Empty>
     {
-        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        public override void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.Length; i++)
@@ -128,69 +121,41 @@ namespace FASTER.test
             }
         }
 
-        public void UpsertCompletionCallback(ref Key key, ref VLValue output, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref Key key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
         // Read functions
-        public void SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
+        public override void SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
         }
 
-        public void ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
+        public override void ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
         }
 
         // Upsert functions
-        public void SingleWriter(ref Key key, ref VLValue src, ref VLValue dst)
+        public override void SingleWriter(ref Key key, ref VLValue src, ref VLValue dst)
         {
             src.CopyTo(ref dst);
         }
 
-        public bool ConcurrentWriter(ref Key key, ref VLValue src, ref VLValue dst)
+        public override bool ConcurrentWriter(ref Key key, ref VLValue src, ref VLValue dst)
         {
             if (src.length != dst.length)
                 return false;
 
             src.CopyTo(ref dst);
             return true;
-        }
-
-        // RMW functions
-        public void InitialUpdater(ref Key key, ref Input input, ref VLValue value)
-        {
-        }
-
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref VLValue value)
-        {
-            return true;
-        }
-
-        public bool NeedCopyUpdate(ref Key key, ref Input input, ref VLValue oldValue) => true;
-
-        public void CopyUpdater(ref Key key, ref Input input, ref VLValue oldValue, ref VLValue newValue)
-        {
         }
     }
 
-    public class VLFunctions2 : IFunctions<VLValue, VLValue, Input, int[], Empty>
+    public class VLFunctions2 : FunctionsBase<VLValue, VLValue, Input, int[], Empty>
     {
-        public void RMWCompletionCallback(ref VLValue key, ref Input input, Empty ctx, Status status)
+        public override void RMWCompletionCallback(ref VLValue key, ref Input input, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.Length; i++)
@@ -199,58 +164,30 @@ namespace FASTER.test
             }
         }
 
-        public void UpsertCompletionCallback(ref VLValue key, ref VLValue output, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref VLValue key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
         // Read functions
-        public void SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
+        public override void SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
         }
 
-        public void ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
+        public override void ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
         }
 
         // Upsert functions
-        public void SingleWriter(ref VLValue key, ref VLValue src, ref VLValue dst)
+        public override void SingleWriter(ref VLValue key, ref VLValue src, ref VLValue dst)
         {
             src.CopyTo(ref dst);
         }
 
-        public bool ConcurrentWriter(ref VLValue key, ref VLValue src, ref VLValue dst)
+        public override bool ConcurrentWriter(ref VLValue key, ref VLValue src, ref VLValue dst)
         {
             if (src.length != dst.length)
                 return false;
 
             src.CopyTo(ref dst);
             return true;
-        }
-
-        // RMW functions
-        public void InitialUpdater(ref VLValue key, ref Input input, ref VLValue value)
-        {
-        }
-
-        public bool InPlaceUpdater(ref VLValue key, ref Input input, ref VLValue value)
-        {
-            return true;
-        }
-
-        public bool NeedCopyUpdate(ref VLValue key, ref Input input, ref VLValue oldValue) => true;
-
-        public void CopyUpdater(ref VLValue key, ref Input input, ref VLValue oldValue, ref VLValue newValue)
-        {
         }
     }
 }
