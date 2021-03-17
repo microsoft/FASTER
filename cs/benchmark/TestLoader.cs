@@ -24,6 +24,7 @@ namespace FASTER.benchmark
         internal Options Options;
 
         internal BenchmarkType BenchmarkType;
+        internal LockImpl LockImpl;
         internal string Distribution;
 
         internal Key[] init_keys = default;
@@ -54,6 +55,10 @@ namespace FASTER.benchmark
             if (!verifyOption(Options.NumaStyle >= 0 && Options.NumaStyle <= 1, "NumaStyle"))
                 return false;
 
+            this.LockImpl = (LockImpl)Options.LockImpl;
+            if (!verifyOption(Enum.IsDefined(typeof(LockImpl), this.LockImpl), "Lock Implementation"))
+                return false;
+
             if (!verifyOption(Options.IterationCount > 0, "Iteration Count"))
                 return false;
 
@@ -62,6 +67,9 @@ namespace FASTER.benchmark
 
             this.Distribution = Options.DistributionName.ToLower();
             if (!verifyOption(this.Distribution == YcsbConstants.UniformDist || this.Distribution == YcsbConstants.ZipfDist, "Distribution"))
+                return false;
+
+            if (!verifyOption(this.Options.RunSeconds >= 0, "RunSeconds"))
                 return false;
 
             return true;

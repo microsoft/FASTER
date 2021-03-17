@@ -75,27 +75,27 @@ namespace FASTER.test
         public MyValue value;
     }
 
-    public class MyFunctions : IFunctions<MyKey, MyValue, MyInput, MyOutput, Empty>
+    public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
     {
-        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value = new MyValue { value = input.value };
         }
 
-        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
             return true;
         }
 
-        public bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
+        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
 
-        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
         {
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == default)
                 dst = new MyOutput();
@@ -103,87 +103,70 @@ namespace FASTER.test
             dst.value = value;
         }
 
-        public bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
             dst.value = src.value;
             return true;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(key.key == output.value.value);
         }
 
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
+        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
-        {
-        }
-
-        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == default)
                 dst = new MyOutput();
             dst.value = value;
         }
 
-        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
             dst = src;
         }
     }
 
-    public class MyFunctionsDelete : IFunctions<MyKey, MyValue, MyInput, MyOutput, int>
+    public class MyFunctionsDelete : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
     {
-        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value = new MyValue { value = input.value };
         }
 
-        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
             return true;
         }
 
-        public bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
+        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
 
-        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
         {
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == null)
                 dst = new MyOutput();
-
             dst.value = value;
         }
 
-        public bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
             dst = src;
             return true;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status)
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status)
         {
             if (ctx == 0)
             {
@@ -196,7 +179,7 @@ namespace FASTER.test
             }
         }
 
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, int ctx, Status status)
+        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, int ctx, Status status)
         {
             if (ctx == 0)
                 Assert.IsTrue(status == Status.OK);
@@ -204,15 +187,7 @@ namespace FASTER.test
                 Assert.IsTrue(status == Status.NOTFOUND);
         }
 
-        public void UpsertCompletionCallback(ref MyKey key, ref MyValue value, int ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref MyKey key, int ctx)
-        {
-        }
-
-        public void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == null)
                 dst = new MyOutput();
@@ -220,69 +195,49 @@ namespace FASTER.test
             dst.value = value;
         }
 
-        public void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
             dst = src;
         }
     }
 
-    public class MixedFunctions : IFunctions<int, MyValue, MyInput, MyOutput, Empty>
+    public class MixedFunctions : FunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
     {
-        public void InitialUpdater(ref int key, ref MyInput input, ref MyValue value)
+        public override void InitialUpdater(ref int key, ref MyInput input, ref MyValue value)
         {
             value = new MyValue { value = input.value };
         }
 
-        public bool InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value)
+        public override bool InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value)
         {
             value.value += input.value;
             return true;
         }
 
-        public bool NeedCopyUpdate(ref int key, ref MyInput input, ref MyValue oldValue) => true;
+        public override bool NeedCopyUpdate(ref int key, ref MyInput input, ref MyValue oldValue) => true;
 
-        public void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
+        public override void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue)
         {
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public void ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override void ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
         }
 
-        public bool ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
+        public override bool ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
         {
             dst.value = src.value;
             return true;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
-        public void ReadCompletionCallback(ref int key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
-        {
-        }
-
-        public void RMWCompletionCallback(ref int key, ref MyInput input, Empty ctx, Status status)
-        {
-        }
-
-        public void UpsertCompletionCallback(ref int key, ref MyValue value, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref int key, Empty ctx)
-        {
-        }
-
-        public void SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override void SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
         }
 
-        public void SingleWriter(ref int key, ref MyValue src, ref MyValue dst)
+        public override void SingleWriter(ref int key, ref MyValue src, ref MyValue dst)
         {
             dst = src;
         }
@@ -328,66 +283,34 @@ namespace FASTER.test
         public MyLargeValue value;
     }
 
-    public class MyLargeFunctions : IFunctions<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
+    public class MyLargeFunctions : FunctionsBase<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
     {
-        public void RMWCompletionCallback(ref MyKey key, ref MyInput input, Empty ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             for (int i = 0; i < output.value.value.Length; i++)
             {
-                Assert.IsTrue(output.value.value[i] == (byte)(output.value.value.Length+i));
+                Assert.IsTrue(output.value.value[i] == (byte)(output.value.value.Length + i));
             }
         }
 
-
-        public void UpsertCompletionCallback(ref MyKey key, ref MyLargeValue value, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref MyKey key, Empty ctx)
-        {
-        }
-
-        public bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyLargeValue oldValue) => true;
-
-        public void CopyUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue oldValue, ref MyLargeValue newValue)
-        {
-        }
-
-        public void InitialUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
-        {
-        }
-
-        public bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyLargeValue value)
-        {
-            return true;
-        }
-
-        public void SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
+        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
         }
 
-        public void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
+        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
         }
 
-        public bool ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
         {
             dst = src;
             return true;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
-        public void SingleWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        public override void SingleWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
         {
             dst = src;
         }
