@@ -28,19 +28,19 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            if (Directory.Exists(commitPath))
+            // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
+            while (Directory.Exists(commitPath))
                 Directory.Delete(commitPath, true);
 
             // Create devices \ log for test
             device = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStore.log", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 10, MemorySizeBits = 12 });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
             deviceFullParams = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
-            logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device });
+            logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
         }
 
@@ -66,7 +66,6 @@ namespace FASTER.test
             int numEntries = 1000;
             int entryFlag = 9999;
 
-
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
             {
@@ -90,7 +89,7 @@ namespace FASTER.test
 
             // Commit to the log
             log.Commit(true);
-
+            
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
@@ -106,11 +105,12 @@ namespace FASTER.test
                         datacheckrun = true;
 
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
-                        currentEntry++;
                     }
+                    currentEntry++;
                 }
             }
+
+            Assert.IsTrue(currentEntry == numEntries);
 
             // if data verification was skipped, then pop a fail
             if (datacheckrun == false)

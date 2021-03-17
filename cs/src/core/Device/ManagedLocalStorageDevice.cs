@@ -115,6 +115,11 @@ namespace FASTER.core
                 Stream logReadHandle = null;
                 int offset = -1;
                 FixedPool<Stream> streampool = null;
+#if NETSTANDARD2_1
+                UnmanagedMemoryManager<byte> umm = default;
+#else
+                SectorAlignedMemory memory = default;
+#endif
 
                 streampool = GetOrAddHandle(segmentId).Item1;
                 (logReadHandle, offset) = streampool.Get();
@@ -128,7 +133,6 @@ namespace FASTER.core
                 try
                 {
 #if NETSTANDARD2_1
-                    UnmanagedMemoryManager<byte> umm;
                     unsafe
                     {
                         umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
@@ -136,7 +140,7 @@ namespace FASTER.core
 
                     readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
 #else
-                    SectorAlignedMemory memory = pool.Get((int)readLength);
+                    memory = pool.Get((int)readLength);
                     readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
 #endif
 
@@ -173,6 +177,13 @@ namespace FASTER.core
                 {
                     Interlocked.Decrement(ref numPending);
                     callback(errorCode, (uint)numBytes, context);
+#if !NETSTANDARD2_1
+                    unsafe
+                    {
+                        Buffer.MemoryCopy(memory.aligned_pointer - memory.offset, (void*)destinationAddress, numBytes, numBytes);
+                    }
+                    memory.Return();
+#endif
                 }
             });
         }
@@ -200,6 +211,11 @@ namespace FASTER.core
                 Stream logWriteHandle = null;
                 int offset = -1;
                 FixedPool<Stream> streampool = null;
+#if NETSTANDARD2_1
+                UnmanagedMemoryManager<byte> umm = default;
+#else
+                SectorAlignedMemory memory = default;
+#endif
 
                 streampool = GetOrAddHandle(segmentId).Item2;
                 (logWriteHandle, offset) = streampool.Get();
@@ -213,7 +229,6 @@ namespace FASTER.core
                 try
                 {
 #if NETSTANDARD2_1
-                    UnmanagedMemoryManager<byte> umm;
                     unsafe
                     {
                         umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
@@ -221,7 +236,7 @@ namespace FASTER.core
 
                     writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
 #else
-                    SectorAlignedMemory memory = pool.Get((int)numBytesToWrite);
+                    memory = pool.Get((int)numBytesToWrite);
                     unsafe
                     {
                         fixed (void* destination = memory.buffer)
@@ -266,6 +281,9 @@ namespace FASTER.core
                 {
                     Interlocked.Decrement(ref numPending);
                     callback(errorCode, numBytesToWrite, context);
+#if !NETSTANDARD2_1
+                    memory?.Return();
+#endif
                 }
             });
         }
