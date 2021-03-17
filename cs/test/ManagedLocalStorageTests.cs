@@ -37,7 +37,7 @@ namespace FASTER.test
 
             // Create devices \ log for test
             device = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStore.log", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 10, MemorySizeBits = 12 });
 
             deviceFullParams = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
             logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device });

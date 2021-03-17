@@ -112,8 +112,6 @@ namespace FASTER.core
         {
             _ = Task.Run(async () =>
             {
-                Interlocked.Increment(ref numPending);
-
                 Stream logReadHandle = null;
                 int offset = -1;
                 FixedPool<Stream> streampool = null;
@@ -122,10 +120,11 @@ namespace FASTER.core
                 (logReadHandle, offset) = streampool.Get();
 
                 logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-                uint errorCode;
-                int numBytes;
+                uint errorCode = 0;
+                int numBytes = 0;
                 Task<int> readTask;
 
+                Interlocked.Increment(ref numPending);
                 try
                 {
 #if NETSTANDARD2_1
@@ -143,13 +142,18 @@ namespace FASTER.core
 
                     if (IsWindows)
                     {
-                        // if non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
-                        // for netstandard+linux we will return after the operation completes.
+                        // If non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
+                        // For netstandard+linux we will return after the operation completes.
                         if (offset >= 0) streampool?.Return(offset);
                     }
 
                     numBytes = await readTask;
-                    errorCode = uint.MaxValue;
+
+                    // Sequentialize all reads from same handle on non-windows
+                    if (!IsWindows)
+                    {
+                        if (offset >= 0) streampool?.Return(offset);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -165,17 +169,11 @@ namespace FASTER.core
 
                     numBytes = 0;
                 }
-
-                // Sequentialize all reads from same handle on non-windows
-                if (!IsWindows)
+                finally
                 {
-                    // TODO: Handle exceptions in the return which can also result in a filestream dispose.
-                    if (offset >= 0) streampool?.Return(offset);
+                    Interlocked.Decrement(ref numPending);
                     callback(errorCode, (uint)numBytes, context);
                 }
-
-                Interlocked.Decrement(ref numPending);
-                callback(errorCode, (uint)numBytes, context);
             });
         }
 
@@ -197,8 +195,6 @@ namespace FASTER.core
         {
             _ = Task.Run(async () =>
             {
-                Interlocked.Increment(ref numPending);
-
                 HandleCapacity(segmentId);
 
                 Stream logWriteHandle = null;
@@ -210,8 +206,10 @@ namespace FASTER.core
 
                 logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
 
-                uint errorCode;
+                uint errorCode = 0;
                 Task writeTask;
+
+                Interlocked.Increment(ref numPending);
                 try
                 {
 #if NETSTANDARD2_1
@@ -237,14 +235,19 @@ namespace FASTER.core
 
                     if (IsWindows)
                     {
-                        // if non-netstandard, or netstandard+windows, we can return to the pool immediately.
-                        // for netstandard+linux we will return after the operation completes.
+                        // If non-netstandard, or netstandard+windows, we can return to the pool immediately.
+                        // For netstandard+linux we will return after the operation completes.
                         if (offset >= 0) streampool?.Return(offset);
                     }
 
-
                     await writeTask;
-                    errorCode = uint.MaxValue;
+
+                    // Sequentialize all writes to same handle on non-windows
+                    if (!IsWindows)
+                    {
+                        ((FileStream)logWriteHandle).Flush(true);
+                        if (offset >= 0) streampool?.Return(offset);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -259,19 +262,11 @@ namespace FASTER.core
                         errorCode = uint.MaxValue;
                     }
                 }
-
-                // Sequentialize all writes to same handle on non-windows
-                if (!IsWindows)
+                finally
                 {
-                    // TODO: Handle exceptions in Flush and in return. Return can result in a filestream dispose.
-                    // TODO: Use async flush?
-                    ((FileStream)logWriteHandle).Flush(true);
-                    if (offset >= 0) streampool?.Return(offset);
+                    Interlocked.Decrement(ref numPending);
+                    callback(errorCode, numBytesToWrite, context);
                 }
-
-                // do this after the flush has finished.
-                Interlocked.Decrement(ref numPending);
-                callback(errorCode, numBytesToWrite, context);
             });
         }
 
