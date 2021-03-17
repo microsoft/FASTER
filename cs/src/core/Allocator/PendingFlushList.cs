@@ -35,12 +35,35 @@ namespace FASTER.core
             return false;
         }
 
-        public bool RemoveAdjacent(long address, out PageAsyncFlushResult<Empty> request)
+        /// <summary>
+        /// Remove item from flush list with from-address equal to the specified address
+        /// </summary>
+        public bool RemoveNextAdjacent(long address, out PageAsyncFlushResult<Empty> request)
         {
             for (int i=0; i<maxSize; i++)
             {
                 request = list[i];
                 if (request?.fromAddress == address)
+                {
+                    if (Interlocked.CompareExchange(ref list[i], null, request) == request)
+                    {
+                        return true;
+                    }
+                }
+            }
+            request = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Remove item from flush list with until-address equal to the specified address
+        /// </summary>
+        public bool RemovePreviousAdjacent(long address, out PageAsyncFlushResult<Empty> request)
+        {
+            for (int i = 0; i < maxSize; i++)
+            {
+                request = list[i];
+                if (request?.untilAddress == address)
                 {
                     if (Interlocked.CompareExchange(ref list[i], null, request) == request)
                     {

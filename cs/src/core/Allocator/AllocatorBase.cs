@@ -1433,11 +1433,19 @@ namespace FASTER.core
                 // ongoing adjacent flush is completed to ensure correctness
                 if (GetOffsetInPage(asyncResult.fromAddress) > 0)
                 {
-                    // Enqueue work in shared queue
                     var index = GetPageIndexForAddress(asyncResult.fromAddress);
+
+                    // Try to merge request with existing adjacent (earlier) pending requests
+                    while (PendingFlush[index].RemovePreviousAdjacent(asyncResult.fromAddress, out var existingRequest))
+                    {
+                        asyncResult.fromAddress = existingRequest.fromAddress;
+                    }
+
+                    // Enqueue work in shared queue
                     if (PendingFlush[index].Add(asyncResult))
                     {
-                        if (PendingFlush[index].RemoveAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
+                        // Perform work from shared queue if possible
+                        if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                         {
                             WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                         }
@@ -1635,7 +1643,7 @@ namespace FASTER.core
                 }
 
                 var _flush = FlushedUntilAddress;
-                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
                 {
                     WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                 }
