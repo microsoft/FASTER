@@ -58,13 +58,10 @@ namespace FASTER.core
             return (creator(), int.MaxValue);
         }
 
-        public void Return(int offset, T item)
+        public void Return(int offset)
         {
             if (offset == int.MaxValue)
-            {
-                item.Dispose();
                 return;
-            }
 
             if (!disposed)
                 Interlocked.CompareExchange(ref owners[offset], 1, 2);
@@ -104,6 +101,15 @@ namespace FASTER.core
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Dispose temporary handles that are not pooled
+        /// </summary>
+        internal void DisposeIfNeeded(int offset, T item)
+        {
+            if (offset == int.MaxValue)
+                item.Dispose();
         }
     }
 }

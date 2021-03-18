@@ -110,53 +110,62 @@ namespace FASTER.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            Stream logReadHandle = null;
-            int offset = -1;
-            FixedPool<Stream> streampool = null;
-            uint errorCode = 0;
-            int numBytes = 0;
-            Task<int> readTask;
-#if NETSTANDARD2_1
-            UnmanagedMemoryManager<byte> umm = default;
-#else
-            SectorAlignedMemory memory = default;
-#endif
-
-            try
-            {
-                Interlocked.Increment(ref numPending);
-                streampool = GetOrAddHandle(segmentId).Item1;
-                (logReadHandle, offset) = streampool.Get();
-                logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
-                unsafe
-                {
-                    umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
-                }
-                readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
-#else
-                memory = pool.Get((int)readLength);
-                readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
-#endif
-                if (IsWindows)
-                {
-                    // If non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
-                    // For netstandard+linux we will return after the operation completes.
-                    streampool?.Return(offset, logReadHandle);
-                }
-            }
-            catch
-            {
-                Interlocked.Decrement(ref numPending);
-#if !NETSTANDARD2_1
-                memory?.Return();
-#endif
-                callback(uint.MaxValue, 0, context);
-                return;
-            }
-
             _ = Task.Run(async () =>
             {
+                Stream logReadHandle = null;
+                int offset = -1;
+                FixedPool<Stream> streampool = null;
+                uint errorCode = 0;
+                int numBytes = 0;
+                Task<int> readTask;
+#if NETSTANDARD2_1
+                UnmanagedMemoryManager<byte> umm = default;
+#else
+                SectorAlignedMemory memory = default;
+#endif
+
+                try
+                {
+                    Interlocked.Increment(ref numPending);
+                    streampool = GetOrAddHandle(segmentId).Item1;
+                    (logReadHandle, offset) = streampool.Get();
+                    logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+#if NETSTANDARD2_1
+                    unsafe
+                    {
+                        umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
+                    }
+
+                    // FileStream.WriteAsync is not thread-safe hence need a lock here
+                    lock (this)
+                    {
+                        readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
+#else
+                    memory = pool.Get((int)readLength);
+                    lock (this)
+                    {
+                        readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
+#endif
+                    }
+                    if (IsWindows)
+                    {
+                        // If non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
+                        // For netstandard+linux we will return after the operation completes.
+                        streampool?.Return(offset);
+                    }
+                }
+                catch
+                {
+                    Interlocked.Decrement(ref numPending);
+#if !NETSTANDARD2_1
+                    memory?.Return();
+#endif
+                    streampool?.Return(offset);
+                    streampool?.DisposeIfNeeded(offset, logReadHandle);
+                    callback(uint.MaxValue, 0, context);
+                    return;
+                }
+                
                 try
                 {
                     numBytes = await readTask;
@@ -164,8 +173,9 @@ namespace FASTER.core
                     // Sequentialize all reads from same handle on non-windows
                     if (!IsWindows)
                     {
-                        streampool?.Return(offset, logReadHandle);
+                        streampool?.Return(offset);
                     }
+                    streampool?.DisposeIfNeeded(offset, logReadHandle);
                 }
                 catch (Exception ex)
                 {
@@ -213,63 +223,70 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            Stream logWriteHandle = null;
-            int offset = -1;
-            FixedPool<Stream> streampool = null;
-            uint errorCode = 0;
-            Task writeTask;
+            _ = Task.Run(async () =>
+            {
+                Stream logWriteHandle = null;
+                int offset = -1;
+                FixedPool<Stream> streampool = null;
+                uint errorCode = 0;
+                Task writeTask;
 #if NETSTANDARD2_1
-            UnmanagedMemoryManager<byte> umm = default;
+                UnmanagedMemoryManager<byte> umm = default;
 #else
             SectorAlignedMemory memory = default;
 #endif
 
-            HandleCapacity(segmentId);
+                HandleCapacity(segmentId);
 
-            try
-            {
-                Interlocked.Increment(ref numPending);
-                streampool = GetOrAddHandle(segmentId).Item2;
-                (logWriteHandle, offset) = streampool.Get();
-                logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+                try
+                {
+                    Interlocked.Increment(ref numPending);
+                    streampool = GetOrAddHandle(segmentId).Item2;
+                    (logWriteHandle, offset) = streampool.Get();
+                    logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
 #if NETSTANDARD2_1
-                unsafe
-                {
-                    umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
-                }
-
-                writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
-#else
-                memory = pool.Get((int)numBytesToWrite);
-                unsafe
-                {
-                    fixed (void* destination = memory.buffer)
+                    unsafe
                     {
-                        Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                        umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
+                    }
+
+                    // FileStream.WriteAsync is not thread-safe hence need a lock here
+                    lock (this)
+                    {
+                        writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
+#else
+                    memory = pool.Get((int)numBytesToWrite);
+                    unsafe
+                    {
+                        fixed (void* destination = memory.buffer)
+                        {
+                            Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                        }
+                    }
+                    lock (this)
+                    {
+                        writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
+#endif
+                    }
+                    if (IsWindows)
+                    {
+                        // If non-netstandard, or netstandard+windows, we can return to the pool immediately.
+                        // For netstandard+linux we will return after the operation completes.
+                        streampool?.Return(offset);
                     }
                 }
-
-                writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
-#endif
-                if (IsWindows)
+                catch
                 {
-                    // If non-netstandard, or netstandard+windows, we can return to the pool immediately.
-                    // For netstandard+linux we will return after the operation completes.
-                    streampool?.Return(offset, logWriteHandle);
-                }
-            }
-            catch
-            {
-                Interlocked.Decrement(ref numPending);
+                    Interlocked.Decrement(ref numPending);
 #if !NETSTANDARD2_1
-                memory?.Return();
+                    memory?.Return();
 #endif
-                callback(uint.MaxValue, 0, context);
-                return;
-            }
+                    streampool?.Return(offset);
+                    streampool?.DisposeIfNeeded(offset, logWriteHandle);
+                    callback(uint.MaxValue, 0, context);
+                    return;
+                }
 
-            _ = Task.Run(async () =>
-            {
                 try
                 {
                     await writeTask;
@@ -278,8 +295,9 @@ namespace FASTER.core
                     if (!IsWindows)
                     {
                         ((FileStream)logWriteHandle).Flush(true);
-                        streampool?.Return(offset, logWriteHandle);
+                        streampool?.Return(offset);
                     }
+                    streampool?.DisposeIfNeeded(offset, logWriteHandle);
                 }
                 catch (Exception ex)
                 {
