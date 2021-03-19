@@ -456,8 +456,8 @@ namespace FASTER.core
         {
             flushedSemaphore = null;
             info = default;
-            if (snapshotFileDevice != null) snapshotFileDevice.Dispose();
-            if (snapshotFileObjectLogDevice != null) snapshotFileObjectLogDevice.Dispose();
+            snapshotFileDevice?.Dispose();
+            snapshotFileObjectLogDevice?.Dispose();
         }
 
         public bool IsDefault()

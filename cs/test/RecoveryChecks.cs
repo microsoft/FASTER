@@ -389,7 +389,7 @@ namespace FASTER.test.recovery
         }
 
 
-        // [Test]
+        [Test]
         public async ValueTask IncrSnapshotRecoveryCheck()
         {
             using var fht1 = new FasterKV<long, long>

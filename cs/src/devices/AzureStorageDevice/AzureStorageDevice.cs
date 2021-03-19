@@ -218,6 +218,9 @@ namespace FASTER.devices
             }
         }
 
+        /// <inheritdoc/>
+        public override long GetFileSize(int segmentId) => segmentSize == -1 ? MAX_PAGEBLOB_SIZE : segmentSize;
+
         //---- The actual read and write accesses to the page blobs
 
         private unsafe Task WritePortionToBlobUnsafeAsync(CloudPageBlob blob, IntPtr sourceAddress, long destinationAddress, long offset, uint length)

@@ -63,7 +63,7 @@ namespace FASTER.core
         public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits)
         {
             // If we are protected when creating the iterator, we do not need per-GetNext protection
-            if (!epoch.ThisInstanceProtected())
+            if (epoch != null && !epoch.ThisInstanceProtected())
                 this.epoch = epoch;
 
             this.beginAddress = beginAddress;
@@ -129,11 +129,19 @@ namespace FASTER.core
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], pageEndAddress, val) == val)
                     {
                         var tmp_i = i;
-                        epoch.BumpCurrentEpoch(() =>
+                        if (epoch != null)
+                        {
+                            epoch.BumpCurrentEpoch(() =>
+                            {
+                                AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
+                                loadedPage[nextFrame] = pageEndAddress;
+                            });
+                        }
+                        else
                         {
                             AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
                             loadedPage[nextFrame] = pageEndAddress;
-                        });
+                        }
                     }
                     else
                         epoch?.ProtectAndDrain();

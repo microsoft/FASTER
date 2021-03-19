@@ -139,6 +139,11 @@ namespace FASTER.core
             [Out] out NativeOverlapped* lpOverlapped,
             [In] UInt32 dwMilliseconds);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool GetFileSizeEx(
+            [In] SafeFileHandle hFile,
+            [Out] out long lpFileSize);
+
         internal enum EMoveMethod : uint
         {
             Begin = 0,

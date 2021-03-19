@@ -774,12 +774,15 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
-                    ? ConcurrentWriterNoLock(ref key, ref src, ref dst, address)
+                    ? ConcurrentWriterNoLock(ref key, ref src, ref dst, ref recordInfo, address)
                     : ConcurrentWriterLock(ref key, ref src, ref dst, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterNoLock(ref Key key, ref Value src, ref Value dst, long address)
-                => _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+            private bool ConcurrentWriterNoLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            {
+                _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentWriterLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
@@ -788,7 +791,8 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref dst, LockType.Exclusive, ref context);
                 try
                 {
-                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref src, ref dst, address);
+                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
+                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref src, ref dst, ref recordInfo, address);
                 }
                 finally
                 {
