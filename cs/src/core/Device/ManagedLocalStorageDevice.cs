@@ -136,32 +136,40 @@ namespace FASTER.core
                         umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
                     }
 
-                    // FileStream.WriteAsync is not thread-safe hence need a lock here
+                    // FileStream.ReadAsync is not thread-safe hence need a lock here
                     lock (this)
                     {
                         readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
+                    }
 #else
                     memory = pool.Get((int)readLength);
+                    // FileStream.ReadAsync is not thread-safe hence need a lock here
                     lock (this)
                     {
                         readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
-#endif
                     }
+#endif
+
                     if (IsWindows)
                     {
                         // If non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
                         // For netstandard+linux we will return after the operation completes.
+                        // DisposeIfNeeded will be called after operation completes
                         streampool?.Return(offset);
                     }
                 }
                 catch
                 {
                     Interlocked.Decrement(ref numPending);
+
+                    // Perform pool returns and disposals
 #if !NETSTANDARD2_1
                     memory?.Return();
 #endif
                     streampool?.Return(offset);
                     streampool?.DisposeIfNeeded(offset, logReadHandle);
+
+                    // Issue user callback
                     callback(uint.MaxValue, 0, context);
                     return;
                 }
@@ -170,38 +178,38 @@ namespace FASTER.core
                 {
                     numBytes = await readTask;
 
-                    // Sequentialize all reads from same handle on non-windows
-                    if (!IsWindows)
-                    {
-                        streampool?.Return(offset);
-                    }
-                    streampool?.DisposeIfNeeded(offset, logReadHandle);
-                }
-                catch (Exception ex)
-                {
-                    if (ex.InnerException != null &&
-                        ex.InnerException is IOException ioex)
-                    {
-                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
-                    }
-                    else
-                    {
-                        errorCode = uint.MaxValue;
-                    }
-
-                    numBytes = 0;
-                }
-                finally
-                {
-                    Interlocked.Decrement(ref numPending);
 #if !NETSTANDARD2_1
                     unsafe
                     {
                         fixed (void* source = memory.buffer)
                             Buffer.MemoryCopy(source, (void*)destinationAddress, numBytes, numBytes);
                     }
+#endif
+                }
+                catch (Exception ex)
+                {
+                    if (ex.InnerException != null && ex.InnerException is IOException ioex)
+                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
+                    else
+                        errorCode = uint.MaxValue;
+                    numBytes = 0;
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numPending);
+
+                    // Perform pool returns and disposals
+#if !NETSTANDARD2_1
                     memory?.Return();
 #endif
+                    // Sequentialize all reads from same handle on non-windows
+                    if (!IsWindows)
+                    {
+                        streampool?.Return(offset);
+                    }
+                    streampool?.DisposeIfNeeded(offset, logReadHandle);
+
+                    // Issue user callback
                     callback(errorCode, (uint)numBytes, context);
                 }
             });
@@ -254,6 +262,7 @@ namespace FASTER.core
                     lock (this)
                     {
                         writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
+                    }
 #else
                     memory = pool.Get((int)numBytesToWrite);
                     unsafe
@@ -263,26 +272,32 @@ namespace FASTER.core
                             Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
                         }
                     }
+                    // FileStream.WriteAsync is not thread-safe hence need a lock here
                     lock (this)
                     {
                         writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
-#endif
                     }
+#endif
                     if (IsWindows)
                     {
                         // If non-netstandard, or netstandard+windows, we can return to the pool immediately.
                         // For netstandard+linux we will return after the operation completes.
+                        // DisposeIfNeeded will be called after operation completes
                         streampool?.Return(offset);
                     }
                 }
                 catch
                 {
                     Interlocked.Decrement(ref numPending);
+
+                    // Perform pool returns and disposals
 #if !NETSTANDARD2_1
                     memory?.Return();
 #endif
                     streampool?.Return(offset);
                     streampool?.DisposeIfNeeded(offset, logWriteHandle);
+
+                    // Issue user callback
                     callback(uint.MaxValue, 0, context);
                     return;
                 }
@@ -290,7 +305,23 @@ namespace FASTER.core
                 try
                 {
                     await writeTask;
+                }
+                catch (Exception ex)
+                {
+                    if (ex.InnerException != null && ex.InnerException is IOException ioex)
+                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
+                    else
+                        errorCode = uint.MaxValue;
+                    numBytesToWrite = 0;
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numPending);
 
+                    // Perform pool returns and disposals
+#if !NETSTANDARD2_1
+                    memory?.Return();
+#endif
                     // Sequentialize all writes to same handle on non-windows
                     if (!IsWindows)
                     {
@@ -298,27 +329,8 @@ namespace FASTER.core
                         streampool?.Return(offset);
                     }
                     streampool?.DisposeIfNeeded(offset, logWriteHandle);
-                }
-                catch (Exception ex)
-                {
-                    if (ex.InnerException != null &&
-                        ex.InnerException is IOException ioex)
-                    {
-                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
-                    }
-                    else
-                    {
-                        errorCode = uint.MaxValue;
-                    }
 
-                    numBytesToWrite = 0;
-                }
-                finally
-                {
-                    Interlocked.Decrement(ref numPending);
-#if !NETSTANDARD2_1
-                    memory?.Return();
-#endif
+                    // Issue user callback
                     callback(errorCode, numBytesToWrite, context);
                 }
             });
