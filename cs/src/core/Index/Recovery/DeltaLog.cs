@@ -180,15 +180,9 @@ namespace FASTER.core
                 entryLength = Utility.GetBlockLength((byte*)physicalAddress);
                 if (entryLength == 0)
                 {
-                    // We are likely at end of page, skip to next
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
-
-                    Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _);
-
-                    if (0 != Utility.GetBlockChecksum((byte*)physicalAddress))
-                    {
+                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
-                    }
                     else
                         continue;
                 }
@@ -198,22 +192,17 @@ namespace FASTER.core
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
-                    {
                         return false;
-                        throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
-                    }
                     else
                         continue;
                 }
 
-                // Verify checksum if needed
+                // Verify checksum
                 if (!Utility.VerifyBlockChecksum((byte*)physicalAddress, entryLength))
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
-                    {
                         return false;
-                    }
                     else
                         continue;
                 }

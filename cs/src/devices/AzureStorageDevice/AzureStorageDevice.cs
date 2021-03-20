@@ -219,7 +219,13 @@ namespace FASTER.devices
         }
 
         /// <inheritdoc/>
-        public override long GetFileSize(int segmentId) => segmentSize == -1 ? MAX_PAGEBLOB_SIZE : segmentSize;
+        public override long GetFileSize(int segmentId)
+        {
+            // We didn't find segment in blob cache
+            if (!blobs.TryGetValue(segmentId, out _))
+                return 0;
+            return segmentSize == -1 ? MAX_PAGEBLOB_SIZE : segmentSize;
+        }
 
         //---- The actual read and write accesses to the page blobs
 

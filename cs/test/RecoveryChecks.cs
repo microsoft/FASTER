@@ -6,9 +6,16 @@ using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
+using System;
+using FASTER.devices;
 
 namespace FASTER.test.recovery
 {
+    public enum DeviceMode
+    {
+        Local,
+        Cloud
+    }
 
     [TestFixture]
     public class RecoveryChecks
@@ -17,6 +24,8 @@ namespace FASTER.test.recovery
         const int numOps = 5000;
         AdId[] inputArray;
         string path;
+        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+        public const string TEST_CONTAINER = "recoverychecks";
 
         [SetUp]
         public void Setup()
@@ -390,12 +399,38 @@ namespace FASTER.test.recovery
 
 
         [Test]
-        public async ValueTask IncrSnapshotRecoveryCheck()
+        public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
+        {
+            ICheckpointManager checkpointManager;
+            if (deviceMode == DeviceMode.Local)
+            {
+                checkpointManager = new DeviceLogCommitCheckpointManager(
+                    new LocalStorageNamedDeviceFactory(),
+                    new DefaultCheckpointNamingScheme(TestContext.CurrentContext.TestDirectory + $"/RecoveryChecks/IncrSnapshotRecoveryCheck"));
+            }
+            else
+            {
+                if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+                {
+                    checkpointManager = new DeviceLogCommitCheckpointManager(
+                        new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
+                        new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/IncrSnapshotRecoveryCheck"));
+                }
+                else
+                    return;
+            }
+
+            await IncrSnapshotRecoveryCheck(checkpointManager);
+            checkpointManager.PurgeAll();
+            checkpointManager.Dispose();
+        }
+
+        public async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
         {
             using var fht1 = new FasterKV<long, long>
                 (1 << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
             using var s1 = fht1.NewSession(new MyFunctions());
@@ -428,7 +463,7 @@ namespace FASTER.test.recovery
             using var fht2 = new FasterKV<long, long>
                 (1 << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
             await fht2.RecoverAsync();
