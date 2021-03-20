@@ -392,8 +392,6 @@ namespace FASTER.core
         /// <param name="localSegmentOffsets"></param>
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
 
-        const int DeltaHeaderSize = 12; // 8 byte checksum + 4 byte length
-
         /// <summary>
         /// Delta flush
         /// </summary>
@@ -405,6 +403,8 @@ namespace FASTER.core
         /// <param name="completedSemaphore"></param>
         internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
         {
+            const int DeltaHeaderSize = 12; // 8 byte checksum + 4 byte length
+
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
             if (endAddress > GetStartLogicalAddress(endPage))
@@ -417,12 +417,6 @@ namespace FASTER.core
             int startOffset = (int)(GetFirstValidLogicalAddress(GetPage(tailAddress)) & PageSizeMask);
             int dataOffset = startOffset + DeltaHeaderSize;
             int destOffset = dataOffset;
-
-            var asyncResult = new PageAsyncFlushResult<Empty>
-            {
-                completedSemaphore = completedSemaphore,
-                count = 1
-            };
 
             int issuedPages = 0;
             for (long p = startPage; p < endPage; p++)
@@ -451,7 +445,7 @@ namespace FASTER.core
                         {
                             var alignedBlockSize = (destOffset + (sectorSize - 1)) & ~(sectorSize - 1);
                             Utility.SetBlockHeader(destOffset - dataOffset, buffer.aligned_pointer + startOffset);
-
+                            var asyncResult = new PageAsyncFlushResult<Empty> { completedSemaphore = completedSemaphore, count = 1, freeBuffer1 = buffer };
                             WriteAsync((IntPtr)buffer.aligned_pointer,
                                         (ulong)tailAddress,
                                         (uint)alignedBlockSize, AsyncFlushPageToDeviceCallback, asyncResult,
@@ -479,7 +473,7 @@ namespace FASTER.core
             {
                 var alignedBlockSize = (destOffset + (sectorSize - 1)) & ~(sectorSize - 1);
                 Utility.SetBlockHeader(destOffset - dataOffset, buffer.aligned_pointer + startOffset);
-
+                var asyncResult = new PageAsyncFlushResult<Empty> { completedSemaphore = completedSemaphore, count = 1, freeBuffer1 = buffer };
                 WriteAsync((IntPtr)buffer.aligned_pointer,
                             (ulong)tailAddress,
                             (uint)alignedBlockSize, AsyncFlushPageToDeviceCallback, asyncResult,

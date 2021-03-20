@@ -427,7 +427,7 @@ namespace FASTER.core
 
         private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, CheckpointType checkpointType, bool undoFutureVersions, CancellationToken cancellationToken)
         {
-            if (untilAddress < scanFromAddress)
+            if (untilAddress <= scanFromAddress)
                 return;
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst);
 
@@ -525,6 +525,7 @@ namespace FASTER.core
                                           recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
+            using var deltaLog = new DeltaLog(recoveryStatus.deltaRecoveryDevice, hlog.LogPageSizeBits);
             for (long page = startPage; page < endPage; page += capacity)
             {
                 long end = Math.Min(page + capacity, endPage);
@@ -536,7 +537,7 @@ namespace FASTER.core
                 }
 
                 // Apply delta
-                ApplyDelta(recoveryStatus.deltaRecoveryDevice, hlog.GetStartLogicalAddress(page), hlog.GetStartLogicalAddress(end), ref version);
+                deltaLog.Apply(hlog, hlog.GetStartLogicalAddress(page), hlog.GetStartLogicalAddress(end), ref version);
 
                 for (long p = page; p < end; p++)
                 {
@@ -561,30 +562,6 @@ namespace FASTER.core
             return version;
         }
 
-        private unsafe void ApplyDelta(IDevice deltaDevice, long startLogicalAddress, long endLogicalAddress, ref int version)
-        {
-            using var iter = new DeltaLogIterator(deltaDevice, hlog.LogPageSizeBits);
-            while (iter.GetNext(out long physicalAddress, out int entryLength))
-            {
-                long endAddress = physicalAddress + entryLength;
-                while (physicalAddress < endAddress)
-                {
-                    long address = *(long*)physicalAddress;
-                    physicalAddress += sizeof(long);
-                    int size = *(int*)physicalAddress;
-                    physicalAddress += sizeof(int);
-                    if (address >= startLogicalAddress && address < endLogicalAddress)
-                    {
-                        var destination = hlog.GetPhysicalAddress(address);
-                        Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
-                        version = hlog.GetInfo(destination).Version;
-                    }
-                    physicalAddress += size;
-                }
-                var alignedEntryLength = (entryLength + (sectorSize - 1)) & ~(sectorSize - 1);
-            }
-        }
-
         private async ValueTask<int> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, int version, Guid guid, bool undoFutureVersions, CancellationToken cancellationToken)
         {
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, guid, out long startPage, out long endPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
@@ -594,6 +571,7 @@ namespace FASTER.core
                                           recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
+            using var deltaLog = new DeltaLog(recoveryStatus.deltaRecoveryDevice, hlog.LogPageSizeBits);
             for (long page = startPage; page < endPage; page += capacity)
             {
                 long end = Math.Min(page + capacity, endPage);
@@ -605,7 +583,7 @@ namespace FASTER.core
                 }
 
                 // Apply delta
-                ApplyDelta(recoveryStatus.deltaRecoveryDevice, hlog.GetStartLogicalAddress(page), hlog.GetStartLogicalAddress(end), ref version);
+                deltaLog.Apply(hlog, hlog.GetStartLogicalAddress(page), hlog.GetStartLogicalAddress(end), ref version);
 
                 for (long p = page; p < end; p++)
                 {

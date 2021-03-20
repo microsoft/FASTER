@@ -49,8 +49,6 @@ namespace FASTER.core
                             kvp.Value.AtomicSwitch(next.version - 1);
 
                     faster.WriteHybridLogMetaInfo();
-                    faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
-                    faster._lastSnapshotCheckpoint = default;
                     break;
                 case Phase.REST:
                     faster._hybridLogCheckpoint.Reset();
@@ -107,6 +105,12 @@ namespace FASTER.core
             FasterKV<Key, Value> faster)
         {
             base.GlobalBeforeEnteringState(next, faster);
+
+            if (next.phase == Phase.PREPARE)
+            {
+                faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+                faster._lastSnapshotCheckpoint = default;
+            }
             if (next.phase != Phase.WAIT_FLUSH) return;
 
             faster.hlog.ShiftReadOnlyToTail(out var tailAddress,
@@ -167,6 +171,8 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREPARE:
+                    faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+                    faster._lastSnapshotCheckpoint = default;
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
                     faster._hybridLogCheckpoint.info.useSnapshotFile = 1;

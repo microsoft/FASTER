@@ -14,24 +14,33 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class DeltaLogIterator : ScanIteratorBase, IDisposable
+    internal sealed class DeltaLog : ScanIteratorBase, IDisposable
     {
-        private readonly BlittableAllocator<Empty, byte> allocator;
-        private readonly BlittableFrame frame;
-        private bool disposed = false;
         const int headerSize = 12;
+        readonly IDevice deltaLogDevice;
+        readonly BlittableFrame frame;
+        bool disposed = false;
+        readonly int LogPageSizeBits;
+        readonly int PageSize;
+        readonly int PageSizeMask;
+        readonly int AlignedPageSizeBytes;
+        readonly int sectorSize;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public DeltaLogIterator(IDevice deltaLogDevice, int logPageSizeBits)
+        public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits)
             : base(Constants.kFirstValidAddress, deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits)
         {
-            this.allocator = new BlittableAllocator<Empty, byte>(new
-                LogSettings { LogDevice = deltaLogDevice, MemorySizeBits = logPageSizeBits + 2, PageSizeBits = logPageSizeBits }, null);
+            LogPageSizeBits = logPageSizeBits;
+            PageSize = 1 << LogPageSizeBits;
+            PageSizeMask = PageSize - 1;
+            this.deltaLogDevice = deltaLogDevice;
             deltaLogDevice.Initialize(-1);
-            if (frameSize > 0)
-                frame = new BlittableFrame(frameSize, 1 << logPageSizeBits, allocator.GetDeviceSectorSize());
+            sectorSize = (int)deltaLogDevice.SectorSize;
+            if (frameSize > 0 && endAddress > 0)
+                frame = new BlittableFrame(frameSize, 1 << logPageSizeBits, sectorSize);
+            AlignedPageSizeBytes = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
         }
 
         /// <summary>
@@ -50,7 +59,45 @@ namespace FASTER.core
         }
 
         internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
+        {
+            IDevice usedDevice = deltaLogDevice;
+            completed = new CountdownEvent(numPages);
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            {
+                int pageIndex = (int)(readPage % frame.frameSize);
+                if (frame.frame[pageIndex] == null)
+                {
+                    frame.Allocate(pageIndex);
+                }
+                else
+                {
+                    frame.Clear(pageIndex);
+                }
+                var asyncResult = new PageAsyncReadResult<TContext>()
+                {
+                    page = readPage,
+                    context = context,
+                    handle = completed,
+                    frame = frame
+                };
+
+                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+
+                uint readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
+
+                if (device != null)
+                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, AsyncReadPagesCallback, asyncResult);
+            }
+        }
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
@@ -63,14 +110,7 @@ namespace FASTER.core
                     Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
                     result.cts?.Cancel();
                 }
-
-                if (result.freeBuffer1 != null)
-                {
-                    if (errorCode == 0)
-                        allocator.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
-                    result.freeBuffer1.Return();
-                    result.freeBuffer1 = null;
-                }
+                Debug.Assert(result.freeBuffer1 == null);
 
                 if (errorCode == 0)
                     result.handle?.Signal();
@@ -86,10 +126,30 @@ namespace FASTER.core
             return (length + 511) & ~511;
         }
 
-        public void Reset()
+        public unsafe void Apply<Key, Value>(AllocatorBase<Key, Value> hlog, long startLogicalAddress, long endLogicalAddress, ref int version)
         {
-            currentAddress = nextAddress = 0;
+            nextAddress = beginAddress;
+            while (GetNext(out long physicalAddress, out int entryLength))
+            {
+                long endAddress = physicalAddress + entryLength;
+                while (physicalAddress < endAddress)
+                {
+                    long address = *(long*)physicalAddress;
+                    physicalAddress += sizeof(long);
+                    int size = *(int*)physicalAddress;
+                    physicalAddress += sizeof(int);
+                    if (address >= startLogicalAddress && address < endLogicalAddress)
+                    {
+                        var destination = hlog.GetPhysicalAddress(address);
+                        Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+                        version = hlog.GetInfo(destination).Version;
+                    }
+                    physicalAddress += size;
+                }
+                var alignedEntryLength = (entryLength + (sectorSize - 1)) & ~(sectorSize - 1);
+            }
         }
+
 
         public unsafe bool GetNext(out long physicalAddress, out int entryLength)
         {
@@ -99,9 +159,9 @@ namespace FASTER.core
                 entryLength = 0;
                 currentAddress = nextAddress;
 
-                var _currentPage = currentAddress >> allocator.LogPageSizeBits;
+                var _currentPage = currentAddress >> LogPageSizeBits;
                 var _currentFrame = _currentPage % frameSize;
-                var _currentOffset = currentAddress & allocator.PageSizeMask;
+                var _currentOffset = currentAddress & PageSizeMask;
                 var _headAddress = long.MaxValue;
 
                 if (disposed)
@@ -121,7 +181,7 @@ namespace FASTER.core
                 if (entryLength == 0)
                 {
                     // We are likely at end of page, skip to next
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
 
                     Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _);
 
@@ -134,9 +194,9 @@ namespace FASTER.core
                 }
 
                 int recordSize = (int)(Align(_currentOffset + headerSize + entryLength) - _currentOffset);
-                if (entryLength < 0 || (_currentOffset + recordSize > allocator.PageSize))
+                if (entryLength < 0 || (_currentOffset + recordSize > PageSize))
                 {
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                     {
                         return false;
@@ -149,7 +209,7 @@ namespace FASTER.core
                 // Verify checksum if needed
                 if (!Utility.VerifyBlockChecksum((byte*)physicalAddress, entryLength))
                 {
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                     {
                         return false;
@@ -159,8 +219,8 @@ namespace FASTER.core
                 }
                 physicalAddress += headerSize;
 
-                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                if ((currentAddress & PageSizeMask) + recordSize == PageSize)
+                    currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
                 else
                     currentAddress += recordSize;
 
