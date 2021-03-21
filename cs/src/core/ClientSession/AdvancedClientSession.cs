@@ -771,7 +771,10 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentWriterNoLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-                => _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
+            {
+                _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
+            }
 
             private bool ConcurrentWriterLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
@@ -779,6 +782,7 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref dst, LockType.Exclusive, ref context);
                 try
                 {
+                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
                     // KeyIndexes do not need notification of in-place updates because the key does not change.
                     return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref src, ref dst, ref recordInfo, address);
                 }
@@ -792,7 +796,10 @@ namespace FASTER.core
             public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 if (!this.SupportsLocking)
+                {
+                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
                     _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+                }
                 else
                     ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address);
             }
@@ -803,6 +810,7 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
                 try
                 {
+                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
                     _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
                 }
                 finally
@@ -847,7 +855,10 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
-                => _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref recordInfo, address);
+            {
+                _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref recordInfo, address);
+            }
 
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
             {
@@ -855,6 +866,7 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
                 try
                 {
+                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
                     // KeyIndexes do not need notification of in-place updates because the key does not change.
                     return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address);
                 }

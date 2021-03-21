@@ -29,8 +29,8 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits)
-            : base(Constants.kFirstValidAddress, deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits)
+        public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress)
+            : base(Constants.kFirstValidAddress, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits)
         {
             LogPageSizeBits = logPageSizeBits;
             PageSize = 1 << LogPageSizeBits;

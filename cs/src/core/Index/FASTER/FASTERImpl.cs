@@ -508,6 +508,7 @@ namespace FASTER.core
             var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
             BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+            hlog.MarkPage(newLogicalAddress, sessionCtx.version);
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                            sessionCtx.version,
                            tombstone: false, invalidBit: false,
@@ -854,6 +855,7 @@ namespace FASTER.core
                             hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
             BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+            hlog.MarkPage(newLogicalAddress, sessionCtx.version);
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
                             tombstone: false, invalidBit: false,
                             latestLogicalAddress);
@@ -1112,6 +1114,7 @@ namespace FASTER.core
                 var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
                 BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                hlog.MarkPage(newLogicalAddress, sessionCtx.version);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version, tombstone:true, invalidBit:false,
                                latestLogicalAddress);

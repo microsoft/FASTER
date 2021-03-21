@@ -837,12 +837,15 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
-                    ? InPlaceUpdaterNoLock(ref key, ref input, ref value, address)
+                    ? InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address)
                     : InPlaceUpdaterLock(ref key, ref input, ref value, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, long address)
-                => _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+            }
 
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
             {
@@ -850,7 +853,8 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
                 try
                 {
-                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref value, address);
+                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
+                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address);
                 }
                 finally
                 {

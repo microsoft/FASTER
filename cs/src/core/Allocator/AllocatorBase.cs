@@ -492,6 +492,13 @@ namespace FASTER.core
             info.Version = version;
         }
 
+        internal void MarkPage(long logicalAddress, int version)
+        {
+            var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
+            if (PageStatusIndicator[offset].Dirty != version)
+                PageStatusIndicator[offset].Dirty = version;
+        }
+
         internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                 DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                 IDevice device)
