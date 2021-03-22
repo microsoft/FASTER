@@ -19,6 +19,7 @@ namespace FASTER.core
     {
         public long startPage;
         public long endPage;
+        public long snapshotEndPage;
         public long untilAddress;
         public int capacity;
         public CheckpointType checkpointType;
@@ -241,11 +242,12 @@ namespace FASTER.core
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return;
 
+            long readOnlyAddress;
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
                 RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.FoldOver, undoFutureVersions);
-                hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, tailAddress);
+                readOnlyAddress = tailAddress;
             }
             else
             {
@@ -257,17 +259,18 @@ namespace FASTER.core
                 // Then recover snapshot into mutable region
                 recoveredHLCInfo.info.version = RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress, recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid, undoFutureVersions, recoveredHLCInfo.info.deltaTailAddress);
 
-                var _head = (1 + (tailAddress >> hlog.LogPageSizeBits) - hlog.GetCapacityNumPages()) << hlog.LogPageSizeBits;
-                if (_head > headAddress)
-                    headAddress = _head;
-                if (recoveredHLCInfo.info.flushedLogicalAddress < headAddress)
-                    recoveredHLCInfo.info.flushedLogicalAddress = headAddress;
-
-                // Finally reset addresses
-                hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, recoveredHLCInfo.info.flushedLogicalAddress);
+                readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
 
+            // Adjust head and read-only address post-recovery
+            var _head = (1 + (tailAddress >> hlog.LogPageSizeBits) - hlog.GetCapacityNumPages()) << hlog.LogPageSizeBits;
+            if (_head > headAddress)
+                headAddress = _head;
+            if (readOnlyAddress < headAddress)
+                readOnlyAddress = headAddress;
+
             // Recover session information
+            hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             systemState.version = recoveredHLCInfo.info.version + 1;
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
         }
@@ -280,11 +283,12 @@ namespace FASTER.core
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return;
 
+            long readOnlyAddress;
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
                 await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.FoldOver, undoFutureVersions, cancellationToken);
-                hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, tailAddress);
+                readOnlyAddress = tailAddress;
             }
             else
             {
@@ -296,17 +300,18 @@ namespace FASTER.core
                 // Then recover snapshot into mutable region
                 recoveredHLCInfo.info.version = await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress, recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid, undoFutureVersions, recoveredHLCInfo.info.deltaTailAddress, cancellationToken);
 
-                var _head = (1 + (tailAddress >> hlog.LogPageSizeBits) - hlog.GetCapacityNumPages()) << hlog.LogPageSizeBits;
-                if (_head > headAddress)
-                    headAddress = _head;
-                if (recoveredHLCInfo.info.flushedLogicalAddress < headAddress)
-                    recoveredHLCInfo.info.flushedLogicalAddress = headAddress;
-
-                // Finally reset addresses
-                hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, recoveredHLCInfo.info.flushedLogicalAddress);
+                readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
 
+            // Adjust head and read-only address post-recovery
+            var _head = (1 + (tailAddress >> hlog.LogPageSizeBits) - hlog.GetCapacityNumPages()) << hlog.LogPageSizeBits;
+            if (_head > headAddress)
+                headAddress = _head;
+            if (readOnlyAddress < headAddress)
+                readOnlyAddress = headAddress;
+
             // Recover session information
+            hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             systemState.version = recoveredHLCInfo.info.version + 1;
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
         }
@@ -553,6 +558,7 @@ namespace FASTER.core
                     }
                     else
                     {
+                        recoveryStatus.WaitFlush(pageIndex);
                         if (!hlog.IsAllocated(pageIndex))
                             hlog.AllocatePage(pageIndex);
                         else
@@ -573,21 +579,12 @@ namespace FASTER.core
                     // Issue next read
                     if (p + capacity < endPage)
                     {
-                        // First, flush snapshot page to main log
+                        // Flush snapshot page to main log
+                        // Flush callback will issue further reads or page clears
                         recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
                         if (p + capacity < snapshotEndPage)
                             recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                        // Flush callback will issue further reads
                         hlog.AsyncFlushPages(p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
-
-                        if (p + capacity >= snapshotEndPage)
-                        {
-                            WaitUntilAllPagesHaveBeenFlushed(p, p + 1, recoveryStatus);
-                            if (!hlog.IsAllocated(pageIndex))
-                                hlog.AllocatePage(pageIndex);
-                            else
-                                hlog.ClearPage(pageIndex);
-                        }
                     }
                 }
             }
@@ -620,6 +617,7 @@ namespace FASTER.core
                     }
                     else
                     {
+                        await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken);
                         if (!hlog.IsAllocated(pageIndex))
                             hlog.AllocatePage(pageIndex);
                         else
@@ -640,21 +638,12 @@ namespace FASTER.core
                     // Issue next read
                     if (p + capacity < endPage)
                     {
-                        // First, flush snapshot page to main log
+                        // Flush snapshot page to main log
+                        // Flush callback will issue further reads or page clears
                         recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
                         if (p + capacity < snapshotEndPage)
                             recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                        // Flush callback will issue further reads
                         hlog.AsyncFlushPages(p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
-
-                        if (p + capacity >= snapshotEndPage)
-                        {
-                            await WaitUntilAllPagesHaveBeenFlushedAsync(p, p + 1, recoveryStatus, cancellationToken);
-                            if (!hlog.IsAllocated(pageIndex))
-                                hlog.AllocatePage(pageIndex);
-                            else
-                                hlog.ClearPage(pageIndex);
-                        }
                     }
                 }
             }
@@ -686,12 +675,13 @@ namespace FASTER.core
             recoveryDevice.Initialize(hlog.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(-1);
             deltaRecoveryDevice.Initialize(-1);
-            recoveryStatus = new RecoveryStatus(capacity, startPage, snapshotEndPage, untilAddress, CheckpointType.Snapshot)
+            recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress, CheckpointType.Snapshot)
             {
                 recoveryDevice = recoveryDevice,
                 objectLogRecoveryDevice = objectLogRecoveryDevice,
                 deltaRecoveryDevice = deltaRecoveryDevice,
-                recoveryDevicePageOffset = snapshotStartPage
+                recoveryDevicePageOffset = snapshotStartPage,
+                snapshotEndPage = snapshotEndPage
             };
 
             // Initially issue read request for all pages that can be held in memory
@@ -820,10 +810,14 @@ namespace FASTER.core
                     }
                     else
                     {
-                        hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
+                        if (readPage < result.context.snapshotEndPage)
+                        {
+                            // If next page is in snapshot, issue retrieval for it
+                            hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, hlog.AsyncReadPagesCallbackForRecovery,
                                                             result.context,
                                                             result.context.recoveryDevicePageOffset,
                                                             result.context.recoveryDevice, result.context.objectLogRecoveryDevice);
+                        }
                     }
                 }
                 result.Free();
