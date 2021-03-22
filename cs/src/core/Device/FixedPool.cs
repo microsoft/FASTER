@@ -24,44 +24,45 @@ namespace FASTER.core
 
         public (T, int) Get()
         {
-            while (true)
+            for (int i = 0; i < size; i++)
             {
-                for (int i = 0; i < size; i++)
+                if (disposed)
+                    throw new FasterException("Accessing a disposed handle in device");
+
+                var val = owners[i];
+                if (val == 0)
                 {
-                    if (disposed)
-                        throw new FasterException("Accessing a disposed handle in device");
-
-                    var val = owners[i];
-                    if (val == 0)
+                    if (Interlocked.CompareExchange(ref owners[i], 2, val) == val)
                     {
-                        if (Interlocked.CompareExchange(ref owners[i], 2, val) == val)
+                        try
                         {
-                            try
-                            {
-                                items[i] = creator();
-                            }
-                            catch
-                            {
-                                Interlocked.Exchange(ref owners[i], val);
-                                throw;
-                            }
-
-                            return (items[i], i);
+                            items[i] = creator();
                         }
+                        catch
+                        {
+                            Interlocked.Exchange(ref owners[i], val);
+                            throw;
+                        }
+
+                        return (items[i], i);
                     }
-                    else if (val == 1)
+                }
+                else if (val == 1)
+                {
+                    if (Interlocked.CompareExchange(ref owners[i], 2, val) == val)
                     {
-                        if (Interlocked.CompareExchange(ref owners[i], 2, val) == val)
-                        {
-                            return (items[i], i);
-                        }
+                        return (items[i], i);
                     }
                 }
             }
+            return (creator(), int.MaxValue);
         }
 
         public void Return(int offset)
         {
+            if (offset == int.MaxValue)
+                return;
+
             if (!disposed)
                 Interlocked.CompareExchange(ref owners[offset], 1, 2);
             else
@@ -100,6 +101,15 @@ namespace FASTER.core
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Dispose temporary handles that are not pooled
+        /// </summary>
+        internal void DisposeIfNeeded(int offset, T item)
+        {
+            if (offset == int.MaxValue)
+                item.Dispose();
         }
     }
 }
