@@ -792,9 +792,16 @@ namespace FASTER.core
             public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 if (!this.SupportsLocking)
-                    _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+                    ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
                 else
                     ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                recordInfo.Tombstone = true;
+                _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
             }
 
             private void ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
@@ -803,7 +810,7 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
                 try
                 {
-                    _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+                    ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
                 }
                 finally
                 {
