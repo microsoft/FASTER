@@ -203,6 +203,11 @@ namespace FASTER.core
         /// </summary>
         public long finalLogicalAddress;
         /// <summary>
+        /// Snapshot end logical address: snaphot is [startLogicalAddress, snapshotFinalLogicalAddress)
+        /// Note that finalLogicalAddress may be higher due to delta records
+        /// </summary>
+        public long snapshotFinalLogicalAddress;
+        /// <summary>
         /// Head address
         /// </summary>
         public long headAddress;
@@ -245,6 +250,7 @@ namespace FASTER.core
             flushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
+            snapshotFinalLogicalAddress = 0;
             deltaTailAddress = 0;
             headAddress = 0;
 
@@ -284,6 +290,9 @@ namespace FASTER.core
 
             value = reader.ReadLine();
             finalLogicalAddress = long.Parse(value);
+
+            value = reader.ReadLine();
+            snapshotFinalLogicalAddress = long.Parse(value);
 
             value = reader.ReadLine();
             headAddress = long.Parse(value);
@@ -369,6 +378,7 @@ namespace FASTER.core
                     writer.WriteLine(flushedLogicalAddress);
                     writer.WriteLine(startLogicalAddress);
                     writer.WriteLine(finalLogicalAddress);
+                    writer.WriteLine(snapshotFinalLogicalAddress);
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
                     writer.WriteLine(deltaTailAddress);
@@ -402,7 +412,7 @@ namespace FASTER.core
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ headAddress ^ beginAddress
+            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
                 ^ checkpointTokensCount ^ (objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
         }
 
@@ -417,6 +427,7 @@ namespace FASTER.core
             Debug.WriteLine("Flushed LogicalAddress: {0}", flushedLogicalAddress);
             Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
             Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
+            Debug.WriteLine("Snapshot Final Logical Address: {0}", snapshotFinalLogicalAddress);
             Debug.WriteLine("Head Address: {0}", headAddress);
             Debug.WriteLine("Begin Address: {0}", beginAddress);
             Debug.WriteLine("Delta Tail Address: {0}", deltaTailAddress);

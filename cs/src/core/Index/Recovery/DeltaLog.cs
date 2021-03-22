@@ -2,12 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -16,15 +13,15 @@ namespace FASTER.core
     /// </summary>
     internal sealed class DeltaLog : ScanIteratorBase, IDisposable
     {
-        const int headerSize = 12;
+        public const int HeaderSize = 12;
         readonly IDevice deltaLogDevice;
         readonly BlittableFrame frame;
-        bool disposed = false;
         readonly int LogPageSizeBits;
         readonly int PageSize;
         readonly int PageSizeMask;
         readonly int AlignedPageSizeBytes;
         readonly int sectorSize;
+        bool disposed = false;
 
         /// <summary>
         /// Constructor
@@ -128,7 +125,7 @@ namespace FASTER.core
 
         public unsafe void Apply<Key, Value>(AllocatorBase<Key, Value> hlog, long startLogicalAddress, long endLogicalAddress, ref int version)
         {
-            nextAddress = beginAddress;
+            Reset();
             while (GetNext(out long physicalAddress, out int entryLength))
             {
                 long endAddress = physicalAddress + entryLength;
@@ -187,7 +184,7 @@ namespace FASTER.core
                         continue;
                 }
 
-                int recordSize = (int)(Align(_currentOffset + headerSize + entryLength) - _currentOffset);
+                int recordSize = (int)(Align(_currentOffset + HeaderSize + entryLength) - _currentOffset);
                 if (entryLength < 0 || (_currentOffset + recordSize > PageSize))
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
@@ -206,7 +203,7 @@ namespace FASTER.core
                     else
                         continue;
                 }
-                physicalAddress += headerSize;
+                physicalAddress += HeaderSize;
 
                 if ((currentAddress & PageSizeMask) + recordSize == PageSize)
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;

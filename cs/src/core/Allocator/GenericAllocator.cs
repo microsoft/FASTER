@@ -238,7 +238,7 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-        protected override bool IsAllocated(int pageIndex)
+        internal override bool IsAllocated(int pageIndex)
         {
             return values[pageIndex] != null;
         }
@@ -288,7 +288,7 @@ namespace FASTER.core
 
 
 
-        protected override void ClearPage(long page, int offset)
+        internal override void ClearPage(long page, int offset)
         {
             Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
 

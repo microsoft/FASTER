@@ -250,7 +250,7 @@ namespace FASTER.core
             return *(nativePointers + pageIndex) + offset;
         }
 
-        protected override bool IsAllocated(int pageIndex)
+        internal override bool IsAllocated(int pageIndex)
         {
             return values[pageIndex] != null;
         }
@@ -300,7 +300,7 @@ namespace FASTER.core
             return page << LogPageSizeBits;
         }
 
-        protected override void ClearPage(long page, int offset)
+        internal override void ClearPage(long page, int offset)
         {
             if (offset == 0)
                 Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);

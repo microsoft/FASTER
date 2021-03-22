@@ -370,7 +370,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="pageIndex"></param>
         /// <returns></returns>
-        protected abstract bool IsAllocated(int pageIndex);
+        internal abstract bool IsAllocated(int pageIndex);
         /// <summary>
         /// Populate page
         /// </summary>
@@ -403,8 +403,6 @@ namespace FASTER.core
         /// <param name="completedSemaphore"></param>
         internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
         {
-            const int DeltaHeaderSize = 12; // 8 byte checksum + 4 byte length
-
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
             if (endAddress > GetStartLogicalAddress(endPage))
@@ -415,7 +413,7 @@ namespace FASTER.core
             var buffer = bufferPool.Get(PageSize);
 
             int startOffset = (int)(GetFirstValidLogicalAddress(GetPage(tailAddress)) & PageSizeMask);
-            int dataOffset = startOffset + DeltaHeaderSize;
+            int dataOffset = startOffset + DeltaLog.HeaderSize;
             int destOffset = dataOffset;
 
             int issuedPages = 0;
@@ -454,7 +452,7 @@ namespace FASTER.core
                             tailAddress += alignedBlockSize;
                             buffer = bufferPool.Get(PageSize);
                             startOffset = (int)(GetFirstValidLogicalAddress(GetPage(tailAddress)) & PageSizeMask);
-                            dataOffset = startOffset + DeltaHeaderSize;
+                            dataOffset = startOffset + DeltaLog.HeaderSize;
                             destOffset = dataOffset;
                         }
                         *((long*)(buffer.aligned_pointer + destOffset)) = logicalAddress;
@@ -549,7 +547,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="page">Page number to be cleared</param>
         /// <param name="offset">Offset to clear from (if partial clear)</param>
-        protected abstract void ClearPage(long page, int offset = 0);
+        internal abstract void ClearPage(long page, int offset = 0);
         /// <summary>
         /// Write page (async)
         /// </summary>

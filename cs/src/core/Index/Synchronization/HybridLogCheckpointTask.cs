@@ -180,6 +180,7 @@ namespace FASTER.core
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, faster);
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
+                    faster._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = faster._hybridLogCheckpoint.info.finalLogicalAddress;
 
                     faster._hybridLogCheckpoint.snapshotFileDevice =
                         faster.checkpointManager.GetSnapshotLogDevice(faster._hybridLogCheckpointToken);
@@ -280,6 +281,7 @@ namespace FASTER.core
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, faster);
+                    faster._hybridLogCheckpoint.info.finalLogicalAddress = 0;
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
 
                     if (faster._hybridLogCheckpoint.deltaFileDevice == null)

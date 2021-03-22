@@ -56,6 +56,17 @@ namespace FASTER.test.recovery
             }
         }
 
+        public class MyFunctions2 : SimpleFunctions<long, long>
+        {
+            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
+            {
+                if (key < 950)
+                    Assert.IsTrue(status == Status.OK && output == key);
+                else
+                    Assert.IsTrue(status == Status.OK && output == key + 1);
+            }
+        }
+
         [Test]
         [Category("FasterKV")]
         public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1<<10)]int size)
@@ -433,13 +444,13 @@ namespace FASTER.test.recovery
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
-            using var s1 = fht1.NewSession(new MyFunctions());
+            using var s1 = fht1.NewSession(new MyFunctions2());
             for (long key = 0; key < 1000; key++)
             {
                 s1.Upsert(ref key, ref key);
             }
 
-            var task = fht1.TakeFullCheckpointAsync(CheckpointType.Snapshot);
+            var task = fht1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
             var result = await task;
 
             for (long key = 950; key < 1000; key++)
@@ -453,6 +464,11 @@ namespace FASTER.test.recovery
             Assert.IsTrue(_result1);
             Assert.IsTrue(_token1 == result.token);
 
+            for (long key = 1000; key < 2000; key++)
+            {
+                s1.Upsert(key, key + 1);
+            }
+
             var _result2 = fht1.TakeHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
@@ -462,18 +478,18 @@ namespace FASTER.test.recovery
 
             using var fht2 = new FasterKV<long, long>
                 (1 << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
             await fht2.RecoverAsync();
 
-            Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
-            Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
+            //Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
+            //Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
             Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
 
-            using var s2 = fht2.NewSession(new MyFunctions());
-            for (long key = 0; key < 1000; key++)
+            using var s2 = fht2.NewSession(new MyFunctions2());
+            for (long key = 0; key < 2000; key++)
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);

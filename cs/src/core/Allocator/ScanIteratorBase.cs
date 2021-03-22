@@ -36,10 +36,10 @@ namespace FASTER.core
         /// </summary>
         protected long currentAddress, nextAddress;
         
-        private readonly CountdownEvent[] loaded;
-        private readonly CancellationTokenSource[] loadedCancel;
-        private readonly long[] loadedPage;
-        private readonly long[] nextLoadedPage;
+        private CountdownEvent[] loaded;
+        private CancellationTokenSource[] loadedCancel;
+        private long[] loadedPage;
+        private long[] nextLoadedPage;
         private readonly int logPageSizeBits;
 
         /// <summary>
@@ -192,6 +192,25 @@ namespace FASTER.core
                     catch { }
                 }
             }
+        }
+
+        /// <summary>
+        /// Reset iterator
+        /// </summary>
+        public void Reset()
+        {
+            loaded = new CountdownEvent[frameSize];
+            loadedCancel = new CancellationTokenSource[frameSize];
+            loadedPage = new long[frameSize];
+            nextLoadedPage = new long[frameSize];
+            for (int i = 0; i < frameSize; i++)
+            {
+                loadedPage[i] = -1;
+                nextLoadedPage[i] = -1;
+                loadedCancel[i] = new CancellationTokenSource();
+            }
+            currentAddress = -1;
+            nextAddress = beginAddress;
         }
     }
 }
