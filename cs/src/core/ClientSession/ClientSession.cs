@@ -791,7 +791,6 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref dst, LockType.Exclusive, ref context);
                 try
                 {
-                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
                     return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref src, ref dst, ref recordInfo, address);
                 }
                 finally
@@ -803,7 +802,32 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
+                if (!this.SupportsLocking)
+                    ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
+                else
+                    ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            {
                 // Non-Advanced IFunctions has no ConcurrentDeleter
+                _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
+                recordInfo.Tombstone = true;
+            }
+
+            private void ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                long context = 0;
+                this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
+                try
+                {
+                    ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
+                }
+                finally
+                {
+                    this.Unlock(ref recordInfo, ref key, ref value, LockType.Exclusive, context);
+                }
             }
 
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
@@ -853,7 +877,6 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
                 try
                 {
-                    _clientSession.fht.hlog.Mark(address, ref recordInfo, _clientSession.ctx.version);
                     return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address);
                 }
                 finally
