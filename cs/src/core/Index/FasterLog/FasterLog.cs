@@ -183,7 +183,8 @@ namespace FASTER.core
         public long Enqueue(byte[] entry)
         {
             long logicalAddress;
-            while (!TryEnqueue(entry, out logicalAddress)) ;
+            while (!TryEnqueue(entry, out logicalAddress))
+                Thread.Yield();
             return logicalAddress;
         }
 
@@ -195,7 +196,8 @@ namespace FASTER.core
         public long Enqueue(ReadOnlySpan<byte> entry)
         {
             long logicalAddress;
-            while (!TryEnqueue(entry, out logicalAddress)) ;
+            while (!TryEnqueue(entry, out logicalAddress))
+                Thread.Yield();
             return logicalAddress;
         }
 
@@ -207,7 +209,8 @@ namespace FASTER.core
         public long Enqueue(IReadOnlySpanBatch readOnlySpanBatch)
         {
             long logicalAddress;
-            while (!TryEnqueue(readOnlySpanBatch, out logicalAddress)) ;
+            while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
+                Thread.Yield();
             return logicalAddress;
         }
         #endregion
@@ -545,7 +548,8 @@ namespace FASTER.core
         public long EnqueueAndWaitForCommit(byte[] entry)
         {
             long logicalAddress;
-            while (!TryEnqueue(entry, out logicalAddress)) ;
+            while (!TryEnqueue(entry, out logicalAddress))
+                Thread.Yield();
             while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
             return logicalAddress;
         }
@@ -559,7 +563,8 @@ namespace FASTER.core
         public long EnqueueAndWaitForCommit(ReadOnlySpan<byte> entry)
         {
             long logicalAddress;
-            while (!TryEnqueue(entry, out logicalAddress)) ;
+            while (!TryEnqueue(entry, out logicalAddress))
+                Thread.Yield();
             while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
             return logicalAddress;
         }
@@ -573,7 +578,8 @@ namespace FASTER.core
         public long EnqueueAndWaitForCommit(IReadOnlySpanBatch readOnlySpanBatch)
         {
             long logicalAddress;
-            while (!TryEnqueue(readOnlySpanBatch, out logicalAddress)) ;
+            while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
+                Thread.Yield();
             while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
             return logicalAddress;
         }
