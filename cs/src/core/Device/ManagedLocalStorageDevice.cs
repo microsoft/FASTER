@@ -16,13 +16,6 @@ namespace FASTER.core
     /// </summary>
     public sealed class ManagedLocalStorageDevice : StorageDeviceBase
     {
-#if NETSTANDARD
-        // IsOSPlatform leads to a string comparison, cache the result once and reuse.
-        private static bool IsWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-#else
-        private static bool IsWindows = true;
-#endif
-
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
@@ -62,7 +55,8 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override bool Throttle() => false; // we do not throttle ManagedLocalStorageDevice
+        // We do not throttle ManagedLocalStorageDevice because our AsyncPool of handles takes care of this
+        public override bool Throttle() => false;
 
         private void RecoverFiles()
         {
@@ -150,13 +144,6 @@ namespace FASTER.core
                         readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
                     }
 #endif
-
-                    if (IsWindows)
-                    {
-                        // If non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
-                        // For netstandard+linux we will return after the operation completes.
-                        streampool?.Return(logReadHandle);
-                    }
                 }
             }
             catch
@@ -201,14 +188,6 @@ namespace FASTER.core
                             readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
                         }
 #endif
-
-                        if (IsWindows)
-                        {
-                            // If non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
-                            // For netstandard+linux we will return after the operation completes.
-                            // DisposeIfNeeded will be called after operation completes
-                            streampool?.Return(logReadHandle);
-                        }
                     }
                     catch
                     {
@@ -254,11 +233,8 @@ namespace FASTER.core
 #if !NETSTANDARD2_1
                     memory?.Return();
 #endif
-                    // Sequentialize all reads from same handle on non-windows
-                    if (!IsWindows)
-                    {
-                        streampool?.Return(logReadHandle);
-                    }
+                    // Sequentialize all reads from same handle
+                    streampool?.Return(logReadHandle);
 
                     // Issue user callback
                     callback(errorCode, (uint)numBytes, context);
@@ -330,13 +306,6 @@ namespace FASTER.core
                         writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
                     }
 #endif
-                    if (IsWindows)
-                    {
-                        // If non-netstandard, or netstandard+windows, we can return to the pool immediately.
-                        // For netstandard+linux we will return after the operation completes.
-                        // DisposeIfNeeded will be called after operation completes
-                        streampool?.Return(logWriteHandle);
-                    }
                 }
             }
             catch
@@ -388,12 +357,6 @@ namespace FASTER.core
                             writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
                         }
 #endif
-                        if (IsWindows)
-                        {
-                            // If non-netstandard, or netstandard+windows, we can return to the pool immediately.
-                            // For netstandard+linux we will return after the operation completes.
-                            streampool?.Return(logWriteHandle);
-                        }
                     }
                     catch
                     {
@@ -431,12 +394,9 @@ namespace FASTER.core
 #if !NETSTANDARD2_1
                     memory?.Return();
 #endif
-                    // Sequentialize all writes to same handle on non-windows
-                    if (!IsWindows)
-                    {
-                        ((FileStream)logWriteHandle).Flush(true);
-                        streampool?.Return(logWriteHandle);
-                    }
+                    // Sequentialize all writes to same handle
+                    ((FileStream)logWriteHandle).Flush(true);
+                    streampool?.Return(logWriteHandle);
 
                     // Issue user callback
                     callback(errorCode, numBytesToWrite, context);
@@ -550,7 +510,7 @@ namespace FASTER.core
 
         private (AsyncPool<Stream>, AsyncPool<Stream>) AddHandle(int _segmentId)
         {
-            return (new AsyncPool<Stream>(64, () => CreateReadHandle(_segmentId)), new AsyncPool<Stream>(64, () => CreateWriteHandle(_segmentId)));
+            return (new AsyncPool<Stream>(ThrottleLimit, () => CreateReadHandle(_segmentId)), new AsyncPool<Stream>(ThrottleLimit, () => CreateWriteHandle(_segmentId)));
         }
 
         private (AsyncPool<Stream>, AsyncPool<Stream>) GetOrAddHandle(int _segmentId)
