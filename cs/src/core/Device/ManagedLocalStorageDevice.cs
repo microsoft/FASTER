@@ -143,19 +143,18 @@ namespace FASTER.core
                         readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
                     }
 #else
-                memory = pool.Get((int)readLength);
-                // FileStream.ReadAsync is not thread-safe hence need a lock here
-                lock (this)
-                {
-                    readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
-                }
+                    memory = pool.Get((int)readLength);
+                    // FileStream.ReadAsync is not thread-safe hence need a lock here
+                    lock (this)
+                    {
+                        readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
+                    }
 #endif
 
                     if (IsWindows)
                     {
                         // If non-netstandard (==windows-only), or netstandard+windows, we can return to the pool immediately.
                         // For netstandard+linux we will return after the operation completes.
-                        // DisposeIfNeeded will be called after operation completes
                         streampool?.Return(logReadHandle);
                     }
                 }
@@ -393,7 +392,6 @@ namespace FASTER.core
                         {
                             // If non-netstandard, or netstandard+windows, we can return to the pool immediately.
                             // For netstandard+linux we will return after the operation completes.
-                            // DisposeIfNeeded will be called after operation completes
                             streampool?.Return(logWriteHandle);
                         }
                     }
