@@ -69,7 +69,7 @@ namespace FASTER.core
         public override void InitializeForReads()
         {
             base.InitializeForReads();
-            if (frameSize > 0 && endAddress > 0)
+            if (frameSize > 0 && (endAddress > 0 || tailAddress > 0))
                 frame = new BlittableFrame(frameSize, 1 << LogPageSizeBits, sectorSize);
         }
 
@@ -179,10 +179,12 @@ namespace FASTER.core
                 if (disposed)
                     return false;
 
-                if (currentAddress >= endAddress)
+                var _endAddress = endAddress;
+                if (tailAddress > _endAddress) _endAddress = tailAddress;
+
+                if (currentAddress >= _endAddress)
                     return false;
 
-                var _endAddress = endAddress;
 
                 if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress, _endAddress))
                     continue;

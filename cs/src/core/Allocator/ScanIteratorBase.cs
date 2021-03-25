@@ -101,6 +101,8 @@ namespace FASTER.core
                 nextLoadedPage[i] = -1;
                 loadedCancel[i] = new CancellationTokenSource();
             }
+            currentAddress = -1;
+            nextAddress = beginAddress;
         }
 
         /// <summary>
