@@ -293,36 +293,6 @@ namespace FASTER.core
             return true;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe static int GetBlockLength(byte* ptr)
-        {
-            return *(int*)(ptr + 8);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe static bool VerifyBlockChecksum(byte* ptr, int length)
-        {
-            var cs = XorBytes(ptr + 8, length + 4);
-            if (cs != *(ulong*)ptr)
-            {
-                return false;
-            }
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe static ulong GetBlockChecksum(byte* ptr)
-        {
-            return *(ulong*)ptr;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe static void SetBlockHeader(int length, byte* dest)
-        {
-            *(int*)(dest + 8) = length;
-            *(ulong*)dest = XorBytes(dest + 8, length + 4);
-        }
-
         /// <summary>
         /// Throws OperationCanceledException if token cancels before the real task completes.
         /// Doesn't abort the inner task, but allows the calling code to get "unblocked" and react to stuck tasks.

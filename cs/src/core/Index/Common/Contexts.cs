@@ -458,9 +458,10 @@ namespace FASTER.core
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
-        public void Recover(Guid token, ICheckpointManager checkpointManager)
+        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
         {
-            info.Recover(token, checkpointManager);
+            if (!CheckDelta(token, checkpointManager, deltaLogPageSizeBits))
+                info.Recover(token, checkpointManager);
         }
 
         public void Reset()
@@ -474,6 +475,35 @@ namespace FASTER.core
         public bool IsDefault()
         {
             return info.guid == default;
+        }
+
+        private unsafe bool CheckDelta(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
+        {
+            using var deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
+            deltaFileDevice.Initialize(-1);
+            if (deltaFileDevice.GetFileSize(0) > 0)
+            {
+                using var log = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
+                log.InitializeForReads();
+                byte[] metadata = null;
+                while (log.GetNext(out long physicalAddress, out int entryLength, out int type))
+                {
+                    if (type != 1) continue; // consider only metadata records
+                    long endAddress = physicalAddress + entryLength;
+                    metadata = new byte[entryLength];
+                    fixed (byte* m = metadata)
+                    {
+                        Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                    }
+                }
+                if (metadata != null)
+                {
+                    using (StreamReader s = new StreamReader(new MemoryStream(metadata)))
+                        info.Initialize(s);
+                    return true;
+                }
+            }
+            return false;
         }
     }
 

@@ -129,7 +129,7 @@ namespace FASTER.core
                 try
                 {
                     recoveredHLCInfo = new HybridLogCheckpointInfo();
-                    recoveredHLCInfo.Recover(hybridLogToken, checkpointManager);
+                    recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits);
                 }
                 catch
                 {
@@ -204,7 +204,7 @@ namespace FASTER.core
 
             // Recovery appropriate context information
             recoveredHLCInfo = new HybridLogCheckpointInfo();
-            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager);
+            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits);
             recoveredHLCInfo.info.DebugPrint();
             try
             {
@@ -545,6 +545,7 @@ namespace FASTER.core
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
             using var deltaLog = new DeltaLog(recoveryStatus.deltaRecoveryDevice, hlog.LogPageSizeBits, deltaTailAddress);
+            deltaLog.InitializeForReads();
             for (long page = startPage; page < endPage; page += capacity)
             {
                 long end = Math.Min(page + capacity, endPage);
@@ -567,7 +568,7 @@ namespace FASTER.core
                 }
 
                 // Apply delta
-                deltaLog.Apply(hlog, hlog.GetStartLogicalAddress(page), hlog.GetStartLogicalAddress(end), ref version);
+                hlog.ApplyDelta(deltaLog, page, end, ref version);
 
                 for (long p = page; p < end; p++)
                 {
@@ -604,6 +605,7 @@ namespace FASTER.core
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
             using var deltaLog = new DeltaLog(recoveryStatus.deltaRecoveryDevice, hlog.LogPageSizeBits, deltaTailAddress);
+            deltaLog.InitializeForReads();
             for (long page = startPage; page < endPage; page += capacity)
             {
                 long end = Math.Min(page + capacity, endPage);
@@ -626,7 +628,7 @@ namespace FASTER.core
                 }
 
                 // Apply delta
-                deltaLog.Apply(hlog, hlog.GetStartLogicalAddress(page), hlog.GetStartLogicalAddress(end), ref version);
+                hlog.ApplyDelta(deltaLog, page, end, ref version);
 
                 for (long p = page; p < end; p++)
                 {

@@ -60,7 +60,8 @@ namespace FASTER.core
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
         /// <param name="logPageSizeBits"></param>
-        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits)
+        /// <param name="initForReads"></param>
+        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits, bool initForReads = true)
         {
             // If we are protected when creating the iterator, we do not need per-GetNext protection
             if (epoch != null && !epoch.ThisInstanceProtected())
@@ -82,7 +83,14 @@ namespace FASTER.core
                 frameSize = 0;
                 return;
             }
+            if (initForReads) InitializeForReads();
+        }
 
+        /// <summary>
+        /// Initialize for reads
+        /// </summary>
+        public virtual void InitializeForReads()
+        {
             loaded = new CountdownEvent[frameSize];
             loadedCancel = new CancellationTokenSource[frameSize];
             loadedPage = new long[frameSize];
@@ -180,16 +188,19 @@ namespace FASTER.core
         /// </summary>
         public virtual void Dispose()
         {
-            // Wait for ongoing reads to complete/fail
-            for (int i = 0; i < frameSize; i++)
+            if (loaded != null)
             {
-                if (loadedPage[i] != -1)
+                // Wait for ongoing reads to complete/fail
+                for (int i = 0; i < frameSize; i++)
                 {
-                    try
+                    if (loadedPage[i] != -1)
                     {
-                        loaded[i].Wait(loadedCancel[i].Token);
+                        try
+                        {
+                            loaded[i].Wait(loadedCancel[i].Token);
+                        }
+                        catch { }
                     }
-                    catch { }
                 }
             }
         }

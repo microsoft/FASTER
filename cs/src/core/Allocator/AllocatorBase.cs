@@ -403,20 +403,17 @@ namespace FASTER.core
         /// <param name="completedSemaphore"></param>
         internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
         {
+            using var deltaLog = new DeltaLog(device, LogPageSizeBits, tailAddress);
+            deltaLog.InitializeForWrites(bufferPool);
+
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
             if (endAddress > GetStartLogicalAddress(endPage))
                 endPage++;
 
-            int maxPages = 2 * (int)(endPage - startPage);
-            completedSemaphore = new SemaphoreSlim(maxPages);
-            var buffer = bufferPool.Get(PageSize);
+            deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
+            int destOffset = 0;
 
-            int startOffset = (int)(GetFirstValidLogicalAddress(GetPage(tailAddress)) & PageSizeMask);
-            int dataOffset = startOffset + DeltaLog.HeaderSize;
-            int destOffset = dataOffset;
-
-            int issuedPages = 0;
             for (long p = startPage; p < endPage; p++)
             {
                 if (PageStatusIndicator[p % BufferSize].Dirty < version)
@@ -439,27 +436,19 @@ namespace FASTER.core
                     if (info.Version == version)
                     {
                         int size = sizeof(long) + sizeof(int) + alignedRecordSize;
-                        if (destOffset + size > PageSize)
+                        if (destOffset + size > entryLength)
                         {
-                            var alignedBlockSize = (destOffset + (sectorSize - 1)) & ~(sectorSize - 1);
-                            Utility.SetBlockHeader(destOffset - dataOffset, buffer.aligned_pointer + startOffset);
-                            var asyncResult = new PageAsyncFlushResult<Empty> { completedSemaphore = completedSemaphore, count = 1, freeBuffer1 = buffer };
-                            WriteAsync((IntPtr)buffer.aligned_pointer,
-                                        (ulong)tailAddress,
-                                        (uint)alignedBlockSize, AsyncFlushPageToDeviceCallback, asyncResult,
-                                        device);
-                            issuedPages++;
-                            tailAddress += alignedBlockSize;
-                            buffer = bufferPool.Get(PageSize);
-                            startOffset = (int)(GetFirstValidLogicalAddress(GetPage(tailAddress)) & PageSizeMask);
-                            dataOffset = startOffset + DeltaLog.HeaderSize;
-                            destOffset = dataOffset;
+                            deltaLog.Seal(destOffset);
+                            deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                            destOffset = 0;
+                            if (destOffset + size > entryLength)
+                                throw new FasterException("Insufficient page size to write delta");
                         }
-                        *((long*)(buffer.aligned_pointer + destOffset)) = logicalAddress;
+                        *((long*)(destPhysicalAddress + destOffset)) = logicalAddress;
                         destOffset += sizeof(long);
-                        *((int*)(buffer.aligned_pointer + destOffset)) = alignedRecordSize;
+                        *((int*)(destPhysicalAddress + destOffset)) = alignedRecordSize;
                         destOffset += sizeof(int);
-                        Buffer.MemoryCopy((void*)physicalAddress, buffer.aligned_pointer + destOffset, alignedRecordSize, alignedRecordSize);
+                        Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
                         destOffset += alignedRecordSize;
                     }
                     physicalAddress += alignedRecordSize;
@@ -467,19 +456,69 @@ namespace FASTER.core
                 }
             }
 
-            if (destOffset > dataOffset)
+            if (destOffset > 0)
+                deltaLog.Seal(destOffset);
+
+            tailAddress = deltaLog.TailAddress;
+            completedSemaphore = deltaLog.CompleteWrites();
+        }
+
+        internal void ApplyDelta(DeltaLog log, long startPage, long endPage, ref int version)
+        {
+            long startLogicalAddress = GetStartLogicalAddress(startPage);
+            long endLogicalAddress = GetStartLogicalAddress(endPage);
+
+            log.Reset();
+            while (log.GetNext(out long physicalAddress, out int entryLength, out int type))
             {
-                var alignedBlockSize = (destOffset + (sectorSize - 1)) & ~(sectorSize - 1);
-                Utility.SetBlockHeader(destOffset - dataOffset, buffer.aligned_pointer + startOffset);
-                var asyncResult = new PageAsyncFlushResult<Empty> { completedSemaphore = completedSemaphore, count = 1, freeBuffer1 = buffer };
-                WriteAsync((IntPtr)buffer.aligned_pointer,
-                            (ulong)tailAddress,
-                            (uint)alignedBlockSize, AsyncFlushPageToDeviceCallback, asyncResult,
-                            device);
-                issuedPages++;
-                tailAddress += alignedBlockSize;
+                if (type != 0) continue; // consider only delta records
+                long endAddress = physicalAddress + entryLength;
+                while (physicalAddress < endAddress)
+                {
+                    long address = *(long*)physicalAddress;
+                    physicalAddress += sizeof(long);
+                    int size = *(int*)physicalAddress;
+                    physicalAddress += sizeof(int);
+                    if (address >= startLogicalAddress && address < endLogicalAddress)
+                    {
+                        var destination = GetPhysicalAddress(address);
+                        Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+                        version = GetInfo(destination).Version;
+                    }
+                    physicalAddress += size;
+                }
             }
-            completedSemaphore.Release(maxPages - issuedPages);
+        }
+
+        /// <summary>
+        /// Metadata flush to delta device
+        /// </summary>
+        /// <param name="deltaDevice"></param>
+        /// <param name="metadata"></param>
+        /// <param name="tailAddress"></param>
+        /// <param name="completedSemaphore"></param>
+        internal unsafe virtual void FlushMetadataToDelta(IDevice deltaDevice, byte[] metadata, ref long tailAddress, out SemaphoreSlim completedSemaphore)
+        {
+            using var deltaLog = new DeltaLog(deltaDevice, LogPageSizeBits, tailAddress);
+            deltaLog.InitializeForWrites(bufferPool, tailAddress);
+            deltaLog.Allocate(out int length, out long physicalAddress);
+            if (length < metadata.Length)
+            {
+                deltaLog.Seal(0, type: 1);
+                deltaLog.Allocate(out length, out physicalAddress);
+                if (length < metadata.Length)
+                {
+                    deltaLog.Seal(0);
+                    throw new Exception($"Metadata of size {metadata.Length} does not fit in delta log space of size {length}");
+                }
+            }
+            fixed (byte* ptr = metadata)
+            {
+                Buffer.MemoryCopy(ptr, (void*)physicalAddress, metadata.Length, metadata.Length);
+            }
+            deltaLog.Seal(metadata.Length, type: 1);
+            tailAddress = deltaLog.TailAddress;
+            completedSemaphore = deltaLog.CompleteWrites();
         }
 
         internal void Mark(long logicalAddress, ref RecordInfo info, int version)

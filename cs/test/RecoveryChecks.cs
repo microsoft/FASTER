@@ -474,7 +474,7 @@ namespace FASTER.test.recovery
 
             Assert.IsTrue(_result2);
             Assert.IsTrue(_token2 == result.token);
-
+            
 
             using var fht2 = new FasterKV<long, long>
                 (1 << 10,
@@ -484,8 +484,6 @@ namespace FASTER.test.recovery
 
             await fht2.RecoverAsync();
 
-            //Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
-            //Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
             Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
 
             using var s2 = fht2.NewSession(new MyFunctions2());

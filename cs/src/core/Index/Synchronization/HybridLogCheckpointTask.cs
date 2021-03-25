@@ -32,22 +32,7 @@ namespace FASTER.core
                     faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    // Collect object log offsets only after flushes
-                    // are completed
-                    var seg = faster.hlog.GetSegmentOffsets();
-                    if (seg != null)
-                    {
-                        faster._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                        Array.Copy(seg, faster._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-                    }
-
-                    // Temporarily block new sessions from starting, which may add an entry to the table and resize the
-                    // dictionary. There should be minimal contention here.
-                    lock (faster._activeSessions)
-                        // write dormant sessions to checkpoint
-                        foreach (var kvp in faster._activeSessions)
-                            kvp.Value.AtomicSwitch(next.version - 1);
-
+                    CollectMetadata(next, faster);
                     faster.WriteHybridLogMetaInfo();
                     break;
                 case Phase.REST:
@@ -57,6 +42,25 @@ namespace FASTER.core
                     faster.checkpointTcs = nextTcs;
                     break;
             }
+        }
+
+        protected void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        {
+            // Collect object log offsets only after flushes
+            // are completed
+            var seg = faster.hlog.GetSegmentOffsets();
+            if (seg != null)
+            {
+                faster._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                Array.Copy(seg, faster._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+            }
+
+            // Temporarily block new sessions from starting, which may add an entry to the table and resize the
+            // dictionary. There should be minimal contention here.
+            lock (faster._activeSessions)
+                // write dormant sessions to checkpoint
+                foreach (var kvp in faster._activeSessions)
+                    kvp.Value.AtomicSwitch(next.version - 1);
         }
 
         /// <inheritdoc />
@@ -301,7 +305,9 @@ namespace FASTER.core
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
-                    base.GlobalBeforeEnteringState(next, faster);
+                    CollectMetadata(next, faster);
+                    faster.hlog.FlushMetadataToDelta(faster._hybridLogCheckpoint.deltaFileDevice, faster._hybridLogCheckpoint.info.ToByteArray(), ref faster._hybridLogCheckpoint.info.deltaTailAddress, out var completedSemaphore);
+                    completedSemaphore.Wait();
                     faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
                     break;
             }
