@@ -134,21 +134,23 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
         /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
+        /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <returns>Whether we successfully initiated the checkpoint (initiation mayfail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType);
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false);
 
         /// <summary>
         /// Initiate checkpoint of FASTER log only (not index)
         /// </summary>
-        /// <param name="cancellationToken">A token to cancel the operation</param>
         /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
+        /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
+        /// <param name="cancellationToken">A token to cancel the operation</param>
         /// <returns>A (bool success, Guid token) tuple.
         /// success: Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index).
         /// token: Token for taken checkpoint.
         /// Await the task to complete checkpoint, if initiated successfully</returns>
-        public ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType, CancellationToken cancellationToken = default);
+        public ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType, bool tryIncremental = false, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Recover from last successful index and log checkpoints

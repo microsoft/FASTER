@@ -355,31 +355,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
+        /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType)
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false)
         {
-            ISynchronizationTask backend;
-            if (checkpointType == CheckpointType.FoldOver)
-                backend = new FoldOverCheckpointTask();
-            else if (checkpointType == CheckpointType.Snapshot)
-                backend = new SnapshotCheckpointTask();
-            else
-                throw new FasterException("Unsupported checkpoint type");
+            if (tryIncremental && checkpointType != CheckpointType.Snapshot)
+                throw new FasterException("Can use tryIncremental only with snapshot checkpoints");
 
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, -1));
-            token = _hybridLogCheckpointToken;
-            return result;
-        }
-
-        /// <summary>
-        /// Initiate log-only checkpoint
-        /// </summary>
-        /// <param name="token">Checkpoint token</param>
-        /// <param name="checkpointType">Checkpoint type</param>
-        /// <param name="tryIncremental">Try to store as delta over last snapshot</param>
-        /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental)
-        {
             ISynchronizationTask backend;
             if (checkpointType == CheckpointType.FoldOver)
                 backend = new FoldOverCheckpointTask();
@@ -402,6 +384,7 @@ namespace FASTER.core
         /// Take log-only checkpoint
         /// </summary>
         /// <param name="checkpointType">Checkpoint type</param>
+        /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>
         /// (bool success, Guid token)
@@ -411,9 +394,9 @@ namespace FASTER.core
         /// token: Token for taken checkpoint
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
-        public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType, CancellationToken cancellationToken = default)
+        public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType, bool tryIncremental = false, CancellationToken cancellationToken = default)
         {
-            var success = TakeHybridLogCheckpoint(out Guid token, checkpointType);
+            var success = TakeHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken);
@@ -422,7 +405,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Recover from the latest checkpoint (blocking operation)
+        /// Recover from the latest valid checkpoint (blocking operation)
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
@@ -432,7 +415,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Asynchronously recover from the latest checkpoint (blocking operation)
+        /// Asynchronously recover from the latest valid checkpoint (blocking operation)
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
