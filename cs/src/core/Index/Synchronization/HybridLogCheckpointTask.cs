@@ -113,6 +113,7 @@ namespace FASTER.core
             if (next.phase == Phase.PREPARE)
             {
                 faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+                faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
                 faster._lastSnapshotCheckpoint = default;
             }
             if (next.phase != Phase.WAIT_FLUSH) return;
@@ -176,6 +177,7 @@ namespace FASTER.core
             {
                 case Phase.PREPARE:
                     faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+                    faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
                     faster._lastSnapshotCheckpoint = default;
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
@@ -288,25 +290,25 @@ namespace FASTER.core
                     faster._hybridLogCheckpoint.info.finalLogicalAddress = 0;
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
 
-                    if (faster._hybridLogCheckpoint.deltaFileDevice == null)
+                    if (faster._hybridLogCheckpoint.deltaLog == null)
                     {
-                        faster._hybridLogCheckpoint.deltaFileDevice =
-                            faster.checkpointManager.GetDeltaLogDevice(faster._hybridLogCheckpointToken);
-                        faster._hybridLogCheckpoint.deltaFileDevice.Initialize(faster.hlog.GetSegmentSize());
+                        faster._hybridLogCheckpoint.deltaFileDevice = faster.checkpointManager.GetDeltaLogDevice(faster._hybridLogCheckpointToken);
+                        faster._hybridLogCheckpoint.deltaFileDevice.Initialize(-1);
+                        faster._hybridLogCheckpoint.deltaLog = new DeltaLog(faster._hybridLogCheckpoint.deltaFileDevice, faster.hlog.LogPageSizeBits, -1);
+                        faster._hybridLogCheckpoint.deltaLog.InitializeForWrites(faster.hlog.bufferPool);
                     }
 
                     faster.hlog.AsyncFlushDeltaToDevice(
                         faster._hybridLogCheckpoint.info.startLogicalAddress,
                         faster._hybridLogCheckpoint.info.finalLogicalAddress,
                         faster._hybridLogCheckpoint.prevVersion,
-                        faster._hybridLogCheckpoint.deltaFileDevice,
-                        ref faster._hybridLogCheckpoint.info.deltaTailAddress,
-                        out faster._hybridLogCheckpoint.flushedSemaphore);
+                        faster._hybridLogCheckpoint.deltaLog);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     CollectMetadata(next, faster);
-                    faster.WriteHybridLogIncrementalMetaInfo();
+                    faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
+                    faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
                     faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
                     break;
             }

@@ -62,12 +62,9 @@ namespace FASTER.core
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
 
-        internal void WriteHybridLogIncrementalMetaInfo()
+        internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
         {
-            using var deltaLog = new DeltaLog(_hybridLogCheckpoint.deltaFileDevice, hlog.LogPageSizeBits, _hybridLogCheckpoint.info.deltaTailAddress);
-            deltaLog.InitializeForWrites(hlog.bufferPool);
             checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, _hybridLogCheckpoint.info.ToByteArray(), deltaLog);
-            _hybridLogCheckpoint.info.deltaTailAddress = deltaLog.TailAddress;
         }
 
         internal void WriteIndexMetaInfo()

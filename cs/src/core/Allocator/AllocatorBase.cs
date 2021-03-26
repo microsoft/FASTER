@@ -398,14 +398,9 @@ namespace FASTER.core
         /// <param name="startAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="version"></param>
-        /// <param name="device"></param>
-        /// <param name="tailAddress"></param>
-        /// <param name="completedSemaphore"></param>
-        internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, IDevice device, ref long tailAddress, out SemaphoreSlim completedSemaphore)
+        /// <param name="deltaLog"></param>
+        internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, DeltaLog deltaLog)
         {
-            using var deltaLog = new DeltaLog(device, LogPageSizeBits, tailAddress);
-            deltaLog.InitializeForWrites(bufferPool);
-
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
             if (endAddress > GetStartLogicalAddress(endPage))
@@ -433,7 +428,7 @@ namespace FASTER.core
                 {
                     ref var info = ref GetInfo(physicalAddress);
                     var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
-                    if (info.Version == version)
+                    if (info.Version == new RecordInfo(version).Version)
                     {
                         int size = sizeof(long) + sizeof(int) + alignedRecordSize;
                         if (destOffset + size > entryLength)
@@ -458,13 +453,12 @@ namespace FASTER.core
 
             if (destOffset > 0)
                 deltaLog.Seal(destOffset);
-
-            tailAddress = deltaLog.TailAddress;
-            completedSemaphore = deltaLog.Flush();
         }
 
         internal void ApplyDelta(DeltaLog log, long startPage, long endPage, ref int version)
         {
+            if (log == null) return;
+
             long startLogicalAddress = GetStartLogicalAddress(startPage);
             long endLogicalAddress = GetStartLogicalAddress(endPage);
 

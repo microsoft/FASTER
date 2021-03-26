@@ -276,7 +276,7 @@ namespace FASTER.core
                 Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
             }
             deltaLog.Seal(commitMetadata.Length, type: 1);
-            deltaLog.Flush().Wait();
+            deltaLog.FlushAsync().Wait();
         }
     }
 }

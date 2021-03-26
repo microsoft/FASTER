@@ -20,6 +20,7 @@ namespace FASTER.test
             DirectoryInfo di = Directory.CreateDirectory(path);
             using (IDevice device = Devices.CreateLogDevice(path + TestContext.CurrentContext.Test.Name + "/delta.log", deleteOnClose: false))
             {
+                device.Initialize(-1);
                 using DeltaLog deltaLog = new DeltaLog(device, 12, 0);
                 Random r = new Random(20);
                 int i;
@@ -42,7 +43,7 @@ namespace FASTER.test
                     }
                     deltaLog.Seal(len, i);
                 }
-                deltaLog.Flush().Wait();
+                deltaLog.FlushAsync().Wait();
 
                 deltaLog.InitializeForReads();
                 i = 0;

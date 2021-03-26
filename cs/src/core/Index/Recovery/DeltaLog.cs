@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -63,8 +64,7 @@ namespace FASTER.core
             PageSize = 1 << LogPageSizeBits;
             PageSizeMask = PageSize - 1;
             this.deltaLogDevice = deltaLogDevice;
-            this.tailAddress = this.flushedUntilAddress = tailAddress;
-            deltaLogDevice.Initialize(-1);
+            this.tailAddress = this.flushedUntilAddress = endAddress;
             sectorSize = (int)deltaLogDevice.SectorSize;
             AlignedPageSizeBytes = (int)Align(PageSize);
         }
@@ -272,15 +272,11 @@ namespace FASTER.core
         /// Initialize for writes
         /// </summary>
         /// <param name="memory"></param>
-        /// <param name="tailAddress"></param>
-        public void InitializeForWrites(SectorAlignedBufferPool memory, long tailAddress = -1)
+        public void InitializeForWrites(SectorAlignedBufferPool memory)
         {
             this.memory = memory;
-            if (tailAddress >= 0)
-                this.tailAddress = tailAddress;
-            completedSemaphore = new SemaphoreSlim(0);
-            issuedFlush = 1;
             buffer = memory.Get(PageSize);
+            completedSemaphore = new SemaphoreSlim(0);
         }
 
         /// <summary>
@@ -352,15 +348,18 @@ namespace FASTER.core
         /// Flush
         /// </summary>
         /// <returns></returns>
-        public unsafe SemaphoreSlim Flush()
+        public async Task FlushAsync()
         {
             // Flush last page if needed
             long pageStartAddress = tailAddress & ~PageSizeMask;
             if (tailAddress > pageStartAddress)
                 FlushPage();
             if (Interlocked.Decrement(ref issuedFlush) == 0)
-                completedSemaphore.Release(int.MaxValue);
-            return completedSemaphore;
+            {
+                issuedFlush = 1;
+                completedSemaphore.Release();
+            }
+            await completedSemaphore.WaitAsync();
         }
 
         /// <summary>
@@ -384,7 +383,10 @@ namespace FASTER.core
                     result.Free();
                 }
                 if (Interlocked.Decrement(ref issuedFlush) == 0)
-                    completedSemaphore.Release(int.MaxValue);
+                {
+                    issuedFlush = 1;
+                    completedSemaphore.Release();
+                }
             }
             catch when (disposed) { }
         }

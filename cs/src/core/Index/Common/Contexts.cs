@@ -450,6 +450,7 @@ namespace FASTER.core
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
         public IDevice deltaFileDevice;
+        public DeltaLog deltaLog;
         public SemaphoreSlim flushedSemaphore;
         public int prevVersion;
 
@@ -461,13 +462,13 @@ namespace FASTER.core
 
         public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
         {
-            using var deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
+            deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
             deltaFileDevice.Initialize(-1);
             if (deltaFileDevice.GetFileSize(0) > 0)
             {
-                using var log = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
-                log.InitializeForReads();
-                info.Recover(token, checkpointManager, log);
+                deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
+                deltaLog.InitializeForReads();
+                info.Recover(token, checkpointManager, deltaLog);
             }
             else
             {
