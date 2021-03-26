@@ -42,7 +42,7 @@ namespace FASTER.test
                     }
                     deltaLog.Seal(len, i);
                 }
-                deltaLog.CompleteWrites().Wait();
+                deltaLog.Flush().Wait();
 
                 deltaLog.InitializeForReads();
                 i = 0;

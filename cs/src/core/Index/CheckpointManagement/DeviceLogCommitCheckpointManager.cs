@@ -233,14 +233,55 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog)
+        {
+            deltaLog.Allocate(out int length, out long physicalAddress);
+            if (length < commitMetadata.Length)
+            {
+                deltaLog.Seal(0, type: 1);
+                deltaLog.Allocate(out length, out physicalAddress);
+                if (length < commitMetadata.Length)
+                {
+                    deltaLog.Seal(0);
+                    throw new Exception($"Metadata of size {commitMetadata.Length} does not fit in delta log space of size {length}");
+                }
+            }
+            fixed (byte* ptr = commitMetadata)
+            {
+                Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
+            }
+            deltaLog.Seal(commitMetadata.Length, type: 1);
+            deltaLog.Flush().Wait();
+        }
+
+        /// <inheritdoc />
         public IEnumerable<Guid> GetLogCheckpointTokens()
         {
             return deviceFactory.ListContents(checkpointNamingScheme.LogCheckpointBasePath()).Select(e => checkpointNamingScheme.Token(e));
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken)
+        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog)
         {
+            byte[] metadata = null;
+            if (deltaLog != null)
+            {
+                // Try to get latest valid metadata from delta-log
+                deltaLog.Reset();
+                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out int type))
+                {
+                    if (type != 1) continue; // consider only metadata records
+                    long endAddress = physicalAddress + entryLength;
+                    metadata = new byte[entryLength];
+                    unsafe
+                    {
+                        fixed (byte* m = metadata)
+                            Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                    }
+                }
+                if (metadata != null) return metadata;
+            }
+
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));

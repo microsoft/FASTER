@@ -166,7 +166,7 @@ namespace FASTER.test.recovery.objectstore
                 new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
                         new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(test_path).FullName)));
+                          new DirectoryInfo(test_path).FullName)), null);
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

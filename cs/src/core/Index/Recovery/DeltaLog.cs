@@ -10,7 +10,7 @@ using System.Threading;
 namespace FASTER.core
 {
     [StructLayout(LayoutKind.Explicit, Size = DeltaLog.HeaderSize)]
-    internal struct DeltalogHeader
+    struct DeltalogHeader
     {
         [FieldOffset(0)]
         public ulong Checksum;
@@ -23,9 +23,13 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class DeltaLog : ScanIteratorBase, IDisposable
+    public sealed class DeltaLog : ScanIteratorBase, IDisposable
     {
+        /// <summary>
+        /// Header size
+        /// </summary>
         public const int HeaderSize = 16;
+
         readonly IDevice deltaLogDevice;
         readonly int LogPageSizeBits;
         readonly int PageSize;
@@ -133,7 +137,7 @@ namespace FASTER.core
             }
         }
 
-        public unsafe static ref DeltalogHeader GetHeader(long physicalAddress) => ref Unsafe.AsRef<DeltalogHeader>((void*)physicalAddress);
+        private unsafe static ref DeltalogHeader GetHeader(long physicalAddress) => ref Unsafe.AsRef<DeltalogHeader>((void*)physicalAddress);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
@@ -162,6 +166,13 @@ namespace FASTER.core
             return (length + sectorSize - 1) & ~(sectorSize - 1);
         }
 
+        /// <summary>
+        /// Get next entry
+        /// </summary>
+        /// <param name="physicalAddress"></param>
+        /// <param name="entryLength"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
         public unsafe bool GetNext(out long physicalAddress, out int entryLength, out int type)
         {
             while (true)
@@ -257,6 +268,11 @@ namespace FASTER.core
             header.Checksum = Utility.XorBytes(dest + 8, length + HeaderSize - 8);
         }
 
+        /// <summary>
+        /// Initialize for writes
+        /// </summary>
+        /// <param name="memory"></param>
+        /// <param name="tailAddress"></param>
         public void InitializeForWrites(SectorAlignedBufferPool memory, long tailAddress = -1)
         {
             this.memory = memory;
@@ -332,7 +348,11 @@ namespace FASTER.core
             buffer = memory.Get(PageSize);
         }
 
-        public unsafe SemaphoreSlim CompleteWrites()
+        /// <summary>
+        /// Flush
+        /// </summary>
+        /// <returns></returns>
+        public unsafe SemaphoreSlim Flush()
         {
             // Flush last page if needed
             long pageStartAddress = tailAddress & ~PageSizeMask;

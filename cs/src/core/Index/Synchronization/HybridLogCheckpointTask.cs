@@ -306,8 +306,7 @@ namespace FASTER.core
                 case Phase.PERSISTENCE_CALLBACK:
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     CollectMetadata(next, faster);
-                    faster.hlog.FlushMetadataToDelta(faster._hybridLogCheckpoint.deltaFileDevice, faster._hybridLogCheckpoint.info.ToByteArray(), ref faster._hybridLogCheckpoint.info.deltaTailAddress, out var completedSemaphore);
-                    completedSemaphore.Wait();
+                    faster.WriteHybridLogIncrementalMetaInfo();
                     faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
                     break;
             }

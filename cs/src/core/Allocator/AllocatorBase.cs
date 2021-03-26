@@ -460,7 +460,7 @@ namespace FASTER.core
                 deltaLog.Seal(destOffset);
 
             tailAddress = deltaLog.TailAddress;
-            completedSemaphore = deltaLog.CompleteWrites();
+            completedSemaphore = deltaLog.Flush();
         }
 
         internal void ApplyDelta(DeltaLog log, long startPage, long endPage, ref int version)
@@ -488,37 +488,6 @@ namespace FASTER.core
                     physicalAddress += size;
                 }
             }
-        }
-
-        /// <summary>
-        /// Metadata flush to delta device
-        /// </summary>
-        /// <param name="deltaDevice"></param>
-        /// <param name="metadata"></param>
-        /// <param name="tailAddress"></param>
-        /// <param name="completedSemaphore"></param>
-        internal unsafe virtual void FlushMetadataToDelta(IDevice deltaDevice, byte[] metadata, ref long tailAddress, out SemaphoreSlim completedSemaphore)
-        {
-            using var deltaLog = new DeltaLog(deltaDevice, LogPageSizeBits, tailAddress);
-            deltaLog.InitializeForWrites(bufferPool, tailAddress);
-            deltaLog.Allocate(out int length, out long physicalAddress);
-            if (length < metadata.Length)
-            {
-                deltaLog.Seal(0, type: 1);
-                deltaLog.Allocate(out length, out physicalAddress);
-                if (length < metadata.Length)
-                {
-                    deltaLog.Seal(0);
-                    throw new Exception($"Metadata of size {metadata.Length} does not fit in delta log space of size {length}");
-                }
-            }
-            fixed (byte* ptr = metadata)
-            {
-                Buffer.MemoryCopy(ptr, (void*)physicalAddress, metadata.Length, metadata.Length);
-            }
-            deltaLog.Seal(metadata.Length, type: 1);
-            tailAddress = deltaLog.TailAddress;
-            completedSemaphore = deltaLog.CompleteWrites();
         }
 
         internal void Mark(long logicalAddress, ref RecordInfo info, int version)
