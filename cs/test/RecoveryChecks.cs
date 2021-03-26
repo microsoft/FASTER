@@ -410,6 +410,7 @@ namespace FASTER.test.recovery
 
 
         [Test]
+        [Repeat(100)]
         public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
         {
             ICheckpointManager checkpointManager;
@@ -484,7 +485,7 @@ namespace FASTER.test.recovery
 
             await fht2.RecoverAsync();
 
-            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
+            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress, $"fht1 tail = {fht1.Log.TailAddress}; fht2 tail = {fht2.Log.TailAddress}");
 
             using var s2 = fht2.NewSession(new MyFunctions2());
             for (long key = 0; key < 2000; key++)
