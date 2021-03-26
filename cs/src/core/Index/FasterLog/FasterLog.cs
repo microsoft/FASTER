@@ -312,15 +312,13 @@ namespace FASTER.core
                 var task = @this.CommitTask;
                 if (@this.TryEnqueue(entry, out logicalAddress))
                     break;
-                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+
+                // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             return logicalAddress;
@@ -350,15 +348,13 @@ namespace FASTER.core
                 var task = @this.CommitTask;
                 if (@this.TryEnqueue(entry.Span, out logicalAddress))
                     break;
-                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+
+                // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             return logicalAddress;
@@ -388,15 +384,13 @@ namespace FASTER.core
                 var task = @this.CommitTask;
                 if (@this.TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
-                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+
+                // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             return logicalAddress;
@@ -607,15 +601,13 @@ namespace FASTER.core
                 task = CommitTask;
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
+
+                // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
@@ -661,15 +653,13 @@ namespace FASTER.core
                 task = CommitTask;
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
+
+                // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
@@ -715,15 +705,13 @@ namespace FASTER.core
                 task = CommitTask;
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
+
+                // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
@@ -1267,19 +1255,6 @@ namespace FASTER.core
                 *(int*)(dest + 8) = length;
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
             }
-        }
-
-        /// <summary>
-        /// Do we need to await a commit to make forward progress?
-        /// </summary>
-        /// <param name="committedUntilAddress"></param>
-        /// <param name="tailAddress"></param>
-        /// <returns></returns>
-        private bool NeedToWait(long committedUntilAddress, long tailAddress)
-        {
-            return
-                allocator.GetPage(committedUntilAddress) <=
-                (allocator.GetPage(tailAddress) - allocator.BufferSize);
         }
     }
 }
