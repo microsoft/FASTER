@@ -410,7 +410,6 @@ namespace FASTER.test.recovery
 
 
         [Test]
-        [Repeat(100)]
         public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
         {
             ICheckpointManager checkpointManager;

@@ -67,6 +67,8 @@ namespace FASTER.core
             this.tailAddress = this.flushedUntilAddress = endAddress;
             sectorSize = (int)deltaLogDevice.SectorSize;
             AlignedPageSizeBytes = (int)Align(PageSize);
+            issuedFlush = 1;
+            completedSemaphore = new SemaphoreSlim(0);
         }
 
         /// <inheritdoc />
@@ -89,7 +91,9 @@ namespace FASTER.core
                 // Dispose/unpin the frame from memory
                 frame?.Dispose();
                 // Wait for ongoing page flushes
-                completedSemaphore?.Wait();
+                if (Interlocked.Decrement(ref issuedFlush) == 0)
+                    completedSemaphore.Release();
+                completedSemaphore.Wait();
                 // Dispose flush buffer
                 buffer?.Dispose();
                 disposed = true;
@@ -276,7 +280,6 @@ namespace FASTER.core
         {
             this.memory = memory;
             buffer = memory.Get(PageSize);
-            completedSemaphore = new SemaphoreSlim(0);
         }
 
         /// <summary>
@@ -355,11 +358,10 @@ namespace FASTER.core
             if (tailAddress > pageStartAddress)
                 FlushPage();
             if (Interlocked.Decrement(ref issuedFlush) == 0)
-            {
-                issuedFlush = 1;
                 completedSemaphore.Release();
-            }
             await completedSemaphore.WaitAsync();
+            Interlocked.Increment(ref issuedFlush);
+            completedSemaphore = new SemaphoreSlim(0);
         }
 
         /// <summary>
@@ -383,10 +385,7 @@ namespace FASTER.core
                     result.Free();
                 }
                 if (Interlocked.Decrement(ref issuedFlush) == 0)
-                {
-                    issuedFlush = 1;
                     completedSemaphore.Release();
-                }
             }
             catch when (disposed) { }
         }
