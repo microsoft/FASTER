@@ -1074,7 +1074,6 @@ namespace FASTER.core
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 ref Value value = ref hlog.GetValue(physicalAddress);
-                recordInfo.Tombstone = true;
                 fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref value, ref recordInfo, logicalAddress);
                 if (WriteDefaultOnDelete)
                     value = default;
