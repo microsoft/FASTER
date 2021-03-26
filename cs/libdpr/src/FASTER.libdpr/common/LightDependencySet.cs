@@ -70,7 +70,6 @@ namespace FASTER.libdpr
             return Interlocked.CompareExchange(ref originalVersion, NoDependency, version) == version;
         }
 
-
         public IEnumerator<WorkerVersion> GetEnumerator()
         {
             return new LightDependencySetEnumerator(this);

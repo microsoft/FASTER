@@ -1,8 +1,10 @@
+using System;
+
 namespace FASTER.libdpr
 {
     public struct Worker
     {
-        public static Worker INVALID = new Worker(-1);
+        public static Worker CLUSTER_MANAGER = new Worker(0);
         public readonly long guid;
 
         public Worker(long guid)
