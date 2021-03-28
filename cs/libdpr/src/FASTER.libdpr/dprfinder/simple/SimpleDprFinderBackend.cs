@@ -5,45 +5,50 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.Sockets;
+using System.Text;
+using System.Threading;
 using FASTER.core;
 
 namespace FASTER.libdpr
 {
     public class SimpleDprFinderBackend
     {
-        internal class DprFinderState
+        public class State
         {
-            // TODO(Tianyu): Relate this with other constants in the system
-            internal const int MAX_SIZE = 1 << 20;
-            internal ConcurrentDictionary<Worker, long> worldLines;
+            internal Dictionary<Worker, long> worldLines;
+
             // Updates to cut is issued single-threadedly
             // TODO(Tianyu): also, need to add workers to it as it is the source of truth for cluster membership
             internal Dictionary<Worker, long> cut;
 
-            public DprFinderState()
+            // Dirty bit to signal that the state has been changed
+            internal bool hasUpdates;
+
+            public State()
             {
-                worldLines = new ConcurrentDictionary<Worker, long>();
+                worldLines = new Dictionary<Worker, long>();
                 cut = new Dictionary<Worker, long>();
             }
 
-            public DprFinderState(byte[] buf)
+            public State(byte[] buf)
             {
                 var head = 0;
                 head = ReadDictionaryFromBytes(buf, head, cut);
                 ReadDictionaryFromBytes(buf, head, worldLines);
             }
 
-            public DprFinderState(DprFinderState other)
+            public State(State other)
             {
-                worldLines = new ConcurrentDictionary<Worker, long>(other.worldLines);
+                worldLines = new Dictionary<Worker, long>(other.worldLines);
                 cut = new Dictionary<Worker, long>(other.worldLines);
             }
 
-            internal bool Serialize(byte[] buf)
+            internal bool Serialize(byte[] buf, out int size)
             {
                 var head = 0;
                 // Check that the buffer is large enough to hold the entries
-                if (buf.Length < sizeof(long) * 2 * (worldLines.Count + cut.Count) + 2 * sizeof(int)) return false;
+                size = sizeof(long) * 2 * (worldLines.Count + cut.Count) + 2 * sizeof(int);
+                if (buf.Length <size) return false;
                 head = SerializeDictionary(cut, buf, head);
                 SerializeDictionary(worldLines, buf, head);
                 return true;
@@ -81,32 +86,61 @@ namespace FASTER.libdpr
             }
         }
 
-        // Ephemeral data structures
+        /* Ephemeral data structures */
+        // Precedence graph stores dependency information. All nodes present in the precedence graph's keyset are
+        // persistent, but some edges may point to non-existent nodes. Nodes are non-existent either when they 
+        // are committed (as determined by checking the current cut), or because they are not yet persistent.
+        //
+        // This graph is updated and read concurrently because races are benign here --- worker-versions are only
+        // added or deleted and never updated; in the face of concurrent writes, readers miss information and arrive
+        // at overly conservative answers that are still correct. 
         private ConcurrentDictionary<WorkerVersion, List<WorkerVersion>> precedenceGraph =
             new ConcurrentDictionary<WorkerVersion, List<WorkerVersion>>();
+
+        // Tracks a mapping from worker -> latest committed version, used for the approximate algorithm. This is 
+        // cheaper to access than scanning through the entire graph if maintained separately. Ok to be out-of-sync
+        // slightly with the graph as the graph is the source of truth and this is used for speed-up / DprFinder
+        // fault recovery when some deps are lost. 
         private ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
-        private DprFinderState volatileState;
+
+        // Volatile information, but immediately visible outside to enable version fast-forwarding. This is ok because
+        // fast-forwarding has no correctness implications, but helps the cluster stay in sync with their checkpoint
+        // schedule.
         private long maxVersion = 0;
 
-        // Persistence
-        private IDevice persistentStorage;
-        private DprFinderState persistentState;
+        // State that is being updated on the fly (single-threadedly). Not visible to the outside world until 
+        // persistent. A thread periodically reads a copy of the volatile state to flush to persistent storage and 
+        // cache the snapshot to make available to workers.
+        private State volatileState;
 
-        // Reused data structure for graph and traversal
+        /* Cluster Recovery */
+        // Recovery reports are processed on the same thread as graph traversal to avoid concurrency and ensure
+        // correctness. As soon as the cluster acknowledges a failure and enters recovery mode, it must stop giving 
+        // guarantees. Single-threaded processing makes this easier.
+        private ConcurrentQueue<(WorkerVersion, long)> recoveryReports = new ConcurrentQueue<(WorkerVersion, long)>();
+
+        /* Persistence */
+        private IDevice persistentStorage;
+        private State persistentState;
+
+        /* Reused data structure for graph and traversal */
         private SimpleObjectPool<List<WorkerVersion>> objectPool =
             new SimpleObjectPool<List<WorkerVersion>>(() => new List<WorkerVersion>());
 
         private HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
-        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>(), uncommittedWvs = new Queue<WorkerVersion>();
+        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>(), outstandingWvs = new Queue<WorkerVersion>();
 
-        // For serialization
-        private byte[] serializationBuffer = new byte[DprFinderState.MAX_SIZE];
+        /* Serialization */
+        // Start out at some arbitrary size --- the code resizes this buffer to fit
+        private byte[] serializationBuffer = new byte[1 << 20];
 
         public SimpleDprFinderBackend(IDevice persistentStorage)
         {
             this.persistentStorage = persistentStorage;
         }
 
+        // Try to commit wvs starting from the given wv. Commits and updates the volatile state the entire dependency
+        // set of wv if all of them are persistent. Committed versions are removed from the precedence graph.
         private bool TryCommitWorkerVersion(WorkerVersion wv)
         {
             if (wv.Version <= volatileState.cut.GetValueOrDefault(wv.Worker, 0))
@@ -124,10 +158,10 @@ namespace FASTER.libdpr
                 var node = frontier.Dequeue();
                 if (visited.Contains(node)) continue;
 
-                visited.Add(node);
-                if (volatileState.cut.GetValueOrDefault(wv.Worker, 0) > wv.Version) continue;
-                if (!precedenceGraph.TryGetValue(wv, out var val)) return false;
+                if (!precedenceGraph.TryGetValue(node, out var val)) return false;
 
+                visited.Add(node);
+                if (volatileState.cut.GetValueOrDefault(node.Worker, 0) >= node.Version) continue;
                 foreach (var dep in val)
                     frontier.Enqueue(dep);
             }
@@ -139,7 +173,7 @@ namespace FASTER.libdpr
                 Debug.Assert(success);
                 if (version < committed.Version)
                     volatileState.cut[committed.Worker] = committed.Version;
-                
+
                 if (precedenceGraph.TryRemove(committed, out var list))
                     objectPool.Return(list);
             }
@@ -149,25 +183,97 @@ namespace FASTER.libdpr
 
         public void TryFindDprCut()
         {
-            // TODO(Tianyu): Do a min pass
-            
-            var hasUpdates = false;
-            // No guarantees if recovery is in progress
-            if (volatileState.worldLines.Any(pair => pair.Value != persistentState.worldLines[Worker.CLUSTER_MANAGER]))
-                return;
-
-            for (var i = 0; i < uncommittedWvs.Count; i++)
+            lock (volatileState)
             {
-                var wv = uncommittedWvs.Dequeue();
-                if (TryCommitWorkerVersion(wv))
-                    hasUpdates = true;
-                else
-                    uncommittedWvs.Enqueue(wv);
+                // Apply any recovery-related updates
+                while (recoveryReports.TryDequeue(out var entry))
+                {
+                    volatileState.worldLines[entry.Item1.Worker] = entry.Item2;
+                    // Remove any rolled back version to avoid accidentally including them in a cut.
+                    for (var v = entry.Item1.Version + 1; v <= maxVersion; v++)
+                    {
+                        if (precedenceGraph.TryRemove(new WorkerVersion(entry.Item1.Worker, v), out var list))
+                            objectPool.Return(list);
+                    }
+                }
+
+                // No guarantees if recovery is in progress
+                if (volatileState.worldLines.Any(pair =>
+                    pair.Value != persistentState.worldLines[Worker.CLUSTER_MANAGER]))
+                    return;
             }
-            
-            // TODO(Tianyu): write to disk if there are updates
+
+            lock (volatileState)
+            {
+                // Use min to quickly prune outdated vertices
+                var minVersion = versionTable.Min(pair => pair.Value);
+                // Update entries in the cut to be at least the min. No need to prune the graph as later traversals will take
+                // care of that
+                foreach (var (worker, version) in volatileState.cut)
+                {
+                    if (version > minVersion) continue;
+                    volatileState.hasUpdates = true;
+                    volatileState.cut[worker] = minVersion;
+                }
+            }
+
+            // Go through the unprocessed wvs and traverse the graph
+            for (var i = 0; i < outstandingWvs.Count; i++)
+            {
+                var wv = outstandingWvs.Dequeue();
+                lock (volatileState)
+                {
+                    if (TryCommitWorkerVersion(wv))
+                        volatileState.hasUpdates = true;
+                    else
+                        outstandingWvs.Enqueue(wv);
+                }
+            }
         }
 
+        /// <summary>
+        /// Writes (a consistent snapshot of) the volatile state to persistent storage so it can be made visible to
+        /// workers. Writes complete synchronously on the calling thread.
+        /// </summary>
+        public void PersistState()
+        {
+            var completed = new ManualResetEventSlim();
+            State copy;
+            lock (volatileState)
+            {
+                if (!volatileState.hasUpdates) return;
+                // Deep copy the state to use for persistence and later as cached state for external access
+                copy = new State(volatileState);
+                volatileState.hasUpdates = false;
+            }
+
+            int size;
+            while (!copy.Serialize(serializationBuffer, out size))
+                // Grow buffer until state fits
+                serializationBuffer = new byte[Math.Max(size, serializationBuffer.Length * 2)];
+
+            Debug.Assert(size <= persistentStorage.SegmentSize);
+            unsafe
+            {
+                fixed (byte* b = &serializationBuffer[0])
+                    persistentStorage.WriteAsync((IntPtr) b, 0, (ulong) 0, (uint) size,
+                        (e, n, o) =>
+                        {
+                            // TODO(Tianyu): error handling?
+                            Interlocked.Exchange(ref persistentState, copy);
+                            completed.Set();
+                        },
+                        null);
+            }
+
+            completed.Wait();
+        }
+
+        /// <summary>
+        /// Report a new checkpoint to the backend with the given dependencies
+        /// </summary>
+        /// <param name="wv">worker-version of the checkpoint</param>
+        /// <param name="deps">dependencies of the checkpoint</param>
         public void NewCheckpoint(WorkerVersion wv, IEnumerable<WorkerVersion> deps)
         {
             maxVersion = Math.Max(wv.Version, maxVersion);
@@ -177,22 +283,17 @@ namespace FASTER.libdpr
             precedenceGraph.TryAdd(wv, list);
         }
 
+        /// <summary>
+        /// Report a new recovery of a worker version. If the given worker is the special value of CLUSTER_MANAGER,
+        /// this is treated as an external signal to start a recovery process. 
+        /// </summary>
+        /// <param name="wv">worker version that is recovered, or (CLUSTER_MANAGER, 0) if triggering recovery for the cluster</param>
+        /// <param name="worldLine"> the new worldline the worker is on</param>
         public void ReportRecovery(WorkerVersion wv, long worldLine)
         {
-                volatileState.worldLines[wv.Worker] = wv.Version;
-                if (wv.Worker.Equals(Worker.CLUSTER_MANAGER)) return;
-                // Remove any rolled back version to avoid accidentally including them in a cut.
-                for (var v = wv.Version + 1; v <= maxVersion; v++)
-                {
-                    // TODO(Tianyu): Should be thread-safe w.r.t concurrent traversal of graph. But verify.
-                    if (precedenceGraph.TryRemove(new WorkerVersion(wv.Worker, v), out var list))
-                        objectPool.Return(list);
-                }
+            recoveryReports.Enqueue(ValueTuple.Create(wv, worldLine));
         }
 
-        public void ServeSync(Socket clientConn)
-        {
-            // TODO(Tianyu): Send back only persistent state
-        }
+        public State GetPersistentState() => persistentState;
     }
 }
