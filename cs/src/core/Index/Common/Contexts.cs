@@ -30,7 +30,8 @@ namespace FASTER.core
         RECORD_ON_DISK,
         SUCCESS_UNMARK,
         CPR_SHIFT_DETECTED,
-        CPR_PENDING_DETECTED
+        CPR_PENDING_DETECTED,
+        ALLOCATE_FAILED
     }
 
     internal class SerializedFasterExecutionContext
@@ -89,6 +90,7 @@ namespace FASTER.core
             internal const byte kSkipReadCache = 0x01;
             internal const byte kNoKey = 0x02;
             internal const byte kSkipCopyReadsToTail = 0x04;
+            internal const byte kIsAsync = 0x08;
 
             internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
             {
@@ -117,6 +119,12 @@ namespace FASTER.core
             {
                 get => (operationFlags & kSkipCopyReadsToTail) != 0;
                 set => operationFlags = value ? (byte)(operationFlags | kSkipCopyReadsToTail) : (byte)(operationFlags & ~kSkipCopyReadsToTail);
+            }
+
+            internal bool IsAsync
+            {
+                get => (operationFlags & kIsAsync) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kIsAsync) : (byte)(operationFlags & ~kIsAsync);
             }
 
             public void Dispose()

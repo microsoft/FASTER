@@ -390,7 +390,9 @@ namespace FASTER.core
             {
                 // Immutable region or new record
                 status = CreateNewRecordUpsert(ref key, ref value, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry, latestLogicalAddress);
-                goto LatchRelease;
+                if (status != OperationStatus.ALLOCATE_FAILED)
+                    goto LatchRelease;
+                latchDestination = LatchDestination.CreatePendingContext;
             }
             #endregion
 
@@ -506,7 +508,9 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
-            BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
+            BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
+            if (newLogicalAddress == 0)
+                return OperationStatus.ALLOCATE_FAILED;
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                            sessionCtx.version,
@@ -722,11 +726,13 @@ namespace FASTER.core
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
                 status = CreateNewRecordRMW(ref key, ref input, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry, latestLogicalAddress);
-                goto LatchRelease;
+                if (status != OperationStatus.ALLOCATE_FAILED)
+                    goto LatchRelease;
+                latchDestination = LatchDestination.CreatePendingContext;
             }
-        #endregion
+            #endregion
 
-        #region Create failure context
+            #region Create failure context
             Debug.Assert(latchDestination == LatchDestination.CreatePendingContext, $"RMW CreatePendingContext encountered latchDest == {latchDestination}");
             {
                 pendingContext.type = OperationType.RMW;
@@ -852,7 +858,9 @@ namespace FASTER.core
             var (actualSize, allocatedSize) = (logicalAddress < hlog.BeginAddress) ?
                             hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
                             hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
-            BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
+            BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
+            if (newLogicalAddress == 0)
+                return OperationStatus.ALLOCATE_FAILED;
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
                             tombstone: false, invalidBit: false,
@@ -1110,7 +1118,12 @@ namespace FASTER.core
                 // Immutable region or new record
                 // Allocate default record size for tombstone
                 var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
-                BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
+                BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
+                if (newLogicalAddress == 0)
+                {
+                    status = OperationStatus.ALLOCATE_FAILED;
+                    goto CreatePendingContext;
+                }
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version, tombstone:true, invalidBit:false,
@@ -1514,6 +1527,8 @@ namespace FASTER.core
                     (actualSize, allocatedSize) = hlog.GetRecordSize(physicalAddress, ref pendingContext.input.Get(), fasterSession);
                 }
                 BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
+                if (newLogicalAddress == 0)
+                    return OperationStatus.ALLOCATE_FAILED;
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                                tombstone:false, invalidBit:false,
@@ -1747,32 +1762,50 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BlockAllocate<Input, Output, Context, FasterSession>(
-            int recordSize, 
-            out long logicalAddress, 
-            FasterExecutionContext<Input, Output, Context> ctx, 
-            FasterSession fasterSession)
-            where FasterSession : IFasterSession
-        {
-            while ((logicalAddress = hlog.TryAllocate(recordSize)) == 0)
-            {
-                hlog.TryComplete();
-                InternalRefresh(ctx, fasterSession);
-                Thread.Yield();
-            }
-        }
+                int recordSize,
+                out long logicalAddress,
+                FasterExecutionContext<Input, Output, Context> ctx,
+                FasterSession fasterSession, bool isAsync = false)
+                where FasterSession : IFasterSession 
+            => BlockAllocate(hlog, recordSize, out logicalAddress, ctx, fasterSession, isAsync);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BlockAllocateReadCache<Input, Output, Context, FasterSession>(
-            int recordSize, 
-            out long logicalAddress, 
-            FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession)
-            where FasterSession : IFasterSession
+                int recordSize,
+                out long logicalAddress,
+                FasterExecutionContext<Input, Output, Context> currentCtx,
+                FasterSession fasterSession)
+                where FasterSession : IFasterSession 
+            => BlockAllocate(readcache, recordSize, out logicalAddress, currentCtx, fasterSession, isAsync: false);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void BlockAllocate<Input, Output, Context, FasterSession>(
+                AllocatorBase<Key, Value> allocator,
+                int recordSize,
+                out long logicalAddress,
+                FasterExecutionContext<Input, Output, Context> ctx,
+                FasterSession fasterSession, bool isAsync)
+                where FasterSession : IFasterSession
         {
-            while ((logicalAddress = readcache.TryAllocate(recordSize)) == 0)
+            var spins = 0;
+            while (true)
             {
-                InternalRefresh(currentCtx, fasterSession);
-                Thread.Yield();
+                var flushTask = allocator.FlushTask;
+                if ((logicalAddress = allocator.TryAllocate(recordSize)) != 0)
+                    return;
+                allocator.TryComplete();
+                InternalRefresh(ctx, fasterSession);
+                if (++spins < Constants.kFlushSpinCount)
+                {
+                    Thread.Yield();
+                    continue;
+                }
+
+                // Async wait/retry is handled at the caller level
+                if (isAsync)
+                    return;
+                flushTask.GetAwaiter().GetResult();
+                spins = 0;
             }
         }
 

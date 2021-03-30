@@ -47,7 +47,6 @@ namespace FASTER.test.async
             new DirectoryInfo(path).Delete(true);
         }
 
-
         // Test that does .ReadAsync with minimum parameters (ref key)
         [Test]
         [Category("FasterKV")]
@@ -56,7 +55,9 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
             {
-                s1.Upsert(ref key, ref key);
+                var r = await s1.UpsertAsync(ref key, ref key);
+                while (r.Status == Status.PENDING)
+                    r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
             for (long key = 0; key < numOps; key++)
@@ -76,7 +77,8 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
             {
-                s1.Upsert(ref key, ref key);
+                var r = await s1.UpsertAsync(ref key, ref key);
+                r.Complete(); // test sync version of Upsert completion
             }
 
             for (long key = 0; key < numOps; key++)
@@ -94,7 +96,8 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
             {
-                s1.Upsert(ref key, ref key);
+                var r = await s1.UpsertAsync(ref key, ref key);
+                r.Complete(); // test sync version of Upsert completion
             }
 
             for (long key = 0; key < numOps; key++)
@@ -167,6 +170,70 @@ namespace FASTER.test.async
 
             (status, output) = (await s1.ReadAsync(key, output,Empty.Default, 129)).Complete();
             Assert.IsTrue(status == Status.OK && output == key + input + input);
+        }
+
+        // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by reference (ref key)
+        [Test]
+        [Category("FasterKV")]
+        public async Task UpsertReadDeleteReadAsyncMinParamByRefTest()
+        {
+            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+            for (long key = 0; key < numOps; key++)
+            {
+                var r = await s1.UpsertAsync(ref key, ref key);
+                while (r.Status == Status.PENDING)
+                    r = await r.CompleteAsync(); // test async version of Upsert completion
+            }
+
+            Assert.IsTrue(numOps > 100);
+
+            for (long key = 0; key < numOps; key++)
+            {
+                var (status, output) = (await s1.ReadAsync(ref key)).Complete();
+                Assert.IsTrue(status == Status.OK && output == key);
+            }
+
+            {   // Scope for variables
+                long deleteKey = 99;
+                var r = await s1.DeleteAsync(ref deleteKey);
+                while (r.Status == Status.PENDING)
+                    r = await r.CompleteAsync(); // test async version of Delete completion
+
+                var (status, _) = (await s1.ReadAsync(ref deleteKey)).Complete();
+                Assert.IsTrue(status == Status.NOTFOUND);
+            }
+        }
+
+        // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by value (key)
+        [Test]
+        [Category("FasterKV")]
+        public async Task UpsertReadDeleteReadAsyncMinParamByValueTest()
+        {
+            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+            for (long key = 0; key < numOps; key++)
+            {
+                var r = await s1.UpsertAsync(key, key);
+                while (r.Status == Status.PENDING)
+                    r = await r.CompleteAsync(); // test async version of Upsert completion
+            }
+
+            Assert.IsTrue(numOps > 100);
+
+            for (long key = 0; key < numOps; key++)
+            {
+                var (status, output) = (await s1.ReadAsync(key)).Complete();
+                Assert.IsTrue(status == Status.OK && output == key);
+            }
+
+            {   // Scope for variables
+                long deleteKey = 99;
+                var r = await s1.DeleteAsync(deleteKey);
+                while (r.Status == Status.PENDING)
+                    r = await r.CompleteAsync(); // test async version of Delete completion
+
+                var (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
+                Assert.IsTrue(status == Status.NOTFOUND);
+            }
         }
 
         /* ** TO DO: Using StartAddress in ReadAsync is now obsolete - might be design change etc but until then, commenting out test **

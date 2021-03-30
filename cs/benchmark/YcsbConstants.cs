@@ -67,7 +67,7 @@ namespace FASTER.benchmark
         internal const int kPeriodicCheckpointMilliseconds = 0;
 #else
         internal const bool kUseSmallData = false;
-        internal const bool kSmallMemoryLog = false;
+        internal const bool kSmallMemoryLog = true;//false;
         internal const int kRunSeconds = 30;
         internal const bool kDumpDistribution = false;
         internal const bool kAffinitizedSession = true;

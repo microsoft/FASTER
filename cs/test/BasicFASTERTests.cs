@@ -617,7 +617,7 @@ namespace FASTER.test
 
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
-            //**** When Bug Fixed ... use the invalidAddress line
+            //**** TODO: When Bug Fixed ... use the invalidAddress line
             // Bug #136259
             //        Ah—slight bug here.I took a quick look to verify that the logicalAddress passed to SingleReader was kInvalidAddress(0), 
             //and while I got that right for the SingleWriter call, I missed it on the SingleReader.

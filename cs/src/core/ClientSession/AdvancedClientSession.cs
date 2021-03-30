@@ -445,6 +445,37 @@ namespace FASTER.core
             => Upsert(ref key, ref desiredValue, userContext, serialNo);
 
         /// <summary>
+        /// Async Upsert operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Upsert result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        {
+            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            return fht.UpsertAsync(this.FasterSession, this.ctx, ref key, ref desiredValue, userContext, serialNo, token);
+        }
+
+        /// <summary>
+        /// Async Upsert operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Upsert result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+            => UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
+
+        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>
@@ -540,6 +571,35 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(Key key, Context userContext = default, long serialNo = 0)
             => Delete(ref key, userContext, serialNo);
+
+        /// <summary>
+        /// Async Delete operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Delete result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        {
+            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            return fht.DeleteAsync(this.FasterSession, this.ctx, ref key, userContext, serialNo, token);
+        }
+
+        /// <summary>
+        /// Async Delete operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Delete result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+            => DeleteAsync(ref key, userContext, serialNo, token);
 
         /// <summary>
         /// Experimental feature

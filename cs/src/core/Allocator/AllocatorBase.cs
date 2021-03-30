@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -38,7 +39,7 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public unsafe abstract partial class AllocatorBase<Key, Value> : IDisposable
+    public abstract partial class AllocatorBase<Key, Value> : IDisposable
     {
         /// <summary>
         /// Epoch information
@@ -233,6 +234,16 @@ namespace FASTER.core
         /// </summary>
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
+        /// <summary>
+        /// The TaskCompletionSource for flush completion
+        /// </summary>
+        private TaskCompletionSource<long> flushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>
+        /// The task ato be waited on for flush completion by the initiator of an operation
+        /// </summary>
+        internal Task FlushTask => flushTcs.Task;
+
         #region Abstract methods
         /// <summary>
         /// Initialize
@@ -268,7 +279,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="ptr"></param>
         /// <returns></returns>
-        public abstract ref RecordInfo GetInfoFromBytePointer(byte* ptr);
+        public unsafe abstract ref RecordInfo GetInfoFromBytePointer(byte* ptr);
 
         /// <summary>
         /// Get key
@@ -295,13 +306,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
-        public abstract AddressInfo* GetKeyAddressInfo(long physicalAddress);
+        public abstract unsafe AddressInfo* GetKeyAddressInfo(long physicalAddress);
         /// <summary>
         /// Get address info for value
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
-        public abstract AddressInfo* GetValueAddressInfo(long physicalAddress);
+        public abstract unsafe AddressInfo* GetValueAddressInfo(long physicalAddress);
 
         /// <summary>
         /// Get record size
@@ -375,7 +386,7 @@ namespace FASTER.core
         /// <param name="src"></param>
         /// <param name="required_bytes"></param>
         /// <param name="destinationPage"></param>
-        internal abstract void PopulatePage(byte* src, int required_bytes, long destinationPage);
+        internal abstract unsafe void PopulatePage(byte* src, int required_bytes, long destinationPage);
         /// <summary>
         /// Write async to device
         /// </summary>
@@ -398,7 +409,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected abstract void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default);
+        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default);
         /// <summary>
         /// Read page (async)
         /// </summary>
@@ -431,7 +442,7 @@ namespace FASTER.core
         /// <param name="record"></param>
         /// <param name="ctx"></param>
         /// <returns></returns>
-        protected abstract bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
+        protected abstract unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
 
         /// <summary>
         /// Retrieve value from context
@@ -749,10 +760,9 @@ namespace FASTER.core
 
         /// <summary>
         /// Try allocate, no thread spinning allowed
-        /// May return 0 in case of inability to allocate
         /// </summary>
-        /// <param name="numSlots"></param>
-        /// <returns></returns>
+        /// <param name="numSlots">Number of slots to allocate</param>
+        /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long TryAllocate(int numSlots = 1)
         {
@@ -815,6 +825,35 @@ namespace FASTER.core
             return (((long)page) << LogPageSizeBits) | ((long)offset);
         }
 
+        /// <summary>
+        /// Async wrapper for TryAllocate
+        /// </summary>
+        /// <param name="numSlots">Number of slots to allocate</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>The allocated logical address</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public async ValueTask<long> AllocateAsync(int numSlots = 1, CancellationToken token = default)
+        {
+            var spins = 0;
+            while (true)
+            {
+                var flushTask = this.FlushTask;
+                var result = this.TryAllocate(numSlots);
+                if (result != 0)
+                    return result;
+                this.TryComplete();
+                if (++spins < Constants.kFlushSpinCount)
+                {
+                    Thread.Yield();
+                    continue;
+                }
+
+                // Async wait/retry is handled at the caller level
+                await flushTask.WithCancellationAsync(token);
+                spins = 0;
+            }
+        }
+
         private bool CannotAllocate(int page)
         {
             return
@@ -870,6 +909,7 @@ namespace FASTER.core
             var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
 
             // Shift read-only address
+            var flushTask = FlushTask;
             try
             {
                 epoch.Resume();
@@ -881,7 +921,19 @@ namespace FASTER.core
             }
 
             // Wait for flush to complete
-            while (FlushedUntilAddress < newBeginAddress) Thread.Yield();
+            var spins = 0;
+            while (true)
+            {
+                if (FlushedUntilAddress >= newBeginAddress)
+                    break;
+                if (++spins < Constants.kFlushSpinCount)
+                {
+                    Thread.Yield();
+                    continue;
+                }
+                flushTask.Wait();
+                flushTask = FlushTask;
+            }
 
             // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
@@ -1114,6 +1166,10 @@ namespace FASTER.core
                             ErrorCode = errorCode
                         });
 
+                    var _flushTcs = flushTcs;
+                    flushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _flushTcs.TrySetResult(errorCode);
+
                     if (errorList.Count > 0)
                     {
                         errorList.RemoveUntil(currentFlushedUntilAddress);
@@ -1218,7 +1274,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// 
-        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1248,7 +1304,7 @@ namespace FASTER.core
         /// <param name="numBytes"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        internal void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1534,7 +1590,7 @@ namespace FASTER.core
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
 
-        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
